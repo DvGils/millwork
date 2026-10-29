@@ -90,7 +90,7 @@ async def test_the_search_box_lists_hits_and_enter_opens_the_first(tmp_path: Pat
     async with TestApp(app).open("/") as page:
         box = page.find(ui.Input)
         await page.change(box, "datepicker")
-        links = [n.props["href"] for n in page.find_all(ui.Link)]
+        links = [n.props["href"] for n in page.find_all(ui.Link) if n.props["href"].startswith("/")]
         assert links[0] == "/components/inputs#datepicker"
         await page.event(box, "submit", "datepicker")
         await page.settle()
