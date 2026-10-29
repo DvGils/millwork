@@ -1,0 +1,62 @@
+[project]
+name = "millwork"
+version = "0.0.1"
+description = "A Python framework for data tools and AI applications: one prebuilt React bundle, driven from Python."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "starlette>=0.47",
+    "uvicorn[standard]>=0.35",
+    "pydantic>=2.11,<3",
+    "python-multipart>=0.0.20",
+    "pyjwt>=2.10",
+    "httpx>=0.28",
+]
+
+[project.urls]
+Repository = "https://github.com/DvGils/millwork"
+
+[project.optional-dependencies]
+dev = ["watchfiles>=1.1"]
+
+[project.scripts]
+millwork = "millwork.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=1.0",
+    "hypothesis>=6.130",
+    "ruff>=0.13",
+    "mypy>=1.17",
+    "watchfiles>=1.1",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/millwork"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+faulthandler_timeout = 30
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# The manual's examples are formatted by hand: compact, as they read on the page.
+exclude = ["src/millwork/manual/pages"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+ignore = ["ASYNC109"]  # `timeout` is the parameter name the API documents
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["millwork"]
+mypy_path = "src"

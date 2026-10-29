@@ -1,0 +1,77 @@
+---
+title: Custom components
+order: 10
+---
+
+# Custom components
+
+When the catalogue has no component for something, an app writes one in
+JSX. The file lives in the app's `components/` folder, is compiled in the
+browser, and composes the same primitives the catalogue is built from.
+Python reaches it by name with `ui.Custom`.
+
+## The contract
+
+A component is a default export that receives `props` from Python, `emit`
+to send an event back, `request` to ask one of its handlers and get the
+answer as a promise, `fileUrl` to show a session file, and `children`
+rendered from Python.
+
+```jsx
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Sparkles } from "lucide-react";
+
+export default function Hello({ props, emit, children }) {
+  const [clicks, setClicks] = useState(0);
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-dashed border-primary/40 p-4">
+      <div className="flex items-center gap-2">
+        <Sparkles className="size-4 text-primary" />
+        <span className="font-medium">Hello, {props.who}.</span>
+        <Badge variant="secondary">server says {props.count}</Badge>
+        <Badge variant="outline">local clicks {clicks}</Badge>
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={() => setClicks((c) => c + 1)}>Local +1</Button>
+        <Button size="sm" onClick={() => emit("wave", clicks)}>Wave to the server</Button>
+      </div>
+      {children}
+    </div>
+  );
+}
+```
+
+## Using it from Python
+
+`ui.Custom(name, props=, events=)` renders `components/<name>.jsx`. Events
+the component emits reach the handler named in `events`, or `on_event` as
+`(name, payload)`.
+
+```python live
+from pydantic import BaseModel
+
+
+class Waves(BaseModel):
+    count: int = 0
+
+
+def example(s):
+    st = state(Waves)
+
+    def waved(s, clicks):
+        st.count += 1
+        s.toast(f"Waved after {clicks} local clicks.")
+
+    return ui.Custom(
+        "Hello",
+        ui.Text("Children from Python render inside the custom component.", variant="muted"),
+        props={"who": "Ada", "count": st.count},
+        events={"wave": waved},
+    )
+```
+
+The import map a custom component can draw on is React, lucide icons, and
+every `@/components/ui/*` module the catalogue uses. Tailwind classes work;
+ones the bundle never saw are compiled in the browser on first use.

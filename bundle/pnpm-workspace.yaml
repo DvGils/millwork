@@ -1,0 +1,5 @@
+minimumReleaseAge: 20160
+# esbuild only verifies its binary in a postinstall; the binary ships as an optional dependency.
+ignoredBuiltDependencies:
+  - esbuild
+strictDepBuilds: false

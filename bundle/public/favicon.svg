@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <title>millwork</title>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1fb3d3"/>
+      <stop offset=".55" stop-color="#0a7ea4"/>
+      <stop offset="1" stop-color="#6d5ae0"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#g)">
+    <path id="b" d="M24 23C17 18 15 9 19 5c5-4 13 3 13 10 0 5-3 7-8 8Z"/>
+    <use href="#b" transform="rotate(120 24 24)"/>
+    <use href="#b" transform="rotate(240 24 24)"/>
+  </g>
+</svg>

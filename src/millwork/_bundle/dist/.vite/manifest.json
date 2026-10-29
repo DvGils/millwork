@@ -1,0 +1,92 @@
+{
+  "_lib-3DI92Zxk.js": {
+    "file": "lib-3DI92Zxk.js",
+    "name": "lib"
+  },
+  "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-cyrillic-ext-wght-normal.woff2": {
+    "file": "geist-cyrillic-ext-wght-normal-DjL33-gN.woff2",
+    "src": "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-cyrillic-ext-wght-normal.woff2"
+  },
+  "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-cyrillic-wght-normal.woff2": {
+    "file": "geist-cyrillic-wght-normal-BEAKL7Jp.woff2",
+    "src": "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-cyrillic-wght-normal.woff2"
+  },
+  "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-latin-ext-wght-normal.woff2": {
+    "file": "geist-latin-ext-wght-normal-DC-KSUi6.woff2",
+    "src": "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-latin-ext-wght-normal.woff2"
+  },
+  "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2": {
+    "file": "geist-latin-wght-normal-BgDaEnEv.woff2",
+    "src": "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2"
+  },
+  "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-vietnamese-wght-normal.woff2": {
+    "file": "geist-vietnamese-wght-normal-6IgcOCM7.woff2",
+    "src": "node_modules/.pnpm/@fontsource-variable+geist@5.3.0/node_modules/@fontsource-variable/geist/files/geist-vietnamese-wght-normal.woff2"
+  },
+  "node_modules/.pnpm/@tailwindcss+browser@4.3.3/node_modules/@tailwindcss/browser/dist/index.global.js": {
+    "file": "index.global-cOFus1M1.js",
+    "name": "index.global",
+    "src": "node_modules/.pnpm/@tailwindcss+browser@4.3.3/node_modules/@tailwindcss/browser/dist/index.global.js",
+    "isDynamicEntry": true
+  },
+  "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.0/node_modules/react-markdown/index.js": {
+    "file": "react-markdown-N6JFNHVD.js",
+    "name": "react-markdown",
+    "src": "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.0/node_modules/react-markdown/index.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_lib-3DI92Zxk.js"
+    ]
+  },
+  "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.0_react@19.3.0__react@19.3.0/node_modules/react-runner/dist/index.modern.js": {
+    "file": "index.modern-BJeNyBXl.js",
+    "name": "index.modern",
+    "src": "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.0_react@19.3.0__react@19.3.0/node_modules/react-runner/dist/index.modern.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "node_modules/.pnpm/remark-gfm@4.0.1/node_modules/remark-gfm/index.js": {
+    "file": "remark-gfm-DoHjwpPg.js",
+    "name": "remark-gfm",
+    "src": "node_modules/.pnpm/remark-gfm@4.0.1/node_modules/remark-gfm/index.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_lib-3DI92Zxk.js"
+    ]
+  },
+  "src/components/charts-inner.tsx": {
+    "file": "charts-inner-CNCCiR9i.js",
+    "name": "charts-inner",
+    "src": "src/components/charts-inner.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "src/main.tsx": {
+    "file": "main-CwL9MAB7.js",
+    "name": "main",
+    "src": "src/main.tsx",
+    "isEntry": true,
+    "dynamicImports": [
+      "node_modules/.pnpm/@tailwindcss+browser@4.3.3/node_modules/@tailwindcss/browser/dist/index.global.js",
+      "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.0_react@19.3.0__react@19.3.0/node_modules/react-runner/dist/index.modern.js",
+      "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.0/node_modules/react-markdown/index.js",
+      "node_modules/.pnpm/remark-gfm@4.0.1/node_modules/remark-gfm/index.js",
+      "src/components/charts-inner.tsx"
+    ],
+    "css": [
+      "main-C-Svr0uJ.css"
+    ],
+    "assets": [
+      "geist-cyrillic-ext-wght-normal-DjL33-gN.woff2",
+      "geist-cyrillic-wght-normal-BEAKL7Jp.woff2",
+      "geist-vietnamese-wght-normal-6IgcOCM7.woff2",
+      "geist-latin-ext-wght-normal-DC-KSUi6.woff2",
+      "geist-latin-wght-normal-BgDaEnEv.woff2"
+    ]
+  }
+}

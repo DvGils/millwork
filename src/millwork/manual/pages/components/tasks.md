@@ -1,0 +1,140 @@
+---
+title: Tasks
+order: 8
+---
+
+# Tasks
+
+Work that takes longer than a click goes in a task. The session owns it, the
+page shows its progress, and the user can cancel it. A handler that awaits a
+task releases the handler lock, so the page stays live meanwhile.
+
+## Starting one
+
+`s.task(work, *args, label=)` runs a coroutine or a plain function (a
+function runs in a thread). It returns a `mw.Task` whose `done`, `status`,
+`progress`, `steps` and `result` the page can read. `ui.Progress(task=)`
+and `ui.Steps(task=)` draw it, and `task.cancel()` stops it.
+
+```python live
+import time
+
+from pydantic import BaseModel
+
+
+def crunch(n: int) -> str:
+    p = mw.progress()
+    p.plan(["Read", "Analyse", "Write"])
+    with p.step("Read"):
+        time.sleep(0.4)
+    with p.step("Analyse") as step:
+        for i in range(n):
+            p.check()
+            p.set((i + 1) / n, f"row {i + 1} of {n}")
+            time.sleep(0.15)
+        step.note(f"{n} rows")
+    with p.step("Write"):
+        time.sleep(0.3)
+    return f"{n} rows analysed"
+
+
+class Job(BaseModel):
+    run: object = None
+
+
+def example(s):
+    st = state(Job)
+    running = st.run is not None and not st.run.done
+    return ui.Stack(
+        ui.Row(
+            ui.Button(
+                "Start",
+                disabled=running,
+                on_click=lambda s, _: setattr(st, "run", s.task(crunch, 12, label="Crunching")),
+            ),
+            ui.Button(
+                "Cancel",
+                variant="outline",
+                disabled=not running,
+                on_click=lambda s, _: st.run.cancel(),
+            ),
+            gap=2,
+        ),
+        ui.Progress(task=st.run) if st.run else ui.Text("No job yet.", variant="muted"),
+        ui.Steps(task=st.run) if st.run else None,
+        ui.Text(f"Result: {st.run.result}" if st.run and st.run.ok else "", variant="muted"),
+        gap=4,
+    )
+```
+
+## Reporting from the work
+
+Inside the work, `mw.progress()` is the reporter. `set(value, message)`
+moves the bar, `plan([...])` declares steps up front, `step(label)` opens
+one as a context manager, `note(text)` leaves a short result on it,
+`log(line)` appends output, and `check()` raises `mw.Cancelled` when the
+user cancelled, so a loop stops at its next check.
+
+## Waiting for a result
+
+A handler can `await` the task to use its result; the lock is released while
+it waits. `on_done=` names a handler to run when the task ends, with the
+task as its argument. `timeout=` cancels a task that runs too long.
+
+```python live
+import asyncio
+
+from pydantic import BaseModel
+
+
+async def slow_sum(a: int, b: int) -> int:
+    await asyncio.sleep(0.8)
+    return a + b
+
+
+class Sum(BaseModel):
+    text: str = "not computed"
+
+
+async def compute(s, _):
+    st = state(Sum)
+    st.text = "computing"
+    result = await s.task(slow_sum, 2, 3, label="Adding")
+    st.text = f"2 + 3 = {result}"
+
+
+def example(s):
+    return ui.Row(
+        ui.Button("Compute", on_click=compute),
+        ui.Text(state(Sum).text, variant="muted"),
+        gap=3,
+    )
+```
+
+## Later and threads
+
+`s.later(seconds, work)` runs work after a delay; `s.thread(fn, *args)`
+runs a blocking function in the thread pool and is what `s.task` does for a
+plain function.
+
+```python live
+from pydantic import BaseModel
+
+
+class Tick(BaseModel):
+    text: str = "waiting"
+
+
+def example(s):
+    st = state(Tick)
+
+    def arm(s, _):
+        st.text = "armed"
+        s.later(1.5, lambda: setattr(st, "text", "fired"))
+
+    return ui.Row(
+        ui.Button("Arm a timer", variant="outline", on_click=arm),
+        ui.Text(st.text, variant="muted"),
+        gap=3,
+    )
+```

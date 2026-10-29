@@ -1,0 +1,14 @@
+.reference/
+__pycache__/
+.venv/
+node_modules/
+dist/
+!src/millwork/_bundle/dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Internal: the design notes and spikes stay on this machine.
+docs/
+spikes/
