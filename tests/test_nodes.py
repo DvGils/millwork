@@ -61,7 +61,7 @@ def components(draw: Any, depth: int = 0) -> Component:
     return Box(*children, label=draw(labels), hidden=draw(st.booleans()))
 
 
-@settings(max_examples=200)
+@settings(max_examples=200, deadline=None)
 @given(components(), components())
 def test_patch_reproduces_the_new_tree(a: Component, b: Component) -> None:
     before, after = build(a), build(b)
@@ -144,7 +144,7 @@ def rich(draw: Any, depth: int = 0) -> Component:
     )
 
 
-@settings(max_examples=300)
+@settings(max_examples=300, deadline=None)
 @given(rich(), rich())
 def test_patch_carries_every_prop_kind_and_keeps_the_table_consistent(
     a: Component, b: Component

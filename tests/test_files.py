@@ -121,7 +121,11 @@ def test_content_checks_and_names() -> None:
     # A long name is cut in the stem; its extension, and so its type, survives.
     assert safe_name("n" * 300 + ".pdf") == "n" * 196 + ".pdf"
     assert safe_name("n" * 300) == "n" * 200
-    assert safe_name("." * 300) == "." * 200
+    # Names Windows cannot write get a prefix; trailing dots and spaces go.
+    assert safe_name("CON.txt") == "_CON.txt" and safe_name("nul") == "_nul"
+    assert safe_name("com1.csv") == "_com1.csv" and safe_name("common.csv") == "common.csv"
+    assert safe_name("report. ") == "report" and safe_name("...") == "file"
+    assert safe_name("." * 300) == "file"
     cut = safe_name("n" * 300 + ".tar.gz")
     assert len(cut) == 200 and cut.endswith(".gz")
     long_suffix = safe_name("n" * 300 + "." + "e" * 30)
@@ -207,9 +211,10 @@ def test_root_permissions_and_sweep(tmp_path: Path) -> None:
 
     files = Files(tmp_path / "root")
     files._ensure_root()
-    os.chmod(files.root, 0o755)
-    files._ensure_root()
-    assert files.root.stat().st_mode & 0o777 == 0o700
+    if os.name == "posix":
+        os.chmod(files.root, 0o755)
+        files._ensure_root()
+        assert files.root.stat().st_mode & 0o777 == 0o700
     old, new = files.root / "old-session", files.root / "new-session"
     old.mkdir()
     new.mkdir()

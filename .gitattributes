@@ -1,0 +1,5 @@
+# Text files are LF everywhere, so a checkout on Windows formats the same.
+* text=auto eol=lf
+*.woff2 binary
+*.png binary
+*.ico binary

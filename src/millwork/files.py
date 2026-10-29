@@ -84,11 +84,23 @@ _MAGIC: dict[str, tuple[bytes, ...]] = {
 _TEXT = {"txt", "md", "csv", "tsv", "json", "xml", "yaml", "yml", "html", "py"}
 
 _SAFE_NAME = re.compile(r"[^\w.\- ()\[\]]+")
+# Device names Windows refuses as file names, whatever the extension.
+_RESERVED = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{i}" for i in range(10)),
+    *(f"LPT{i}" for i in range(10)),
+}
 
 
 def safe_name(name: str) -> str:
     base = Path(name).name or "file"
-    cleaned = _SAFE_NAME.sub("_", base)
+    # A trailing dot or space is dropped by Windows, so the name would differ.
+    cleaned = _SAFE_NAME.sub("_", base).rstrip(". ") or "file"
+    if cleaned.split(".", 1)[0].upper() in _RESERVED:
+        cleaned = "_" + cleaned
     if len(cleaned) <= 200:
         return cleaned
     # A long name is cut in the stem, never in the extension: the extension
@@ -114,6 +126,15 @@ def check_content(name: str, head: bytes) -> None:
             raise Reject("the file is not UTF-8 text") from exc
 
 
+def _owner() -> str:
+    """What tells one user's store from another's in a shared temp directory."""
+    if hasattr(os, "getuid"):
+        return str(os.getuid())
+    import getpass
+
+    return _SAFE_NAME.sub("_", getpass.getuser())
+
+
 class Files:
     """Configuration and the store. One per app."""
 
@@ -125,7 +146,7 @@ class Files:
         default_max_mb: int = 50,
     ) -> None:
         self.root = (
-            Path(root) if root else Path(tempfile.gettempdir()) / f"millwork-files-{os.getuid()}"
+            Path(root) if root else Path(tempfile.gettempdir()) / f"millwork-files-{_owner()}"
         )
         self.max_session_bytes = max_session_mb * 1024 * 1024
         self.default_max_bytes = default_max_mb * 1024 * 1024
@@ -136,8 +157,13 @@ class Files:
         return self.root / session_id
 
     def _ensure_root(self) -> None:
-        """The root is ours alone: created private, and never a path someone else owns."""
+        """The root is ours alone: created private, and never a path someone else owns.
+
+        Windows has no file mode or owner id to check; its temp directory is
+        per user already, and a root given explicitly is the app's own."""
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if not hasattr(os, "getuid"):
+            return
         st = self.root.stat()
         if st.st_uid != os.getuid():
             raise RuntimeError(f"files root {self.root} is owned by another user")
