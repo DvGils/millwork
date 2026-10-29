@@ -2,6 +2,8 @@
 
 # millwork
 
+[![CI](https://github.com/DvGils/millwork/actions/workflows/ci.yml/badge.svg)](https://github.com/DvGils/millwork/actions/workflows/ci.yml)
+
 A Python framework for data tools and AI applications. The browser runs one
 prebuilt React bundle; Python describes the page and handles its events.
 There is no JavaScript to write, no build step in your project, and no state
