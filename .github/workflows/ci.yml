@@ -1,0 +1,64 @@
+# Every push and pull request: the Python checks on two interpreters, the
+# bundle's checks, and a build that must reproduce the committed bundle.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check src tests
+      - run: uv run ruff format --check src tests
+      - run: uv run mypy src
+      - run: uv run pytest -q
+
+  bundle:
+    name: Bundle
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bundle
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: bundle/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm exec vitest run
+      - run: pnpm build
+      - name: The committed bundle is the built bundle
+        working-directory: .
+        run: |
+          if [ -n "$(git status --porcelain src/millwork/_bundle/dist)" ]; then
+            git status --porcelain src/millwork/_bundle/dist
+            echo "src/millwork/_bundle/dist differs from a fresh build; run the build and commit it" >&2
+            exit 1
+          fi
