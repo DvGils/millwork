@@ -497,7 +497,7 @@ def test_chat_and_form_uploads_take_their_specs_from_the_node(tmp_path: Path) ->
 
 def test_download_contents_reach_the_tab_by_id(tmp_path: Path) -> None:
     app = mw.App("dl", public=None, bundle_dir=tmp_path, secret="s3cret", files=Files(tmp_path))
-    (tmp_path / "report.csv").write_text("a,b\n1,2\n")
+    (tmp_path / "report.csv").write_bytes(b"a,b\n1,2\n")
 
     @app.page("/")
     def home(s: mw.Session) -> ui.Component:

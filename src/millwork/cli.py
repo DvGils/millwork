@@ -25,7 +25,7 @@ def load_app(target: str, debug: bool = False) -> object:
     ``--debug`` switches a millwork App into debug mode (page errors in the
     tab, the theme file watched) as well as raising the log level.
     """
-    module_name, _, attr = target.partition(":")
+    module_name, attr = split_target(target)
     if module_name.endswith(".py") or os.sep in module_name:
         module = _import_file(module_name)
     else:
@@ -35,6 +35,14 @@ def load_app(target: str, debug: bool = False) -> object:
     if debug and hasattr(app, "debug"):
         app.debug = True
     return getattr(app, "asgi", app)
+
+
+def split_target(target: str) -> tuple[str, str]:
+    """``module:attribute`` or ``path:attribute``; a Windows drive letter is not a split."""
+    module_name, sep, attr = target.rpartition(":")
+    if sep and module_name and attr.isidentifier():
+        return module_name, attr
+    return target, ""
 
 
 def _import_file(path: str) -> types.ModuleType:

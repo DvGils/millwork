@@ -31,3 +31,13 @@ def test_a_file_path_loads_the_app_with_its_directory_importable(tmp_path: Path)
 def test_a_missing_file_exits_with_a_message(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="no such file"):
         load_app(str(tmp_path / "nope.py"))
+
+
+def test_the_target_splits_at_the_attribute_not_a_drive_letter() -> None:
+    from millwork.cli import split_target
+
+    assert split_target("app.py") == ("app.py", "")
+    assert split_target("app.py:app") == ("app.py", "app")
+    assert split_target("pkg.mod:make_app") == ("pkg.mod", "make_app")
+    assert split_target("C:\\apps\\app.py") == ("C:\\apps\\app.py", "")
+    assert split_target("C:\\apps\\app.py:app") == ("C:\\apps\\app.py", "app")
