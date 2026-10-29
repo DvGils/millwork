@@ -16,6 +16,12 @@ CI=1 pnpm -C bundle build             # rebuilds src/millwork/_bundle/dist
 
 Commit the rebuilt `dist` together with the source change that caused it.
 
+The shadcn generator is not a dependency: `pnpm -C bundle dlx shadcn@latest
+add <component>` fetches it when a component under `src/components/ui` is
+added or regenerated. Its Tailwind layer is vendored as `src/shadcn.css`;
+refresh that file from the package's `dist/tailwind.css` when the
+components are regenerated with a newer version.
+
 Layout: `src/components/` holds one file per catalogue group, `src/render.tsx`
 turns the tree the server sends into React elements, `src/store.ts` applies
 patches, `src/ws.ts` keeps the socket and its replay, `src/icons.ts` is the
