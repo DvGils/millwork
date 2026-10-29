@@ -27,7 +27,7 @@ from typing import Any
 from pydantic import BaseModel
 
 import millwork as mw
-from millwork import ui
+from millwork import context, ui
 
 log = logging.getLogger("millwork.manual")
 
@@ -243,11 +243,14 @@ def render_block(s: mw.Session[State], live: Live, ns: dict[str, Any]) -> ui.Com
         # Held per page and model name, not per block: a handler defined in one
         # block looks ``state`` up when it runs, by which time a later block may
         # have rebound it. The block runs on every render, so ``model`` is a new
-        # class each time; the held instance is matched by name.
+        # class each time; the held instance is matched by name. The namespace
+        # is shared by every session on the page, so the session is the one
+        # running now (a handler's, a task's), not the one that rendered last.
+        owner = context.current() or s
         key = f"{live.id.rsplit('#', 1)[0]}:{model.__name__}"
-        held = s.state.blocks.get(key)
+        held = owner.state.blocks.get(key)
         if type(held).__name__ != model.__name__:
-            held = s.state.blocks[key] = model()
+            held = owner.state.blocks[key] = model()
         return held
 
     ns["state"] = state

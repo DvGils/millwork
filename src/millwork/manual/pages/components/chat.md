@@ -98,3 +98,57 @@ ui.Row(
 | `await reply.component(component)` | any catalogue component inside the message |
 | `await reply.suggestions([...])` | follow-up chips |
 | `await reply.error(text)` | an error line |
+
+## Under a message
+
+Hover an answer and a row of buttons appears: copy, thumbs up and down
+when the chat has an `on_feedback` handler, regenerate on the latest
+answer, and any `actions` of the app's own. A thumbs down asks for a
+comment. The choice stays on the message, so it is there after a reload,
+and millwork keeps nothing else: `on_feedback` gets the message, the value
+and the comment, and the app stores them where it wants. A user message
+has an edit button; the edited message is answered again and what followed
+it goes. `regenerate=False`, `edit=False` and `copyable=False` switch each
+off.
+
+```python live
+from pydantic import BaseModel
+
+
+class Feedback(BaseModel):
+    notes: list[str] = []
+
+
+async def echo(s, turn):
+    async with turn.reply() as reply:
+        await reply.text(f"You said: {turn.text}")
+
+
+async def rated(s, message, value, comment):
+    what = "cleared" if value is None else value
+    note = f"{what}: {message.text[:30]}" + (f" ({comment})" if comment else "")
+    state(Feedback).notes.append(note)
+
+
+async def act(s, message, action):
+    s.toast(f"{action}: {message.text}")
+
+
+def example(s):
+    notes = state(Feedback).notes
+    return ui.Stack(
+        ui.Card(
+            ui.Chat(
+                key="rated",
+                welcome="Say something, then rate the answer or edit your message.",
+                on_message=echo,
+                on_feedback=rated,
+                on_action=act,
+                actions=[ui.Action(id="save", label="Save", icon="bookmark")],
+                cls="h-[22rem]",
+            ),
+            padding=False,
+        ),
+        ui.Text("Feedback so far: " + ("; ".join(notes) or "none")),
+    )
+```

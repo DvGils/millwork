@@ -391,12 +391,28 @@ class Session[S]:
                     "fileId": ref.id,
                 }
             )
-        message = UIMessage(id=secrets.token_urlsafe(8), role="user", parts=parts)
-        thread.messages.append(message)
-        turn = ChatTurn(
-            self, event.node, thread, message, files, command if isinstance(command, str) else None
+        metadata = {"command": command} if isinstance(command, str) else None
+        message = UIMessage(
+            id=secrets.token_urlsafe(8), role="user", parts=parts, metadata=metadata
         )
-        handler = self.tree.handler(event.node, "message") if self.tree else None
+        thread.messages.append(message)
+        self._chat_run(event.node, thread, message)
+
+    def _chat_run(self, node_id: str, thread: Thread, message: UIMessage) -> None:
+        """Run ``on_message`` for a user message the thread holds: a new one, or one
+        sent again after an edit or a regenerate."""
+        files = [
+            ref
+            for p in message.parts
+            if p.get("type") == "file"
+            and isinstance(p.get("fileId"), str)
+            and (ref := self.files.get(p["fileId"])) is not None
+        ]
+        command = (message.metadata or {}).get("command")
+        turn = ChatTurn(
+            self, node_id, thread, message, files, command if isinstance(command, str) else None
+        )
+        handler = self.tree.handler(node_id, "message") if self.tree else None
         if handler is None:
             self.refresh()
             return
@@ -430,6 +446,96 @@ class Session[S]:
         handler = self.tree.handler(event.node, "stop") if self.tree else None
         if handler is not None:
             await self._run_handler(handler, self, None)
+
+    def _chat_target(
+        self, event: Event, component: Chat, role: str
+    ) -> tuple[Thread, int, dict[str, Any]] | None:
+        """The thread and the index of the message an action names, when it is
+        one of this chat's with the expected role and the thread is free."""
+        if component.key is None:
+            return None
+        thread = self.chat(component.key)
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        message_id = payload.get("id")
+        index = thread.find(message_id) if isinstance(message_id, str) else None
+        if index is None or thread.messages[index].role != role:
+            return None
+        return thread, index, payload
+
+    async def _chat_feedback(self, event: Event, component: Chat) -> None:
+        """Thumbs up or down on an assistant message, with a comment; kept in the
+        message's metadata so it shows after a reload, and given to ``on_feedback``."""
+        target = self._chat_target(event, component, "assistant")
+        if target is None:
+            return
+        thread, index, payload = target
+        value = payload.get("value")
+        if value not in ("up", "down", None):
+            return
+        comment = str(payload.get("comment") or "").strip()[:2000] or None
+        message = thread.messages[index]
+        metadata = dict(message.metadata or {})
+        if value is None:
+            metadata.pop("feedback", None)
+        else:
+            metadata["feedback"] = {"value": value, "comment": comment}
+        message.metadata = metadata or None
+        handler = self.tree.handler(event.node, "feedback") if self.tree else None
+        if handler is not None:
+            await self._run_handler(handler, self, message, value, comment)
+        else:
+            self.refresh()
+
+    async def _chat_action(self, event: Event, component: Chat) -> None:
+        target = self._chat_target(event, component, "assistant")
+        if target is None:
+            return
+        thread, index, payload = target
+        action = payload.get("action")
+        if not any(a.id == action for a in component.actions):
+            return
+        handler = self.tree.handler(event.node, "action") if self.tree else None
+        if handler is not None:
+            await self._run_handler(handler, self, thread.messages[index], action)
+
+    async def _chat_regenerate(self, event: Event, component: Chat) -> None:
+        """Answer a user message again: the assistant message named and everything
+        after it go, and ``on_message`` runs for the user message before it."""
+        target = self._chat_target(event, component, "assistant")
+        if target is None or not component.regenerate:
+            return
+        thread, index, _ = target
+        if thread.busy:
+            self.toast("Wait for the current reply to finish.", tone="warning")
+            return
+        user = next(
+            (i for i in range(index - 1, -1, -1) if thread.messages[i].role == "user"), None
+        )
+        if user is None:
+            return
+        thread.truncate(index)
+        self._chat_run(event.node, thread, thread.messages[user])
+
+    async def _chat_edit(self, event: Event, component: Chat) -> None:
+        """A user message with new text: what followed it goes, and it is answered again."""
+        target = self._chat_target(event, component, "user")
+        if target is None or not component.edit:
+            return
+        thread, index, payload = target
+        if thread.busy:
+            self.toast("Wait for the current reply to finish.", tone="warning")
+            return
+        text = str(payload.get("text") or "").strip()
+        if len(text) > component.max_chars:
+            self.toast("The message is too long.", tone="warning")
+            return
+        message = thread.messages[index]
+        files = [p for p in message.parts if p.get("type") == "file"]
+        if not text and not files:
+            return
+        message.parts = ([{"type": "text", "text": text}] if text else []) + files
+        thread.truncate(index + 1)
+        self._chat_run(event.node, thread, message)
 
     def spawn(self, coro: Any, what: str = "work") -> asyncio.Task[Any]:
         """Run a coroutine for this session: tracked, cancelled on close, failures logged."""
@@ -846,12 +952,18 @@ class Session[S]:
             return
         payload = event.payload
 
-        if isinstance(component, Chat) and event.name in ("message", "stop"):
-            if event.name == "message":
-                await self._chat_message(event, component)
-            else:
-                await self._chat_stop(event, component)
-            return
+        if isinstance(component, Chat):
+            chat_events = {
+                "message": self._chat_message,
+                "stop": self._chat_stop,
+                "feedback": self._chat_feedback,
+                "action": self._chat_action,
+                "regenerate": self._chat_regenerate,
+                "edit": self._chat_edit,
+            }
+            if event.name in chat_events:
+                await chat_events[event.name](event, component)
+                return
 
         if event.name == "download" and isinstance(component, Download):
             token = context.bind(self)

@@ -16,7 +16,7 @@ from millwork.files import FileRef
 from millwork.forms import FormIssues, Issue
 from millwork.nodes import Component, Text
 from millwork.ui.charts import AreaChart, BarChart, LineChart
-from millwork.ui.chat import Accept, Chat, Command
+from millwork.ui.chat import Accept, Action, Chat, Command
 from millwork.ui.files import Download, FileCard, FileUpload, Image, Pdf
 from millwork.ui.form import Form
 from millwork.ui.table import Column, MenuItem, Table
@@ -646,6 +646,7 @@ class Spinner(Component):
 
 __all__ = [
     "Accept",
+    "Action",
     "Accordion",
     "AccordionItem",
     "Alert",

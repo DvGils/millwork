@@ -195,3 +195,108 @@ async def test_a_second_message_before_the_reply_starts_waits(tmp_path: Path) ->
         assert "Wait for the current reply to finish." in page.toasts
         assert page.find("main").props["busy"] is False
         assert [m["role"] for m in page.find("main").props["messages"]] == ["user", "assistant"]
+
+
+async def test_message_actions_feedback_regenerate_edit(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    seen: list[Any] = []
+    answers = iter(["one", "two", "three"])
+    app = mw.App("c3", public=None, bundle_dir=tmp_path)
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as r:
+            await r.text(f"{next(answers)}:{turn.text}:{turn.command}")
+
+    async def feedback(
+        s: mw.Session, m: mw.UIMessage, value: str | None, comment: str | None
+    ) -> None:
+        seen.append(("feedback", m.id, value, comment))
+
+    async def action(s: mw.Session, m: mw.UIMessage, action: str) -> None:
+        seen.append(("action", m.id, action))
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Chat(
+                key="main",
+                on_message=answer,
+                on_feedback=feedback,
+                on_action=action,
+                actions=[ui.Action(id="save", label="Save", icon="bookmark")],
+            )
+        )
+
+    async with TestApp(app).open("/") as page:
+        chat = page.session.chat("main")
+        await page.event("main", "message", {"text": "hi", "files": [], "command": "shout"})
+        user, assistant = chat.messages
+        assert assistant.text == "one:hi:shout"
+        # The wire carries the handlers and the actions, so the tab shows the buttons.
+        props = page.find("main").props
+        assert props["on_feedback"] is True and props["actions"][0]["id"] == "save"
+
+        # Feedback lands in the message's metadata, so it shows after a reload,
+        # and reaches the handler; a comment can follow; clearing removes it.
+        aid = assistant.id
+        await page.event("main", "feedback", {"id": aid, "value": "down", "comment": None})
+        assert assistant.metadata == {"feedback": {"value": "down", "comment": None}}
+        await page.event("main", "feedback", {"id": aid, "value": "down", "comment": "Too short"})
+        assert assistant.metadata == {"feedback": {"value": "down", "comment": "Too short"}}
+        shown = page.find("main").props["messages"][1]["metadata"]["feedback"]
+        assert shown["comment"] == "Too short"
+        await page.event("main", "feedback", {"id": assistant.id, "value": None})
+        assert assistant.metadata is None
+        await page.event("main", "feedback", {"id": assistant.id, "value": "sideways"})
+        await page.event("main", "feedback", {"id": user.id, "value": "up"})
+        await page.event("main", "feedback", {"id": "nope", "value": "up"})
+        assert [s for s in seen if s[0] == "feedback"] == [
+            ("feedback", assistant.id, "down", None),
+            ("feedback", assistant.id, "down", "Too short"),
+            ("feedback", assistant.id, None, None),
+        ]
+
+        # An app action names the message; an unknown action id is ignored.
+        await page.event("main", "action", {"id": assistant.id, "action": "save"})
+        await page.event("main", "action", {"id": assistant.id, "action": "delete"})
+        assert [s for s in seen if s[0] == "action"] == [("action", assistant.id, "save")]
+
+        # Regenerate answers the same user message again, command included.
+        await page.event("main", "regenerate", {"id": assistant.id})
+        assert [m.text for m in chat.messages] == ["hi", "two:hi:shout"]
+        assert chat.messages[0].id == user.id
+
+        # Editing replaces the text, drops what followed, and answers again.
+        await page.event("main", "edit", {"id": user.id, "text": "hello"})
+        assert [m.text for m in chat.messages] == ["hello", "three:hello:shout"]
+        await page.event("main", "edit", {"id": user.id, "text": ""})
+        assert [m.text for m in chat.messages] == ["hello", "three:hello:shout"]
+        await page.event("main", "regenerate", {"id": user.id})
+        assert len(chat.messages) == 2
+
+
+async def test_message_actions_can_be_switched_off(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("c4", public=None, bundle_dir=tmp_path)
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as r:
+            await r.text("ok")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Chat(key="main", on_message=answer, regenerate=False, edit=False, copyable=False)
+        )
+
+    async with TestApp(app).open("/") as page:
+        chat = page.session.chat("main")
+        await page.event("main", "message", {"text": "hi", "files": [], "command": None})
+        user, assistant = chat.messages
+        await page.event("main", "regenerate", {"id": assistant.id})
+        await page.event("main", "edit", {"id": user.id, "text": "changed"})
+        assert [m.text for m in chat.messages] == ["hi", "ok"]
+        props = page.find("main").props
+        assert (props["regenerate"], props["edit"], props["copyable"]) == (False, False, False)

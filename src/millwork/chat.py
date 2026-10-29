@@ -67,6 +67,22 @@ class Thread:
     def load(self, messages: list[UIMessage | dict[str, Any]]) -> None:
         self.messages = [m if isinstance(m, UIMessage) else UIMessage(**m) for m in messages]
 
+    def find(self, message_id: str) -> int | None:
+        return next((i for i, m in enumerate(self.messages) if m.id == message_id), None)
+
+    def truncate(self, index: int) -> None:
+        """Drop the messages from ``index`` on, and the inline components only they used."""
+        del self.messages[index:]
+        kept = {
+            p.get("data", {}).get("slot")
+            for m in self.messages
+            for p in m.parts
+            if p.get("type") == "data-component"
+        }
+        for slot in [s for s in self.inline if s not in kept]:
+            del self.inline[slot]
+        self.suggestions.clear()
+
 
 class ChatTurn:
     """What ``on_message`` receives: the user's message and a way to reply."""

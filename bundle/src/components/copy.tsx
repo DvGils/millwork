@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "cn";
 import { icon } from "../icons";
+import { t } from "../theme";
 import { Button } from "@/components/ui/button";
 
 // The async clipboard needs a secure context and a focused document; a plain
@@ -35,13 +36,14 @@ export function CopyButton({ text, className }: { text: () => string; className?
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
   const Icon = icon(done ? "check" : "copy");
+  const label = t("copy");
   return (
     <Button
       type="button"
       size="icon-xs"
       variant="ghost"
-      aria-label="Copy"
-      title="Copy"
+      aria-label={label}
+      title={label}
       className={cn("text-muted-foreground hover:text-foreground", done && "text-success", className)}
       onClick={() => {
         void copyText(text()).then(() => {

@@ -97,3 +97,20 @@ async def test_the_search_box_lists_hits_and_enter_opens_the_first(tmp_path: Pat
         nav = [c for c in page.commands if c.name == "navigate"]
         assert nav and nav[-1].args["path"] == "/components/inputs"
         assert nav[-1].args["hash"] == "datepicker"
+
+
+async def test_block_state_belongs_to_the_session_that_acts(tmp_path: Path) -> None:
+    """Two tabs on the same page share the block's namespace, not its state."""
+    from millwork.manual import make_app
+    from millwork.testing import TestApp
+
+    app = make_app()
+    async with (
+        TestApp(app).open("/components/chat") as one,
+        TestApp(app).open("/components/chat") as two,
+    ):
+        await one.event("rated", "message", {"text": "mine", "files": [], "command": None})
+        reply = one.session.chat("rated").messages[-1]
+        await one.event("rated", "feedback", {"id": reply.id, "value": "up", "comment": None})
+        assert "up: You said: mine" in one.text()
+        assert "up: You said: mine" not in two.text()

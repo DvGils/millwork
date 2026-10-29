@@ -30,7 +30,7 @@
     "isDynamicEntry": true
   },
   "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.0/node_modules/react-markdown/index.js": {
-    "file": "react-markdown-DAxqgR5a.js",
+    "file": "react-markdown-3qlVoeti.js",
     "name": "react-markdown",
     "src": "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.0/node_modules/react-markdown/index.js",
     "isDynamicEntry": true,
@@ -40,7 +40,7 @@
     ]
   },
   "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.0_react@19.3.0__react@19.3.0/node_modules/react-runner/dist/index.modern.js": {
-    "file": "index.modern-Cc9OWg8J.js",
+    "file": "index.modern-BCDQduht.js",
     "name": "index.modern",
     "src": "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.0_react@19.3.0__react@19.3.0/node_modules/react-runner/dist/index.modern.js",
     "isDynamicEntry": true,
@@ -58,7 +58,7 @@
     ]
   },
   "src/components/charts-inner.tsx": {
-    "file": "charts-inner-BcWz7Jsb.js",
+    "file": "charts-inner-dFjgSTqK.js",
     "name": "charts-inner",
     "src": "src/components/charts-inner.tsx",
     "isDynamicEntry": true,
@@ -67,7 +67,7 @@
     ]
   },
   "src/main.tsx": {
-    "file": "main-DiAxNTGW.js",
+    "file": "main-BGXXQfm4.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
@@ -79,7 +79,7 @@
       "src/components/charts-inner.tsx"
     ],
     "css": [
-      "main-CAbv87l9.css"
+      "main-D1CMhyNN.css"
     ],
     "assets": [
       "geist-cyrillic-ext-wght-normal-DjL33-gN.woff2",

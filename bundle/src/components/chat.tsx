@@ -13,6 +13,7 @@ import { onStream } from "../ws";
 import { upload, useFileUrl } from "./files";
 import { applyChunk, type Part, type Transient, type UIMessage } from "../stream";
 import { Markdown } from "./markdown";
+import { CopyButton } from "./copy";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,23 @@ interface Command {
   label: string;
   icon?: string | null;
   description?: string | null;
+}
+
+interface ActionSpec {
+  id: string;
+  label: string;
+  icon?: string | null;
+}
+
+// What a message may offer under itself, from the Chat's props and handlers.
+interface Tools {
+  copy: boolean;
+  feedback: boolean;
+  regenerate: boolean;
+  edit: boolean;
+  actions: ActionSpec[];
+  busy: boolean;
+  emit: (name: string, payload?: unknown) => void;
 }
 
 interface Accept {
@@ -104,6 +122,19 @@ export const Chat: Renderer = ({ node, props, emit }) => {
     setTransient({});
   };
 
+  const tools: Tools = {
+    copy: props.copyable !== false,
+    feedback: Boolean(props.on_feedback),
+    regenerate: props.regenerate !== false && Boolean(props.on_message),
+    edit: props.edit !== false && Boolean(props.on_message),
+    actions: props.on_action && Array.isArray(props.actions) ? (props.actions as ActionSpec[]) : [],
+    busy,
+    emit,
+  };
+  // Only the latest answer can be regenerated: an earlier one would take the
+  // whole conversation after it along.
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+
   return (
     <div className={cn("mw-fill flex max-h-dvh min-h-0 grow flex-col", props.cls as string)}>
       <MessageScrollerProvider>
@@ -117,7 +148,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
               ) : null}
               {messages.map((m) => (
                 <MessageScrollerItem key={m.id} messageId={m.id} scrollAnchor={m.role === "user"}>
-                  <ChatMessage message={m} inline={inline} showSteps={String(props.show_steps ?? "collapsed")} streaming={m === inflight} />
+                  <ChatMessage message={m} inline={inline} showSteps={String(props.show_steps ?? "collapsed")} streaming={m === inflight} tools={tools} last={m.id === lastAssistant} />
                 </MessageScrollerItem>
               ))}
               {transient.status && busy ? (
@@ -165,22 +196,164 @@ function Spin() {
 
 // ------------------------------------------------------------- one message
 
-function ChatMessage({ message, inline, showSteps, streaming }: { message: UIMessage; inline: Record<string, { $node: string }>; showSteps: string; streaming: boolean }) {
+function ChatMessage({ message, inline, showSteps, streaming, tools, last }: { message: UIMessage; inline: Record<string, { $node: string }>; showSteps: string; streaming: boolean; tools: Tools; last: boolean }) {
   const user = message.role === "user";
+  const [editing, setEditing] = useState(false);
   const steps = message.parts.filter((p) => p.type === "reasoning" || p.type.startsWith("tool-") || p.type === "error");
   const rest = message.parts.filter((p) => !steps.includes(p));
   const sources = rest.filter((p) => p.type === "source-url" || p.type === "source-document");
   const body = rest.filter((p) => !sources.includes(p));
+  const text = () => message.parts.filter((p) => p.type === "text").map((p) => String(p.text ?? "")).join("\n");
   return (
     <Message align={user ? "end" : "start"}>
       <MessageContent className={cn("flex max-w-[85%] flex-col gap-2", user && "items-end")}>
         {!user && steps.length && showSteps !== "hidden" ? <StepsTrace parts={steps} collapsed={showSteps === "collapsed"} streaming={streaming} /> : null}
-        {body.map((p, i) => (
-          <PartView key={i} part={p} user={user} inline={inline} />
-        ))}
+        {editing ? (
+          <EditBox
+            text={text()}
+            onSave={(next) => {
+              tools.emit("edit", { id: message.id, text: next });
+              setEditing(false);
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        ) : (
+          body.map((p, i) => <PartView key={i} part={p} user={user} inline={inline} />)
+        )}
         {sources.length ? <Sources parts={sources} /> : null}
+        {streaming || editing ? null : user ? (
+          tools.edit ? (
+            <ActionRow>
+              <IconAction name="pencil" label={t("edit")} disabled={tools.busy} onClick={() => setEditing(true)} />
+            </ActionRow>
+          ) : null
+        ) : (
+          <AssistantActions message={message} tools={tools} last={last} text={text} />
+        )}
       </MessageContent>
     </Message>
+  );
+}
+
+// ------------------------------------------------------------- under a message
+
+// A box that opens under the last message would sit below the fold of the
+// message list; it comes into view when it mounts.
+function intoView(el: HTMLDivElement | null) {
+  el?.scrollIntoView({ block: "nearest" });
+}
+
+// Hidden until the message is hovered or holds focus; always there without a
+// mouse. `pinned` keeps it in view, for a message with feedback on it.
+function ActionRow({ children, pinned }: { children: ReactNode; pinned?: boolean }) {
+  return (
+    <div className={cn("flex flex-wrap items-center gap-0.5 transition-opacity", pinned ? "opacity-100" : "opacity-0 group-hover/message:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100")}>
+      {children}
+    </div>
+  );
+}
+
+function IconAction({ name, label, active, disabled, onClick }: { name: string; label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
+  const Icon = icon(name);
+  return (
+    <Button type="button" size="icon-xs" variant="ghost" aria-label={label} title={label} aria-pressed={active} disabled={disabled} className={cn("text-muted-foreground hover:text-foreground", active && "text-foreground")} onClick={onClick}>
+      {Icon ? <Icon className={cn(active && "fill-current")} /> : null}
+    </Button>
+  );
+}
+
+function AssistantActions({ message, tools, last, text }: { message: UIMessage; tools: Tools; last: boolean; text: () => string }) {
+  const feedback = (message.metadata as { feedback?: { value?: string; comment?: string | null } } | undefined)?.feedback;
+  const current = feedback?.value ?? null;
+  const [commenting, setCommenting] = useState(false);
+  const [comment, setComment] = useState("");
+  const rate = (value: "up" | "down") => {
+    const next = current === value ? null : value;
+    tools.emit("feedback", { id: message.id, value: next, comment: null });
+    setCommenting(next === "down");
+    setComment("");
+  };
+  const show = tools.copy || tools.feedback || (tools.regenerate && last) || tools.actions.length > 0;
+  if (!show) return null;
+  return (
+    <>
+      <ActionRow pinned={current !== null}>
+        {tools.copy ? <CopyButton text={text} /> : null}
+        {tools.feedback ? (
+          <>
+            <IconAction name="thumbs-up" label={t("good_response")} active={current === "up"} onClick={() => rate("up")} />
+            <IconAction name="thumbs-down" label={t("bad_response")} active={current === "down"} onClick={() => rate("down")} />
+          </>
+        ) : null}
+        {tools.regenerate && last ? <IconAction name="refresh-cw" label={t("regenerate")} disabled={tools.busy} onClick={() => tools.emit("regenerate", { id: message.id })} /> : null}
+        {tools.actions.map((a) => {
+          const Icon = icon(a.icon);
+          return (
+            <Button key={a.id} type="button" size="xs" variant="ghost" className="text-muted-foreground hover:text-foreground" onClick={() => tools.emit("action", { id: message.id, action: a.id })}>
+              {Icon ? <Icon /> : null}
+              {a.label}
+            </Button>
+          );
+        })}
+      </ActionRow>
+      {commenting && current === "down" ? (
+        <div ref={intoView} className="flex w-full max-w-md flex-col gap-2 rounded-lg border bg-card p-2">
+          <Textarea value={comment} placeholder={t("feedback_prompt")} rows={2} autoFocus className="min-h-16 resize-none" onChange={(e) => setComment(e.target.value)} />
+          <div className="flex justify-end gap-1">
+            <Button type="button" size="sm" variant="ghost" onClick={() => setCommenting(false)}>
+              {t("skip")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!comment.trim()}
+              onClick={() => {
+                tools.emit("feedback", { id: message.id, value: "down", comment: comment.trim() });
+                setCommenting(false);
+              }}
+            >
+              {t("send")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+// A user message being edited in place: Enter sends it again, Escape leaves it as it was.
+function EditBox({ text, onSave, onCancel }: { text: string; onSave: (text: string) => void; onCancel: () => void }) {
+  const [value, setValue] = useState(text);
+  const save = () => {
+    if (value.trim()) onSave(value.trim());
+  };
+  return (
+    <div ref={intoView} className="flex w-full flex-col gap-2 rounded-xl border bg-card p-2">
+      <Textarea
+        value={value}
+        autoFocus
+        rows={2}
+        className="field-sizing-content max-h-60 min-h-9 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            save();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+      />
+      <div className="flex justify-end gap-1">
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+          {t("cancel")}
+        </Button>
+        <Button type="button" size="sm" disabled={!value.trim()} onClick={save}>
+          {t("save")}
+        </Button>
+      </div>
+    </div>
   );
 }
 
