@@ -75,8 +75,9 @@ _PATH = re.compile(r"^/(?!/)[A-Za-z0-9._~/-]+$")
 
 STRINGS: dict[str, str] = {
     "loading": "Loading…",
-    "disconnected": "Disconnected.",
     "reconnecting": "Reconnecting…",
+    "session_ended": "This session has ended.",
+    "reload": "Reload",
     "other_tab": "This page was opened in another tab.",
     "copied": "Copied",
     "working": "Working",

@@ -61,6 +61,10 @@ class Image(Component):
 
 
 class Pdf(Component):
+    """A PDF in the browser's own viewer. A form or a link inside the document
+    looks like part of the app, so show files the app made or the person
+    uploaded themselves, not documents from strangers."""
+
     type: ClassVar[str] = "Pdf"
     src: FileRef | str
     page: int | None = None

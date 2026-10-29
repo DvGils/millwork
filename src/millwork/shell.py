@@ -80,6 +80,7 @@ class Shell:
         user: dict[str, object] | None = None,
         nonce: str | None = None,
         keep_alive: bool = False,
+        components: dict[str, str] | None = None,
     ) -> str:
         entry = self._entry()
         if theme is not None:
@@ -103,6 +104,8 @@ class Shell:
         }
         if keep_alive:
             payload["keep_alive"] = True
+        if components:
+            payload["components"] = components
         if theme is not None:
             payload["theme"] = theme.boot()
         if user is not None:

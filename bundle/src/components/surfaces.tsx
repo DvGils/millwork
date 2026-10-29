@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
+import { useStatus } from "../ws";
 import { store, useNode } from "../store";
 import { navigate } from "../ws";
 import { has, isInternalPath, safeUrl } from "../lib";
@@ -104,9 +105,11 @@ const dialogSize: Record<string, string> = {
   full: "sm:max-w-[calc(100%-2rem)]",
 };
 
-export const Dialog: Renderer = ({ props, children, emit }) => (
+export const Dialog: Renderer = ({ props, children, emit }) => {
+  const status = useStatus();
+  return (
   <UiDialog
-    open={Boolean(props.open)}
+    open={Boolean(props.open) && status !== "closed"}
     disablePointerDismissal={props.dismissable === false}
     onOpenChange={(open) => {
       if (!open && props.dismissable !== false && props.on_close) emit("close");
@@ -130,7 +133,8 @@ export const Dialog: Renderer = ({ props, children, emit }) => (
       ) : null}
     </DialogContent>
   </UiDialog>
-);
+  );
+};
 
 export const Empty: Renderer = ({ props }) => {
   const Icon = icon(props.icon);

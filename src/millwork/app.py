@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import logging
 import re
 import secrets
@@ -165,8 +166,17 @@ class App:
         csp: str | None = DEFAULT_CSP,
         threads: int | None = None,
         keep_alive: bool = False,
+        max_sessions: int = 1000,
+        max_sessions_per_client: int = 20,
     ) -> None:
         self.name = name
+        # Caps on live sessions, including those waiting out the grace period.
+        # A client is a signed-in user, or the connecting address without auth.
+        # Over a cap, the client's oldest session without a tab makes room, and
+        # only when every one still has a tab is the new one refused.
+        self.max_sessions = max_sessions
+        self.max_sessions_per_client = max_sessions_per_client
+        self._admit_lock = asyncio.Lock()
         # The secret signs file URLs (and cookies, with auth). Without auth, a random
         # per-process secret is used: fine for one replica, logged so it is not a
         # surprise. With auth, a cookie must outlive the process and resist guessing,
@@ -210,6 +220,9 @@ class App:
         self._theme_watch: asyncio.Task[None] | None = None
         self._components_watch: asyncio.Task[None] | None = None
         self._component_mtimes: dict[str, float] = {}
+        # A content hash per custom component: in the source URL, so a tab caches
+        # a version for good and fetches a changed one under a new URL.
+        self.component_versions: dict[str, str] = {}
         self.origins = origins or []
         self.session_grace = session_grace
         self.debug = debug
@@ -283,6 +296,7 @@ class App:
             log.info("swept %d stale file directories", removed)
         for fn in self._startup:
             await _maybe_await(fn())
+        self.component_versions = self._component_hashes()
         if self.debug and self._theme_path is not None:
             self._theme_watch = asyncio.create_task(self._watch_theme())
         if self.debug and self.components_dir is not None and self.components_dir.is_dir():
@@ -359,6 +373,17 @@ class App:
             await asyncio.sleep(1.0)
             await self.check_components()
 
+    def _component_hashes(self) -> dict[str, str]:
+        if self.components_dir is None or not self.components_dir.is_dir():
+            return {}
+        versions = {}
+        for path in self.components_dir.glob("*.jsx"):
+            try:
+                versions[path.stem] = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+            except OSError:
+                continue
+        return versions
+
     def _component_stamps(self) -> dict[str, float]:
         assert self.components_dir is not None
         try:
@@ -371,13 +396,45 @@ class App:
         look; returns their names. The watcher calls this every second."""
         stamps = self._component_stamps()
         changed = [n for n, m in stamps.items() if self._component_mtimes.get(n) != m]
+        gone = set(self._component_mtimes) - set(stamps)
         self._component_mtimes = stamps
+        if changed or gone:
+            self.component_versions = self._component_hashes()
         for name in changed:
             log.info("custom component %s changed; reloading it in open tabs", name)
+            args = {"name": name, "version": self.component_versions.get(name)}
             for session in list(self.sessions.values()):
                 if not session.closed:
-                    await session._send_now(Command(name="reload_component", args={"name": name}))
+                    await session._send_now(Command(name="reload_component", args=args))
         return changed
+
+    async def admit(self, session: Session[Any]) -> bool:
+        """Take the new session in, making room by ending the session longest without
+        a tab when a cap is reached; False, and the session left out, when none can
+        be ended. One at a time, so two arriving together cannot both take the last
+        place."""
+        client = session.client
+
+        async def make_room(client: str | None) -> bool:
+            idle = [
+                s
+                for s in self.sessions.values()
+                if not s.closed and not s.has_tab and (client is None or s.client == client)
+            ]
+            if not idle:
+                return False
+            oldest = min(idle, key=lambda s: s.detached_at)
+            await oldest.end("This session made room for a newer one.")
+            return True
+
+        async with self._admit_lock:
+            mine = sum(1 for s in self.sessions.values() if s.client == client and not s.closed)
+            if mine >= self.max_sessions_per_client and not await make_room(client):
+                return False
+            if len(self.sessions) >= self.max_sessions and not await make_room(None):
+                return False
+            self.sessions[session.id] = session
+            return True
 
     async def reload_theme(self) -> bool:
         """Re-read the theme file and push it to open sessions; False when it is invalid."""
@@ -412,9 +469,12 @@ class App:
         path = (base / f"{name}.jsx").resolve()
         if not path.is_relative_to(base) or not path.is_file():
             return PlainTextResponse("Not found", status_code=404)
-        return FileResponse(
-            path, media_type="text/javascript", headers={"Cache-Control": "no-cache"}
-        )
+        # Asked for by its current version, the source may be kept for good; the
+        # URL changes with the content. Any other request is revalidated each time.
+        current = self.component_versions.get(name)
+        version = request.query_params.get("v")
+        cache = "public, max-age=31536000, immutable" if version == current else "no-cache"
+        return FileResponse(path, media_type="text/javascript", headers={"Cache-Control": cache})
 
     async def _health(self, request: Request) -> JSONResponse:
         """200 once the startup hooks are done, 503 before that and during shutdown, so
@@ -484,6 +544,7 @@ class App:
                 user=user_boot,
                 nonce=nonce,
                 keep_alive=self.keep_alive,
+                components=self.component_versions,
             ),
             nonce,
         )

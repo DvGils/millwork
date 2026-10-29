@@ -76,6 +76,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--port", type=int, default=8000)
     run.add_argument("--debug", action="store_true")
     run.add_argument("--reload", action="store_true", help="restart the process on Python changes")
+    run.add_argument(
+        "--proxy",
+        default=None,
+        metavar="IPS",
+        help="trust X-Forwarded-* from these proxy addresses (comma separated, or *)",
+    )
     docs = sub.add_parser("docs", help="serve the manual, with its live examples")
     docs.add_argument("--host", default="127.0.0.1")
     docs.add_argument("--port", type=int, default=8008)
@@ -124,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
             port=args.port,
             reload=True,
             reload_dirs=[os.getcwd()],
+            forwarded_allow_ips=args.proxy,
         )
         return 0
     uvicorn.run(
@@ -131,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         host=args.host,
         port=args.port,
         log_level="debug" if args.debug else "info",
+        forwarded_allow_ips=args.proxy,
     )
     return 0
 

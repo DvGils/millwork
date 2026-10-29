@@ -16,6 +16,7 @@ import re
 import secrets
 import shutil
 import tempfile
+import threading
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -142,14 +143,51 @@ class Files:
         self,
         root: Path | str | None = None,
         *,
-        max_session_mb: int = 2000,
+        max_session_mb: int = 200,
         default_max_mb: int = 50,
+        max_total_mb: int = 2000,
     ) -> None:
         self.root = (
             Path(root) if root else Path(tempfile.gettempdir()) / f"millwork-files-{_owner()}"
         )
+        self.max_session_mb = max_session_mb
+        self.max_total_mb = max_total_mb
         self.max_session_bytes = max_session_mb * 1024 * 1024
         self.default_max_bytes = default_max_mb * 1024 * 1024
+        self.max_total_bytes = max_total_mb * 1024 * 1024
+        # Bytes on disk per session, counted as they are written so that uploads
+        # in flight hold their space against both quotas. Writers run in worker
+        # threads, so the check and the count move together under one lock.
+        self._usage: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def used(self, session_id: str | None = None) -> int:
+        """Bytes held by one session, or by every session together."""
+        with self._lock:
+            if session_id is not None:
+                return self._usage.get(session_id, 0)
+            return sum(self._usage.values())
+
+    def _take(self, session: Session[Any], size: int) -> None:
+        """Hold ``size`` more bytes for the session, or refuse: against its quota,
+        the process's, and a session that has closed meanwhile (its space is gone)."""
+        with self._lock:
+            if session.closed:
+                raise Reject("the session closed", 410)
+            held = self._usage.get(session.id, 0)
+            if held + size > self.max_session_bytes:
+                raise Reject("the session's file quota is used up", 413)
+            if sum(self._usage.values()) + size > self.max_total_bytes:
+                raise Reject("the server's file space is used up", 507)
+            self._usage[session.id] = held + size
+
+    def _release(self, session_id: str, size: int) -> None:
+        with self._lock:
+            left = self._usage.get(session_id, 0) - size
+            if left > 0:
+                self._usage[session_id] = left
+            else:
+                self._usage.pop(session_id, None)
 
     # ------------------------------------------------------------- directories
 
@@ -171,6 +209,8 @@ class Files:
             os.chmod(self.root, 0o700)
 
     def discard(self, session_id: str) -> None:
+        with self._lock:
+            self._usage.pop(session_id, None)
         shutil.rmtree(self.session_dir(session_id), ignore_errors=True)
 
     def sweep(self, older_than: float) -> int:
@@ -251,7 +291,6 @@ class Files:
             path=directory / f"{file_id}{ext}",
             mime=mime,
             limit=max_bytes or self.default_max_bytes,
-            used=sum(f.size for f in session.files.all()),
             check=check,
             node=node,
         )
@@ -274,7 +313,6 @@ class FileWriter:
         path: Path,
         mime: str | None,
         limit: int,
-        used: int,
         check: bool,
         node: str | None,
     ) -> None:
@@ -285,9 +323,10 @@ class FileWriter:
         self.path = path
         self._mime = mime
         self._limit = limit
-        self._used = used
         self._node = node
         self._size = 0
+        # Bytes counted against the quotas so far: exactly what abort gives back.
+        self._reserved = 0
         self._head = b""
         self._checked = not check
         self._fh: Any = path.open("wb")
@@ -301,11 +340,11 @@ class FileWriter:
         try:
             if len(self._head) < 64:
                 self._head += chunk[: 64 - len(self._head)]
-            self._size += len(chunk)
-            if self._size > self._limit:
+            if self._size + len(chunk) > self._limit:
                 raise Reject(f"the file is larger than {self._limit // (1024 * 1024)} MB", 413)
-            if self._used + self._size > self._files.max_session_bytes:
-                raise Reject("the session's file quota is used up", 413)
+            self._files._take(self._session, len(chunk))
+            self._reserved += len(chunk)
+            self._size += len(chunk)
             if not self._checked and len(self._head) >= 16:
                 # Enough bytes to know the format: reject before the rest streams in.
                 check_content(self.name, self._head)
@@ -321,11 +360,11 @@ class FileWriter:
         try:
             if not self._checked:
                 check_content(self.name, self._head)
+            self._fh.close()
         except BaseException:
             self.abort()
             raise
         self._done = True
-        self._fh.close()
         guessed = mimetypes.guess_type(self.name)[0]
         ref = FileRef(
             id=self.id,
@@ -344,6 +383,8 @@ class FileWriter:
         if self._done:
             return
         self._done = True
+        self._files._release(self._session.id, self._reserved)
+        self._reserved = 0
         with contextlib.suppress(Exception):
             self._fh.close()
         self.path.unlink(missing_ok=True)
@@ -370,6 +411,7 @@ class SessionFiles:
         ref = self._refs.pop(file_id, None)
         if ref is None:
             return False
+        self._session.app.files._release(ref.session, ref.size)
         ref.path.unlink(missing_ok=True)
         return True
 

@@ -93,6 +93,8 @@ class SessionInfo(Wire):
     id: str
     resume: str
     protocol: int = PROTOCOL_VERSION
+    # Custom component versions, so a tab that outlived a deploy fetches fresh sources.
+    components: dict[str, str] = Field(default_factory=dict)
 
 
 class Ask(Wire):

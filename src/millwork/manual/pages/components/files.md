@@ -83,7 +83,10 @@ def example(s):
 ## Image and Pdf
 
 `ui.Image` and `ui.Pdf` take a `FileRef` or an outside URL. An image has a
-`size` and a `fit`; a PDF a `page` and a `height`.
+`size` and a `fit`; a PDF a `page` and a `height`. The browser's own viewer
+shows the PDF, so a form or a link inside it looks like part of the app:
+show files the app made or the person uploaded themselves, not documents
+from strangers.
 
 ```python live
 import struct, zlib

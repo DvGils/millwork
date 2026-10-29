@@ -132,7 +132,8 @@ def example(s):
 
 The `ui.Header` shows the signed-in person's picture or initials with a
 menu that holds the theme choice and sign-out; `user_menu=False` hides it.
-`s.logout()` signs out from a handler: the cookie is cleared and the tab
+`s.logout()` signs out from a handler: the cookie is cleared, the person's
+other sessions on this process end with a note in their tabs, and the tab
 goes to the login page.
 
 ## The session cookie
@@ -142,7 +143,10 @@ The cookie is a signed token holding the `User`, `HttpOnly`, `SameSite=Lax`,
 default). There is no sliding renewal: after that long a person signs in
 again. It is stateless, so any replica of the app validates it with the
 shared secret, and nothing about a person leaves the server beyond the
-`User` itself. The socket is bound to the cookie: a session cannot be
+`User` itself. Stateless also means signing out cannot revoke a copy of
+the cookie: a copy stays valid until it expires, so the lifetime is the
+bound, and an app with sensitive data sets `session` to a working day.
+Chainlit's cookie works the same way; Shiny leaves sign-in to the host. The socket is bound to the cookie: a session cannot be
 resumed by someone else. Logins and refusals are logged with the
 identifier; `log_identity="hashed"` logs a hash instead.
 

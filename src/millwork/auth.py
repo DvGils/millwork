@@ -472,8 +472,16 @@ class Auth:
         return response
 
     async def route_logout(self, request: Request) -> Response:
+        """Clear the cookie, and end the user's live sessions on this process. The
+        cookie itself stays valid until it expires: it is signed, not stored."""
         response = JSONResponse({"ok": True})
         self.clear_cookie(request, response)
+        user = await self.identify(request)
+        app = getattr(request.app.state, "millwork", None)
+        if user is not None and app is not None:
+            for session in list(app.sessions.values()):
+                if session.user is not None and session.user.id == user.id:
+                    await session.end("Signed out.")
         return response
 
     async def route_oauth_start(self, request: Request) -> Response:

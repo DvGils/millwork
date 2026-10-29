@@ -3,10 +3,11 @@
 // Messages sent while the socket is not open are queued and flushed right
 // after the next hello, so a click during a reconnect is delayed, not lost.
 
+import { useEffect, useState } from "react";
 import { applyTheme, t, type ThemeBoot } from "./theme";
 import { store, type Node, type PatchOp } from "./store";
 import { toast } from "@/components/ui/toast";
-import { invalidate } from "./custom";
+import { invalidate, syncVersions } from "./custom";
 
 interface Boot {
   path: string;
@@ -20,7 +21,7 @@ type ServerMessage =
   | { type: "patch"; ops: PatchOp[] }
   | { type: "stream"; node: string; chunk: Record<string, unknown> }
   | { type: "command"; name: string; args: Record<string, unknown> }
-  | { type: "session"; id: string; resume: string; protocol: number }
+  | { type: "session"; id: string; resume: string; protocol: number; components?: Record<string, string> }
   | { type: "ask"; request: string; node: string; timeout: number | null }
   | { type: "error"; message: string; fatal: boolean }
   | { type: "head"; request: string; payload: unknown }
@@ -35,6 +36,8 @@ const streamListeners = new Map<string, Set<(chunk: Record<string, unknown>) => 
 
 let socket: WebSocket | null = null;
 let status: Status = "connecting";
+// Why the session is over, once it is: shown with the reload offer.
+let endReason: string | null = null;
 let sessionId: string | null = null;
 let resumeToken: string | null = null;
 let lastSeq = 0;
@@ -66,6 +69,18 @@ if (typeof window !== "undefined") {
 function setStatus(s: Status) {
   status = s;
   for (const l of listeners) l(s);
+}
+
+export function closedReason(): string | null {
+  return endReason;
+}
+
+// The connection status as React state; overlays close themselves once the
+// session has ended, since nothing behind them can answer any more.
+export function useStatus(): Status {
+  const [s, setS] = useState<Status>(status);
+  useEffect(() => onStatus(setS), []);
+  return s;
 }
 
 export function onStatus(l: (s: Status) => void): () => void {
@@ -320,6 +335,7 @@ function handle(env: Envelope<ServerMessage>) {
       sessionId = m.id;
       resumeToken = m.resume;
       storeSession();
+      if (m.components) syncVersions(m.components);
       setStatus("open");
       while (queue.length && socket && socket.readyState === WebSocket.OPEN) sendNow(queue.shift()!);
       break;
@@ -343,10 +359,12 @@ function handle(env: Envelope<ServerMessage>) {
       command(m.name, m.args);
       break;
     case "error":
-      toast.add({ title: m.message, type: "error" });
       if (m.fatal) {
         closedForGood = true;
+        endReason = m.message;
         setStatus("closed");
+      } else {
+        toast.add({ title: m.message, type: "error" });
       }
       break;
     case "ask":
@@ -409,7 +427,7 @@ function command(name: string, args: Record<string, unknown>) {
       void fetch("/_mw/auth/logout", { method: "POST" }).finally(() => window.location.assign("/_mw/login"));
       break;
     case "reload_component":
-      invalidate(args.name ? String(args.name) : undefined);
+      invalidate(args.name ? String(args.name) : undefined, args.version ? String(args.version) : undefined);
       window.dispatchEvent(new CustomEvent("mw:reload-component", { detail: { name: args.name } }));
       break;
     case "download": {
@@ -488,8 +506,8 @@ export function connect() {
     if (ev.code === 4409) {
       // Another tab took this session over.
       closedForGood = true;
+      endReason = t("other_tab");
       setStatus("closed");
-      toast.add({ title: t("other_tab"), type: "warning", timeout: 0 });
       return;
     }
     setStatus("reconnecting");

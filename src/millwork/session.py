@@ -59,6 +59,9 @@ Close = Callable[[], Awaitable[None]]
 
 RENDER_COALESCE_SECONDS = 0.05
 OUTBOX_KEEP = 500
+# Messages from the tab still being handled; further ones are dropped until
+# the backlog clears, so a flood cannot grow the task set without bound.
+MAX_INFLIGHT = 64
 
 
 class Session[S]:
@@ -70,6 +73,15 @@ class Session[S]:
         self.params = params
         self.path = path
         self.user: Any = None
+        # Who opened it, for the per-client cap: the user's id, or the address.
+        self.client: str | None = None
+        self.created = time.monotonic()
+        # When its tab last went away, for the caps: the session longest without
+        # a tab makes room first. A session being connected or caught up still
+        # has its tab, even though nothing can be sent to it yet.
+        self.detached_at = self.created
+        self.connecting = False
+        self.end_reason: str | None = None
         self.state: S = page.make_state()
         self.tree: Tree | None = None
         self.closed = False
@@ -115,6 +127,15 @@ class Session[S]:
     def connected(self) -> bool:
         return self._send is not None
 
+    @property
+    def has_tab(self) -> bool:
+        return self.connected or self.connecting or self._catching_up is not None
+
+    @property
+    def inflight(self) -> int:
+        """Messages from the tab whose handling has not finished."""
+        return sum(1 for t in self._spawned if not t.done())
+
     def owns_resume(self, token: str | None) -> bool:
         return token is not None and hmac.compare_digest(self.resume_token, token)
 
@@ -130,6 +151,8 @@ class Session[S]:
         A second attachment replaces the first: the earlier socket is closed
         so a duplicated tab cannot keep dispatching into the session.
         """
+        if self.closed:
+            return
         if self._grace is not None:
             self._grace.cancel()
             self._grace = None
@@ -148,7 +171,10 @@ class Session[S]:
             except Exception:
                 log.debug("closing the previous socket of %s failed", self.id)
         try:
-            await send(pack(self._seq, SessionInfo(id=self.id, resume=self.resume_token)))
+            info = SessionInfo(
+                id=self.id, resume=self.resume_token, components=self.app.component_versions
+            )
+            await send(pack(self._seq, info))
             if self.tree is not None and self._can_replay(last_seq):
                 caught_up = last_seq
                 while True:
@@ -184,6 +210,8 @@ class Session[S]:
         self._close_socket = None
         self._send_bytes = None
         self._catching_up = None
+        self.connecting = False
+        self.detached_at = time.monotonic()
         self._abort_requests("the socket went away")
         if self.closed:
             return
@@ -193,6 +221,19 @@ class Session[S]:
         self._grace = None
         if not self.connected and not self.closed:
             self._loop.create_task(self.close())
+
+    async def end(self, message: str) -> None:
+        """Close the session and tell its tab why, so the tab stops instead of
+        reconnecting: signed out elsewhere, or made room for a newer session."""
+        if not self.closed:
+            self.end_reason = message
+            with contextlib.suppress(Exception):
+                await self._send_now(ServerError(message=message, fatal=True))
+            close = self._close_socket
+            if close is not None:
+                with contextlib.suppress(Exception):
+                    await close()
+        await self.close()
 
     async def close(self) -> None:
         if self.closed:
@@ -321,6 +362,9 @@ class Session[S]:
             return
         payload = event.payload if isinstance(event.payload, dict) else {}
         text = str(payload.get("text") or "").strip()
+        if len(text) > component.max_chars:
+            self.toast("The message is too long.", tone="warning")
+            return
         ids = [d.get("id") for d in payload.get("files") or [] if isinstance(d, dict)]
         files = [
             ref
@@ -658,6 +702,8 @@ class Session[S]:
         self._loop.create_task(self._render())
 
     async def _mount(self) -> None:
+        if self.closed:
+            return
         tree = self._build()
         if tree is None:
             return

@@ -9,7 +9,9 @@ order: 9
 commands, and a streamed reply from Python. It needs a `key`, which names
 the thread the session keeps for it, and an `on_message` handler that gets a
 `mw.ChatTurn` and replies through it. The chat fills whatever height it is
-given, so give it one with `cls` inside a card.
+given, so give it one with `cls` inside a card. `attachments=ui.Accept(...)`
+says what a person may attach, of which types, how many and how large;
+without it the composer takes no files. `max_chars` caps a message.
 
 ## A streamed reply
 

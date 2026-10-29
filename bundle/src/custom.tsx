@@ -21,11 +21,35 @@ const sources = new Map<string, Promise<string>>();
 const compiled = new Map<string, Compiled>();
 let version = 0;
 
+// The content version of each component, from the boot and then from every
+// session message: in the source URL, so the browser keeps a version for good
+// and a changed component is fetched under a new URL without a reload.
+function versions(): Record<string, string> {
+  const w = window as unknown as { __mw?: { components?: Record<string, string> } };
+  w.__mw ??= {};
+  w.__mw.components ??= {};
+  return w.__mw.components;
+}
+
+// Called with the versions a new session reports; a component whose version
+// moved (a deploy while the tab was open) is loaded afresh on its next mount.
+export function syncVersions(next: Record<string, string>) {
+  const current = versions();
+  const changed = Object.keys(next).filter((name) => current[name] !== undefined && current[name] !== next[name]);
+  Object.assign(current, next);
+  for (const name of changed) {
+    invalidate(name);
+    window.dispatchEvent(new CustomEvent("mw:reload-component", { detail: { name } }));
+  }
+}
+
 function load(name: string): Promise<string> {
   const key = `${version}:${name}`;
   let p = sources.get(key);
   if (!p) {
-    p = fetch(`/_mw/components/${encodeURIComponent(name)}.jsx`, { cache: "no-cache" }).then((r) => {
+    const v = versions()[name];
+    const url = `/_mw/components/${encodeURIComponent(name)}.jsx${v ? `?v=${encodeURIComponent(v)}` : ""}`;
+    p = fetch(url, { cache: v ? "default" : "no-cache" }).then((r) => {
       if (!r.ok) throw new Error(`custom component ${name}: HTTP ${r.status}`);
       return r.text();
     });
@@ -37,16 +61,17 @@ function load(name: string): Promise<string> {
 }
 
 // Called for the dev loop's reload_component command, or for every component when no name is given.
-export function invalidate(name?: string) {
+export function invalidate(name?: string, newVersion?: string) {
+  if (name !== undefined && newVersion) versions()[name] = newVersion;
   if (name === undefined) {
     version += 1;
     sources.clear();
     compiled.clear();
     return;
   }
+  // Only this component's entries go; the others keep their keys and their mounts.
   for (const key of [...sources.keys()]) if (key.endsWith(`:${name}`)) sources.delete(key);
   for (const key of [...compiled.keys()]) if (key.endsWith(`:${name}`)) compiled.delete(key);
-  version += 1;
 }
 
 async function compile(name: string, code: string): Promise<Compiled> {

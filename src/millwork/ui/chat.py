@@ -35,6 +35,7 @@ class Chat(Component):
     suggestions: list[str] = []
     placeholder: str | None = None
     attachments: Accept | None = None
+    max_chars: int = 64_000
     commands: list[Command] = []
     disabled: bool = False
     show_steps: Literal["full", "collapsed", "hidden"] = "collapsed"

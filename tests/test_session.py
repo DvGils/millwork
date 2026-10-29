@@ -685,4 +685,7 @@ async def test_a_changed_custom_component_is_pushed_to_open_tabs(tmp_path: Path)
         os.utime(comps / "Hello.jsx", (1, 1))  # a distinct mtime whatever the clock does
         assert await app.check_components() == ["Hello"]
         reloads = [c for c in page.commands if c.name == "reload_component"]
-        assert reloads and reloads[-1].args == {"name": "Hello"}
+        assert reloads and reloads[-1].args["name"] == "Hello"
+        # The new source has a new version, so the tab fetches it under a new URL.
+        version = reloads[-1].args["version"]
+        assert version == app.component_versions["Hello"] and len(version) == 16

@@ -147,6 +147,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
         busy={busy}
         disabled={Boolean(props.disabled) || !props.on_message}
         placeholder={props.placeholder ? String(props.placeholder) : "Type a message"}
+        maxChars={typeof props.max_chars === "number" ? props.max_chars : undefined}
         attachments={(props.attachments as Accept | null) ?? null}
         commands={Array.isArray(props.commands) ? (props.commands as Command[]) : []}
         onSend={sendMessage}
@@ -340,6 +341,7 @@ function Composer({
   busy,
   disabled,
   placeholder,
+  maxChars,
   attachments,
   commands,
   onSend,
@@ -350,6 +352,7 @@ function Composer({
   busy: boolean;
   disabled: boolean;
   placeholder: string;
+  maxChars?: number;
   attachments: Accept | null;
   commands: Command[];
   onSend: (text: string, files: FileRefWire[], command: string | null) => void;
@@ -408,6 +411,7 @@ function Composer({
         value={text}
         placeholder={placeholder}
         disabled={disabled}
+        maxLength={maxChars}
         rows={1}
         className="field-sizing-content max-h-40 min-h-9 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
         onChange={(e) => setText(e.target.value)}

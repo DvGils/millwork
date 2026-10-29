@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Renderer } from "../render";
 import { Render, Slot } from "../render";
+import { useStatus } from "../ws";
 import { useNode } from "../store";
 import { cn } from "cn";
 import { has } from "../lib";
@@ -292,9 +293,11 @@ export const ToggleGroup: Renderer = ({ props, emit }) => {
   );
 };
 
-export const Sheet: Renderer = ({ props, children, emit }) => (
+export const Sheet: Renderer = ({ props, children, emit }) => {
+  const status = useStatus();
+  return (
   <UiSheet
-    open={Boolean(props.open)}
+    open={Boolean(props.open) && status !== "closed"}
     disablePointerDismissal={props.dismissable === false}
     onOpenChange={(open) => {
       if (!open && props.dismissable !== false && props.on_close) emit("close");
@@ -310,7 +313,8 @@ export const Sheet: Renderer = ({ props, children, emit }) => (
       <div className="flex flex-col gap-4 overflow-auto px-4 pb-4">{children}</div>
     </SheetContent>
   </UiSheet>
-);
+  );
+};
 
 export const Slider: Renderer = ({ props, emit }) => {
   const controlled = has(props, "value");

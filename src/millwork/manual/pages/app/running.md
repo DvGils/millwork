@@ -23,7 +23,9 @@ app = mw.App(
     auth=...,                         # see Signing in
     origins=["https://projects.example.com"],
     session_grace=300,                # seconds a session waits for its tab to come back
-    files=mw.Files("/var/lib/projects/files", max_session_mb=2000, default_max_mb=50),
+    max_sessions_per_client=20,       # live sessions per user, or per address without auth
+    max_sessions=1000,                # live sessions in the process
+    files=mw.Files("/var/lib/projects/files", max_session_mb=200, max_total_mb=2000),
     threads=8,                        # the pool sync tasks and handlers run in
     keep_alive=False,
 )
@@ -31,8 +33,17 @@ app = mw.App(
 
 `origins` is the allow-list for the socket and the login route; without
 one, same origin only. `files` is where uploads and generated files live
-while a session lives, with a limit per session and the default limit per
-upload; the folder is private to the process's user and swept at start.
+while a session lives, with a quota per session and one for the whole
+process; the folder is private to the process's user and swept at start.
+The default folder is the system's temporary directory, which on some
+hosts is memory, so a deployment names a disk. The session caps count
+sessions waiting out the grace period too: over a cap, the client's
+session longest without a tab makes room, and only when every one still
+has a tab is a new one refused. Without sign-in the client is the
+connecting address, so behind a proxy on another machine pass the proxy's
+address with `--proxy`, or every visitor counts as one client. A session ended that way, or by signing out in
+another tab, tells its tab so: the page stays readable, takes no more
+input, and offers a reload.
 `threads` sizes the pool that runs sync tasks; the default is Python's.
 `keep_alive=True` makes every tab ping the server while open, for a host
 that scales to zero and would otherwise stop the process under a page that
@@ -48,6 +59,9 @@ def example(s):
         rows=[
             {"option": "name", "value": app.name},
             {"option": "session_grace", "value": f"{app.session_grace:.0f} s"},
+            {"option": "max_sessions_per_client", "value": app.max_sessions_per_client},
+            {"option": "max_sessions", "value": app.max_sessions},
+            {"option": "files", "value": f"{app.files.max_session_mb} MB per session, {app.files.max_total_mb} MB in all"},
             {"option": "origins", "value": ", ".join(app.origins) or "same origin"},
             {"option": "threads", "value": app.threads or "Python's default"},
             {"option": "keep_alive", "value": app.keep_alive},
@@ -55,7 +69,7 @@ def example(s):
             {"option": "auth", "value": "on" if app.auth else "off"},
         ],
         row_key="option",
-        height=260,
+        height=360,
     )
 ```
 
@@ -79,6 +93,11 @@ per app behind a reverse proxy that passes the websocket upgrade through:
 ```
 uv run millwork run app.py --host 127.0.0.1 --port 8000
 ```
+
+A proxy on the same machine is trusted for `X-Forwarded-*` out of the box;
+one on another host is named with `--proxy 10.0.0.5` (or `--proxy '*'`
+when only the proxy can reach the process), so the app sees the visitor's
+address and scheme rather than the proxy's.
 
 A container image is Python plus the app's dependencies with that line as
 its command. The process exits cleanly on SIGTERM: sessions get their

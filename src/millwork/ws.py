@@ -29,7 +29,7 @@ from millwork.protocol import (
     unpack_client,
     unpack_frame,
 )
-from millwork.session import Session
+from millwork.session import MAX_INFLIGHT, Session
 
 log = logging.getLogger("millwork.ws")
 
@@ -97,7 +97,17 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             return
         session = Session(app, page, params, first.path)
         session.user = user
-        app.sessions[session.id] = session
+        session.client = (
+            f"user:{user.id}"
+            if user is not None
+            else f"addr:{ws.client.host if ws.client else '?'}"
+        )
+        session.connecting = True
+        if not await app.admit(session):
+            log.warning("session refused for %s: too many sessions", session.client)
+            await ws.send_text(pack(0, ServerError(message="Too many open sessions.", fatal=True)))
+            await ws.close(code=4429)
+            return
         try:
             await session.connect()
         except (Forbidden, NotFound) as exc:
@@ -127,7 +137,17 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         await ws.close(code=4500)
         session.detach(send)
         return
+    finally:
+        session.connecting = False
+    if session.closed:
+        # Ended while it was being connected (signed out elsewhere): the tab is
+        # told now, since nothing could reach it before.
+        reason = session.end_reason or "The session ended."
+        await ws.send_text(pack(0, ServerError(message=reason, fatal=True)))
+        await ws.close(code=4409)
+        return
 
+    overflowed = False
     try:
         while True:
             message = await ws.receive()
@@ -155,6 +175,23 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             # Each message is its own task: the receive loop never waits on a handler,
             # so an answer to an open ask (or a click during a long handler) still arrives.
             # The session's lock keeps handlers one at a time, in order.
+            # An answer to an open ask resolves a waiting handler and starts no new
+            # work, so it passes the bound: the backlog cannot clear without it.
+            if (
+                isinstance(msg, Event | Answer | Navigate)
+                and session.inflight >= MAX_INFLIGHT
+                and not (isinstance(msg, Event) and "/@ask:" in msg.node)
+            ):
+                if not overflowed:
+                    overflowed = True
+                    log.warning(
+                        "session %s: %d messages pending, dropping", session.id, MAX_INFLIGHT
+                    )
+                    await session._send_now(
+                        ServerError(message="Too many actions at once; wait a moment.", fatal=False)
+                    )
+                continue
+            overflowed = False
             if isinstance(msg, Event):
                 session.spawn(session.dispatch(msg), f"event {msg.name} on {msg.node}")
             elif isinstance(msg, Answer):
