@@ -1,0 +1,28 @@
+# Dependabot keeps the pinned action hashes, the Python lock and the bundle's
+# packages current; minor and patch updates arrive as one pull request per
+# ecosystem.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /bundle
+    schedule:
+      interval: weekly
+    groups:
+      bundle-minor:
+        update-types: [minor, patch]
