@@ -1,5 +1,7 @@
 {
   "mode": "system",
+  "logo": "/public/mark.svg",
+  "favicon": "/public/mark.svg",
   "fonts": [
     {
       "family": "Inter",

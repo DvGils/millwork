@@ -36,7 +36,7 @@ export function Logo({ className }: { className?: string }) {
   const logo = theme().logo;
   if (!logo) return null;
   const src = scheme === "dark" && logo.dark ? logo.dark : logo.light;
-  return <img src={safeUrl(src, { image: true })} alt="" className={cn("h-7 w-auto", className)} />;
+  return <img src={safeUrl(src, { image: true })} alt="" className={cn("h-8 w-auto", className)} />;
 }
 
 function initials(name: string): string {
@@ -109,13 +109,13 @@ export const Header: Renderer = ({ props, children }) => {
   return (
     <header
       className={cn(
-        "sticky top-0 z-20 flex h-14 items-center gap-5 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+        "sticky top-0 z-20 flex h-16 items-center gap-5 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80",
         props.cls as string,
       )}
     >
       <div className="flex min-w-0 items-center gap-3">
         {props.logo !== false ? <Logo /> : null}
-        {props.title ? <span className="truncate text-base font-semibold tracking-tight">{String(props.title)}</span> : null}
+        {props.title ? <span className="truncate text-lg font-semibold tracking-tight">{String(props.title)}</span> : null}
       </div>
       {links.length ? (
         <nav className="hidden items-center gap-4 text-sm md:flex">
