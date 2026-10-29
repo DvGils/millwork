@@ -391,14 +391,16 @@ def make_app(theme: Any = None) -> mw.App:
                     ui.Stack(children=body, gap=6, cls="mx-auto w-full min-w-0 max-w-3xl py-6"),
                 ],
                 header=ui.Header(
-                    ui.Link(
-                        label="GitHub",
-                        href="https://github.com/DvGils/millwork",
-                        target="_blank",
-                        icon="external-link",
-                        cls="text-sm text-muted-foreground hover:text-foreground",
-                    ),
                     title="millwork",
+                    children=[
+                        ui.Link(
+                            label="GitHub",
+                            href="https://github.com/DvGils/millwork",
+                            target="_blank",
+                            icon="external-link",
+                            cls="text-sm text-muted-foreground hover:text-foreground",
+                        )
+                    ],
                 ),
             )
 
