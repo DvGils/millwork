@@ -525,6 +525,7 @@ def test_health_assets_and_the_thread_pool_are_deployment_ready(tmp_path: Path) 
 async def test_more_files_than_allowed_are_dropped_and_work_signals_activity(
     tmp_path: Path,
 ) -> None:
+    from millwork.protocol import Event
     from millwork.testing import TestApp
 
     class S(BaseModel):
@@ -536,8 +537,10 @@ async def test_more_files_than_allowed_are_dropped_and_work_signals_activity(
     async def uploaded(s: mw.Session[S], refs: list[mw.FileRef]) -> None:
         s.state.got = len(refs)
 
+    gate = asyncio.Event()
+
     async def start(s: mw.Session[S], _: Any) -> None:
-        s.state.run = s.task(asyncio.sleep, 0.05)
+        s.state.run = s.task(gate.wait)
 
     @app.page("/")
     def home(s: mw.Session[S]) -> ui.Component:
@@ -561,7 +564,19 @@ async def test_more_files_than_allowed_are_dropped_and_work_signals_activity(
         await page.event("chat", "message", {"text": "", "files": refs[5:7]})
         assert len(s.chat("chat").messages[0].parts) == 1
         # Starting a task tells the tab the session is busy; its end says so too.
-        await page.click("go")
+        # The task is held open on a gate, so the first render is forced while it
+        # runs rather than raced against the coalesced render timer.
+        s.spawn(s.dispatch(Event(node=page.find("go").id, name="click")), "click")
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert page.state.run.status == "running"
+        await s._render()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        activity = [c.args["busy"] for c in page.commands if c.name == "activity"]
+        assert activity == [True]
+        gate.set()
+        await page.settle()
         activity = [c.args["busy"] for c in page.commands if c.name == "activity"]
         assert activity == [True, False]
 
