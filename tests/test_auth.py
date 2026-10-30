@@ -288,7 +288,7 @@ def test_the_headers_provider_goes_through_on_login(tmp_path: Path) -> None:
         public=None,
         bundle_dir=tmp_path,
         secret="x" * 32,
-        proxies=["testclient"],
+        proxied=True,
         auth=auth.Auth([auth.Headers(user="x-user")], on_login=on_login),
     )
 

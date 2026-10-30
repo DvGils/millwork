@@ -4,6 +4,7 @@ path inside the app is not, and the prefix comes from the ASGI scope alone."""
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -175,6 +176,81 @@ def test_auth_redirects_and_callbacks_are_under_the_prefix(tmp_path: Path) -> No
     ) as c:
         r = c.get("/sales/_mw/auth/oauth/fake?next=/x", follow_redirects=False)
         assert r.status_code == 302 and "Path=/sales" in r.headers["set-cookie"]
+
+
+def test_a_root_app_cookie_does_not_shadow_a_prefixed_app(tmp_path: Path) -> None:
+    """A browser sends the cookie with the longer path first; the first one is
+    read, and a token is only good at the path it was issued for."""
+    secret = "s" * 32
+
+    def on_login(identity: auth.Identity) -> auth.User:
+        return auth.User(id=identity.subject, name=identity.subject)
+
+    def make(name: str) -> mw.App:
+        app = mw.App(
+            name,
+            public=None,
+            secret=secret,
+            auth=auth.Auth([auth.Password(lambda u, p: True)], on_login=on_login),
+        )
+
+        @app.page("/")
+        def home(s: mw.Session) -> ui.Component:
+            return ui.Page(ui.Text(name, key="t"))
+
+        return app
+
+    root, sales = make("root"), make("sales")
+    with TestClient(root.asgi) as c:
+        r = c.post("/_mw/auth/login", json={"username": "ada", "password": "x"})
+        root_token = r.cookies["mw_auth"]
+    with TestClient(sales.asgi, root_path="/sales") as c:
+        r = c.post("/sales/_mw/auth/login", json={"username": "ada", "password": "x"})
+        sales_token = r.cookies["mw_auth"]
+        c.cookies.clear()
+        both = f"mw_auth={sales_token}; mw_auth={root_token}"
+        assert c.get("/sales/", headers={"cookie": both}, follow_redirects=False).status_code == 200
+        # The root app's token alone, even with the same secret, is not a sign-in here.
+        only_root = f"mw_auth={root_token}"
+        r = c.get("/sales/", headers={"cookie": only_root}, follow_redirects=False)
+        assert r.status_code == 302
+    # Two Cookie header lines are read the same way.
+    from starlette.datastructures import Headers as H
+
+    from millwork.auth import _cookies
+
+    two = H(raw=[(b"cookie", b"mw_auth=first"), (b"cookie", b"mw_auth=second; x=1")])
+    assert _cookies(two) == {"mw_auth": "first", "x": "1"}
+
+
+def test_an_unstripped_prefix_is_said_once_and_a_bad_one_refused(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    app = make_app(tmp_path)
+    with caplog.at_level(logging.WARNING), TestClient(app.asgi, root_path="/sales") as client:
+        # The TestClient does not prepend root_path, so a doubled path is what
+        # a proxy that forgot to strip would send.
+        assert client.get("/sales/sales/").status_code == 404
+        assert client.get("/sales/sales/other").status_code == 404
+    said = [r.message for r in caplog.records if "must strip" in r.message]
+    assert len(said) == 1 and "/sales/" in said[0]
+    with caplog.at_level(logging.ERROR), TestClient(app.asgi, root_path="/ventes été") as client:
+        r = client.get("/")
+        assert r.status_code == 500 and "root path" in r.text
+        assert client.get("/x").status_code == 500
+    assert len([r for r in caplog.records if "every request refused" in r.message]) == 1
+
+
+def test_the_favicon_link_is_always_under_the_prefix(tmp_path: Path) -> None:
+    app = mw.App("p", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("x", key="t"))
+
+    with TestClient(app.asgi, root_path="/sales") as client:
+        assert '<link rel="icon" href="/sales/favicon.ico">' in client.get("/").text
+        assert client.get("/sales/favicon.ico").status_code in (200, 204)
 
 
 def test_plain_pages_and_theme_reloads_know_the_prefix(tmp_path: Path) -> None:

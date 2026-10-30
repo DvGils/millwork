@@ -143,6 +143,7 @@ STRINGS: dict[str, str] = {
     "continue_with": "Continue with {provider}",
     "no_sign_in": "No sign-in method is configured.",
     "proxy_sign_in": "Sign-in happens before this app, and this request carried no identity.",
+    "proxy_denied": "You are signed in, but this app does not admit you.",
     "sign_out": "Sign out",
     "theme": "Theme",
     "light": "Light",

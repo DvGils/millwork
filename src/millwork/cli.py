@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import getpass
 import importlib
 import importlib.util
@@ -16,7 +17,7 @@ import types
 from typing import Any, cast
 
 
-def load_app(target: str, debug: bool = False, proxies: str | None = None) -> object:
+def load_app(target: str, debug: bool = False, proxied: bool = False) -> object:
     """Import ``module:attribute`` or ``path/to/file.py:attribute``; the attribute
     defaults to ``app``.
 
@@ -26,7 +27,7 @@ def load_app(target: str, debug: bool = False, proxies: str | None = None) -> ob
 
     ``--debug`` switches a millwork App into debug mode (page errors in the
     tab, the theme file watched) as well as raising the log level, and
-    ``--proxy`` names the proxies the App believes.
+    ``--proxied`` tells the App a reverse proxy is in front of it.
     """
     module_name, attr = split_target(target)
     if module_name.endswith(".py") or os.sep in module_name:
@@ -37,8 +38,8 @@ def load_app(target: str, debug: bool = False, proxies: str | None = None) -> ob
     app = getattr(module, attr or "app")
     if debug and hasattr(app, "debug"):
         app.debug = True
-    if proxies is not None and hasattr(app, "proxies"):
-        app.proxies = proxies
+    if proxied and hasattr(app, "proxied"):
+        app.proxied = True
     return getattr(app, "asgi", app)
 
 
@@ -70,7 +71,7 @@ def asgi_factory() -> object:
     return load_app(
         os.environ["MILLWORK_TARGET"],
         os.environ.get("MILLWORK_DEBUG") == "1",
-        os.environ.get("MILLWORK_PROXY") or None,
+        os.environ.get("MILLWORK_PROXIED") == "1",
     )
 
 
@@ -81,8 +82,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument(
         "target", help="the App as module:attribute or file.py:attribute, for example app:app"
     )
-    run.add_argument("--host", default="127.0.0.1")
-    run.add_argument("--port", type=int, default=8000)
+    run.add_argument("--host", default=None, help="default 127.0.0.1")
+    run.add_argument("--port", type=int, default=None, help="default 8000")
     run.add_argument(
         "--uds",
         default=None,
@@ -98,15 +99,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     run.add_argument("--reload", action="store_true", help="restart the process on Python changes")
     run.add_argument(
-        "--proxy",
-        default=None,
-        metavar="IPS",
-        help="the reverse proxies to believe for X-Forwarded-* and identity headers: "
-        "addresses or networks, comma separated, or *; the local host by default",
+        "--proxied",
+        action="store_true",
+        help="a reverse proxy is in front: its forwarded address and scheme and its "
+        "identity headers are believed; implied by --uds",
     )
     docs = sub.add_parser("docs", help="serve the manual, with its live examples")
-    docs.add_argument("--host", default="127.0.0.1")
-    docs.add_argument("--port", type=int, default=8008)
+    docs.add_argument("--host", default=None, help="default 127.0.0.1")
+    docs.add_argument("--port", type=int, default=None, help="default 8008")
+    docs.add_argument("--uds", default=None, metavar="PATH", help="listen on a unix socket")
+    docs.add_argument("--proxied", action="store_true", help="as for run; implied by --uds")
     docs.add_argument("--theme", default=None, help="a theme file to show the manual in")
     docs.add_argument("--root-path", default="", help="the path prefix the manual is served under")
     sub.add_parser("secret", help="print a signing secret for App(secret=...)")
@@ -122,29 +124,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"--root-path: {exc}", file=sys.stderr)
             return 2
 
-    if getattr(args, "proxy", None):
-        from millwork.proxy import TrustedProxies
-
-        try:
-            TrustedProxies(args.proxy)
-        except ValueError as exc:
-            print(f"--proxy: {exc}", file=sys.stderr)
-            return 2
-
     if args.command == "docs":
-        import uvicorn
-
         from millwork.manual import make_app
 
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-        uvicorn.run(
-            cast(Any, make_app(theme=args.theme).asgi),
+        manual = make_app(theme=args.theme)
+        manual.proxied = args.proxied or bool(args.uds)
+        return serve(
+            manual.asgi,
             host=args.host,
             port=args.port,
-            proxy_headers=False,
+            default_port=8008,
+            uds=args.uds,
             root_path=args.root_path,
+            debug=False,
         )
-        return 0
     if args.command == "secret":
         print(secrets.token_urlsafe(48))
         return 0
@@ -164,10 +158,12 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
     )
+    # A unix socket is only ever reached through a proxy.
+    proxied = args.proxied or bool(args.uds)
     if args.reload:
         os.environ["MILLWORK_TARGET"] = args.target
         os.environ["MILLWORK_DEBUG"] = "1" if args.debug else "0"
-        os.environ["MILLWORK_PROXY"] = args.proxy or ""
+        os.environ["MILLWORK_PROXIED"] = "1" if proxied else "0"
         return serve(
             "millwork.cli:asgi_factory",
             factory=True,
@@ -179,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
             debug=args.debug,
         )
     return serve(
-        load_app(args.target, args.debug, args.proxy),
+        load_app(args.target, args.debug, proxied),
         host=args.host,
         port=args.port,
         uds=args.uds,
@@ -191,13 +187,14 @@ def main(argv: list[str] | None = None) -> int:
 def serve(
     app: object,
     *,
-    host: str,
-    port: int,
+    host: str | None,
+    port: int | None,
     uds: str | None,
     root_path: str,
     debug: bool,
     reload: bool = False,
     factory: bool = False,
+    default_port: int = 8000,
 ) -> int:
     """Run uvicorn around the app. millwork handles proxy headers itself, so
     uvicorn's own handling is off. A unix socket is bound here rather than by
@@ -205,10 +202,13 @@ def serve(
     it world-writable."""
     import uvicorn
 
+    if uds and (host is not None or port is not None):
+        print("--uds replaces --host and --port; give one or the other", file=sys.stderr)
+        return 2
     config = uvicorn.Config(
         cast(Any, app),
-        host=host,
-        port=port,
+        host=host or "127.0.0.1",
+        port=port or default_port,
         uds=uds,
         proxy_headers=False,
         root_path=root_path,
@@ -225,6 +225,8 @@ def serve(
         if uds:
             usock = UnixSocket(uds, config.backlog, inheritable=reload)
             server.owned = usock
+            # uvicorn says where it listens only for sockets it bound itself.
+            logging.getLogger("millwork").info("listening on unix socket %s", uds)
     except OSError as exc:
         print(f"--uds: {exc}", file=sys.stderr)
         return 2
@@ -278,7 +280,8 @@ class UnixSocket:
     """
 
     def __init__(self, path: str, backlog: int, *, inheritable: bool) -> None:
-        self.path = path
+        # Absolute, so the file is still found at exit after a chdir.
+        self.path = os.path.abspath(path)
         self._clear(path)
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         mask = os.umask(0o117)
@@ -311,7 +314,8 @@ class UnixSocket:
         try:
             probe.connect(path)
         except ConnectionRefusedError:
-            os.remove(path)
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(path)
         except FileNotFoundError:
             pass
         except OSError as exc:

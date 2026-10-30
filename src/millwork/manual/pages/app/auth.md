@@ -88,7 +88,10 @@ in request headers, and `auth.Headers` reads them. Give it the header names
 the proxy uses: `user` or `email` is required, `name`, `groups` and
 `picture` are optional, and `groups` is split on commas into
 `identity.raw["groups"]`. The person goes through `on_login` on every page
-load and socket connect, so keep that hook cheap. `sign_out` is the proxy's
+load and socket connect, so keep that hook cheap; a sync hook runs off
+the event loop, so a slow one delays its own visitor and nobody else, and
+one that raises shows the error page and ends the tab's attempts rather
+than looping. A visitor the hook refuses sees the login page say so. `sign_out` is the proxy's
 own sign-out URL, which the user menu and `s.logout()` go to; without one
 the menu offers no sign-out, since the app holds nothing to clear, and
 `s.logout()` only ends the person's sessions, after which the proxy signs
@@ -119,22 +122,12 @@ auth.Headers(email="Cf-Access-Authenticated-User-Email", sign_out="/cdn-cgi/acce
 auth.Headers(user="Remote-User", email="Remote-Email", name="Remote-Name", groups="Remote-Groups")
 ```
 
-The headers are believed only on a connection from a proxy the app was
-told about, `App(proxies=["10.0.0.5"])` or `millwork run --proxy 10.0.0.5`,
-with addresses, networks such as `10.0.0.0/24`, or `*` when only the proxy
-can reach the process. When nothing is named the local host is trusted:
-the loopback addresses, and a unix socket, where the socket's file
-permissions decide who connects at all.
-From any other peer the headers are ignored, with one line in the log
-naming the peer, since that is nearly always a missing `proxies` setting.
-A request that reaches the app without an identity lands on the login
-page, which then only says that sign-in happens before the app.
-
-Whoever can open a connection the app takes for its proxy can name anyone,
-so the list is as much a part of the setup as the proxy itself. On a
-machine with other users, the local host includes them: bind the app to
-the proxy alone, over a unix socket or a container network, rather than to
-a port any process can reach.
+The headers are read when the app runs with `--proxied` or
+`App(proxied=True)`, as the Running chapter describes; without the switch
+they are ignored, with one line in the log. Whoever can reach the process
+can send these headers, so a proxied app listens where only its proxy
+connects. A request that arrives without an identity lands on the login
+page, which says that sign-in happens before the app.
 
 ## Deciding who gets in
 
@@ -193,7 +186,9 @@ goes to the login page.
 
 The cookie is a signed token holding the `User`, `HttpOnly`, `SameSite=Lax`,
 `Secure` over HTTPS, with a fixed lifetime set by `session` (seven days by
-default). There is no sliding renewal: after that long a person signs in
+default). It is bound to the path it was set for, the app's prefix, so
+apps side by side on one host never accept each other's cookie, even with
+one secret between them. There is no sliding renewal: after that long a person signs in
 again. It is stateless, so any replica of the app validates it with the
 shared secret, and nothing about a person leaves the server beyond the
 `User` itself. Stateless also means signing out cannot revoke a copy of

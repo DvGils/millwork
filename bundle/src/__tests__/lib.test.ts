@@ -39,6 +39,17 @@ describe("same-origin paths", () => {
   });
 });
 
+describe("relative links", () => {
+  it("passes fragments and page-relative paths through, refusing schemes", () => {
+    expect(safeUrl("#top")).toBe("#top");
+    expect(safeUrl("other")).toBe("other");
+    expect(safeUrl("docs/page?x=1#a")).toBe("docs/page?x=1#a");
+    for (const bad of ["javascript:alert(1)", "data:text/html,x", "../x", "a/../b", "\\evil", "//evil"]) {
+      expect(safeUrl(bad)).toBe("about:blank");
+    }
+  });
+});
+
 describe("signOutUrl", () => {
   it("is the proxy's URL when the proxy signed the person in, else the login page", () => {
     const boot = (mw: { base?: string; user?: { sign_out?: string | null } | null }) => vi.stubGlobal("window", { __mw: mw });

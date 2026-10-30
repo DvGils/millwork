@@ -37,7 +37,7 @@ from millwork.auth import Auth
 from millwork.files import Files
 from millwork.nodes import Component
 from millwork.protocol import Command
-from millwork.proxy import ASGIApp, Proxied, TrustedProxies
+from millwork.proxy import ASGIApp, Proxied
 from millwork.shell import Shell, plain, root_of
 from millwork.theme import Theme, find_theme, under
 
@@ -169,16 +169,20 @@ class App:
         keep_alive: bool = False,
         max_sessions: int = 1000,
         max_sessions_per_client: int = 20,
-        proxies: list[str] | str | None = None,
+        proxied: bool = False,
     ) -> None:
         self.name = name
-        self.proxies = proxies
+        # Behind a reverse proxy: its forwarded address and scheme, and the
+        # identity headers an auth.Headers provider names, are believed.
+        self.proxied = proxied
         # Caps on live sessions, including those waiting out the grace period.
         # A client is a signed-in user, or the connecting address without auth.
         # Over a cap, the client's oldest session without a tab makes room, and
         # only when every one still has a tab is the new one refused.
         self.max_sessions = max_sessions
         self.max_sessions_per_client = max_sessions_per_client
+        self._warned_no_address = False
+        self._warned_prefix = False
         self._admit_lock = asyncio.Lock()
         # The secret signs file URLs (and cookies, with auth). Without auth, a random
         # per-process secret is used: fine for one replica, logged so it is not a
@@ -389,21 +393,9 @@ class App:
     # ------------------------------------------------------------- asgi
 
     @property
-    def proxies(self) -> list[str] | str | None:
-        """The reverse proxies whose X-Forwarded-* and identity headers are believed:
-        addresses, CIDR networks or "*"; the local host when not set. Checked when
-        set, so a typo fails at startup rather than locking everyone out."""
-        return self._proxies
-
-    @proxies.setter
-    def proxies(self, value: list[str] | str | None) -> None:
-        self._trusted = TrustedProxies(value)
-        self._proxies = value
-
-    @property
     def asgi(self) -> ASGIApp:
         if self._asgi is None:
-            self._asgi = Proxied(self._build_asgi(), lambda: self._trusted)
+            self._asgi = Proxied(self._build_asgi(), lambda: self.proxied)
         return self._asgi
 
     def _build_asgi(self) -> Starlette:
@@ -584,10 +576,25 @@ class App:
             headers["Content-Security-Policy"] = self.csp.format(scripts=scripts)
         return HTMLResponse(page, status_code=status, headers=headers)
 
+    def _check_stripped(self, scope: Any, path: str) -> None:
+        """A path that still starts with the prefix means the proxy passed it
+        through whole: every route then misses, and only the log can say why."""
+        base = root_of(scope)
+        if base and (path == base or path.startswith(base + "/")) and not self._warned_prefix:
+            self._warned_prefix = True
+            log.warning(
+                "the request path %s still carries the prefix %s: the proxy must strip it",
+                path,
+                base,
+            )
+
     def _plain(self, request: Request, status: int, title: str, text: str) -> HTMLResponse:
         """A themed page for a failure before the bundle can run."""
         nonce = secrets.token_urlsafe(16)
-        base = root_of(request.scope)
+        try:
+            base = root_of(request.scope)
+        except ValueError:
+            base = ""
         page = plain(title=title, text=text, theme=self.theme, nonce=nonce, base=base)
         return self._html(page, nonce, status)
 
@@ -605,8 +612,15 @@ class App:
         from millwork.auth import _safe_next
 
         next_path = _safe_next(request.query_params.get("next"))
+        base = root_of(request.scope)
+        if await self.user_for(request) is not None:
+            # Already signed in, by a cookie or by the proxy: nothing to show.
+            return RedirectResponse(f"{base}{next_path}", status_code=302)
+        error = request.query_params.get("error")
+        if error is None and self.auth.proxy_identity(request):
+            error = self.theme.text("proxy_denied")
         boot = {
-            **self.auth.describe(next_path, request.query_params.get("error")),
+            **self.auth.describe(next_path, error),
             "name": self.name,
             "image": self.theme.login_image,
         }
@@ -618,13 +632,14 @@ class App:
                 login=boot,
                 theme=self.theme,
                 nonce=nonce,
-                base=root_of(request.scope),
+                base=base,
             ),
             nonce,
         )
 
     async def _serve_page(self, request: Request) -> Any:
         path = "/" + request.path_params.get("path", "")
+        self._check_stripped(request.scope, path)
         resolved = self.resolve(path)
         status = 200
         if resolved is None:

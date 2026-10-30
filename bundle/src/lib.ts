@@ -13,6 +13,11 @@ export function safeUrl(value: unknown, opts: { image?: boolean } = {}): string 
   if (v.startsWith("/") && !v.startsWith("//") && !v.includes("\\") && !hasDotSegment(v)) return toBrowser(v);
   const lower = v.toLowerCase();
   if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("mailto:")) return v;
+  // A fragment, or a path relative to the page: the browser resolves it under
+  // the page's own URL, prefix included, so it needs no mapping. A scheme would
+  // show as a colon before any slash.
+  if (v.startsWith("#")) return v;
+  if (!v.startsWith("/") && !v.includes("\\") && !/^[^/?#]*:/.test(v) && !hasDotSegment(v)) return v;
   if (opts.image && (lower.startsWith("blob:") || lower.startsWith("data:image/"))) return v;
   return "about:blank";
 }

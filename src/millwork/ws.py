@@ -75,7 +75,14 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         await ws.close(code=4426)
         return
 
-    user = await app.user_for(ws)
+    try:
+        user = await app.user_for(ws)
+    except Exception:
+        # Said once per attempt; the tab is told to stop, so a broken hook does
+        # not turn every open tab into a reconnect loop.
+        log.exception("identity lookup failed")
+        await refuse("something_went_wrong", 4500)
+        return
     session: Session[Any] | None = None
     if first.session and first.resume:
         candidate = app.sessions.get(first.session)
@@ -101,6 +108,18 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             if user is not None
             else f"addr:{ws.client.host if ws.client else '?'}"
         )
+        if (
+            user is None
+            and ws.scope.get("millwork.proxied")
+            and "x-forwarded-for" not in ws.headers
+            and not app._warned_no_address
+        ):
+            # Every anonymous visitor then shares the proxy's address and one cap.
+            app._warned_no_address = True
+            log.warning(
+                "the proxy sends no X-Forwarded-For, so every anonymous visitor "
+                "counts as one client for the session cap"
+            )
         session.connecting = True
         if not await app.admit(session):
             log.warning("session refused for %s: too many sessions", session.client)

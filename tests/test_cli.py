@@ -156,7 +156,7 @@ def test_reload_mode_passes_the_bound_socket_to_the_reloader(
 
     from millwork.cli import main
 
-    for key in ("MILLWORK_TARGET", "MILLWORK_DEBUG", "MILLWORK_PROXY"):
+    for key in ("MILLWORK_TARGET", "MILLWORK_DEBUG", "MILLWORK_PROXIED"):
         monkeypatch.setenv(key, "")  # so the values main sets are undone afterwards
     seen: list[tuple[int, bool]] = []
 

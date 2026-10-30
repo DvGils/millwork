@@ -327,9 +327,9 @@ class Headers(Provider):
     does the signing in and passes who it saw: a header with the user name
     or id, one with the e-mail, and perhaps the display name, the groups and a
     picture. Name the headers the proxy uses; ``user`` or ``email`` is required.
-    The headers are believed only on a connection from a proxy the app trusts
-    (``App(proxies=...)``, ``millwork run --proxy``), and go through
-    ``on_login`` on every page load and socket connect, so keep that hook cheap.
+    The headers are read when the app is behind a proxy (``App(proxied=True)``,
+    ``millwork run --proxied``) and go through ``on_login`` on every page load
+    and socket connect, so keep that hook cheap.
     ``sign_out`` is the proxy's own sign-out URL, where the user menu sends the
     person; without one the menu has no sign-out, since the app has nothing to
     clear.
@@ -337,6 +337,7 @@ class Headers(Provider):
 
     kind: Literal["oauth", "password", "header", "dev"] = "header"
     VALUE_LIMIT = 1024
+    GROUPS_LIMIT = 8192
 
     def __init__(
         self,
@@ -367,6 +368,7 @@ class Headers(Provider):
             if value
         }
         self.sign_out = sign_out
+        self._dropped: set[str] = set()
 
     def present(self, headers: Any) -> bool:
         return any(headers.get(h) for h in self.headers.values())
@@ -378,8 +380,19 @@ class Headers(Provider):
         would otherwise let the visitor's own value through first."""
         raw: dict[str, Any] = {}
         for role, header in self.headers.items():
-            value = _header_text(_single(headers, header))
+            given = _single(headers, header)
+            limit = self.GROUPS_LIMIT if role == "groups" else self.VALUE_LIMIT
+            value = _header_text(given, limit)
             if value is None:
+                if given and role not in self._dropped:
+                    self._dropped.add(role)
+                    log.warning(
+                        "the %s header (%s) was ignored: empty, over %d characters, "
+                        "not printable, or sent more than once",
+                        role,
+                        header,
+                        limit,
+                    )
                 continue
             raw[role] = (
                 [g.strip() for g in value.split(",") if g.strip()] if role == "groups" else value
@@ -416,7 +429,7 @@ def _sign_out_ok(url: str) -> bool:
     return url.startswith(("https://", "http://")) and len(url) > 8
 
 
-def _header_text(value: str | None) -> str | None:
+def _header_text(value: str | None, limit: int) -> str | None:
     """A header value as text: UTF-8 when the proxy sent it that way, trimmed,
     refused when empty, over the limit or not printable."""
     if not value:
@@ -426,7 +439,7 @@ def _header_text(value: str | None) -> str | None:
     except UnicodeError:
         pass
     value = value.strip()
-    if not value or len(value) > Headers.VALUE_LIMIT or not value.isprintable():
+    if not value or len(value) > limit or not value.isprintable():
         return None
     return value
 
@@ -497,7 +510,7 @@ class Auth:
         self.intents = intents or {}
         self.secret = ""
         self.debug = False
-        self._untrusted_peers: set[str] = set()
+        self._warned_unproxied = False
 
     def bind(self, secret: str, debug: bool, origins: list[str] | None = None) -> None:
         self.secret = secret
@@ -508,7 +521,9 @@ class Auth:
 
     # ------------------------------------------------------------- tokens
 
-    def issue(self, user: User) -> str:
+    def issue(self, user: User, path: str = "/") -> str:
+        """A token for the cookie at ``path``, the app's prefix: it is refused
+        at any other path, so apps side by side with one secret stay apart."""
         if len(json.dumps(user.claims)) > CLAIMS_LIMIT:
             raise ValueError("user claims exceed 2 KB; keep the record small")
         now = dt.datetime.now(dt.UTC)
@@ -517,12 +532,15 @@ class Auth:
             "iat": int(now.timestamp()),
             "exp": int((now + self.session).timestamp()),
             "jti": secrets.token_urlsafe(8),
+            "path": path,
         }
         return sign(self.secret, "auth", payload)
 
-    def read(self, token: str | None) -> User | None:
+    def read(self, token: str | None, path: str | None = None) -> User | None:
         data = verify(self.secret, "auth", token)
         if data is None:
+            return None
+        if path is not None and data.get("path") != path:
             return None
         data = {k: v for k, v in data.items() if k in User.model_fields}
         try:
@@ -532,12 +550,12 @@ class Auth:
 
     def user_from(self, request: Request) -> User | None:
         """The signed-in user of an HTTP request (or a websocket's handshake)."""
-        return self.read(request.cookies.get(AUTH_COOKIE))
+        return self.read(_cookies(request.headers).get(AUTH_COOKIE), _cookie_path(request))
 
     def set_cookie(self, request: Request, response: Response, user: User) -> None:
         response.set_cookie(
             AUTH_COOKIE,
-            self.issue(user),
+            self.issue(user, _cookie_path(request)),
             httponly=True,
             secure=request.url.scheme == "https",
             samesite="lax",
@@ -577,8 +595,13 @@ class Auth:
                 picture_url=identity.picture_url,
             )
         else:
-            result = self.on_login(identity)
-            user = await result if inspect.isawaitable(result) else result
+            # A sync hook runs off the loop: with a proxy identity it runs on
+            # every page load, and a slow one would stall every session.
+            if inspect.iscoroutinefunction(self.on_login):
+                user = await self.on_login(identity)
+            else:
+                result = await asyncio.to_thread(self.on_login, identity)
+                user = await result if inspect.isawaitable(result) else result
         who = self._log_id(identity.email or identity.subject)
         if user is None:
             log.warning("login denied: %s via %s", who, identity.provider)
@@ -695,7 +718,7 @@ class Auth:
         if not isinstance(provider, OAuth):
             return JSONResponse({"reason": "no such provider"}, status_code=404)
         q = request.query_params
-        state_data = verify(self.secret, "oauth-state", request.cookies.get(STATE_COOKIE))
+        state_data = verify(self.secret, "oauth-state", _cookies(request.headers).get(STATE_COOKIE))
         if state_data is None:
             return self._login_redirect(request, "/", "Sign-in expired, try again.")
         next_path = _safe_next(state_data.get("next"))
@@ -739,14 +762,11 @@ class Auth:
 
         The proxy's headers go through ``on_login`` like any other provider, on
         every request: the hook still decides access and shapes the user. They
-        are read only on a connection the app knows to come from its proxy.
+        are read when the app is behind a proxy.
         """
         headers = request_or_scope.headers
-        cookies = (
-            request_or_scope.cookies if hasattr(request_or_scope, "cookies") else _cookies(headers)
-        )
         scope = request_or_scope.scope
-        user = self.read(cookies.get(AUTH_COOKIE))
+        user = self.read(_cookies(headers).get(AUTH_COOKIE), root_of(scope) or "/")
         if user is not None:
             scope["millwork.identified_by"] = "cookie"
             return user
@@ -756,8 +776,12 @@ class Auth:
                 return provider.user
             if isinstance(provider, Headers):
                 if not scope.get("millwork.proxied"):
-                    if provider.present(headers):
-                        self._untrusted(request_or_scope)
+                    if provider.present(headers) and not self._warned_unproxied:
+                        self._warned_unproxied = True
+                        log.warning(
+                            "identity headers arrived and were ignored: the app is not "
+                            "marked as behind a proxy (App(proxied=True), millwork run --proxied)"
+                        )
                     continue
                 identity = provider.identity(headers)
                 if identity is not None:
@@ -767,19 +791,14 @@ class Auth:
                     return user
         return None
 
-    def _untrusted(self, request_or_scope: Any) -> None:
-        """Identity headers arrived from a peer that is not a trusted proxy: say so
-        once per peer, since this is nearly always a missing ``proxies`` setting."""
-        client = getattr(request_or_scope, "client", None)
-        peer = client.host if client else "a unix socket"
-        if peer not in self._untrusted_peers and len(self._untrusted_peers) < 100:
-            self._untrusted_peers.add(peer)
-            log.warning(
-                "identity headers ignored from %s: not a trusted proxy. Name the proxy "
-                "with App(proxies=...) or millwork run --proxy; under uvicorn directly, "
-                "pass --no-proxy-headers so the real peer is seen",
-                peer,
-            )
+    def proxy_identity(self, request: Request) -> bool:
+        """Whether the proxy named a visitor on this request, whatever the hook
+        then said."""
+        if not request.scope.get("millwork.proxied"):
+            return False
+        return any(
+            isinstance(p, Headers) and p.present(request.headers) for p in self.providers.values()
+        )
 
     @property
     def sign_out(self) -> str | None | bool:
@@ -803,12 +822,17 @@ def _same_origin(request: Request, origins: list[str]) -> bool:
 
 
 def _cookies(headers: Any) -> dict[str, str]:
-    raw = headers.get("cookie", "")
+    """The request's cookies, the first of a repeated name winning: a browser
+    sends the cookie with the longer path first, so under a prefix the app's
+    own cookie comes before a root app's cookie of the same name."""
     out: dict[str, str] = {}
-    for part in raw.split(";"):
-        if "=" in part:
-            k, _, v = part.strip().partition("=")
-            out[k] = v
+    for raw in (
+        headers.getlist("cookie") if hasattr(headers, "getlist") else [headers.get("cookie", "")]
+    ):
+        for part in (raw or "").split(";"):
+            if "=" in part:
+                k, _, v = part.strip().partition("=")
+                out.setdefault(k, v)
     return out
 
 

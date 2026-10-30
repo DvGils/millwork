@@ -169,8 +169,10 @@ class Shell:
             theme_css = theme.css(base) + theme_css
             head = theme.head() + head
             lang = theme.locale
-            if theme.favicon:
-                head += f'<link rel="icon" href="{html.escape(under(base, theme.favicon) or "")}">'
+            # Always a link: without one the browser asks the host's root for
+            # /favicon.ico, which an app under a prefix never sees.
+            icon = under(base, theme.favicon) if theme.favicon else f"{base}/favicon.ico"
+            head += f'<link rel="icon" href="{html.escape(icon or "")}">'
         asset = html.escape(f"{base}{self.prefix}/assets/")
         scripts = f'<script type="module" src="{asset}{_basename(str(entry["file"]))}"></script>'
         css_files = cast(list[str], entry.get("css", []))

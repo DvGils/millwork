@@ -8,7 +8,9 @@ order: 5
 One process serves an app: Python, the built bundle inside the package,
 and nothing else. There is no Node on the machine, no build step, no
 configuration file. What an app needs is said on the `App`, in Python,
-with values from wherever the app keeps its secrets.
+with values from wherever the app keeps its secrets. This chapter has
+the pieces; the Hosting chapter puts them together on a machine and on a
+container platform.
 
 ## The App's options
 
@@ -40,8 +42,8 @@ hosts is memory, so a deployment names a disk. The session caps count
 sessions waiting out the grace period too: over a cap, the client's
 session longest without a tab makes room, and only when every one still
 has a tab is a new one refused. Without sign-in the client is the
-connecting address, so behind a proxy on another machine pass the proxy's
-address with `--proxy`, or every visitor counts as one client. A session ended that way, or by signing out in
+connecting address, so behind a proxy run with `--proxied`, or every
+visitor counts as one client. A session ended that way, or by signing out in
 another tab, tells its tab so: the page stays readable, takes no more
 input, and offers a reload.
 `threads` sizes the pool that runs sync tasks; the default is Python's.
@@ -94,27 +96,21 @@ per app behind a reverse proxy that passes the websocket upgrade through:
 uv run millwork run app.py --host 127.0.0.1 --port 8000
 ```
 
-A proxy on the same machine is believed for `X-Forwarded-For` and
-`X-Forwarded-Proto` out of the box; one on another host is named with
-`--proxy 10.0.0.5`, or `App(proxies=[...])`, with addresses, networks or
-`'*'` when only the proxy can reach the process; a typo in the list stops
-the app at startup. The app then sees the
-visitor's address and scheme rather than the proxy's, and the same list
-decides whose identity headers `auth.Headers` reads. millwork does this
-itself, so `millwork run` turns uvicorn's own forwarded-headers handling
-off. Under uvicorn directly, pass `--no-proxy-headers` yourself: with both
-on, uvicorn replaces the connecting address with the forwarded one before
-millwork looks, and a visitor who sends `X-Forwarded-For: 127.0.0.1` would
-pass for the proxy.
+`--proxied`, or `App(proxied=True)`, says a reverse proxy is in front.
+The app then takes the visitor's address and scheme from the proxy's
+`X-Forwarded-For` and `X-Forwarded-Proto`, and the visitor's identity from
+the headers an `auth.Headers` provider names. Anyone who can reach the
+process can send those headers too, so a proxied app listens where only
+its proxy connects: a unix socket, a loopback port, or a container
+network. `millwork run` handles the forwarded headers itself; under
+uvicorn directly, pass `--no-proxy-headers` so they are handled once.
 
 On one machine with the proxy, a unix socket is tighter than a port: no
 other process can reach the app, and nothing listens on the network.
-`--uds` takes the socket's path instead of a host and port, and creates
+`--uds` takes the socket's path in place of a host and port, and creates
 it for its owner and group only, mode 0660 whatever the umask, so the
-proxy connects when it runs in the app's group and nothing else does. The
-socket counts as the local host for `--proxy`, since its permissions
-already decide who connects; in an explicit list it is spelled `unix`, as
-in `--proxy unix,10.0.0.5`.
+proxy connects when it runs in the app's group. A socket is only ever
+reached through a proxy, so `--uds` implies `--proxied`.
 
 ```
 uv run millwork run app.py --uds /run/sales/app.sock
@@ -128,6 +124,7 @@ location / {
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
 ```
 
@@ -160,6 +157,7 @@ location /sales/ {
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
 ```
 
