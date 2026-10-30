@@ -3,17 +3,19 @@
 // props, so its own state survives a server push. The compiler (react-runner
 // with sucrase) is a lazy chunk: pages without custom components never load it.
 
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import type { Node } from "./store";
 import { imports } from "./imports";
 import { fileUrl, request } from "./ws";
 import { ensureTailwindRuntime } from "./tailwind-runtime";
+import { ChatContext, type ChatApi } from "./chat-context";
 
 type Compiled = ComponentType<{
   props: Record<string, unknown>;
   emit: (name: string, payload?: unknown) => void;
   request: (name: string, payload?: unknown) => Promise<unknown>;
   fileUrl: (id: string) => Promise<string>;
+  chat?: ChatApi;
   children?: ReactNode;
 }>;
 
@@ -126,11 +128,13 @@ export function CustomComponent({
   // A custom component asks its own handlers (`on_<name>` on the Python side) and
   // fetches session files the same way the catalogue does.
   const ask = useCallback((name: string, payload?: unknown) => request(node.id, name, payload ?? null), [node.id]);
+  // Inside a chat's composer the component may upload and send; elsewhere there is no chat.
+  const chat = useContext(ChatContext);
 
   if (error) return <div className="text-destructive text-sm">{error}</div>;
   if (!Comp) return null;
   return (
-    <Comp props={stable} emit={emit} request={ask} fileUrl={fileUrl}>
+    <Comp props={stable} emit={emit} request={ask} fileUrl={fileUrl} chat={chat ?? undefined}>
       {children}
     </Comp>
   );

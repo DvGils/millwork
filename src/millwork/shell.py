@@ -47,20 +47,29 @@ class Shell:
         self.bundle_dir = bundle_dir
         self.prefix = prefix
         self._manifest: dict[str, dict[str, object]] | None = None
+        self._stamp = 0.0
         self._load()
 
     def _load(self) -> None:
+        # Re-read when the file changes: a bundle rebuilt under a running process
+        # has new hashed names, and a page must name the files that exist now.
         manifest = self.bundle_dir / ".vite" / "manifest.json"
-        if manifest.is_file():
+        try:
+            stamp = manifest.stat().st_mtime
+        except OSError:
+            self._manifest, self._stamp = None, 0.0
+            return
+        if stamp != self._stamp or self._manifest is None:
             self._manifest = json.loads(manifest.read_text(encoding="utf-8"))
-        else:
-            self._manifest = None
+            self._stamp = stamp
 
     @property
     def available(self) -> bool:
+        self._load()
         return self._manifest is not None
 
     def _entry(self) -> dict[str, object]:
+        self._load()
         assert self._manifest is not None
         for item in self._manifest.values():
             if item.get("isEntry"):

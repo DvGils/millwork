@@ -30,11 +30,18 @@ class Action(BaseModel):
 
 
 class Accept(BaseModel):
+    """What the composer takes: the extensions, how many per message, how large.
+    ``capture`` opens the camera or the microphone straight away on a phone;
+    ``paperclip=False`` hides the attach button while uploads from the chat's
+    ``tools`` still go by these limits."""
+
     model_config = ConfigDict(extra="forbid")
 
     accept: list[str] | None = None
     max_files: int = 5
     max_size_mb: int | None = None
+    capture: Literal["user", "environment"] | None = None
+    paperclip: bool = True
 
 
 class Chat(Component):
@@ -57,6 +64,9 @@ class Chat(Component):
     regenerate: bool = True
     edit: bool = True
     actions: list[Action] = []
+    # Components in the composer, left of Send: a Button with a handler, or a
+    # Custom component, which receives ``chat`` with upload, send and busy.
+    tools: list[Component] = []
     on_message: Any = None
     on_stop: Any = None
     on_feedback: Any = None

@@ -109,7 +109,7 @@ export const Header: Renderer = ({ props, children }) => {
   return (
     <header
       className={cn(
-        "sticky top-0 z-20 flex h-16 items-center gap-5 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+        "sticky top-0 z-20 flex h-16 shrink-0 items-center gap-5 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80",
         props.cls as string,
       )}
     >

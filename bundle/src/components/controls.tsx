@@ -64,6 +64,7 @@ export const Input: Renderer = ({ props, emit }) => {
   const later = useDebounced(typeof props.debounce_ms === "number" ? props.debounce_ms : 250);
   const Prefix = icon(props.prefix_icon);
   const Clear = icon("x");
+  const wrapped = Boolean(Prefix || props.suffix || props.clearable);
   const clearable = Boolean(props.clearable) && current !== "" && !props.disabled && !props.readonly;
   const clear = () => {
     setDraft("");
@@ -87,13 +88,15 @@ export const Input: Renderer = ({ props, emit }) => {
           emit("submit", current);
         }
       }}
-      className={cn(Prefix && "pl-8", props.clearable && "pr-8", props.cls as string)}
+      className={cn(Prefix && "pl-8", props.clearable && "pr-8", !wrapped && (props.cls as string))}
     />
   );
-  if (!Prefix && !props.suffix && !props.clearable) return field;
+  if (!wrapped) return field;
+  // The app's classes (a margin, a width) go on the outer box, so the icon and
+  // the clear button stay centred on the input itself.
   return (
-    <div className="relative flex items-center gap-2">
-      {Prefix ? <Prefix className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" /> : null}
+    <div className={cn("relative flex items-center gap-2", props.cls as string)}>
+      {Prefix ? <Prefix className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" /> : null}
       {field}
       {clearable && Clear ? (
         <button

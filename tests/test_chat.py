@@ -300,3 +300,51 @@ async def test_message_actions_can_be_switched_off(tmp_path: Path) -> None:
         assert [m.text for m in chat.messages] == ["hi", "ok"]
         props = page.find("main").props
         assert (props["regenerate"], props["edit"], props["copyable"]) == (False, False, False)
+
+
+async def test_tools_render_in_the_composer_and_accept_options_reach_the_wire(
+    tmp_path: Path,
+) -> None:
+    from millwork.testing import TestApp
+
+    clicks: list[str] = []
+    app = mw.App("c5", public=None, bundle_dir=tmp_path)
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as r:
+            await r.text(f"{len(turn.files)} files")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Chat(
+                key="main",
+                on_message=answer,
+                attachments=ui.Accept(accept=[".webm"], capture="user", paperclip=False),
+                tools=[
+                    ui.Button("Camera", key="cam", on_click=lambda s, _: clicks.append("cam")),
+                    ui.Custom("Voice"),
+                ],
+            )
+        )
+
+    async with TestApp(app).open("/") as page:
+        props = page.find("main").props
+        assert props["attachments"] == {
+            "accept": [".webm"],
+            "max_files": 5,
+            "max_size_mb": None,
+            "capture": "user",
+            "paperclip": False,
+        }
+        # The tools are nodes of their own under the chat, so their handlers work.
+        assert [slot["$node"] for slot in props["tools"]] == [
+            "root/main/@tools.cam",
+            "root/main/@tools.1",
+        ]
+        await page.click("root/main/@tools.cam")
+        assert clicks == ["cam"]
+        # A file uploaded against the chat node (what chat.upload does) goes with a message.
+        ref = app.files.store(page.session, "voice.webm", [b"\x1aE\xdf\xa3"], node="root/main")
+        await page.event("main", "message", {"text": "", "files": [{"id": ref.id}]})
+        assert page.session.chat("main").messages[-1].text == "1 files"

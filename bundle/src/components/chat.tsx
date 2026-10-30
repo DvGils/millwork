@@ -31,6 +31,8 @@ import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CustomComponent } from "../custom";
+import { Slot } from "../render";
+import { ChatContext, type ChatApi, type ChatFile } from "../chat-context";
 
 interface Command {
   id: string;
@@ -60,6 +62,8 @@ interface Accept {
   accept?: string[] | null;
   max_files?: number;
   max_size_mb?: number | null;
+  capture?: "user" | "environment" | null;
+  paperclip?: boolean;
 }
 
 interface FileRefWire {
@@ -137,7 +141,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
 
   return (
     <div className={cn("mw-fill flex max-h-dvh min-h-0 grow flex-col", props.cls as string)}>
-      <MessageScrollerProvider>
+      <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller className="min-h-0 grow">
           <MessageScrollerViewport className="px-3">
             <MessageScrollerContent className="flex flex-col gap-4 py-4">
@@ -147,7 +151,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
                 </div>
               ) : null}
               {messages.map((m) => (
-                <MessageScrollerItem key={m.id} messageId={m.id} scrollAnchor={m.role === "user"}>
+                <MessageScrollerItem key={m.id} messageId={m.id}>
                   <ChatMessage message={m} inline={inline} showSteps={String(props.show_steps ?? "collapsed")} streaming={m === inflight} tools={tools} last={m.id === lastAssistant} />
                 </MessageScrollerItem>
               ))}
@@ -181,6 +185,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
         maxChars={typeof props.max_chars === "number" ? props.max_chars : undefined}
         attachments={(props.attachments as Accept | null) ?? null}
         commands={Array.isArray(props.commands) ? (props.commands as Command[]) : []}
+        tools={Array.isArray(props.tools) ? (props.tools as unknown[]) : []}
         onSend={sendMessage}
         onStop={() => emit("stop")}
         canStop={Boolean(props.on_stop) || busy}
@@ -517,6 +522,7 @@ function Composer({
   maxChars,
   attachments,
   commands,
+  tools,
   onSend,
   onStop,
   canStop,
@@ -528,6 +534,7 @@ function Composer({
   maxChars?: number;
   attachments: Accept | null;
   commands: Command[];
+  tools: unknown[];
   onSend: (text: string, files: FileRefWire[], command: string | null) => void;
   onStop: () => void;
   canStop: boolean;
@@ -551,6 +558,19 @@ function Composer({
     setFiles([]);
   }, [text, files, busy, disabled, uploading, onSend, command]);
 
+  // What the chat's tools may do, under the same limits as the paperclip.
+  const api = useMemo<ChatApi>(
+    () => ({
+      upload: (file: File) => upload(node, file, () => undefined) as Promise<ChatFile>,
+      send: (t: string, attached: ChatFile[] = []) => {
+        if (disabled || busy) return;
+        onSend(t.trim(), attached as FileRefWire[], command);
+      },
+      busy: busy || disabled,
+    }),
+    [node, disabled, busy, onSend, command],
+  );
+
   const take = async (list: FileList) => {
     setUploading(true);
     setError(null);
@@ -567,7 +587,7 @@ function Composer({
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border bg-card p-2">
+    <div className="relative flex flex-col gap-2 rounded-xl border bg-card p-2">
       {files.length ? (
         <div className="flex flex-wrap gap-1.5">
           {files.map((f) => (
@@ -609,13 +629,20 @@ function Composer({
             })}
           </ToggleGroup>
         ) : null}
-        {attachments ? (
+        {attachments && attachments.paperclip !== false ? (
           <>
-            <input ref={inputRef} type="file" className="sr-only" multiple accept={attachments.accept?.join(",")} onChange={(e) => e.target.files && void take(e.target.files)} />
+            <input ref={inputRef} type="file" className="sr-only" multiple accept={attachments.accept?.join(",")} capture={attachments.capture ?? undefined} onChange={(e) => e.target.files && void take(e.target.files)} />
             <Button type="button" variant="ghost" size="icon-sm" aria-label={t("attach")} disabled={disabled || uploading} onClick={() => inputRef.current?.click()}>
               {Clip ? <Clip /> : null}
             </Button>
           </>
+        ) : null}
+        {tools.length ? (
+          <ChatContext.Provider value={api}>
+            {tools.map((slot, i) => (
+              <Slot key={i} value={slot} />
+            ))}
+          </ChatContext.Provider>
         ) : null}
         {error ? <span className="truncate text-xs text-destructive">{error}</span> : null}
         <span className="grow" />

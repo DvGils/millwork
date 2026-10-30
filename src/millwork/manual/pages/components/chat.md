@@ -12,6 +12,8 @@ the thread the session keeps for it, and an `on_message` handler that gets a
 given, so give it one with `cls` inside a card. `attachments=ui.Accept(...)`
 says what a person may attach, of which types, how many and how large;
 without it the composer takes no files. `max_chars` caps a message.
+`tools=[...]` puts your own buttons in the composer; the section below
+and the Custom chapter show what goes there.
 
 ## A streamed reply
 
@@ -98,6 +100,87 @@ ui.Row(
 | `await reply.component(component)` | any catalogue component inside the message |
 | `await reply.suggestions([...])` | follow-up chips |
 | `await reply.error(text)` | an error line |
+
+## Tools in the composer
+
+`tools=[...]` renders components left of Send. A `ui.Button` there is an
+ordinary button with a handler in Python, and nothing says it must touch
+the conversation: this gear opens a `ui.Dialog` that lives next to the
+chat, the dialog changes state, and the next reply reads it. Nothing is
+sent and no message appears. A custom component in the slot gets a `chat`
+prop to upload and send with; the Custom chapter builds a voice note
+button on it.
+
+```python live
+from pydantic import BaseModel
+
+
+class Settings(BaseModel):
+    open: bool = False
+    tone: str = "plain"
+    sign: bool = False
+
+
+async def answer(s, turn):
+    st = state(Settings)
+    async with turn.reply() as reply:
+        text = turn.text.upper() if st.tone == "shout" else turn.text
+        await reply.text(f"You said: {text}" + (" (sent from the manual)" if st.sign else ""))
+
+
+def example(s):
+    st = state(Settings)
+
+    def opened(value):
+        def handler(s, _):
+            st.open = value
+
+        return handler
+
+    return ui.Stack(
+        ui.Card(
+            ui.Chat(
+                key="settings-demo",
+                welcome="The gear in the composer opens the settings.",
+                tools=[
+                    ui.Button(
+                        key="gear",
+                        icon="settings",
+                        variant="ghost",
+                        size="sm",
+                        tooltip="Settings",
+                        on_click=opened(True),
+                    )
+                ],
+                on_message=answer,
+                cls="h-[20rem]",
+            ),
+            padding=False,
+        ),
+        ui.Dialog(
+            ui.Field(
+                ui.Select(
+                    key="tone",
+                    options=["plain", "shout"],
+                    value=st.tone,
+                    on_change=lambda s, v: setattr(st, "tone", v or "plain"),
+                ),
+                label="Tone",
+            ),
+            ui.Switch(
+                key="sign",
+                label="Sign the replies",
+                checked=st.sign,
+                on_change=lambda s, v: setattr(st, "sign", bool(v)),
+            ),
+            key="settings",
+            open=st.open,
+            title="Chat settings",
+            on_close=opened(False),
+            footer=ui.Button("Done", on_click=opened(False)),
+        ),
+    )
+```
 
 ## Under a message
 

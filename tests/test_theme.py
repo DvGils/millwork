@@ -127,3 +127,25 @@ def test_header_links_become_slots() -> None:
     assert tree.nodes["root/@header/@links.docs"].props["href"] == "/docs"
     assert header.props["user_menu"] is False
     assert tree.nodes["root"].props["header"] == {"$node": "root/@header"}
+
+
+def test_shell_picks_up_a_rebuilt_bundle(tmp_path: Path) -> None:
+    """A rebuild under a running process has new hashed names; the next page names them."""
+    import json
+    import os
+
+    from millwork.shell import Shell
+
+    (tmp_path / ".vite").mkdir()
+    manifest = tmp_path / ".vite" / "manifest.json"
+
+    def write(name: str, stamp: float) -> None:
+        manifest.write_text(json.dumps({"src/main.tsx": {"file": name, "isEntry": True}}))
+        os.utime(manifest, (stamp, stamp))
+
+    write("main-old.js", 1_000)
+    shell = Shell(tmp_path, prefix="/_mw")
+    assert "main-old.js" in shell.render(title="t", path="/")
+    write("main-new.js", 2_000)
+    html = shell.render(title="t", path="/")
+    assert "main-new.js" in html and "main-old.js" not in html
