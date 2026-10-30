@@ -372,9 +372,10 @@ async def test_messages_and_steps_carry_their_times(tmp_path: Path) -> None:
         user, assistant = page.session.chat("main").messages
         assert user.metadata is not None and before <= user.metadata["at"] <= before + 5
         assert assistant.metadata is not None
-        assert before <= assistant.metadata["at"] and assistant.metadata["took"] >= 0.02
+        # The bounds allow for Windows' 16 ms timer: a 20 ms sleep can wake at 16.
+        assert before <= assistant.metadata["at"] and assistant.metadata["took"] >= 0.01
         step = next(p for p in assistant.parts if p["type"] == "tool-step")
-        assert 0.02 <= step["took"] < 5
+        assert 0.01 <= step["took"] < 5
         # The stream told the tab the same, so the live message matched.
         chunks = page.stream
         start = next(c for c in chunks if c["type"] == "start")
