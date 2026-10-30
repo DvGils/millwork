@@ -29,6 +29,9 @@ def test_trusted_proxies_parse_addresses_networks_literals_and_star() -> None:
     assert "127.0.0.1" not in TrustedProxies([])
     # A unix socket has no peer address: local by default, otherwise only "*".
     assert None in local and None not in named and None not in TrustedProxies([])
+    assert None in TrustedProxies("unix, 10.0.0.5") and "10.0.0.5" in TrustedProxies(
+        "unix,10.0.0.5"
+    )
     for bad in ("10.0.0.0/33", "300.1.1.1", "10.0.0", "1.2.3.4.5", "10.0.0.0/x"):
         with pytest.raises(ValueError):
             TrustedProxies([bad])
@@ -289,10 +292,12 @@ def test_the_cli_hands_the_proxies_to_the_app(
     import demo  # type: ignore[import-not-found]
 
     assert demo.app.proxies == "10.0.0.5"
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(kw))
+    configs: list[uvicorn.Config] = []
+    monkeypatch.setattr(
+        uvicorn.Server, "run", lambda self, sockets=None: configs.append(self.config)
+    )
     assert main(["run", str(tmp_path / "demo.py"), "--proxy", "*"]) == 0
-    assert calls[0]["proxy_headers"] is False and "forwarded_allow_ips" not in calls[0]
+    assert configs[0].proxy_headers is False
     assert sys.modules["demo"].app.proxies == "*"
     # The reload path goes through the environment and the factory.
     monkeypatch.setenv("MILLWORK_TARGET", str(tmp_path / "demo.py"))

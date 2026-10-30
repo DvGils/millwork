@@ -107,6 +107,36 @@ on, uvicorn replaces the connecting address with the forwarded one before
 millwork looks, and a visitor who sends `X-Forwarded-For: 127.0.0.1` would
 pass for the proxy.
 
+On one machine with the proxy, a unix socket is tighter than a port: no
+other process can reach the app, and nothing listens on the network.
+`--uds` takes the socket's path instead of a host and port, and creates
+it for its owner and group only, mode 0660 whatever the umask, so the
+proxy connects when it runs in the app's group and nothing else does. The
+socket counts as the local host for `--proxy`, since its permissions
+already decide who connects; in an explicit list it is spelled `unix`, as
+in `--proxy unix,10.0.0.5`.
+
+```
+uv run millwork run app.py --uds /run/sales/app.sock
+```
+
+```nginx
+location / {
+    proxy_pass http://unix:/run/sales/app.sock:/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+The socket file is removed when the process exits, as long as it is still
+the socket the process made. One left behind by a crash is replaced at
+the next start; one that another process still answers on is refused, and
+so is anything at the path that is not a socket. The health route is reached the same way:
+`curl --unix-socket /run/sales/app.sock http://app/_mw/health`.
+
 A container image is Python plus the app's dependencies with that line as
 its command. The process exits cleanly on SIGTERM: sessions get their
 `close` hook, tasks are cancelled, uploads in flight are cut.

@@ -26,7 +26,8 @@ LOOPBACK = ("127.0.0.1", "::1")
 
 class TrustedProxies:
     """The peers whose forwarded and identity headers are believed: ``"*"`` for
-    every peer, otherwise addresses, networks in CIDR form, and literal names."""
+    every peer, otherwise addresses, networks in CIDR form, and literal names,
+    among which ``unix`` stands for a connection over a unix socket."""
 
     def __init__(self, proxies: list[str] | str | None) -> None:
         # Not naming any proxy means the local one: the loopback addresses, and
@@ -61,7 +62,7 @@ class TrustedProxies:
         if self.all:
             return True
         if host is None:
-            return self.local
+            return self.local or "unix" in self.literals
         if not host:
             return False
         try:

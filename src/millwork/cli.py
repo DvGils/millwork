@@ -9,6 +9,8 @@ import importlib.util
 import logging
 import os
 import secrets
+import socket
+import stat
 import sys
 import types
 from typing import Any, cast
@@ -81,6 +83,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     run.add_argument("--host", default="127.0.0.1")
     run.add_argument("--port", type=int, default=8000)
+    run.add_argument(
+        "--uds",
+        default=None,
+        metavar="PATH",
+        help="listen on a unix socket at this path instead of a host and port; the socket "
+        "is created for its owner and group only",
+    )
     run.add_argument("--debug", action="store_true")
     run.add_argument(
         "--root-path",
@@ -155,32 +164,173 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
     )
-    import uvicorn
-
     if args.reload:
         os.environ["MILLWORK_TARGET"] = args.target
         os.environ["MILLWORK_DEBUG"] = "1" if args.debug else "0"
         os.environ["MILLWORK_PROXY"] = args.proxy or ""
-        uvicorn.run(
+        return serve(
             "millwork.cli:asgi_factory",
             factory=True,
+            reload=True,
             host=args.host,
             port=args.port,
-            reload=True,
-            reload_dirs=[os.getcwd()],
-            proxy_headers=False,
+            uds=args.uds,
             root_path=args.root_path,
+            debug=args.debug,
         )
-        return 0
-    uvicorn.run(
-        cast(Any, load_app(args.target, args.debug, args.proxy)),
+    return serve(
+        load_app(args.target, args.debug, args.proxy),
         host=args.host,
         port=args.port,
-        log_level="debug" if args.debug else "info",
-        proxy_headers=False,
+        uds=args.uds,
         root_path=args.root_path,
+        debug=args.debug,
     )
+
+
+def serve(
+    app: object,
+    *,
+    host: str,
+    port: int,
+    uds: str | None,
+    root_path: str,
+    debug: bool,
+    reload: bool = False,
+    factory: bool = False,
+) -> int:
+    """Run uvicorn around the app. millwork handles proxy headers itself, so
+    uvicorn's own handling is off. A unix socket is bound here rather than by
+    uvicorn, so that it is never open to every local user: uvicorn would make
+    it world-writable."""
+    import uvicorn
+
+    config = uvicorn.Config(
+        cast(Any, app),
+        host=host,
+        port=port,
+        uds=uds,
+        proxy_headers=False,
+        root_path=root_path,
+        log_level="debug" if debug else "info",
+        reload=reload,
+        reload_dirs=[os.getcwd()] if reload else None,
+        factory=factory,
+    )
+    # The reloader pickles the server for the process it spawns, which a class
+    # defined in a function cannot be; there the supervisor removes the socket.
+    server = (uvicorn.Server if reload else _server_class())(config)
+    usock: UnixSocket | None = None
+    try:
+        if uds:
+            usock = UnixSocket(uds, config.backlog, inheritable=reload)
+            server.owned = usock
+    except OSError as exc:
+        print(f"--uds: {exc}", file=sys.stderr)
+        return 2
+    try:
+        if reload:
+            from uvicorn.supervisors import ChangeReload
+
+            sockets = [usock.sock if usock else config.bind_socket()]
+            ChangeReload(config, target=server.run, sockets=sockets).run()
+        elif usock is not None:
+            server.run(sockets=[usock.sock])
+        else:
+            server.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if usock is not None:
+            usock.close()
+            usock.remove()
     return 0
+
+
+def _server_class() -> type:
+    import uvicorn
+
+    class Server(uvicorn.Server):
+        """Removes the unix socket file as part of shutting down. After the
+        server loop uvicorn re-raises the signal that stopped it, which ends the
+        process before any cleanup around ``run`` could happen. Under the
+        reloader the supervisor owns the socket and removes it when it exits."""
+
+        owned: UnixSocket | None = None
+
+        async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+            await super().shutdown(sockets)
+            if self.owned is not None:
+                self.owned.remove()
+
+    return Server
+
+
+class UnixSocket:
+    """A listening unix socket the process owns: made for its owner and group
+    only (mode 0660, whatever the umask, created under that mask so it is never
+    briefly open to everyone), and removed at the end only while the path still
+    holds the very socket that was created, never something put there since.
+
+    Whatever is at the path first must be a socket. One nobody answers on was
+    left by a crashed process and is replaced; one that answers, or cannot be
+    told apart from a live one within a second, is refused.
+    """
+
+    def __init__(self, path: str, backlog: int, *, inheritable: bool) -> None:
+        self.path = path
+        self._clear(path)
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        mask = os.umask(0o117)
+        try:
+            sock.bind(path)
+        except FileNotFoundError:
+            sock.close()
+            raise OSError(f"{path}: the directory does not exist") from None
+        except OSError:
+            sock.close()
+            raise
+        finally:
+            os.umask(mask)
+        st = os.lstat(path)
+        self.ident = (st.st_dev, st.st_ino)
+        sock.set_inheritable(inheritable)
+        sock.listen(backlog)
+        self.sock = sock
+
+    @staticmethod
+    def _clear(path: str) -> None:
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            return
+        if not stat.S_ISSOCK(st.st_mode):
+            raise OSError(f"{path} exists and is not a socket")
+        probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        probe.settimeout(1.0)
+        try:
+            probe.connect(path)
+        except ConnectionRefusedError:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise OSError(f"{path} may be in use ({exc.strerror or exc})") from None
+        else:
+            raise OSError(f"{path} is in use by another process")
+        finally:
+            probe.close()
+
+    def close(self) -> None:
+        self.sock.close()
+
+    def remove(self) -> None:
+        try:
+            st = os.lstat(self.path)
+            if stat.S_ISSOCK(st.st_mode) and (st.st_dev, st.st_ino) == self.ident:
+                os.remove(self.path)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
