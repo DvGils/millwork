@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { applyTheme, t, type ThemeBoot } from "./theme";
 import { store, type Node, type PatchOp } from "./store";
+import { mw, toApp, toBrowser } from "./lib";
 import { toast } from "@/components/ui/toast";
 import { invalidate, syncVersions } from "./custom";
 
@@ -404,8 +405,11 @@ function command(name: string, args: Record<string, unknown>) {
       boot.path = path;
       storeSession();
       if (args.hash) pendingHash = String(args.hash);
-      const target = pendingHash ? `${path}#${pendingHash}` : path;
-      if (window.location.pathname !== path || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
+      const browserPath = toBrowser(path);
+      const target = pendingHash ? `${browserPath}#${pendingHash}` : browserPath;
+      // Compared as app paths: the prefix with and without its slash is one page,
+      // so a popped history entry is never pushed over.
+      if (toApp(window.location.pathname) !== path || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
         window.history.pushState({ mw: true }, "", target);
       }
       if (args.title) document.title = String(args.title);
@@ -424,7 +428,7 @@ function command(name: string, args: Record<string, unknown>) {
       break;
     case "logout":
       closedForGood = true;
-      void fetch("/_mw/auth/logout", { method: "POST" }).finally(() => window.location.assign("/_mw/login"));
+      void fetch(mw("/auth/logout"), { method: "POST" }).finally(() => window.location.assign(mw("/login")));
       break;
     case "reload_component":
       invalidate(args.name ? String(args.name) : undefined, args.version ? String(args.version) : undefined);
@@ -452,7 +456,8 @@ function command(name: string, args: Record<string, unknown>) {
 
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
-    if (window.location.pathname !== boot.path) navigate(window.location.pathname);
+    const path = toApp(window.location.pathname);
+    if (path !== boot.path) navigate(path);
   });
 }
 

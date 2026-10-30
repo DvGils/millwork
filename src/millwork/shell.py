@@ -9,11 +9,32 @@ from __future__ import annotations
 
 import html
 import json
+import re
+from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from millwork.protocol import PROTOCOL_VERSION
-from millwork.theme import Theme
+from millwork.theme import Theme, under
+
+_PREFIX = re.compile(r"^(/[A-Za-z0-9._~-]+)*/?$")
+
+
+def check_prefix(value: str) -> str:
+    """A path prefix as the server may be told it: plain path segments, or empty.
+    Anything else is refused up front, since the prefix is written into HTML,
+    CSS and cookie paths."""
+    if not _PREFIX.match(value) or any(seg in (".", "..") for seg in value.split("/")):
+        raise ValueError(f"the path prefix must be a plain path such as /sales, got {value!r}")
+    return value.rstrip("/")
+
+
+def root_of(scope: Mapping[str, Any]) -> str:
+    """The path prefix the app runs under, from the ASGI scope and nothing else:
+    the server is told it (``--root-path``) or a mount sets it. Never a request
+    header, which a client could write. Empty at the root, else ``/prefix``."""
+    return check_prefix(str(scope.get("root_path") or ""))
+
 
 TEMPLATE = """<!doctype html>
 <html lang="{lang}" data-density="{density}" data-scrollbars="{scrollbars}">
@@ -53,7 +74,7 @@ PLAIN_TEMPLATE = """<!doctype html>
 <style{nonce}>{css}</style>
 </head>
 <body>
-<main><h1>{title}</h1><p>{text}</p><p><a href="/">{home}</a></p></main>
+<main><h1>{title}</h1><p>{text}</p><p><a href="{home_href}">{home}</a></p></main>
 </body>
 </html>
 """
@@ -76,7 +97,7 @@ PLAIN_CSS = (
 )
 
 
-def plain(*, title: str, text: str, theme: Theme, nonce: str | None = None) -> str:
+def plain(*, title: str, text: str, theme: Theme, nonce: str | None = None, base: str = "") -> str:
     """An HTML page without the bundle, for a failure before it can run: not found
     without a built bundle, an exception in an app's own route."""
     return PLAIN_TEMPLATE.format(
@@ -84,9 +105,10 @@ def plain(*, title: str, text: str, theme: Theme, nonce: str | None = None) -> s
         title=html.escape(title),
         text=html.escape(text),
         home=html.escape(theme.text("home")),
+        home_href=html.escape(f"{base}/"),
         nonce=f' nonce="{html.escape(nonce)}"' if nonce else "",
         mode_script=MODE_SCRIPT,
-        css=PLAIN_DEFAULTS + theme.css() + PLAIN_CSS.format(),
+        css=PLAIN_DEFAULTS + theme.css(base) + PLAIN_CSS.format(),
     )
 
 
@@ -138,15 +160,18 @@ class Shell:
         nonce: str | None = None,
         keep_alive: bool = False,
         components: dict[str, str] | None = None,
+        base: str = "",
     ) -> str:
+        """``base`` is the path prefix the app runs under: every URL the page
+        carries is under it, while ``path`` stays the app's own."""
         entry = self._entry()
         if theme is not None:
-            theme_css = theme.css() + theme_css
+            theme_css = theme.css(base) + theme_css
             head = theme.head() + head
             lang = theme.locale
             if theme.favicon:
-                head += f'<link rel="icon" href="{html.escape(theme.favicon)}">'
-        asset = f"{self.prefix}/assets/"
+                head += f'<link rel="icon" href="{html.escape(under(base, theme.favicon) or "")}">'
+        asset = html.escape(f"{base}{self.prefix}/assets/")
         scripts = f'<script type="module" src="{asset}{_basename(str(entry["file"]))}"></script>'
         css_files = cast(list[str], entry.get("css", []))
         styles = "".join(
@@ -156,8 +181,9 @@ class Shell:
         styles = styles + f'<style id="mw-theme">{theme_css}</style>'
         payload: dict[str, object] = {
             "path": path,
+            "base": base,
             "protocol": PROTOCOL_VERSION,
-            "ws": f"{self.prefix}/ws",
+            "ws": f"{base}{self.prefix}/ws",
         }
         if keep_alive:
             payload["keep_alive"] = True

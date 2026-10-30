@@ -3,6 +3,7 @@
 // props, so its own state survives a server push. The compiler (react-runner
 // with sucrase) is a lazy chunk: pages without custom components never load it.
 
+import { mw } from "./lib";
 import { useCallback, useContext, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import type { Node } from "./store";
 import { imports } from "./imports";
@@ -50,7 +51,7 @@ function load(name: string): Promise<string> {
   let p = sources.get(key);
   if (!p) {
     const v = versions()[name];
-    const url = `/_mw/components/${encodeURIComponent(name)}.jsx${v ? `?v=${encodeURIComponent(v)}` : ""}`;
+    const url = `${mw("/components/")}${encodeURIComponent(name)}.jsx${v ? `?v=${encodeURIComponent(v)}` : ""}`;
     p = fetch(url, { cache: v ? "default" : "no-cache" }).then((r) => {
       if (!r.ok) throw new Error(`custom component ${name}: HTTP ${r.status}`);
       return r.text();

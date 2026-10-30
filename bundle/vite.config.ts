@@ -7,7 +7,9 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
-  base: "/_mw/assets/",
+  // Relative: the font files and lazy chunks resolve next to the stylesheet and
+  // the entry, wherever the server mounts the assets (under a path prefix too).
+  base: "./",
   build: {
     outDir: path.resolve(__dirname, "../src/millwork/_bundle/dist"),
     emptyOutDir: true,

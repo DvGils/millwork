@@ -105,6 +105,40 @@ its command. The process exits cleanly on SIGTERM: sessions get their
 `/_mw/health` answers 200 once the startup hooks have run and 503 before
 that and during shutdown, for a platform that waits for readiness.
 
+## Under a path prefix
+
+An app can live under a path on a shared host, `https://apps.example/sales/`,
+next to other apps. The proxy strips the prefix and the server is told it:
+
+```
+uv run millwork run app.py --port 8000 --root-path /sales
+```
+
+```nginx
+location /sales/ {
+    proxy_pass http://127.0.0.1:8000/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+That is the whole configuration. Every URL the server writes into the page,
+the bundle, the theme's fonts, the socket, the login and logout routes, the
+favicon, is under the prefix; the cookies' path is the prefix, so apps side
+by side on one host never share one; the OAuth callback URL carries it.
+Inside the app nothing changes: page paths, `ui.Link` targets, `s.navigate`,
+`s.path`, the `next` of a login, an image's `src`, a file's URL and a path
+in Markdown are the app's own paths, and the tab puts each one under the
+prefix as it renders it. A custom component that builds a URL itself reads
+the prefix from `window.__mw.base` (empty at the root). The prefix is taken
+from the ASGI `root_path` and nothing else, so a request header such as
+`X-Forwarded-Prefix` cannot move an app; `--root-path` is uvicorn's flag,
+and any other ASGI server has the same setting. The manual takes the flag
+too: `millwork docs --root-path /manual`.
+
 ## More than one replica
 
 HTTP is stateless and the socket is the session: identity comes from the

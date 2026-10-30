@@ -151,6 +151,14 @@ STRINGS: dict[str, str] = {
 }
 
 
+def under(base: str, path: str | None) -> str | None:
+    """A same-origin path as the browser must ask for it: under the app's prefix
+    when the app runs under one. Anything that is not a path is left alone."""
+    if base and path and path.startswith("/"):
+        return base + path
+    return path
+
+
 def _check_path(value: str, what: str) -> str:
     if not _PATH.match(value):
         raise ValueError(
@@ -184,12 +192,12 @@ class Font(BaseModel):
             raise ValueError("font weights is a number or a range such as '100 900'")
         return self
 
-    def css(self) -> str:
+    def css(self, base: str = "") -> str:
         assert self.src is not None
         fmt = {"woff2": "woff2", "woff": "woff", "ttf": "truetype", "otf": "opentype"}.get(
             self.src.rsplit(".", 1)[-1].lower(), ""
         )
-        src = f"url({self.src})" + (f" format('{fmt}')" if fmt else "")
+        src = f"url({under(base, self.src)})" + (f" format('{fmt}')" if fmt else "")
         return (
             f"@font-face{{font-family:'{self.family}';src:{src};"
             f"font-weight:{self.weights};font-style:{self.style};font-display:swap}}"
@@ -266,9 +274,10 @@ class Theme(BaseModel):
 
     # ------------------------------------------------------------- rendering
 
-    def css(self) -> str:
-        """The style element's text: font faces, then the two token blocks."""
-        parts = [f.css() for f in self.fonts if f.src is not None]
+    def css(self, base: str = "") -> str:
+        """The style element's text: font faces, then the two token blocks. ``base``
+        is the path prefix the app runs under, for the font files."""
+        parts = [f.css(base) for f in self.fonts if f.src is not None]
         light = self.tokens.get("light", {})
         dark = self.tokens.get("dark", {})
         for selector, values in ((":root", light), (".dark", dark)):
@@ -298,7 +307,8 @@ class Theme(BaseModel):
         return s
 
     def boot(self) -> dict[str, Any]:
-        """What the bundle reads at start."""
+        """What the bundle reads at start. Image paths are the app's own: the
+        bundle puts every same-origin path under the prefix when it renders it."""
         return {
             "mode": self.mode,
             "logo": self.logo.model_dump() if self.logo else None,

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { icon } from "./icons";
-import { safeUrl } from "./lib";
+import { safeUrl, mw } from "./lib";
 import { t, theme } from "./theme";
 import { Logo } from "./components/header";
 
@@ -34,7 +34,7 @@ export function Login({ boot }: { boot: LoginBoot }) {
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch("/_mw/auth/login", {
+      const r = await fetch(mw("/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -69,14 +69,14 @@ export function Login({ boot }: { boot: LoginBoot }) {
               {oauth.map((p) => {
                 const Icon = icon(p.icon);
                 return (
-                  <Button key={p.id} variant="outline" className="w-full" onClick={() => window.location.assign(`/_mw/auth/oauth/${encodeURIComponent(p.id)}?next=${next}`)}>
+                  <Button key={p.id} variant="outline" className="w-full" onClick={() => window.location.assign(`${mw("/auth/oauth/")}${encodeURIComponent(p.id)}?next=${next}`)}>
                     {Icon ? <Icon /> : null}
                     {t("continue_with", { provider: p.label })}
                   </Button>
                 );
               })}
               {boot.intents.map((it) => (
-                <Button key={it.id} variant="ghost" className="w-full" onClick={() => window.location.assign(`/_mw/auth/oauth/${encodeURIComponent(oauth[0].id)}?next=${next}&intent=${encodeURIComponent(it.id)}`)}>
+                <Button key={it.id} variant="ghost" className="w-full" onClick={() => window.location.assign(`${mw("/auth/oauth/")}${encodeURIComponent(oauth[0].id)}?next=${next}&intent=${encodeURIComponent(it.id)}`)}>
                   {it.label}
                 </Button>
               ))}

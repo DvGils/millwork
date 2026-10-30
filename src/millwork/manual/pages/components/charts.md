@@ -193,7 +193,7 @@ function loadPlotly() {
   if (window.Plotly) return Promise.resolve(window.Plotly);
   loading ??= new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "/public/plotly.min.js";
+    script.src = `${window.__mw.base || ""}/public/plotly.min.js`;
     script.onload = () => resolve(window.Plotly);
     script.onerror = () => reject(new Error("plotly.min.js did not load"));
     document.head.appendChild(script);

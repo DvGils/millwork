@@ -73,6 +73,9 @@ class Session[S]:
         self.params = params
         self.path = path
         self.user: Any = None
+        # The path prefix the app runs under, as the tab's socket arrived under it,
+        # for anything the session renders into a browser URL.
+        self.base = ""
         # Who opened it, for the per-client cap: the user's id, or the address.
         self.client: str | None = None
         self.created = time.monotonic()

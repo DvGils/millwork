@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "cn";
 import { icon } from "../icons";
-import { safeUrl } from "../lib";
+import { mw, safeUrl } from "../lib";
 import { Render } from "../render";
 import { t, theme, useMode, useScheme, type Mode } from "../theme";
 import type { Renderer } from "../render";
@@ -60,7 +60,7 @@ export function UserMenu() {
   const scheme = useScheme();
   const ModeIcon = scheme === "dark" ? Moon : Sun;
   const signOut = () => {
-    void fetch("/_mw/auth/logout", { method: "POST" }).finally(() => window.location.assign("/_mw/login"));
+    void fetch(mw("/auth/logout"), { method: "POST" }).finally(() => window.location.assign(mw("/login")));
   };
   return (
     <DropdownMenu>

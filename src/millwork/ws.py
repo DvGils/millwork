@@ -29,6 +29,7 @@ from millwork.protocol import (
     unpack_frame,
 )
 from millwork.session import MAX_INFLIGHT, Session
+from millwork.shell import root_of
 
 log = logging.getLogger("millwork.ws")
 
@@ -94,6 +95,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             return
         session = Session(app, page, params, first.path)
         session.user = user
+        session.base = root_of(ws.scope)
         session.client = (
             f"user:{user.id}"
             if user is not None

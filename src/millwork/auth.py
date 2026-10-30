@@ -24,12 +24,14 @@ import secrets
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Literal
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import unquote, urlencode, urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
+
+from millwork.shell import root_of
 
 log = logging.getLogger("millwork.auth")
 
@@ -440,11 +442,11 @@ class Auth:
             secure=request.url.scheme == "https",
             samesite="lax",
             max_age=int(self.session.total_seconds()),
-            path=request.scope.get("root_path") or "/",
+            path=_cookie_path(request),
         )
 
     def clear_cookie(self, request: Request, response: Response) -> None:
-        response.delete_cookie(AUTH_COOKIE, path=request.scope.get("root_path") or "/")
+        response.delete_cookie(AUTH_COOKIE, path=_cookie_path(request))
 
     # ------------------------------------------------------------- login
 
@@ -577,6 +579,7 @@ class Auth:
             secure=request.url.scheme == "https",
             samesite="lax",
             max_age=STATE_LIFETIME,
+            path=_cookie_path(request),
         )
         return response
 
@@ -605,18 +608,19 @@ class Auth:
         user = await self.login(identity)
         if user is None:
             return self._login_redirect(request, next_path, "Access denied.")
-        response = RedirectResponse(next_path, status_code=302)
+        response = RedirectResponse(f"{root_of(request.scope)}{next_path}", status_code=302)
         self.set_cookie(request, response, user)
-        response.delete_cookie(STATE_COOKIE)
+        response.delete_cookie(STATE_COOKIE, path=_cookie_path(request))
         return response
 
     def _callback_url(self, request: Request, provider: OAuth) -> str:
-        base = str(request.base_url).rstrip("/")
-        root = request.scope.get("root_path") or ""
-        return f"{base}{root}/_mw/auth/oauth/{provider.id}/callback"
+        # The scheme and host as the proxy forwarded them, then the prefix from
+        # the scope: base_url would take the outer app's root under a mount.
+        url = request.url
+        return f"{url.scheme}://{url.netloc}{root_of(request.scope)}/_mw/auth/oauth/{provider.id}/callback"
 
     def _login_redirect(self, request: Request, next_path: str, error: str) -> Response:
-        root = request.scope.get("root_path") or ""
+        root = root_of(request.scope)
         return RedirectResponse(
             f"{root}/_mw/login?{urlencode({'next': next_path, 'error': error})}", status_code=302
         )
@@ -677,21 +681,29 @@ def _cookies(headers: Any) -> dict[str, str]:
 
 
 def _safe_next(value: str | None) -> str:
-    """Only a same-origin path: never an absolute URL or a scheme-relative one.
+    """Only a path inside the app: never an absolute URL, a scheme-relative one,
+    a dot segment that could climb out of the app's prefix, or a framework route.
 
     A backslash is refused outright: browsers read a slash-backslash prefix as
-    a scheme-relative URL.
+    a scheme-relative URL. Dot segments are matched after percent-decoding,
+    since a browser decodes ``%2e`` before it resolves the path.
     """
-    if (
-        value
-        and value.startswith("/")
-        and not value.startswith("//")
-        and not value.startswith("/_mw/")
-        and "\\" not in value
-        and value.isprintable()
-    ):
-        return value
-    return "/"
+    if not (value and value.startswith("/") and not value.startswith("//")):
+        return "/"
+    if "\\" in value or not value.isprintable():
+        return "/"
+    path = value.split("?", 1)[0].split("#", 1)[0]
+    segments = [unquote(seg).lower() for seg in path.split("/")]
+    if any(seg in (".", "..") for seg in segments):
+        return "/"
+    if len(segments) > 1 and segments[1] == "_mw":
+        return "/"
+    return value
+
+
+def _cookie_path(request: Request) -> str:
+    """The cookie's scope: the app's prefix, so apps side by side never share."""
+    return root_of(request.scope) or "/"
 
 
 __all__ = [

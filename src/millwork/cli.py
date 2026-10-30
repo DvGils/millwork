@@ -75,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--host", default="127.0.0.1")
     run.add_argument("--port", type=int, default=8000)
     run.add_argument("--debug", action="store_true")
+    run.add_argument(
+        "--root-path",
+        default="",
+        help="the path prefix the app is served under, such as /sales",
+    )
     run.add_argument("--reload", action="store_true", help="restart the process on Python changes")
     run.add_argument(
         "--proxy",
@@ -86,10 +91,19 @@ def main(argv: list[str] | None = None) -> int:
     docs.add_argument("--host", default="127.0.0.1")
     docs.add_argument("--port", type=int, default=8008)
     docs.add_argument("--theme", default=None, help="a theme file to show the manual in")
+    docs.add_argument("--root-path", default="", help="the path prefix the manual is served under")
     sub.add_parser("secret", help="print a signing secret for App(secret=...)")
     hp = sub.add_parser("hash-password", help="hash a password for a Password provider")
     hp.add_argument("--user", default="", help="prefix the line with the user name")
     args = parser.parse_args(argv)
+    if getattr(args, "root_path", ""):
+        from millwork.shell import check_prefix
+
+        try:
+            args.root_path = check_prefix(args.root_path)
+        except ValueError as exc:
+            print(f"--root-path: {exc}", file=sys.stderr)
+            return 2
 
     if args.command == "docs":
         import uvicorn
@@ -97,7 +111,12 @@ def main(argv: list[str] | None = None) -> int:
         from millwork.manual import make_app
 
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-        uvicorn.run(cast(Any, make_app(theme=args.theme).asgi), host=args.host, port=args.port)
+        uvicorn.run(
+            cast(Any, make_app(theme=args.theme).asgi),
+            host=args.host,
+            port=args.port,
+            root_path=args.root_path,
+        )
         return 0
     if args.command == "secret":
         print(secrets.token_urlsafe(48))
@@ -131,6 +150,7 @@ def main(argv: list[str] | None = None) -> int:
             reload=True,
             reload_dirs=[os.getcwd()],
             forwarded_allow_ips=args.proxy,
+            root_path=args.root_path,
         )
         return 0
     uvicorn.run(
@@ -139,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         port=args.port,
         log_level="debug" if args.debug else "info",
         forwarded_allow_ips=args.proxy,
+        root_path=args.root_path,
     )
     return 0
 

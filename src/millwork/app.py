@@ -37,8 +37,8 @@ from millwork.auth import Auth
 from millwork.files import Files
 from millwork.nodes import Component
 from millwork.protocol import Command
-from millwork.shell import Shell, plain
-from millwork.theme import Theme, find_theme
+from millwork.shell import Shell, plain, root_of
+from millwork.theme import Theme, find_theme, under
 
 # The policy for every HTML page; ``{scripts}`` becomes the page's script sources
 # (the bundle and the nonce of its two inline lines). Styles stay inline because
@@ -518,15 +518,16 @@ class App:
             log.error("theme not reloaded: %s", exc)
             return False
         log.info("theme reloaded from %s", self._theme_path)
-        args = {"css": self.theme.css(), "boot": self.theme.boot()}
         for session in list(self.sessions.values()):
             if not session.closed:
+                args = {"css": self.theme.css(session.base), "boot": self.theme.boot()}
                 await session._send_now(Command(name="theme", args=args))
         return True
 
     async def _favicon(self, request: Request) -> Any:
         if self.theme.favicon:
-            return RedirectResponse(self.theme.favicon, status_code=302)
+            href = under(root_of(request.scope), self.theme.favicon) or ""
+            return RedirectResponse(href, status_code=302)
         icon = self.bundle_dir / "favicon.svg"
         if icon.is_file():
             return FileResponse(icon, media_type="image/svg+xml")
@@ -568,18 +569,18 @@ class App:
             headers["Content-Security-Policy"] = self.csp.format(scripts=scripts)
         return HTMLResponse(page, status_code=status, headers=headers)
 
-    def _plain(self, status: int, title: str, text: str) -> HTMLResponse:
+    def _plain(self, request: Request, status: int, title: str, text: str) -> HTMLResponse:
         """A themed page for a failure before the bundle can run."""
         nonce = secrets.token_urlsafe(16)
-        return self._html(
-            plain(title=title, text=text, theme=self.theme, nonce=nonce), nonce, status
-        )
+        base = root_of(request.scope)
+        page = plain(title=title, text=text, theme=self.theme, nonce=nonce, base=base)
+        return self._html(page, nonce, status)
 
     async def _server_error(self, request: Request, exc: Exception) -> Any:
         """An unhandled exception in a route: a page in the app's colours, never the
         exception; the traceback is in the log. Debug mode shows Starlette's own page."""
         text = self.theme.text
-        return self._plain(500, text("something_went_wrong"), text("try_again"))
+        return self._plain(request, 500, text("something_went_wrong"), text("try_again"))
 
     async def _login_page(self, request: Request) -> Any:
         if self.auth is None:
@@ -597,7 +598,12 @@ class App:
         nonce = secrets.token_urlsafe(16)
         return self._html(
             self.shell.render(
-                title=self.name, path=f"{PREFIX}/login", login=boot, theme=self.theme, nonce=nonce
+                title=self.name,
+                path=f"{PREFIX}/login",
+                login=boot,
+                theme=self.theme,
+                nonce=nonce,
+                base=root_of(request.scope),
             ),
             nonce,
         )
@@ -611,17 +617,19 @@ class App:
             resolved = self.fallback("not_found", path)
             status = 404
         page, _ = resolved
+        base = root_of(request.scope)
         if self.auth is not None and not page.public and await self.user_for(request) is None:
             from urllib.parse import urlencode
 
-            return RedirectResponse(f"{PREFIX}/login?{urlencode({'next': path})}", status_code=302)
+            login = f"{base}{PREFIX}/login?{urlencode({'next': path})}"
+            return RedirectResponse(login, status_code=302)
         if not self.shell.available:
             if status == 404:
                 text = self.theme.text
-                return self._plain(404, text("not_found_title"), text("not_found_text", path=path))
-            return self._plain(
-                503, "millwork", "The bundle is not built. Run `pnpm build` in bundle/."
-            )
+                title, body = text("not_found_title"), text("not_found_text", path=path)
+                return self._plain(request, 404, title, body)
+            hint = "The bundle is not built. Run `pnpm build` in bundle/."
+            return self._plain(request, 503, "millwork", hint)
         user = await self.user_for(request)
         user_boot = (
             {"id": user.id, "name": user.name, "picture_url": user.picture_url} if user else None
@@ -636,6 +644,7 @@ class App:
                 nonce=nonce,
                 keep_alive=self.keep_alive,
                 components=self.component_versions,
+                base=base,
             ),
             nonce,
             status,

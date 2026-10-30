@@ -346,7 +346,7 @@ export const Link: Renderer = ({ props }) => {
       onClick={internal ? (e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
         e.preventDefault();
-        navigate(href);
+        navigate(props.href as string);
       } : undefined}
       className={cn("inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline", props.cls as string)}
     >
