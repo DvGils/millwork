@@ -114,3 +114,11 @@ async def test_block_state_belongs_to_the_session_that_acts(tmp_path: Path) -> N
         await one.event("rated", "feedback", {"id": reply.id, "value": "up", "comment": None})
         assert "up: You said: mine" in one.text()
         assert "up: You said: mine" not in two.text()
+        # Each session's blocks live in a module of their own, dropped on close.
+        import sys
+
+        from millwork.manual import live_module_name
+
+        names = [live_module_name("/components/chat", s.id) for s in (one.session, two.session)]
+        assert all(n in sys.modules for n in names)
+    assert not any(n in sys.modules for n in names)

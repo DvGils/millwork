@@ -116,6 +116,19 @@ STRINGS: dict[str, str] = {
     "select_all": "Select all",
     "select_row": "Select row",
     "dismiss": "Dismiss",
+    "previous": "Previous",
+    "next": "Next",
+    "wait_for_reply": "Wait for the current reply to finish.",
+    "message_too_long": "The message is too long.",
+    "reply_failed": "The reply failed.",
+    "something_went_wrong": "Something went wrong.",
+    "no_page": "No page at {path}.",
+    "page_failed": "The page failed to start.",
+    "render_failed": "The page failed to render.",
+    "too_many_sessions": "Too many open sessions.",
+    "too_many_actions": "Too many actions at once; wait a moment.",
+    "signed_out": "Signed out.",
+    "made_room": "This session made room for a newer one.",
     "sign_in": "Sign in",
     "sign_in_hint": "Sign in to continue.",
     "sign_in_failed": "Sign-in failed",
@@ -270,6 +283,13 @@ class Theme(BaseModel):
 
     def all_strings(self) -> dict[str, str]:
         return {**STRINGS, **self.strings}
+
+    def text(self, key: str, **vars: Any) -> str:
+        """A message the server sends to a person, in the theme's words."""
+        s = self.all_strings()[key]
+        for name, value in vars.items():
+            s = s.replace("{" + name + "}", str(value))
+        return s
 
     def boot(self) -> dict[str, Any]:
         """What the bundle reads at start."""

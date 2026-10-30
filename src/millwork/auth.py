@@ -481,7 +481,7 @@ class Auth:
         if user is not None and app is not None:
             for session in list(app.sessions.values()):
                 if session.user is not None and session.user.id == user.id:
-                    await session.end("Signed out.")
+                    await session.end(app.theme.text("signed_out"))
         return response
 
     async def route_oauth_start(self, request: Request) -> Response:

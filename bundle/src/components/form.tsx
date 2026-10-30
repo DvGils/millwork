@@ -323,7 +323,7 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
                   <ItemField item={f.item!} pointer={itemPointer} schemaPointer="" ctx={ctx} />
                 </div>
                 {!ctx.disabled ? (
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Remove" onClick={() => set(items.filter((__, j) => j !== i))}>
+                  <Button type="button" variant="ghost" size="icon-sm" aria-label={t("remove")} onClick={() => set(items.filter((__, j) => j !== i))}>
                     {Trash ? <Trash /> : "×"}
                   </Button>
                 ) : null}

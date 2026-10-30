@@ -31,6 +31,7 @@ dev = [
     "ruff>=0.13",
     "mypy>=1.17",
     "watchfiles>=1.1",
+    "httpx2>=2.16.0",
 ]
 
 [build-system]

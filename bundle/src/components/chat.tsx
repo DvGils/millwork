@@ -702,12 +702,12 @@ function Composer({
         {busy && canStop ? (
           <Button type="button" variant="outline" size="sm" onClick={onStop}>
             {Stop ? <Stop /> : null}
-            Stop
+            {t("stop")}
           </Button>
         ) : (
           <Button type="button" size="sm" disabled={disabled || busy || uploading || (!text.trim() && files.length === 0)} onClick={submit} aria-label={t("send")}>
             {Send ? <Send /> : null}
-            Send
+            {t("send")}
           </Button>
         )}
       </div>

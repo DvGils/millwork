@@ -127,6 +127,10 @@ class Session[S]:
     def connected(self) -> bool:
         return self._send is not None
 
+    def text(self, key: str, **vars: Any) -> str:
+        """A framework message in the theme's words, for toasts and errors."""
+        return self.app.theme.text(key, **vars)
+
     @property
     def has_tab(self) -> bool:
         return self.connected or self.connecting or self._catching_up is not None
@@ -358,12 +362,12 @@ class Session[S]:
             return
         thread = self.chat(component.key)
         if thread.busy:
-            self.toast("Wait for the current reply to finish.", tone="warning")
+            self.toast(self.text("wait_for_reply"), tone="warning")
             return
         payload = event.payload if isinstance(event.payload, dict) else {}
         text = str(payload.get("text") or "").strip()
         if len(text) > component.max_chars:
-            self.toast("The message is too long.", tone="warning")
+            self.toast(self.text("message_too_long"), tone="warning")
             return
         ids = [d.get("id") for d in payload.get("files") or [] if isinstance(d, dict)]
         files = [
@@ -429,7 +433,7 @@ class Session[S]:
                 pass
             except Exception:
                 log.exception("chat handler failed")
-                self.toast("The reply failed.", tone="destructive")
+                self.toast(self.text("reply_failed"), tone="destructive")
             finally:
                 context.unbind(token)
                 thread.turn_task = None
@@ -508,7 +512,7 @@ class Session[S]:
             return
         thread, index, _ = target
         if thread.busy:
-            self.toast("Wait for the current reply to finish.", tone="warning")
+            self.toast(self.text("wait_for_reply"), tone="warning")
             return
         user = next(
             (i for i in range(index - 1, -1, -1) if thread.messages[i].role == "user"), None
@@ -525,11 +529,11 @@ class Session[S]:
             return
         thread, index, payload = target
         if thread.busy:
-            self.toast("Wait for the current reply to finish.", tone="warning")
+            self.toast(self.text("wait_for_reply"), tone="warning")
             return
         text = str(payload.get("text") or "").strip()
         if len(text) > component.max_chars:
-            self.toast("The message is too long.", tone="warning")
+            self.toast(self.text("message_too_long"), tone="warning")
             return
         message = thread.messages[index]
         files = [p for p in message.parts if p.get("type") == "file"]
@@ -618,7 +622,7 @@ class Session[S]:
                 await _call(fn, *args)
             except Exception:
                 log.exception("handler %s failed", getattr(fn, "__name__", fn))
-                self.toast("Something went wrong.", tone="destructive")
+                self.toast(self.text("something_went_wrong"), tone="destructive")
             finally:
                 context.unbind(token)
         self.refresh()
@@ -759,11 +763,11 @@ class Session[S]:
         path, _, fragment = path.partition("#")
         resolved = self.app.resolve(path)
         if resolved is None:
-            await self._send_now(ServerError(message=f"No page at {path}.", fatal=False))
+            await self._send_now(ServerError(message=self.text("no_page", path=path), fatal=False))
             return
         page, params = resolved
         if self.app.auth is not None and not page.public and self.user is None:
-            await self._send_now(ServerError(message="Sign in to continue.", fatal=True))
+            await self._send_now(ServerError(message=self.text("sign_in_hint"), fatal=True))
             return
         # Under the handler lock: no render runs against the new page before its
         # connect has finished, and no handler runs across the switch. The switch
@@ -783,7 +787,7 @@ class Session[S]:
             except Exception:
                 log.exception("connect failed for %s", path)
                 self.page, self.params, self.path, self.state, self.tree = previous
-                await self._send_now(ServerError(message="The page failed to start.", fatal=False))
+                await self._send_now(ServerError(message=self.text("page_failed"), fatal=False))
                 return
             for ask in list(self._asks.values()):
                 if not ask.future.done():
@@ -899,7 +903,7 @@ class Session[S]:
         except Exception:
             log.exception("page %s failed to render", self.page.path)
             self._loop.create_task(
-                self._send_now(ServerError(message="The page failed to render.", fatal=False))
+                self._send_now(ServerError(message=self.text("render_failed"), fatal=False))
             )
             return None
         finally:
@@ -919,7 +923,7 @@ class Session[S]:
                 await _call(handler, self, None)
             except Exception:
                 log.exception("toast action failed")
-                self.toast("Something went wrong.", tone="destructive")
+                self.toast(self.text("something_went_wrong"), tone="destructive")
             finally:
                 context.unbind(ctx)
         self.refresh()
@@ -973,7 +977,7 @@ class Session[S]:
                 self.download(component.filename, component.content, component.mime)
             except Exception:
                 log.exception("download %s failed", component.filename)
-                self.toast("The download failed.", tone="destructive")
+                self.toast(self.text("download_failed"), tone="destructive")
             finally:
                 context.unbind(token)
             return
@@ -1027,7 +1031,7 @@ class Session[S]:
                 )
             except Exception:
                 log.exception("handler %s on %s failed", event.name, event.node)
-                self.toast("Something went wrong.", tone="destructive")
+                self.toast(self.text("something_went_wrong"), tone="destructive")
             finally:
                 context.unbind(token)
         if event.name == "submit" and isinstance(component, Form) and not rejected:

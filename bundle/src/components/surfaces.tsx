@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
+import { t } from "../theme";
 import { store, useNode } from "../store";
 import { navigate } from "../ws";
 import { has, isInternalPath, safeUrl } from "../lib";
@@ -195,7 +196,7 @@ export const Alert: Renderer = ({ props, emit }) => {
         <button
           type="button"
           className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
-          aria-label="Dismiss"
+          aria-label={t("dismiss")}
           onClick={() => emit("dismiss")}
         >
           ×

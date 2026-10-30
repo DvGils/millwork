@@ -92,14 +92,27 @@ language and how dates and numbers are formatted.
 ## Strings
 
 Interface copy comes from the app's own Python, in its own language. The
-bundle has a few strings of its own, for its controls: `send`, `stop`,
+framework has strings of its own: the bundle's controls (`send`, `stop`,
 `attach`, `search`, `no_results`, `clear`, `loading`, `reconnecting`,
-`sign_in`, `username`, `password` and some twenty more. They are English;
-an app in another language sets them in the theme's `strings` section,
-key by key, and a key the bundle does not know is refused.
+`sign_in`, `username`, `password`) and the messages the server sends on
+its own account (`wait_for_reply`, `message_too_long`, `something_went_wrong`,
+`too_many_sessions`, `signed_out` and the rest). They are English; an app in
+another language sets them in the theme's `strings` section, key by key,
+and a key the framework does not know is refused. Every key is in the
+table below, with its English.
 
 ```json
 {"locale": "nl", "strings": {"send": "Verstuur", "stop": "Stop", "search": "Zoeken"}}
+```
+
+```python live
+from millwork.theme import STRINGS
+
+ui.Table(
+    rows=[{"key": k, "english": v} for k, v in sorted(STRINGS.items())],
+    row_key="key",
+    height=320,
+)
 ```
 
 ## While designing

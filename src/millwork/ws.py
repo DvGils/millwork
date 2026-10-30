@@ -57,6 +57,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         return
     await ws.accept()
 
+    async def refuse(key: str, code: int, **vars: Any) -> None:
+        await ws.send_text(pack(0, ServerError(message=app.theme.text(key, **vars), fatal=True)))
+        await ws.close(code=code)
+
     try:
         _, first = unpack_client(await ws.receive_text())
     except (ValidationError, WebSocketDisconnect, KeyError):
@@ -87,13 +91,11 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     if session is None:
         resolved = app.resolve(first.path)
         if resolved is None:
-            await ws.send_text(pack(0, ServerError(message="no such page", fatal=True)))
-            await ws.close(code=4404)
+            await refuse("no_page", 4404, path=first.path)
             return
         page, params = resolved
         if app.auth is not None and not page.public and user is None:
-            await ws.send_text(pack(0, ServerError(message="Sign in to continue.", fatal=True)))
-            await ws.close(code=4401)
+            await refuse("sign_in_hint", 4401)
             return
         session = Session(app, page, params, first.path)
         session.user = user
@@ -105,8 +107,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         session.connecting = True
         if not await app.admit(session):
             log.warning("session refused for %s: too many sessions", session.client)
-            await ws.send_text(pack(0, ServerError(message="Too many open sessions.", fatal=True)))
-            await ws.close(code=4429)
+            await refuse("too_many_sessions", 4429)
             return
         try:
             await session.connect()
@@ -118,7 +119,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         except Exception:
             log.exception("connect failed for %s", first.path)
             await ws.send_text(
-                pack(0, ServerError(message="The page failed to start.", fatal=True))
+                pack(0, ServerError(message=app.theme.text("page_failed"), fatal=True))
             )
             await session.close()
             await ws.close(code=4500)
@@ -133,7 +134,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         await session.attach(send, first.seq, close=close_this_socket, send_bytes=ws.send_bytes)
     except Exception:
         log.exception("attach failed for session %s", session.id)
-        await ws.send_text(pack(0, ServerError(message="The page failed to start.", fatal=True)))
+        await ws.send_text(pack(0, ServerError(message=app.theme.text("page_failed"), fatal=True)))
         await ws.close(code=4500)
         session.detach(send)
         return
@@ -188,7 +189,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                         "session %s: %d messages pending, dropping", session.id, MAX_INFLIGHT
                     )
                     await session._send_now(
-                        ServerError(message="Too many actions at once; wait a moment.", fatal=False)
+                        ServerError(message=app.theme.text("too_many_actions"), fatal=False)
                     )
                 continue
             overflowed = False

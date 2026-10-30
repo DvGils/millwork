@@ -244,7 +244,11 @@ def test_resume_is_bound_to_the_user(tmp_path: Path) -> None:
             ws.send_text(json.dumps({"seq": 1, "msg": {"type": "hello", "path": "/", **resume}}))
             assert json.loads(ws.receive_text())["msg"]["id"] == info["id"]
         # Another user with the session id and token gets their own session, not this one.
-        client.cookies.set("mw_auth", app.auth.issue(auth.User(id="eve", name="Eve")))
+        # The jar files the login cookie under the test host's domain; the
+        # replacement names the same one, or both would be sent.
+        client.cookies.set(
+            "mw_auth", app.auth.issue(auth.User(id="eve", name="Eve")), domain="testserver.local"
+        )
         with client.websocket_connect("/_mw/ws") as ws:
             ws.send_text(json.dumps({"seq": 1, "msg": {"type": "hello", "path": "/", **resume}}))
             msg = json.loads(ws.receive_text())["msg"]

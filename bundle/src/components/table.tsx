@@ -413,11 +413,11 @@ export const Table: Renderer = ({ props, emit }) => {
           {pageSize && table.getPageCount() > 1 ? (
             <span className="inline-flex items-center gap-1">
               <Button variant="ghost" size="xs" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
-                Previous
+                {t("previous")}
               </Button>
               {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
               <Button variant="ghost" size="xs" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
-                Next
+                {t("next")}
               </Button>
             </span>
           ) : null}

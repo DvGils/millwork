@@ -291,7 +291,9 @@ class App:
             asyncio.get_running_loop().set_default_executor(
                 ThreadPoolExecutor(max_workers=self.threads, thread_name_prefix="millwork")
             )
-        removed = self.files.sweep(older_than=max(self.session_grace * 4, 3600))
+        # On a thread: a root with many stale directories would otherwise hold
+        # the loop before the first request.
+        removed = await asyncio.to_thread(self.files.sweep, max(self.session_grace * 4, 3600))
         if removed:
             log.info("swept %d stale file directories", removed)
         for fn in self._startup:
@@ -424,7 +426,7 @@ class App:
             if not idle:
                 return False
             oldest = min(idle, key=lambda s: s.detached_at)
-            await oldest.end("This session made room for a newer one.")
+            await oldest.end(self.theme.text("made_room"))
             return True
 
         async with self._admit_lock:

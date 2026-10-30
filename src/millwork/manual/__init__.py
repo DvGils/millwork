@@ -218,15 +218,20 @@ def load(root: Path = PAGES) -> list[Page]:
     return pages
 
 
-def page_namespace(slug: str = "") -> dict[str, Any]:
+def live_module_name(slug: str, session_id: str) -> str:
+    return "millwork.manual.live" + slug.replace("/", ".") + "." + session_id
+
+
+def page_namespace(slug: str = "", session_id: str = "") -> dict[str, Any]:
     """What every live block sees. Blocks on a page run in order and share it,
     so a later block may use what an earlier one defined.
 
     The namespace is a real module's, registered under a name, so a Pydantic
     model defined in a block can resolve its annotations the way it would in a
-    file.
+    file. One per session and page: a handler keeps what its own session
+    defined, and the module goes when the session closes.
     """
-    name = "millwork.manual.live" + slug.replace("/", ".")
+    name = live_module_name(slug, session_id)
     module = sys.modules.get(name)
     if module is None:
         module = sys.modules[name] = types.ModuleType(name)
@@ -379,10 +384,13 @@ def make_app(theme: Any = None) -> mw.App:
             s.navigate(f"{found[0].section.page.slug}#{found[0].section.anchor}")
 
     def register(page: Page) -> None:
+        def drop_namespace(s: mw.Session[State]) -> None:
+            sys.modules.pop(live_module_name(page.slug, s.id), None)
+
         @app.page(page.slug, title=f"{page.title} · millwork")
         def view(s: mw.Session[State]) -> ui.Component:
             body: list[ui.Component] = []
-            ns = page_namespace(page.slug)
+            ns = page_namespace(page.slug, s.id)
             for seg in page.segments:
                 if isinstance(seg, str):
                     body.append(ui.Markdown(seg))
@@ -406,6 +414,8 @@ def make_app(theme: Any = None) -> mw.App:
                     ],
                 ),
             )
+
+        view.close(drop_namespace)
 
     for page in pages:
         register(page)
