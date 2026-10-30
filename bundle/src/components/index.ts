@@ -3,7 +3,7 @@
 import type { Renderer } from "../render";
 import { Code, Markdown, Page, Row, Stack, Text } from "./layout";
 import { Badge, Button, Card, Input, Separator } from "./controls";
-import { Header } from "./header";
+import { Header, LogoNode } from "./header";
 import {
   Alert,
   Dialog,
@@ -45,6 +45,7 @@ export const registry: Record<string, Renderer> = {
   Steps,
   Page,
   Header,
+  Logo: LogoNode,
   Stack,
   Row,
   Grid,

@@ -92,6 +92,13 @@ class Header(Component):
     user_menu: bool = True
 
 
+class Logo(Component):
+    """The theme's logo, the light or dark file with the scheme; nothing when the
+    theme has none. For a page outside the app bar: a login-like page, an error page."""
+
+    type: ClassVar[str] = "Logo"
+
+
 class Page(Component):
     type: ClassVar[str] = "Page"
     title: str | None = None
@@ -710,6 +717,7 @@ __all__ = [
     "Table",
     "Tabs",
     "Text",
+    "Logo",
     "Textarea",
     "ToggleGroup",
     "Tooltip",

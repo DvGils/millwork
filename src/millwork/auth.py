@@ -127,17 +127,24 @@ class Identity(BaseModel):
 
 
 class Forbidden(Exception):
-    """Raised from ``connect`` when the user may not open this page."""
+    """Raised from ``connect`` when the user may not open this page.
 
-    def __init__(self, message: str = "You may not open this page.") -> None:
+    The session lands on the app's forbidden page, which shows ``message``
+    when one is given and the theme's standard text otherwise.
+    """
+
+    def __init__(self, message: str | None = None) -> None:
         self.message = message
-        super().__init__(message)
+        super().__init__(message or "")
 
 
 class NotFound(Exception):
-    def __init__(self, message: str = "Not found.") -> None:
+    """Raised from ``connect`` when what the path names does not exist; the
+    session lands on the app's not-found page."""
+
+    def __init__(self, message: str | None = None) -> None:
         self.message = message
-        super().__init__(message)
+        super().__init__(message or "")
 
 
 def email_of(raw: dict[str, Any]) -> str | None:

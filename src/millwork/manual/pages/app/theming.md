@@ -77,10 +77,11 @@ every page view then calls a third party.
 ## Logo, favicon and login image
 
 `logo` is one path, or `light` and `dark` paths; the `ui.Header` shows it
-unless `logo=False`. `favicon` and `login_image` are paths under
-`/public/` too. The login page shows the logo, the image and the app's
-name. Nothing else in millwork shows a brand, and nothing in a theme
-changes a component's layout.
+unless `logo=False`, and `ui.Logo` puts it on a page of the app's own, an
+error page for instance. `favicon` and `login_image` are paths under
+`/public/` too. The login page and the framework's error pages show the
+logo and the app's name. Nothing else in millwork shows a brand, and
+nothing in a theme changes a component's layout.
 
 ## Options
 

@@ -14,7 +14,6 @@ from urllib.parse import urlsplit
 from pydantic import ValidationError
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from millwork.auth import Forbidden, NotFound
 from millwork.protocol import (
     PROTOCOL_VERSION,
     Answer,
@@ -89,11 +88,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 log.warning("resume refused: another user")
 
     if session is None:
-        resolved = app.resolve(first.path)
-        if resolved is None:
-            await refuse("no_page", 4404, path=first.path)
-            return
-        page, params = resolved
+        page, params = app.resolve(first.path) or app.fallback("not_found", first.path)
         if app.auth is not None and not page.public and user is None:
             await refuse("sign_in_hint", 4401)
             return
@@ -110,12 +105,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             await refuse("too_many_sessions", 4429)
             return
         try:
-            await session.connect()
-        except (Forbidden, NotFound) as exc:
-            await ws.send_text(pack(0, ServerError(message=exc.message, fatal=True)))
-            await session.close()
-            await ws.close(code=4403 if isinstance(exc, Forbidden) else 4404)
-            return
+            await session.connect_or_fall_back()
         except Exception:
             log.exception("connect failed for %s", first.path)
             await ws.send_text(

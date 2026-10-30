@@ -31,6 +31,10 @@ function bootUser(): BootUser | null {
   return (window as unknown as { __mw?: { user?: BootUser | null } }).__mw?.user ?? null;
 }
 
+// The catalogue's Logo node: the theme's logo on a page of the app's own, such
+// as an error page, outside the app bar.
+export const LogoNode: Renderer = ({ props }) => <Logo className={props.cls as string | undefined} />;
+
 export function Logo({ className }: { className?: string }) {
   const scheme = useScheme();
   const logo = theme().logo;

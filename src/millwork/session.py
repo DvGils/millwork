@@ -115,6 +115,7 @@ class Session[S]:
         # Development warnings: each is said once per session; counters tell a
         # handler that changed nothing, and a thread that changed state, apart.
         self._warned: set[str] = set()
+        self._slow_builds = 0
         self._effects = 0
         self._handler_runs = 0
         self._noop_watch: tuple[str, int] | None = None
@@ -761,10 +762,7 @@ class Session[S]:
         """Switch this session to another page. State is per page; files and identity stay."""
         # A fragment names a heading: the tab scrolls to it after the mount.
         path, _, fragment = path.partition("#")
-        resolved = self.app.resolve(path)
-        if resolved is None:
-            await self._send_now(ServerError(message=self.text("no_page", path=path), fatal=False))
-            return
+        resolved = self.app.resolve(path) or self.app.fallback("not_found", path)
         page, params = resolved
         if self.app.auth is not None and not page.public and self.user is None:
             await self._send_now(ServerError(message=self.text("sign_in_hint"), fatal=True))
@@ -778,12 +776,9 @@ class Session[S]:
             self.page, self.params, self.path = page, params, path
             self.state = page.make_state()
             self.tree = None
+            self._slow_builds = 0
             try:
-                await self.connect()
-            except (Forbidden, NotFound) as exc:
-                self.page, self.params, self.path, self.state, self.tree = previous
-                await self._send_now(ServerError(message=exc.message, fatal=False))
-                return
+                await self.connect_or_fall_back()
             except Exception:
                 log.exception("connect failed for %s", path)
                 self.page, self.params, self.path, self.state, self.tree = previous
@@ -793,7 +788,7 @@ class Session[S]:
                 if not ask.future.done():
                     ask.future.set_result(None)
             self._asks.clear()
-            args: dict[str, Any] = {"path": path, "title": page.title}
+            args: dict[str, Any] = {"path": path, "title": self.page.title}
             if fragment:
                 args["hash"] = fragment
             await self._send_now(Command(name="navigate", args=args))
@@ -887,7 +882,10 @@ class Session[S]:
             started = time.perf_counter()
             root = self.page.render(self)
             took = (time.perf_counter() - started) * 1000
-            if took > SLOW_PAGE_MS:
+            # Two slow builds in a row: a page that does I/O is slow every time,
+            # while one wall-clock hiccup (a collection, a busy process) is not.
+            self._slow_builds = self._slow_builds + 1 if took > SLOW_PAGE_MS else 0
+            if self._slow_builds >= 2:
                 self.warn(
                     "slow-page",
                     f"the page function took {took:.0f} ms; it should build the tree and "
@@ -1272,6 +1270,17 @@ class Session[S]:
             await _call(self.page.on_connect, self, **self.params)
         finally:
             context.unbind(token)
+
+    async def connect_or_fall_back(self) -> None:
+        """Connect, and when the hook refuses with NotFound or Forbidden, land on the
+        app's page for that instead, under the path that was asked for."""
+        try:
+            await self.connect()
+        except (Forbidden, NotFound) as exc:
+            kind = "forbidden" if isinstance(exc, Forbidden) else "not_found"
+            self.page, self.params = self.app.fallback(kind, self.path, exc.message)
+            self.state = self.page.make_state()
+            await self.connect()
 
 
 def _confirmation(component: Component, event: Event) -> tuple[str, bool] | None:

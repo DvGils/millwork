@@ -42,6 +42,54 @@ MODE_SCRIPT = (
 )
 
 
+PLAIN_TEMPLATE = """<!doctype html>
+<html lang="{lang}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<script{nonce}>window.__mw = {{}};</script>
+<script{nonce}>{mode_script}</script>
+<style{nonce}>{css}</style>
+</head>
+<body>
+<main><h1>{title}</h1><p>{text}</p><p><a href="/">{home}</a></p></main>
+</body>
+</html>
+"""
+
+# The look of the page above: the theme's surface, ink and font, so even a
+# failure before the bundle runs is in the app's colours. The stock tokens
+# come first; a theme's own blocks follow and win.
+PLAIN_DEFAULTS = (
+    ":root{--background:#fff;--foreground:#0a0a0a;--muted-foreground:#737373;--primary:#171717}"
+    ".dark{--background:#0a0a0a;--foreground:#fafafa;--muted-foreground:#a1a1a1;--primary:#e5e5e5}"
+)
+PLAIN_CSS = (
+    "html{{background:var(--background);color:var(--foreground);"
+    "font-family:var(--font-sans,system-ui,sans-serif)}}"
+    "body{{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center}}"
+    "main{{max-width:24rem;padding:1.5rem}}"
+    "h1{{font-size:1.5rem;font-weight:600;letter-spacing:-0.02em;margin:0 0 .5rem}}"
+    "p{{margin:0 0 1rem;color:var(--muted-foreground);line-height:1.5}}"
+    "a{{color:var(--primary);text-decoration:underline;text-underline-offset:4px}}"
+)
+
+
+def plain(*, title: str, text: str, theme: Theme, nonce: str | None = None) -> str:
+    """An HTML page without the bundle, for a failure before it can run: not found
+    without a built bundle, an exception in an app's own route."""
+    return PLAIN_TEMPLATE.format(
+        lang=html.escape(theme.locale),
+        title=html.escape(title),
+        text=html.escape(text),
+        home=html.escape(theme.text("home")),
+        nonce=f' nonce="{html.escape(nonce)}"' if nonce else "",
+        mode_script=MODE_SCRIPT,
+        css=PLAIN_DEFAULTS + theme.css() + PLAIN_CSS.format(),
+    )
+
+
 class Shell:
     def __init__(self, bundle_dir: Path, prefix: str) -> None:
         self.bundle_dir = bundle_dir

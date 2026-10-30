@@ -37,7 +37,7 @@ from millwork.auth import Auth
 from millwork.files import Files
 from millwork.nodes import Component
 from millwork.protocol import Command
-from millwork.shell import Shell
+from millwork.shell import Shell, plain
 from millwork.theme import Theme, find_theme
 
 # The policy for every HTML page; ``{scripts}`` becomes the page's script sources
@@ -228,6 +228,13 @@ class App:
         self.debug = debug
         self.bundle_dir = bundle_dir or BUNDLE_DIR
         self.pages: list[PageDef] = []
+        # Where a session lands when no page matches the path, or connect raises
+        # NotFound or Forbidden: the framework's own pages until the app sets its
+        # own with ``@app.not_found`` and ``@app.forbidden``.
+        self.error_pages: dict[str, PageDef] = {
+            "not_found": self._error_page_def("not_found", _not_found_view),
+            "forbidden": self._error_page_def("forbidden", _forbidden_view),
+        }
         self.sessions: dict[str, Session[Any]] = {}
         self.shell = Shell(self.bundle_dir, prefix=PREFIX)
         self._routes: list[Any] = []
@@ -263,6 +270,65 @@ class App:
             if params is not None:
                 return page, params
         return None
+
+    def fallback(
+        self, kind: str, path: str, message: str | None = None
+    ) -> tuple[PageDef, dict[str, str]]:
+        """The error page for ``kind`` (``not_found`` or ``forbidden``) and its params:
+        the path that was asked for and the message connect raised with, if any."""
+        return self.error_pages[kind], {"path": path, "message": message or ""}
+
+    def _error_page_def(
+        self,
+        kind: str,
+        fn: Callable[[Any], Component],
+        *,
+        title: str | None = None,
+        public: bool = False,
+        state: Callable[[], Any] | type | None = None,
+    ) -> PageDef:
+        return PageDef(
+            path=f"{PREFIX}/{kind.replace('_', '-')}",
+            render=fn,
+            title=title or self.theme.text(f"{kind}_title"),
+            public=public,
+            state=state or self.default_state,
+        )
+
+    def not_found(
+        self,
+        fn: Callable[[Any], Component] | None = None,
+        *,
+        title: str | None = None,
+        public: bool = False,
+        state: Callable[[], Any] | type | None = None,
+    ) -> Any:
+        """Decorator: the page shown when no page matches, or connect raises ``NotFound``.
+
+        An ordinary page function; ``s.params["path"]`` is the path asked for and
+        ``s.params["message"]`` the text ``NotFound`` was raised with, or empty.
+        The HTTP response that serves it is a 404.
+        """
+        return self._set_error_page("not_found", fn, title=title, public=public, state=state)
+
+    def forbidden(
+        self,
+        fn: Callable[[Any], Component] | None = None,
+        *,
+        title: str | None = None,
+        public: bool = False,
+        state: Callable[[], Any] | type | None = None,
+    ) -> Any:
+        """Decorator: the page shown when connect raises ``Forbidden``; see ``not_found``."""
+        return self._set_error_page("forbidden", fn, title=title, public=public, state=state)
+
+    def _set_error_page(self, kind: str, fn: Any, **options: Any) -> Any:
+        def register(fn: Callable[[Any], Component]) -> PageDef:
+            page = self._error_page_def(kind, fn, **options)
+            self.error_pages[kind] = page
+            return page
+
+        return register(fn) if fn is not None else register
 
     # ------------------------------------------------------------- extension
 
@@ -349,7 +415,11 @@ class App:
         routes.append(Route("/{path:path}", self._serve_page))
         middleware = [Middleware(_SecurityHeaders), *self._middleware]
         app = Starlette(
-            routes=routes, middleware=middleware, debug=self.debug, lifespan=self._lifespan
+            routes=routes,
+            middleware=middleware,
+            debug=self.debug,
+            lifespan=self._lifespan,
+            exception_handlers={500: self._server_error},
         )
         app.state.millwork = self
         return app
@@ -488,7 +558,7 @@ class App:
         """The signed-in user, or None; always None without auth configured."""
         return await self.auth.identify(request_or_scope) if self.auth is not None else None
 
-    def _html(self, page: str, nonce: str) -> HTMLResponse:
+    def _html(self, page: str, nonce: str, status: int = 200) -> HTMLResponse:
         headers = {}
         if self.csp:
             scripts = f"'self' 'nonce-{nonce}'"
@@ -496,7 +566,20 @@ class App:
                 # Custom components are compiled in the tab (react-runner uses Function).
                 scripts += " 'unsafe-eval'"
             headers["Content-Security-Policy"] = self.csp.format(scripts=scripts)
-        return HTMLResponse(page, headers=headers)
+        return HTMLResponse(page, status_code=status, headers=headers)
+
+    def _plain(self, status: int, title: str, text: str) -> HTMLResponse:
+        """A themed page for a failure before the bundle can run."""
+        nonce = secrets.token_urlsafe(16)
+        return self._html(
+            plain(title=title, text=text, theme=self.theme, nonce=nonce), nonce, status
+        )
+
+    async def _server_error(self, request: Request, exc: Exception) -> Any:
+        """An unhandled exception in a route: a page in the app's colours, never the
+        exception; the traceback is in the log. Debug mode shows Starlette's own page."""
+        text = self.theme.text
+        return self._plain(500, text("something_went_wrong"), text("try_again"))
 
     async def _login_page(self, request: Request) -> Any:
         if self.auth is None:
@@ -522,16 +605,22 @@ class App:
     async def _serve_page(self, request: Request) -> Any:
         path = "/" + request.path_params.get("path", "")
         resolved = self.resolve(path)
+        status = 200
         if resolved is None:
-            return PlainTextResponse("Not found", status_code=404)
+            # The not-found page, served as a 404 so monitors and crawlers see one.
+            resolved = self.fallback("not_found", path)
+            status = 404
         page, _ = resolved
         if self.auth is not None and not page.public and await self.user_for(request) is None:
             from urllib.parse import urlencode
 
             return RedirectResponse(f"{PREFIX}/login?{urlencode({'next': path})}", status_code=302)
         if not self.shell.available:
-            return PlainTextResponse(
-                "millwork: the bundle is not built. Run `pnpm build` in bundle/.", status_code=503
+            if status == 404:
+                text = self.theme.text
+                return self._plain(404, text("not_found_title"), text("not_found_text", path=path))
+            return self._plain(
+                503, "millwork", "The bundle is not built. Run `pnpm build` in bundle/."
             )
         user = await self.user_for(request)
         user_boot = (
@@ -549,10 +638,44 @@ class App:
                 components=self.component_versions,
             ),
             nonce,
+            status,
         )
 
     def file_response(self, path: Path) -> FileResponse:
         return FileResponse(path)
+
+
+def _error_view(s: Any, kind: str) -> Component:
+    """The framework's own error page: the logo, a title, the reason, a way home.
+    The same frame as the login page, in the theme's tokens, with no app chrome."""
+    from millwork import ui
+
+    message = s.params.get("message") or s.text(f"{kind}_text", path=s.params.get("path", ""))
+    home = ui.Button(
+        label=s.text("home"),
+        variant="outline",
+        icon="house",
+        on_click=lambda s, _: s.navigate("/"),
+    )
+    card = ui.Stack(
+        children=[
+            ui.Logo(cls="h-9 self-start"),
+            ui.Text(s.text(f"{kind}_title"), variant="title"),
+            ui.Text(message, variant="muted"),
+            ui.Row(children=[home]),
+        ],
+        gap=3,
+        cls="w-full max-w-sm",
+    )
+    return ui.Stack(children=[card], align="center", justify="center", cls="min-h-dvh p-6")
+
+
+def _not_found_view(s: Any) -> Component:
+    return _error_view(s, "not_found")
+
+
+def _forbidden_view(s: Any) -> Component:
+    return _error_view(s, "forbidden")
 
 
 async def _maybe_await(value: Any) -> Any:

@@ -5,6 +5,7 @@ import { closedReason, onStatus, type Status } from "./ws";
 import { Toaster } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Login, type LoginBoot } from "./login";
+import { Logo } from "./components/header";
 import { t } from "./theme";
 
 export function App() {
@@ -19,6 +20,9 @@ function Connected() {
   useEffect(() => onStatus(setStatus), []);
 
   const ended = status === "closed";
+  // Ended before anything was shown: the reason is the page, in the login
+  // page's frame, rather than a banner over an empty screen.
+  if (ended && !root) return <EndedPage />;
   return (
     <>
       {ended ? <Ended /> : null}
@@ -49,6 +53,24 @@ function Splash({ status }: { status: Status }) {
 // The session is over and the tab will not reconnect on its own: the reason, and
 // a reload, which starts a fresh session on the same page. In the flow above the
 // page so nothing is covered, sticky so it stays in view, above any overlay.
+function EndedPage() {
+  const reason = closedReason();
+  return (
+    <div role="alert" className="flex min-h-dvh items-center justify-center p-6">
+      <div className="flex w-full max-w-sm flex-col gap-3">
+        <Logo className="h-9 self-start" />
+        <h1 className="text-2xl font-semibold tracking-tight">{t("session_ended")}</h1>
+        {reason ? <p className="text-sm text-muted-foreground">{reason}</p> : null}
+        <div>
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            {t("reload")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Ended() {
   const reason = closedReason();
   return (

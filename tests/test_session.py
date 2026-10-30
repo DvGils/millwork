@@ -114,15 +114,17 @@ def test_unknown_page_and_protocol(tmp_path: Path) -> None:
     app = make_app(tmp_path)
     with TestClient(app.asgi) as client:
         with client.websocket_connect("/_mw/ws") as ws:
-            send(ws, {"type": "hello", "path": "/nope"})
-            assert recv(ws)["type"] == "error"
+            # No page at the path: the session opens on the not-found page.
+            hello(ws, "/nope")
+            assert "There is nothing at /nope." in texts(recv(ws))
         with client.websocket_connect("/_mw/ws") as ws:
             send(ws, {"type": "hello", "path": "/", "protocol": 999})
             assert recv(ws) == {"type": "command", "name": "reload", "args": {}}
             assert closed_with(ws) == 4426
         assert client.get("/_mw/health").json()["ok"] is True
         assert client.get("/").status_code == 503  # no bundle in tmp_path
-        assert client.get("/nope").status_code == 404
+        missing = client.get("/nope")
+        assert missing.status_code == 404 and "There is nothing at /nope." in missing.text
 
 
 def test_superseded_socket_does_not_detach_the_live_one(tmp_path: Path) -> None:
@@ -208,7 +210,9 @@ def test_navigate_keeps_the_session(tmp_path: Path) -> None:
         assert mount["title"] == "Other" and mount["nodes"]["root/t"]["props"]["content"] == "n=7"
         assert app.sessions[info["id"]].path == "/other/7"
         send(ws, {"type": "navigate", "path": "/nowhere"})
-        assert recv(ws)["type"] == "error"
+        assert recv(ws)["args"] == {"path": "/nowhere", "title": "Page not found"}
+        assert "There is nothing at /nowhere." in texts(recv(ws))
+        assert app.sessions[info["id"]].path == "/nowhere"
 
 
 def test_origin_check_and_boot_escaping(tmp_path: Path) -> None:
@@ -234,6 +238,11 @@ def test_origin_check_and_boot_escaping(tmp_path: Path) -> None:
     assert "</script>" not in _script_safe(
         json.dumps({"path": "/docs/</script><script>alert(1)</script>"})
     )
+
+
+def texts(mount: dict[str, Any]) -> list[str]:
+    """Every Text node's content in a mount message."""
+    return [n["props"]["content"] for n in mount["nodes"].values() if n["type"] == "Text"]
 
 
 def closed_with(ws: Any) -> int:
@@ -318,7 +327,7 @@ def test_events_run_one_at_a_time_in_order_while_the_socket_keeps_reading(
         assert order == ["slow in", "fast", "slow out True"]
 
 
-def test_connect_failures_end_the_socket_with_a_message(tmp_path: Path) -> None:
+def test_connect_failures_land_on_the_error_page_or_end_the_socket(tmp_path: Path) -> None:
     from millwork.auth import NotFound
 
     app = mw.App("c", public=None, bundle_dir=tmp_path)
@@ -336,16 +345,20 @@ def test_connect_failures_end_the_socket_with_a_message(tmp_path: Path) -> None:
 
     with TestClient(app.asgi) as client:
         with client.websocket_connect("/_mw/ws") as ws:
-            send(ws, {"type": "hello", "path": "/item/missing"})
-            assert recv(ws) == {"type": "error", "message": "No such item.", "fatal": True}
-            assert closed_with(ws) == 4404
-        with client.websocket_connect("/_mw/ws") as ws:
             send(ws, {"type": "hello", "path": "/item/broken"})
             assert recv(ws)["message"] == "The page failed to start."
             assert closed_with(ws) == 4500
-        # Neither failed connect left a session behind; a good one navigates into a bad one
-        # and keeps its session.
+        # A crashed connect left no session behind.
         assert app.sessions == {}
+        with client.websocket_connect("/_mw/ws") as ws:
+            # NotFound from connect: the session opens on the not-found page, with
+            # the message, under the path that was asked for.
+            info = hello(ws, "/item/missing")
+            assert "No such item." in texts(recv(ws))
+            session = app.sessions[info["id"]]
+            assert session.path == "/item/missing" and session.page is app.error_pages["not_found"]
+        # A good session navigates into a crash and keeps its page, and into a
+        # NotFound and lands on the error page.
         with client.websocket_connect("/_mw/ws") as ws:
             info = hello(ws, "/item/ok")
             recv(ws)
@@ -355,9 +368,11 @@ def test_connect_failures_end_the_socket_with_a_message(tmp_path: Path) -> None:
                 "message": "The page failed to start.",
                 "fatal": False,
             }
+            assert app.sessions[info["id"]].path == "/item/ok"
             send(ws, {"type": "navigate", "path": "/item/missing"})
-            assert recv(ws)["message"] == "No such item."
-            assert info["id"] in app.sessions
+            assert recv(ws)["args"]["title"] == "Page not found"
+            assert "No such item." in texts(recv(ws))
+            assert app.sessions[info["id"]].path == "/item/missing"
 
 
 def test_resume_of_a_closed_session_starts_a_fresh_one(tmp_path: Path) -> None:
@@ -650,9 +665,11 @@ async def test_development_warnings_name_the_four_mistakes(tmp_path: Path) -> No
             for c in page.commands
             if c.name == "toast" and c.args.get("title") == "millwork"
         ]
-        assert any("page function took" in w for w in warnings())
+        # One slow build is a hiccup; the second in a row is the page's fault.
+        assert not any("page function took" in w for w in warnings())
         assert not any("without keys" in w for w in warnings())  # a static list is fine
         await page.click("add")
+        assert any("page function took" in w for w in warnings())
         assert any("without keys" in w for w in warnings())  # one that changed length is not
         await page.click("noop")
         assert any("changed nothing" in w for w in warnings())

@@ -71,9 +71,61 @@ def example(s):
     )
 ```
 
-A path no page matches shows an error toast and leaves the tab where it
-was. A link to another site is an ordinary link; give it `target="_blank"`
-to open a new tab.
+A link to another site is an ordinary link; give it `target="_blank"` to
+open a new tab.
+
+## When a page is missing
+
+A path no page matches lands on the app's not-found page: over HTTP as a
+404 that serves the shell, and over the session when a link or
+`s.navigate` asks for it, so the tab keeps its session and can go on from
+there. `connect` reaches the same pages by raising: `mw.NotFound(message)`
+when what the path names does not exist, `mw.Forbidden(message)` when this
+person may not open it. The session lands on the error page under the path
+that was asked for, with the message if one was given.
+
+Without any app code the framework's own pages are shown: the theme's
+logo, a title and a line from the string table, and a way home, in the
+same frame as the login page. An app replaces them with pages of its own,
+written like any other page: `s.params["path"]` is the path asked for and
+`s.params["message"]` what `connect` raised with, or empty.
+
+```python
+@app.not_found
+def missing(s):
+    return ui.Page(
+        ui.Stack(
+            ui.Logo(cls="h-9 self-start"),
+            ui.Text("Nothing here", variant="title"),
+            ui.Text(s.params["message"] or f"There is no page at {s.params['path']}.", variant="muted"),
+            ui.Input(kind="search", placeholder="Search instead", on_submit=search),
+            gap=3,
+            cls="max-w-sm",
+        ),
+    )
+
+
+@app.forbidden(title="Private")
+def private(s):
+    return ui.Page(ui.Text(s.params["message"] or "Ask the owner for access."))
+```
+
+`ui.Logo` is the theme's logo, light or dark with the scheme, for a page
+outside the app bar. The link below goes to a page this manual does not
+have, which is the framework's own not-found page in this manual's theme.
+
+```python live
+ui.Row(
+    ui.Logo(cls="h-6"),
+    ui.Link(label="Open a page that does not exist", href="/components/nothing-here"),
+    gap=4,
+)
+```
+
+A failure before the bundle can run, a crash in an app's own route or the
+bundle missing, is a plain HTML page with the same title and text, in the
+theme's colours and font, never a stack trace. In debug mode a crash shows
+Starlette's own traceback page instead.
 
 ## State and the session
 

@@ -141,8 +141,12 @@ def test_pages_are_gated_and_password_login_sets_the_cookie(tmp_path: Path) -> N
             mount = json.loads(ws.receive_text())["msg"]
             assert mount["nodes"]["root/t"]["props"]["content"] == "hi demian"
         with client.websocket_connect("/_mw/ws") as ws:
-            msg = ws_hello(ws, "/projects/p9")
-            assert msg["type"] == "error" and msg["message"] == "Not your project."
+            # Forbidden from connect: the forbidden page, with the message, same socket.
+            assert ws_hello(ws, "/projects/p9")["type"] == "session"
+            mount = json.loads(ws.receive_text())["msg"]
+            assert "Not your project." in [
+                n["props"].get("content") for n in mount["nodes"].values()
+            ]
         with client.websocket_connect("/_mw/ws") as ws:
             ws_hello(ws, "/projects/p1")
             assert (

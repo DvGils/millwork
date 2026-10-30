@@ -324,6 +324,14 @@ async def test_a_failed_navigate_leaves_the_session_on_its_page(tmp_path: Path) 
 
     @bad.connect
     async def load(s: mw.Session[State]) -> None:
+        raise RuntimeError("db down")
+
+    @app.page("/gone")
+    def gone(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("never", key="t"))
+
+    @gone.connect
+    async def missing(s: mw.Session[State]) -> None:
         raise NotFound("No such thing.")
 
     wire = Wire()
@@ -331,12 +339,25 @@ async def test_a_failed_navigate_leaves_the_session_on_its_page(tmp_path: Path) 
     await click(session, "inc")
     tree = session.tree
     await session.navigate_to("/bad")
-    assert wire.messages[-1] == {"type": "error", "message": "No such thing.", "fatal": False}
+    assert wire.messages[-1] == {
+        "type": "error",
+        "message": "The page failed to start.",
+        "fatal": False,
+    }
     # Page, path, state and tree are what they were; the next click still works.
     assert session.path == "/" and session.state.count == 1 and session.tree is tree
     await click(session, "inc")
     assert wire.messages[-1]["ops"] == [
         {"op": "set", "id": "root/count", "props": {"content": "2"}}
+    ]
+    # NotFound from connect is not a failure: the session moves to the not-found
+    # page under the path it asked for, with the message.
+    await session.navigate_to("/gone")
+    assert session.path == "/gone" and session.page is app.error_pages["not_found"]
+    assert session.params == {"path": "/gone", "message": "No such thing."}
+    assert wire.messages[-2]["args"] == {"path": "/gone", "title": "Page not found"}
+    assert "No such thing." in [
+        n["props"].get("content") for n in wire.messages[-1]["nodes"].values()
     ]
     await session.close()
 
