@@ -37,9 +37,8 @@ Three are millwork's own, with their `-foreground`: `success` and
 `warning`, which the catalogue's `tone` vocabulary needs, and `info`, which
 a custom component may use as `bg-info text-info-foreground`. A value is
 one CSS value, hex, `oklch(...)`, a length or a font stack. A token left
-out keeps the default, so a brand is four or five values, not forty. A
-token the bundle does not know, or a value CSS could misuse, is refused
-when the app starts.
+out keeps the default, so a brand is four or five values. An unknown
+token, or a value CSS could misuse, is refused when the app starts.
 
 Light and dark are both always there: `mode` is `light`, `dark` or
 `system`, and the user menu in the header lets a person choose, kept in
@@ -63,8 +62,7 @@ ui.Stack(
 ```
 
 The five chart tokens are read in order by the charts. Pick them as a set
-that stays apart for colour-blind readers in both schemes, not five
-favourites.
+that stays apart for colour-blind readers in both schemes.
 
 ## Fonts
 
@@ -80,8 +78,8 @@ every page view then calls a third party.
 unless `logo=False`, and `ui.Logo` puts it on a page of the app's own, an
 error page for instance. `favicon` and `login_image` are paths under
 `/public/` too. The login page and the framework's error pages show the
-logo and the app's name. Nothing else in millwork shows a brand, and
-nothing in a theme changes a component's layout.
+logo and the app's name. A theme sets colours, fonts and these images;
+layout belongs to the components.
 
 ## Options
 

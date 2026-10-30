@@ -27,8 +27,7 @@ async def test_a_click_counts(app):
         assert page.last_patch is not None
 ```
 
-Tests are `async def`; with pytest-asyncio in auto mode nothing else is
-needed. `open(path)` runs the page's `connect` and the first render and
+Tests are `async def`, run by pytest-asyncio in auto mode. `open(path)` runs the page's `connect` and the first render and
 yields a `Page`; leaving the block closes the session, `close` hook
 included. `open(path, user=User(...))` signs a person in; without one a
 gated page raises `Forbidden`, which is a test of its own. `open(path,
@@ -92,7 +91,7 @@ plain text, `stream` and `errors` are views on it. `settle()` waits until
 the session has nothing left to do: running tasks and spawned work are
 awaited, the coalesced render runs at once, and a handler waiting on an
 open question is left for `answer`. Every action settles before it
-returns, so a test never sleeps.
+returns, so a test reads the result on the next line.
 
 ## Running one here
 

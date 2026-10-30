@@ -42,8 +42,7 @@ def privacy(s: mw.Session) -> ui.Component:
 
 `secret` signs the session cookie and must be at least 32 characters;
 `millwork secret` prints one. Values such as the secret and the provider's
-credentials come from wherever the app keeps its secrets; millwork reads
-no environment variables of its own.
+credentials come from wherever the app keeps its secrets.
 
 The login page is part of millwork: the app's name, the theme's
 `login_image`, one button per OAuth provider, a username and password form
@@ -75,8 +74,8 @@ def verify(username: str, password: str) -> bool:
     return stored is not None and auth.check_password(password, stored)
 ```
 
-`auth.Dev(user)` signs every visitor in as that user and is refused
-outside `--debug`, so it cannot ship.
+`auth.Dev(user)` signs every visitor in as that user; it is allowed with
+`--debug` and refused otherwise.
 
 Several providers can be listed together; the login page offers each.
 
@@ -89,17 +88,16 @@ the proxy uses: `user` or `email` is required, `name`, `groups` and
 `picture` are optional, and `groups` is split on commas into
 `identity.raw["groups"]`. The person goes through `on_login` on every page
 load and socket connect, so keep that hook cheap; a sync hook runs off
-the event loop, so a slow one delays its own visitor and nobody else, and
-one that raises shows the error page and ends the tab's attempts rather
-than looping. A visitor the hook refuses sees the login page say so. `sign_out` is the proxy's
-own sign-out URL, which the user menu and `s.logout()` go to; without one
-the menu offers no sign-out, since the app holds nothing to clear, and
-`s.logout()` only ends the person's sessions, after which the proxy signs
-them in again on the next page. The proxy must replace these headers, not
-add to what the browser sent; a header that arrives twice is ignored.
+the event loop, and one that raises shows the error page and the tab
+stops retrying. A visitor the hook refuses sees the login page say so.
+`sign_out` is the proxy's own sign-out URL, which the user menu and
+`s.logout()` go to; without one the menu offers no sign-out, and
+`s.logout()` ends the person's sessions on this process, after which the
+proxy signs them in again on the next page. The proxy replaces these
+headers on the way through; a header that arrives twice is ignored.
 
 ```python
-# oauth2-proxy in front of the app (its default --pass-user-headers)
+# oauth2-proxy in front of the app, with its default headers
 auth.Headers(
     user="X-Forwarded-User",
     email="X-Forwarded-Email",
@@ -107,27 +105,13 @@ auth.Headers(
     groups="X-Forwarded-Groups",
     sign_out="/oauth2/sign_out",
 )
-
-# Azure App Service or Container Apps built-in authentication
-auth.Headers(
-    user="X-MS-CLIENT-PRINCIPAL-ID",
-    email="X-MS-CLIENT-PRINCIPAL-NAME",
-    sign_out="/.auth/logout",
-)
-
-# Cloudflare Access
-auth.Headers(email="Cf-Access-Authenticated-User-Email", sign_out="/cdn-cgi/access/logout")
-
-# Authelia and other proxies that speak the Remote-* convention
-auth.Headers(user="Remote-User", email="Remote-Email", name="Remote-Name", groups="Remote-Groups")
 ```
 
 The headers are read when the app runs with `--proxied` or
-`App(proxied=True)`, as the Running chapter describes; without the switch
-they are ignored, with one line in the log. Whoever can reach the process
-can send these headers, so a proxied app listens where only its proxy
-connects. A request that arrives without an identity lands on the login
-page, which says that sign-in happens before the app.
+`App(proxied=True)`, as the Running chapter describes. A request that
+arrives without an identity lands on the login page, which says that
+sign-in happens before the app. The proxy's or platform's documentation
+lists the header names it sets and its sign-out URL.
 
 ## Deciding who gets in
 
@@ -155,7 +139,7 @@ async def admit(identity: auth.Identity) -> auth.User | None:
 
 A `User` is `id`, `name`, `claims` and `picture_url`. `claims` is the
 app's own dictionary, capped at 2 KB: roles, the projects a person may
-see, flags. A picture is a URL, never bytes. Without `on_login` every
+see, flags. A picture is a URL. Without `on_login` every
 identified visitor becomes a `User` with the e-mail as `id`, and a provider
 that gives no e-mail is refused.
 
@@ -189,20 +173,16 @@ The cookie is a signed token holding the `User`, `HttpOnly`, `SameSite=Lax`,
 default). Its name and path carry the app's prefix, `mw_auth_sales` under
 `/sales`, so apps side by side on one host each read their own, and it is
 signed for the app by name, so apps that share a secret still keep their
-sign-ins apart. There is no sliding renewal: after that long a person signs in
-again. It is stateless, so any replica of the app validates it with the
-shared secret, and nothing about a person leaves the server beyond the
-`User` itself. Stateless also means signing out cannot revoke a copy of
-the cookie: a copy stays valid until it expires, so the lifetime is the
-bound, and an app with sensitive data sets `session` to a working day.
-Chainlit's cookie works the same way; Shiny leaves sign-in to the host. The socket is bound to the cookie: a session cannot be
-resumed by someone else. Logins and refusals are logged with the
-identifier; `log_identity="hashed"` logs a hash instead.
+sign-ins apart. After that long a person signs in again. The cookie holds
+the `User` and is valid on any replica with the same secret. Signing out
+clears the browser's cookie and ends the person's sessions on that
+process; a copy of the cookie stays valid until it expires, so the
+lifetime is the bound, and an app with sensitive data sets `session` to a
+working day. The socket is bound to the cookie, so a session is resumed
+by its own user. Logins and refusals are logged with the identifier;
+`log_identity="hashed"` logs a hash instead.
 
-## What is not here
-
-No user database, no registration, no password reset: identity comes from
-the provider and the record is what `on_login` returns. No roles model:
-`claims` is a dictionary and the app reads it. No token refresh and no
-calls to the provider after login: an app that needs an access token for
-its own API calls obtains and keeps it in `on_login`, outside the cookie.
+Identity is what the provider says and the record is what `on_login`
+returns; `claims` is a dictionary the app reads. An access token the app
+needs for its own API calls is obtained in `on_login` and kept by the
+app.

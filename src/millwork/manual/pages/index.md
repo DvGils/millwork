@@ -7,8 +7,8 @@ order: 0
 
 millwork is a Python framework for data tools and AI applications. The browser
 runs one prebuilt React bundle; Python describes the page and handles its
-events. There is no JavaScript to write, no build step in your project, and no
-state in the browser that Python does not own.
+events. The project is Python only: the bundle is prebuilt, and Python owns
+every piece of state.
 
 ```python
 import millwork as mw

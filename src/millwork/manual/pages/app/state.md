@@ -17,7 +17,7 @@ every page. A handler is any callable bound to an `on_*` prop. It receives
 the session and the event's payload: the new value for `on_change`, the
 validated model for a form's `on_submit`, nothing of use for `on_click`.
 It may be sync or async. When it returns, the page renders once, under a
-lock, so a render never sees state a handler is still changing.
+lock, so a render sees state as a handler left it.
 
 ```python live
 from pydantic import BaseModel
@@ -106,7 +106,7 @@ state survives; `cls` adds Tailwind classes for a spacing or sizing tweak.
 
 A control shows either what Python says (`value=`, with every change
 reported through `on_change`) or what the browser holds (`default=`, with
-changes reported but not required). Never both. The Inputs chapter shows
+changes reported but not required), one or the other. The Inputs chapter shows
 the two side by side. Inside a `ui.Form` every control is browser-owned
 draft state until the form is submitted.
 
@@ -138,8 +138,8 @@ tick are one render.
 Some mistakes the framework can see, and says so: once per session, as a
 log line with the page's path, and in debug mode as a toast as well.
 
-- **A slow page function**, over 20 ms. The page function builds the tree
-  and nothing else; I/O belongs in `connect` or a task.
+- **A slow page function**, over 20 ms. The page function builds the tree;
+  I/O belongs in `connect` or a task.
 - **A list without keys**: four or more siblings of one type without a
   key whose number changed between renders.
 - **A handler that changed nothing**: no state, no command, no task.

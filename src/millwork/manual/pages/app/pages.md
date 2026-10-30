@@ -124,8 +124,8 @@ ui.Row(
 
 A failure before the bundle can run, a crash in an app's own route or the
 bundle missing, is a plain HTML page with the same title and text, in the
-theme's colours and font, never a stack trace. In debug mode a crash shows
-Starlette's own traceback page instead.
+theme's colours and font; the traceback goes to the log. In debug mode a
+crash shows Starlette's own traceback page.
 
 ## State and the session
 
@@ -146,8 +146,8 @@ def project(s: mw.Session[State]) -> ui.Component:
 ```
 
 Everything a page shows comes from `s.state` and from what its handlers put
-there, so a page is a plain function and a handler is the only place where
-things change.
+there, so a page is a plain function and handlers are where things
+change.
 
 ## Connect and close
 
@@ -196,5 +196,5 @@ current page drawn as text instead; the Layout chapter shows both.
 `app.middleware(cls)` for pure ASGI middleware, and `app.on_startup` and
 `app.on_shutdown` for hooks around the process. The `public/` folder next
 to the app is served at `/public/`. Everything millwork owns lives under
-`/_mw/`, so it never collides with a route of the app's own;
-`/_mw/health` answers 200 once the startup hooks are done.
+`/_mw/`, leaving every other path to the app; `/_mw/health` answers 200
+once the startup hooks are done.
