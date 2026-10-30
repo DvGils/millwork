@@ -56,7 +56,14 @@ class Chat(Component):
     commands: list[Command] = []
     disabled: bool = False
     show_steps: Literal["full", "collapsed", "hidden"] = "collapsed"
+    # Reading aids, each off by default: the assistant's picture beside its
+    # messages, a name and a time above each message (on hover, always without
+    # a mouse), and how long a reply and each of its steps took.
     avatar: str | None = None
+    assistant_name: str | None = None
+    names: bool = False
+    timestamps: bool = False
+    durations: bool = False
     # Under an assistant message: copy, thumbs up and down (with ``on_feedback``),
     # regenerate on the last one, the app's own ``actions``; a user message can
     # be edited and resent. Each is off without its handler or flag.

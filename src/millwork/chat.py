@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import logging
 import secrets
+import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -137,9 +138,15 @@ class Reply:
         self._s = session
         self._node = node_id
         self._thread = thread
-        self.message = UIMessage(id=secrets.token_urlsafe(8), role="assistant")
+        # When the reply began and how long it took, kept in the message's metadata
+        # so the time shows on a reload too; the tab reads them when asked to.
+        self.message = UIMessage(
+            id=secrets.token_urlsafe(8), role="assistant", metadata={"at": time.time()}
+        )
         self._text_id: str | None = None
         self._finished = False
+        self._started = time.monotonic()
+        self._tool_started: dict[str, float] = {}
 
     async def _send(self, chunk: dict[str, Any]) -> None:
         await self._s.stream(self._node, chunk)
@@ -148,7 +155,8 @@ class Reply:
         self._thread.inflight = self.message
         self._thread.suggestions = []
         self._s.refresh()
-        await self._send({"type": "start", "messageId": self.message.id})
+        start = {"type": "start", "messageId": self.message.id}
+        await self._send({**start, "messageMetadata": self.message.metadata})
         await self._send({"type": "start-step"})
 
     async def _finish(self, reason: str) -> None:
@@ -156,6 +164,9 @@ class Reply:
             return
         self._finished = True
         await self._end_text()
+        took = round(time.monotonic() - self._started, 3)
+        self.message.metadata = {**(self.message.metadata or {}), "took": took}
+        await self._send({"type": "message-metadata", "messageMetadata": {"took": took}})
         await self._send({"type": "finish-step"})
         await self._send({"type": "finish", "finishReason": reason})
         self._thread.messages.append(self.message)
@@ -204,6 +215,7 @@ class Reply:
             "input": input,
         }
         self.message.parts.append(part)
+        self._tool_started[call_id] = time.monotonic()
         await self._send(
             {
                 "type": "tool-input-available",
@@ -213,6 +225,10 @@ class Reply:
             }
         )
         return ToolHandle(self, call_id, part)
+
+    def _took(self, call_id: str) -> float:
+        started = self._tool_started.pop(call_id, None)
+        return round(time.monotonic() - started, 3) if started is not None else 0.0
 
     @contextlib.asynccontextmanager
     async def step(self, label: str) -> AsyncIterator[ToolHandle]:
@@ -344,15 +360,19 @@ class ToolHandle:
         self.part = part
 
     async def output(self, result: Any) -> None:
+        took = self._reply._took(self.id)
         self.part["state"] = "output-available"
         self.part["output"] = result
+        self.part["took"] = took
         await self._reply._send(
-            {"type": "tool-output-available", "toolCallId": self.id, "output": result}
+            {"type": "tool-output-available", "toolCallId": self.id, "output": result, "took": took}
         )
 
     async def error(self, text: str) -> None:
+        took = self._reply._took(self.id)
         self.part["state"] = "output-error"
         self.part["errorText"] = text
+        self.part["took"] = took
         await self._reply._send(
-            {"type": "tool-output-error", "toolCallId": self.id, "errorText": text}
+            {"type": "tool-output-error", "toolCallId": self.id, "errorText": text, "took": took}
         )

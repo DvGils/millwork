@@ -2,7 +2,7 @@
 // a composer with attachments and commands, every part kind rendered on
 // shadcn's chat components.
 
-import { t } from "../theme";
+import { locale, t } from "../theme";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Renderer } from "../render";
 import { Render } from "../render";
@@ -25,7 +25,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import { Message, MessageContent } from "@/components/ui/message";
+import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
@@ -56,6 +56,32 @@ interface Tools {
   actions: ActionSpec[];
   busy: boolean;
   emit: (name: string, payload?: unknown) => void;
+}
+
+// The reading aids a Chat asked for; each is off unless its prop is set.
+interface Aids {
+  avatar: string | null;
+  names: boolean;
+  timestamps: boolean;
+  durations: boolean;
+  assistantName: string;
+  userName: string;
+}
+
+// A clock time in the theme's locale, with the date once it is not today.
+function clock(at: unknown): string | null {
+  if (typeof at !== "number") return null;
+  const d = new Date(at * 1000);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat(locale(), sameDay ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(d);
+}
+
+function elapsed(took: unknown): string | null {
+  if (typeof took !== "number") return null;
+  if (took < 60) return `${took < 10 ? took.toFixed(1) : Math.round(took)} s`;
+  const m = Math.floor(took / 60);
+  return `${m} min ${Math.round(took - m * 60)} s`;
 }
 
 interface Accept {
@@ -138,6 +164,15 @@ export const Chat: Renderer = ({ node, props, emit }) => {
   // Only the latest answer can be regenerated: an earlier one would take the
   // whole conversation after it along.
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+  const user = (window as unknown as { __mw?: { user?: { name?: string } } }).__mw?.user;
+  const aids: Aids = {
+    avatar: typeof props.avatar === "string" && props.avatar ? safeUrl(props.avatar, { image: true }) ?? null : null,
+    names: Boolean(props.names),
+    timestamps: Boolean(props.timestamps),
+    durations: Boolean(props.durations),
+    assistantName: typeof props.assistant_name === "string" && props.assistant_name ? props.assistant_name : t("assistant"),
+    userName: user?.name ? String(user.name) : t("you"),
+  };
 
   return (
     <div className={cn("mw-fill flex max-h-dvh min-h-0 grow flex-col", props.cls as string)}>
@@ -152,7 +187,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
               ) : null}
               {messages.map((m) => (
                 <MessageScrollerItem key={m.id} messageId={m.id}>
-                  <ChatMessage message={m} inline={inline} showSteps={String(props.show_steps ?? "collapsed")} streaming={m === inflight} tools={tools} last={m.id === lastAssistant} />
+                  <ChatMessage message={m} inline={inline} showSteps={String(props.show_steps ?? "collapsed")} streaming={m === inflight} tools={tools} last={m.id === lastAssistant} aids={aids} />
                 </MessageScrollerItem>
               ))}
               {transient.status && busy ? (
@@ -201,9 +236,15 @@ function Spin() {
 
 // ------------------------------------------------------------- one message
 
-function ChatMessage({ message, inline, showSteps, streaming, tools, last }: { message: UIMessage; inline: Record<string, { $node: string }>; showSteps: string; streaming: boolean; tools: Tools; last: boolean }) {
+function ChatMessage({ message, inline, showSteps, streaming, tools, last, aids }: { message: UIMessage; inline: Record<string, { $node: string }>; showSteps: string; streaming: boolean; tools: Tools; last: boolean; aids: Aids }) {
   const user = message.role === "user";
   const [editing, setEditing] = useState(false);
+  const meta = message.metadata ?? {};
+  const line = [
+    aids.names ? (user ? aids.userName : aids.assistantName) : null,
+    aids.timestamps ? clock(meta.at) : null,
+    aids.durations && !user && !streaming ? elapsed(meta.took) : null,
+  ].filter((x): x is string => Boolean(x));
   const steps = message.parts.filter((p) => p.type === "reasoning" || p.type.startsWith("tool-") || p.type === "error");
   const rest = message.parts.filter((p) => !steps.includes(p));
   const sources = rest.filter((p) => p.type === "source-url" || p.type === "source-document");
@@ -211,8 +252,18 @@ function ChatMessage({ message, inline, showSteps, streaming, tools, last }: { m
   const text = () => message.parts.filter((p) => p.type === "text").map((p) => String(p.text ?? "")).join("\n");
   return (
     <Message align={user ? "end" : "start"}>
+      {!user && aids.avatar ? (
+        <MessageAvatar className="self-start">
+          <img src={aids.avatar} alt="" className="size-8 object-cover" />
+        </MessageAvatar>
+      ) : null}
       <MessageContent className={cn("flex max-w-[85%] flex-col gap-2", user && "items-end")}>
-        {!user && steps.length && showSteps !== "hidden" ? <StepsTrace parts={steps} collapsed={showSteps === "collapsed"} streaming={streaming} /> : null}
+        {line.length ? (
+          <div className={cn("text-xs text-muted-foreground transition-opacity", "opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100")}>
+            {line.join(" · ")}
+          </div>
+        ) : null}
+        {!user && steps.length && showSteps !== "hidden" ? <StepsTrace parts={steps} collapsed={showSteps === "collapsed"} streaming={streaming} durations={aids.durations} /> : null}
         {editing ? (
           <EditBox
             text={text()}
@@ -434,8 +485,8 @@ function Sources({ parts }: { parts: Part[] }) {
   );
 }
 
-function StepsTrace({ parts, collapsed, streaming }: { parts: Part[]; collapsed: boolean; streaming: boolean }) {
-  const lines = parts.map((p, i) => <StepLine key={i} part={p} />);
+function StepsTrace({ parts, collapsed, streaming, durations }: { parts: Part[]; collapsed: boolean; streaming: boolean; durations: boolean }) {
+  const lines = parts.map((p, i) => <StepLine key={i} part={p} durations={durations} />);
   if (!collapsed) return <Trace>{lines}</Trace>;
   const running = streaming && parts.some((p) => p.state === "streaming" || p.state === "input-available" || p.state === "input-streaming");
   const Icon = icon(running ? "loader-2" : "brain");
@@ -445,7 +496,7 @@ function StepsTrace({ parts, collapsed, streaming }: { parts: Part[]; collapsed:
         <TraceCollapsibleTrigger>
           <TraceLine status={running ? "running" : undefined}>
             <TraceIcon>{Icon ? <Icon className={cn(running && "animate-spin")} /> : null}</TraceIcon>
-            <TraceTitle>{running ? t("working") : t("steps", { n: parts.length })}</TraceTitle>
+            <TraceTitle>{running ? t("working") : (parts.length === 1 ? t("one_step") : t("steps", { n: parts.length }))}</TraceTitle>
           </TraceLine>
         </TraceCollapsibleTrigger>
         <TraceCollapsibleContent>
@@ -456,7 +507,7 @@ function StepsTrace({ parts, collapsed, streaming }: { parts: Part[]; collapsed:
   );
 }
 
-function StepLine({ part }: { part: Part }) {
+function StepLine({ part, durations }: { part: Part; durations: boolean }) {
   if (part.type === "reasoning") {
     const Icon = icon("brain");
     const streaming = part.state === "streaming";
@@ -489,6 +540,7 @@ function StepLine({ part }: { part: Part }) {
   const failed = state === "output-error";
   const isStep = name === "step";
   const label = isStep ? String((part.input as { label?: string } | undefined)?.label ?? "step") : name;
+  const took = durations && !running ? elapsed(part.took) : null;
   const Icon = icon(failed ? "x-circle" : running ? "loader-2" : isStep ? "check-circle-2" : "wand-2");
   const detail: ReactNode = isStep ? null : (
     <div className="flex flex-col gap-1 font-mono text-xs text-muted-foreground">
@@ -501,6 +553,7 @@ function StepLine({ part }: { part: Part }) {
     <TraceLine status={failed ? "error" : running ? "running" : undefined}>
       <TraceIcon>{Icon ? <Icon className={cn(running && "animate-spin")} /> : null}</TraceIcon>
       <TraceTitle>{label}</TraceTitle>
+      {took ? <span className="ml-1 text-xs text-muted-foreground">{took}</span> : null}
     </TraceLine>
   );
   if (!detail) return line;

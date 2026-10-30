@@ -101,6 +101,44 @@ ui.Row(
 | `await reply.suggestions([...])` | follow-up chips |
 | `await reply.error(text)` | an error line |
 
+## Reading aids
+
+Four things are off until asked for, since a chat is often clean enough
+without them: `avatar` puts a picture beside the assistant's messages,
+`names=True` and `timestamps=True` write who said it and when above each
+message (on hover, always on a touch screen; `assistant_name` sets the
+name), and `durations=True` shows how long the reply took and how long
+each step ran. The times are kept on the messages, so a loaded thread
+shows them too.
+
+```python live
+import asyncio
+
+
+async def answer(s, turn):
+    async with turn.reply() as reply:
+        async with reply.step("Checking the archive") as step:
+            await asyncio.sleep(0.6)
+            await step.output({"found": 2})
+        await reply.text(f"Two notes mention {turn.text.strip() or 'nothing'}.")
+
+
+ui.Card(
+    ui.Chat(
+        key="aids",
+        welcome="Hover a message for its name and time.",
+        avatar="/public/mark.svg",
+        assistant_name="Archivist",
+        names=True,
+        timestamps=True,
+        durations=True,
+        on_message=answer,
+        cls="h-[20rem]",
+    ),
+    padding=False,
+)
+```
+
 ## Tools in the composer
 
 `tools=[...]` renders components left of Send. A `ui.Button` there is an

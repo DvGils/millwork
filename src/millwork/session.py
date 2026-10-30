@@ -391,7 +391,9 @@ class Session[S]:
                     "fileId": ref.id,
                 }
             )
-        metadata = {"command": command} if isinstance(command, str) else None
+        metadata: dict[str, Any] = {"at": time.time()}
+        if isinstance(command, str):
+            metadata["command"] = command
         message = UIMessage(
             id=secrets.token_urlsafe(8), role="user", parts=parts, metadata=metadata
         )

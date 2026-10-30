@@ -241,13 +241,13 @@ async def test_message_actions_feedback_regenerate_edit(tmp_path: Path) -> None:
         # and reaches the handler; a comment can follow; clearing removes it.
         aid = assistant.id
         await page.event("main", "feedback", {"id": aid, "value": "down", "comment": None})
-        assert assistant.metadata == {"feedback": {"value": "down", "comment": None}}
+        assert assistant.metadata["feedback"] == {"value": "down", "comment": None}
         await page.event("main", "feedback", {"id": aid, "value": "down", "comment": "Too short"})
-        assert assistant.metadata == {"feedback": {"value": "down", "comment": "Too short"}}
+        assert assistant.metadata["feedback"] == {"value": "down", "comment": "Too short"}
         shown = page.find("main").props["messages"][1]["metadata"]["feedback"]
         assert shown["comment"] == "Too short"
         await page.event("main", "feedback", {"id": assistant.id, "value": None})
-        assert assistant.metadata is None
+        assert "feedback" not in assistant.metadata
         await page.event("main", "feedback", {"id": assistant.id, "value": "sideways"})
         await page.event("main", "feedback", {"id": user.id, "value": "up"})
         await page.event("main", "feedback", {"id": "nope", "value": "up"})
@@ -348,3 +348,40 @@ async def test_tools_render_in_the_composer_and_accept_options_reach_the_wire(
         ref = app.files.store(page.session, "voice.webm", [b"\x1aE\xdf\xa3"], node="root/main")
         await page.event("main", "message", {"text": "", "files": [{"id": ref.id}]})
         assert page.session.chat("main").messages[-1].text == "1 files"
+
+
+async def test_messages_and_steps_carry_their_times(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("c6", public=None, bundle_dir=tmp_path)
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as r:
+            async with r.step("look") as step:
+                await asyncio.sleep(0.02)
+                await step.output(1)
+            await r.text("done")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Chat(key="main", on_message=answer, names=True, durations=True))
+
+    async with TestApp(app).open("/") as page:
+        before = __import__("time").time()
+        await page.event("main", "message", {"text": "hi", "files": [], "command": None})
+        user, assistant = page.session.chat("main").messages
+        assert user.metadata is not None and before <= user.metadata["at"] <= before + 5
+        assert assistant.metadata is not None
+        assert before <= assistant.metadata["at"] and assistant.metadata["took"] >= 0.02
+        step = next(p for p in assistant.parts if p["type"] == "tool-step")
+        assert 0.02 <= step["took"] < 5
+        # The stream told the tab the same, so the live message matched.
+        chunks = page.stream
+        start = next(c for c in chunks if c["type"] == "start")
+        assert start["messageMetadata"]["at"] == assistant.metadata["at"]
+        assert next(c for c in chunks if c["type"] == "message-metadata")["messageMetadata"] == {
+            "took": assistant.metadata["took"]
+        }
+        output = next(c for c in chunks if c["type"] == "tool-output-available")
+        assert output["took"] == step["took"]
+        assert page.find("main").props["names"] is True

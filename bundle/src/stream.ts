@@ -28,13 +28,14 @@ export interface Transient {
 export function applyChunk(message: UIMessage | null, chunk: Chunk, extra: Transient): UIMessage | null {
   switch (chunk.type) {
     case "start":
-      return { id: String(chunk.messageId ?? ""), role: "assistant", parts: [] };
+      return { id: String(chunk.messageId ?? ""), role: "assistant", parts: [], metadata: (chunk.messageMetadata as Record<string, unknown> | undefined) ?? undefined };
     case "finish":
       return null;
     case "start-step":
     case "finish-step":
-    case "message-metadata":
       return message;
+    case "message-metadata":
+      return message ? { ...message, metadata: { ...(message.metadata ?? {}), ...((chunk.messageMetadata as Record<string, unknown> | undefined) ?? {}) } } : message;
   }
   if (!message) return message;
   const parts = [...message.parts];
@@ -84,12 +85,12 @@ export function applyChunk(message: UIMessage | null, chunk: Chunk, extra: Trans
     }
     case "tool-output-available": {
       const i = find((p) => p.toolCallId === chunk.toolCallId);
-      if (i >= 0) parts[i] = { ...parts[i], state: "output-available", output: chunk.output };
+      if (i >= 0) parts[i] = { ...parts[i], state: "output-available", output: chunk.output, took: chunk.took };
       break;
     }
     case "tool-output-error": {
       const i = find((p) => p.toolCallId === chunk.toolCallId);
-      if (i >= 0) parts[i] = { ...parts[i], state: "output-error", errorText: chunk.errorText };
+      if (i >= 0) parts[i] = { ...parts[i], state: "output-error", errorText: chunk.errorText, took: chunk.took };
       break;
     }
     case "source-url":
