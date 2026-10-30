@@ -2,8 +2,10 @@
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -21,9 +23,9 @@ def fake_provider() -> Starlette:
     """An OAuth provider that accepts any code and knows one user."""
 
     async def token(request: Request) -> JSONResponse:
-        form = await request.form()
-        assert form["grant_type"] == "authorization_code"
-        return JSONResponse({"access_token": "tok-" + str(form["code"]), "token_type": "bearer"})
+        form = parse_qs((await request.body()).decode())
+        assert form["grant_type"] == ["authorization_code"]
+        return JSONResponse({"access_token": "tok-" + form["code"][0], "token_type": "bearer"})
 
     async def me(request: Request) -> JSONResponse:
         assert request.headers["authorization"] == "Bearer tok-abc"
@@ -174,6 +176,10 @@ def test_oauth_flow_with_intent_and_denial(tmp_path: Path) -> None:
         )
         # A mismatching state is refused.
         r = client.get("/_mw/auth/oauth/fake/callback?code=abc&state=wrong", follow_redirects=False)
+        assert r.status_code == 302 and "error=" in r.headers["location"]
+        r = client.get(
+            "/_mw/auth/oauth/fake/callback?code=abc&state=%C3%A9", follow_redirects=False
+        )
         assert r.status_code == 302 and "error=" in r.headers["location"]
         r = client.get(
             f"/_mw/auth/oauth/fake/callback?code=abc&state={state}", follow_redirects=False
@@ -354,3 +360,53 @@ def test_backslash_paths_are_refused_and_auth_needs_a_real_secret(
                 secret=secret,
                 auth=auth.Auth([auth.Password(lambda u, p: False)]),
             )
+
+
+def test_signed_tokens_refuse_everything_but_the_genuine_article() -> None:
+    secret = "s" * 32
+    exp = int(time.time()) + 60
+    token = auth.sign(secret, "auth", {"id": "u", "exp": exp})
+    assert auth.verify(secret, "auth", token) == {"id": "u", "exp": exp}
+    body, sig = token.split(".")
+    # A changed payload, a changed signature, another secret, another purpose.
+    forged = auth.sign("x" * 32, "auth", {"id": "admin", "exp": exp}).split(".")[0]
+    assert auth.verify(secret, "auth", f"{forged}.{sig}") is None
+    assert auth.verify(secret, "auth", f"{body}.{sig[:-2]}AA") is None
+    assert auth.verify("t" * 32, "auth", token) is None
+    assert auth.verify(secret, "oauth-state", token) is None
+    # Expired, no expiry, an expiry that is not a number, a payload that is not an object.
+    assert auth.verify(secret, "auth", auth.sign(secret, "auth", {"exp": exp - 120})) is None
+    for payload in ({"id": "u"}, {"exp": "9999999999"}, {"exp": True}, {"exp": float("inf")}):
+        with pytest.raises(ValueError):
+            auth.sign(secret, "auth", payload)
+    for raw in (
+        b"[1]",
+        b'{"id": "u"}',
+        b'{"exp": "9999999999"}',
+        b'{"exp": true}',
+        b'{"exp": NaN}',
+        b'{"exp": Infinity}',
+        b'{"exp": 1e999}',
+    ):
+        hand = auth._b64(raw)
+        assert auth.verify(secret, "auth", f"{hand}.{auth._mac(secret, 'auth', hand)}") is None
+    with pytest.raises(ValueError):
+        auth.sign(secret, "auth", {"exp": float("nan")})
+    with pytest.raises(ValueError):
+        auth.sign("", "auth", {"exp": exp})
+    # Only the exact signature text is accepted: no re-padding, re-spelling or stray bytes.
+    for spelled in (sig + "=", sig.replace("-", "+").replace("_", "/"), sig[:10] + " " + sig[10:]):
+        if spelled != sig:
+            assert auth.verify(secret, "auth", f"{body}.{spelled}") is None
+    # Malformed, non-ASCII and oversized input is refused before anything is decoded.
+    for bad in (None, "", "a", "a.b.c", "!!.!!", f"{body}.{'*' * 10}", "x" * 9000, "\ud800." + sig):
+        assert auth.verify(secret, "auth", bad) is None
+
+
+def test_state_cookie_cannot_pose_as_a_login() -> None:
+    a = auth.Auth([auth.Password(lambda u, p: True)])
+    a.bind("s" * 32, False)
+    state = auth.sign(
+        a.secret, "oauth-state", {"id": "eve", "name": "Eve", "exp": int(time.time()) + 60}
+    )
+    assert a.read(state) is None

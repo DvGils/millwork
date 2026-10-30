@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import datetime as dt
 import hashlib
 import hmac
 import inspect
 import json
 import logging
+import math
 import os
 import secrets
 from collections.abc import Awaitable, Callable
@@ -25,7 +27,6 @@ from typing import Any, Literal
 from urllib.parse import urlencode, urlsplit
 
 import httpx
-import jwt as pyjwt
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
@@ -36,6 +37,68 @@ CLAIMS_LIMIT = 2048
 STATE_LIFETIME = 180
 AUTH_COOKIE = "mw_auth"
 STATE_COOKIE = "mw_oauth_state"
+TOKEN_LIMIT = 8192
+
+
+def _b64(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _unb64(text: str) -> bytes:
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def _key(secret: str, purpose: str) -> bytes:
+    """A signing key for one purpose, so a token issued for one use never reads as another."""
+    if not secret:
+        raise ValueError("a signing secret is required")
+    return hmac.new(secret.encode(), b"millwork:" + purpose.encode(), hashlib.sha256).digest()
+
+
+def _mac(secret: str, purpose: str, body: str) -> str:
+    return _b64(hmac.new(_key(secret, purpose), body.encode(), hashlib.sha256).digest())
+
+
+def _expiry(payload: dict[str, Any]) -> float | None:
+    """The payload's ``exp`` when it is a finite number, else None."""
+    exp = payload.get("exp")
+    if isinstance(exp, bool) or not isinstance(exp, (int, float)) or not math.isfinite(exp):
+        return None
+    return exp
+
+
+def sign(secret: str, purpose: str, payload: dict[str, Any]) -> str:
+    """A signed token: the JSON payload and an HMAC-SHA256 over it, both base64url.
+
+    The payload must carry ``exp`` as a finite unix timestamp.
+    """
+    if _expiry(payload) is None:
+        raise ValueError("a token needs a numeric exp")
+    body = _b64(json.dumps(payload, separators=(",", ":"), allow_nan=False).encode())
+    return f"{body}.{_mac(secret, purpose, body)}"
+
+
+def verify(secret: str, purpose: str, token: str | None) -> dict[str, Any] | None:
+    """The payload of a token signed for ``purpose`` and not expired, else None.
+
+    The signature is compared in constant time, as the exact text ``sign``
+    produced, before the payload is decoded: nothing an attacker wrote is parsed.
+    """
+    if not token or len(token) > TOKEN_LIMIT or not token.isascii() or token.count(".") != 1:
+        return None
+    body, sig = token.split(".")
+    if not hmac.compare_digest(sig.encode(), _mac(secret, purpose, body).encode()):
+        return None
+    try:
+        payload = json.loads(_unb64(body))
+    except (ValueError, binascii.Error):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    exp = _expiry(payload)
+    if exp is None or exp <= dt.datetime.now(dt.UTC).timestamp():
+        return None
+    return payload
 
 
 class User(BaseModel):
@@ -342,18 +405,15 @@ class Auth:
         now = dt.datetime.now(dt.UTC)
         payload = {
             **user.model_dump(mode="json"),
-            "iat": now,
-            "exp": now + self.session,
+            "iat": int(now.timestamp()),
+            "exp": int((now + self.session).timestamp()),
             "jti": secrets.token_urlsafe(8),
         }
-        return pyjwt.encode(payload, self.secret, algorithm="HS256")
+        return sign(self.secret, "auth", payload)
 
     def read(self, token: str | None) -> User | None:
-        if not token:
-            return None
-        try:
-            data = pyjwt.decode(token, self.secret, algorithms=["HS256"])
-        except pyjwt.PyJWTError:
+        data = verify(self.secret, "auth", token)
+        if data is None:
             return None
         data = {k: v for k, v in data.items() if k in User.model_fields}
         try:
@@ -499,7 +559,7 @@ class Auth:
             "intent": intent,
             "exp": int(dt.datetime.now(dt.UTC).timestamp()) + STATE_LIFETIME,
         }
-        signed = pyjwt.encode(payload, self.secret, algorithm="HS256")
+        signed = sign(self.secret, "oauth-state", payload)
         response = RedirectResponse(
             provider.authorize(self._callback_url(request, provider), state), status_code=302
         )
@@ -518,17 +578,14 @@ class Auth:
         if not isinstance(provider, OAuth):
             return JSONResponse({"reason": "no such provider"}, status_code=404)
         q = request.query_params
-        try:
-            state_data = pyjwt.decode(
-                request.cookies.get(STATE_COOKIE, ""), self.secret, algorithms=["HS256"]
-            )
-        except pyjwt.PyJWTError:
+        state_data = verify(self.secret, "oauth-state", request.cookies.get(STATE_COOKIE))
+        if state_data is None:
             return self._login_redirect(request, "/", "Sign-in expired, try again.")
         next_path = _safe_next(state_data.get("next"))
         if q.get("error") or not q.get("code") or not q.get("state"):
             log.warning("oauth %s returned %s", provider.id, q.get("error") or "no code")
             return self._login_redirect(request, next_path, "Sign-in was cancelled.")
-        if not hmac.compare_digest(str(state_data.get("state")), q["state"]):
+        if not hmac.compare_digest(str(state_data.get("state")).encode(), q["state"].encode()):
             return self._login_redirect(request, next_path, "Sign-in state did not match.")
         try:
             tokens = await provider.exchange(q["code"], self._callback_url(request, provider))
