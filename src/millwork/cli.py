@@ -217,14 +217,11 @@ def serve(
         reload_dirs=[os.getcwd()] if reload else None,
         factory=factory,
     )
-    # The reloader pickles the server for the process it spawns, which a class
-    # defined in a function cannot be; there the supervisor removes the socket.
-    server = (uvicorn.Server if reload else _server_class())(config)
-    usock: UnixSocket | None = None
+    server = uvicorn.Server(config)
+    sock: socket.socket | None = None
     try:
         if uds:
-            usock = UnixSocket(uds, config.backlog, inheritable=reload)
-            server.owned = usock
+            sock = bind_unix_socket(uds, config.backlog, inheritable=reload)
             # uvicorn says where it listens only for sockets it bound itself.
             logging.getLogger("millwork").info("listening on unix socket %s", uds)
     except OSError as exc:
@@ -234,107 +231,68 @@ def serve(
         if reload:
             from uvicorn.supervisors import ChangeReload
 
-            sockets = [usock.sock if usock else config.bind_socket()]
+            sockets = [sock if sock is not None else config.bind_socket()]
             ChangeReload(config, target=server.run, sockets=sockets).run()
-        elif usock is not None:
-            server.run(sockets=[usock.sock])
+        elif sock is not None:
+            server.run(sockets=[sock])
         else:
             server.run()
     except KeyboardInterrupt:
         pass
-    finally:
-        if usock is not None:
-            usock.close()
-            usock.remove()
     return 0
 
 
-def _server_class() -> type:
-    import uvicorn
+def _answers(path: str) -> bool:
+    """Whether a process listens on the socket. A connect on a unix socket
+    answers at once: refused means nobody, and anything else means someone,
+    including a listener too busy to accept."""
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.setblocking(False)
+    try:
+        probe.connect(path)
+    except (ConnectionRefusedError, FileNotFoundError):
+        return False
+    except OSError:
+        return True
+    else:
+        return True
+    finally:
+        probe.close()
 
-    class Server(uvicorn.Server):
-        """Removes the unix socket file as part of shutting down. After the
-        server loop uvicorn re-raises the signal that stopped it, which ends the
-        process before any cleanup around ``run`` could happen. Under the
-        reloader the supervisor owns the socket and removes it when it exits."""
 
-        owned: UnixSocket | None = None
-
-        async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
-            await super().shutdown(sockets)
-            if self.owned is not None:
-                self.owned.remove()
-
-    return Server
-
-
-class UnixSocket:
-    """A listening unix socket the process owns: made for its owner and group
-    only (mode 0660, whatever the umask, created under that mask so it is never
-    briefly open to everyone), and removed at the end only while the path still
-    holds the very socket that was created, never something put there since.
-
-    Whatever is at the path first must be a socket. One nobody answers on was
-    left by a crashed process and is replaced; one that answers, or cannot be
-    told apart from a live one within a second, is refused.
-    """
-
-    def __init__(self, path: str, backlog: int, *, inheritable: bool) -> None:
-        # Absolute, so the file is still found at exit after a chdir.
-        self.path = os.path.abspath(path)
-        self._clear(path)
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        mask = os.umask(0o117)
-        try:
-            sock.bind(path)
-        except FileNotFoundError:
-            sock.close()
-            raise OSError(f"{path}: the directory does not exist") from None
-        except OSError:
-            sock.close()
-            raise
-        finally:
-            os.umask(mask)
+def bind_unix_socket(path: str, backlog: int, *, inheritable: bool) -> socket.socket:
+    """A listening unix socket for the process's owner and group only: mode 0660
+    whatever the umask, created under that mask so it is at no point open to
+    everyone. Like a port, the path is refused while another process answers
+    on it; a socket file nobody answers on was left by an earlier process and
+    is replaced; anything else at the path stops the start. The file stays at
+    exit, where the next start replaces it."""
+    try:
         st = os.lstat(path)
-        self.ident = (st.st_dev, st.st_ino)
-        sock.set_inheritable(inheritable)
-        sock.listen(backlog)
-        self.sock = sock
-
-    @staticmethod
-    def _clear(path: str) -> None:
-        try:
-            st = os.lstat(path)
-        except FileNotFoundError:
-            return
+    except FileNotFoundError:
+        pass
+    else:
         if not stat.S_ISSOCK(st.st_mode):
-            raise OSError(f"{path} exists and is not a socket")
-        probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        probe.settimeout(1.0)
-        try:
-            probe.connect(path)
-        except ConnectionRefusedError:
-            with contextlib.suppress(FileNotFoundError):
-                os.remove(path)
-        except FileNotFoundError:
-            pass
-        except OSError as exc:
-            raise OSError(f"{path} may be in use ({exc.strerror or exc})") from None
-        else:
+            raise OSError(f"{path} exists and is not a socket file")
+        if _answers(path):
             raise OSError(f"{path} is in use by another process")
-        finally:
-            probe.close()
-
-    def close(self) -> None:
-        self.sock.close()
-
-    def remove(self) -> None:
-        try:
-            st = os.lstat(self.path)
-            if stat.S_ISSOCK(st.st_mode) and (st.st_dev, st.st_ino) == self.ident:
-                os.remove(self.path)
-        except OSError:
-            pass
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(path)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    mask = os.umask(0o117)
+    try:
+        sock.bind(path)
+    except FileNotFoundError:
+        sock.close()
+        raise OSError(f"{path}: the directory does not exist") from None
+    except OSError:
+        sock.close()
+        raise
+    finally:
+        os.umask(mask)
+    sock.set_inheritable(inheritable)
+    sock.listen(backlog)
+    return sock
 
 
 if __name__ == "__main__":

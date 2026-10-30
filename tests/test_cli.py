@@ -84,6 +84,8 @@ def test_a_unix_socket_is_bound_for_owner_and_group_only(
         probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         probe.connect(path)
         probe.close()
+        for sock in sockets:
+            sock.close()
 
     monkeypatch.setattr(uvicorn.Server, "run", run)
     path = str(sock_dir / "app.sock")
@@ -96,54 +98,28 @@ def test_a_unix_socket_is_bound_for_owner_and_group_only(
     config, sockets = seen[0]
     assert config.uds == path and config.proxy_headers is False and config.root_path == "/x"
     assert sockets is not None and sockets[0].family == socket.AF_UNIX
-    assert not os.path.exists(path)  # removed on exit
-    # A socket file left behind is replaced; one that answers is refused and
-    # left alone; a file that is not a socket is refused and left alone.
-    stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    stale.bind(path)
-    stale.close()
+    # The socket file stays at exit and the next start replaces it.
+    before = os.stat(path).st_ino
     assert main(["run", str(tmp_path / "demo.py"), "--uds", path]) == 0 and len(seen) == 2
+    assert os.stat(path).st_ino != before
+    # A socket another process answers on is refused and left alone, like a port.
+    busy = str(sock_dir / "busy.sock")
     live = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    live.bind(path)
+    live.bind(busy)
     live.listen(1)
     try:
-        assert main(["run", str(tmp_path / "demo.py"), "--uds", path]) == 2
-        assert stat.S_ISSOCK(os.stat(path).st_mode)
+        held = os.stat(busy).st_ino
+        assert main(["run", str(tmp_path / "demo.py"), "--uds", busy]) == 2
+        assert os.stat(busy).st_ino == held
     finally:
         live.close()
-        os.remove(path)
+    # Anything at the path that is not a socket stops the start and is left alone.
     (sock_dir / "precious.txt").write_text("data")
     assert main(["run", str(tmp_path / "demo.py"), "--uds", str(sock_dir / "precious.txt")]) == 2
     assert (sock_dir / "precious.txt").read_text() == "data"
     assert main(["run", str(tmp_path / "demo.py"), "--uds", str(sock_dir / "no/dir.sock")]) == 2
+    assert main(["run", str(tmp_path / "demo.py"), "--uds", path, "--port", "1"]) == 2
     assert len(seen) == 2
-
-
-@unix_only
-def test_exit_only_removes_the_socket_the_process_made(
-    tmp_path: Path, sock_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import socket
-
-    import uvicorn
-
-    from millwork.cli import main
-
-    path = str(sock_dir / "app.sock")
-    other = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-
-    def run(self: uvicorn.Server, sockets: list[socket.socket] | None = None) -> None:
-        # The socket is removed while running and another process binds the path.
-        os.remove(path)
-        other.bind(path)
-        other.listen(1)
-
-    monkeypatch.setattr(uvicorn.Server, "run", run)
-    try:
-        assert main(["run", write_demo(tmp_path), "--uds", path]) == 0
-        assert os.path.exists(path)
-    finally:
-        other.close()
 
 
 @unix_only
@@ -173,6 +149,5 @@ def test_reload_mode_passes_the_bound_socket_to_the_reloader(
     path = str(sock_dir / "app.sock")
     assert main(["run", write_demo(tmp_path), "--reload", "--uds", path]) == 0
     assert seen[0] == (socket.AF_UNIX, True)
-    assert not os.path.exists(path)
     assert main(["run", str(tmp_path / "demo.py"), "--reload", "--port", "0"]) == 0
     assert seen[1][0] in (socket.AF_INET, socket.AF_INET6)

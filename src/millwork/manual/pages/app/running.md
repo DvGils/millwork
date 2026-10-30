@@ -128,11 +128,11 @@ location / {
 }
 ```
 
-The socket file is removed when the process exits, as long as it is still
-the socket the process made. One left behind by a crash is replaced at
-the next start; one that another process still answers on is refused, and
-so is anything at the path that is not a socket. The health route is reached the same way:
-`curl --unix-socket /run/sales/app.sock http://app/_mw/health`.
+Like a port, the path is refused while another process answers on it. A
+socket file nobody answers on, left by an earlier process, is replaced at
+the next start, and anything else at the path stops the start. The file
+alone says nothing about the app; the health route does, reached the
+same way: `curl --unix-socket /run/sales/app.sock http://app/_mw/health`.
 
 A container image is Python plus the app's dependencies with that line as
 its command. The process exits cleanly on SIGTERM: sessions get their

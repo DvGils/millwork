@@ -81,7 +81,8 @@ WantedBy=multi-user.target
 ```
 
 `RuntimeDirectory` makes `/run/millwork` for the sockets and
-`RuntimeDirectoryPreserve` keeps it when one app stops while others run;
+`RuntimeDirectoryPreserve` keeps it when one app stops while others run,
+which would otherwise take their sockets away;
 `StateDirectory` makes `/var/lib/millwork/sales` the one place the
 process may write under `ProtectSystem=strict`, so the app names it. The
 env file is `KEY=value` lines, one of them the output of `millwork
@@ -204,9 +205,9 @@ journalctl -u millwork@sales -f
 ```
 
 `--compile-bytecode` because the unit's read-only file system keeps
-Python from writing its caches later. A unit that fails to start five
-times in a row, as it does when something else holds the socket path,
-stays failed until `systemctl reset-failed millwork@sales`. An update is `uv sync` again and
+Python from writing its caches later. A start that fails, with something
+else at the socket path for instance, is retried every two seconds and
+the journal says why. An update is `uv sync` again and
 `systemctl restart millwork@sales`; sessions on that app end, their tabs
 say so, and nothing else is touched. The manual itself can sit there too:
 `millwork docs --uds /run/millwork/manual.sock --root-path /manual` in a
