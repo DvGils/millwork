@@ -242,11 +242,19 @@ def serve(
     return 0
 
 
+def _unix_family() -> int:
+    """The address family for a unix socket, which Windows lacks."""
+    family = getattr(socket, "AF_UNIX", None)
+    if family is None:
+        raise OSError("unix sockets are not available on this platform")
+    return int(family)
+
+
 def _answers(path: str) -> bool:
     """Whether a process listens on the socket. A connect on a unix socket
     answers at once: refused means nobody, and anything else means someone,
     including a listener too busy to accept."""
-    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe = socket.socket(_unix_family(), socket.SOCK_STREAM)
     probe.setblocking(False)
     try:
         probe.connect(path)
@@ -278,7 +286,7 @@ def bind_unix_socket(path: str, backlog: int, *, inheritable: bool) -> socket.so
             raise OSError(f"{path} is in use by another process")
         with contextlib.suppress(FileNotFoundError):
             os.remove(path)
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock = socket.socket(_unix_family(), socket.SOCK_STREAM)
     mask = os.umask(0o117)
     try:
         sock.bind(path)

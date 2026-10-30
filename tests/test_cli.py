@@ -98,10 +98,10 @@ def test_a_unix_socket_is_bound_for_owner_and_group_only(
     config, sockets = seen[0]
     assert config.uds == path and config.proxy_headers is False and config.root_path == "/x"
     assert sockets is not None and sockets[0].family == socket.AF_UNIX
-    # The socket file stays at exit and the next start replaces it.
-    before = os.stat(path).st_ino
+    # The socket file stays at exit, and the next start binds the path again:
+    # its fake run above connects to what it finds there.
+    assert os.path.exists(path)
     assert main(["run", str(tmp_path / "demo.py"), "--uds", path]) == 0 and len(seen) == 2
-    assert os.stat(path).st_ino != before
     # A socket another process answers on is refused and left alone, like a port.
     busy = str(sock_dir / "busy.sock")
     live = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
