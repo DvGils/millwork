@@ -15,6 +15,8 @@ export interface LoginBoot {
   name: string;
   providers: { id: string; label: string; kind: "oauth" | "password"; icon?: string | null }[];
   intents: { id: string; label: string }[];
+  // True when a proxy in front of the app does the signing in.
+  proxied?: boolean;
   next: string;
   error?: string | null;
   image?: string | null;
@@ -103,7 +105,7 @@ export function Login({ boot }: { boot: LoginBoot }) {
               </Button>
             </form>
           ) : null}
-          {!oauth.length && !passwordProvider ? <Label>{t("no_sign_in")}</Label> : null}
+          {!oauth.length && !passwordProvider ? <Label>{t(boot.proxied ? "proxy_sign_in" : "no_sign_in")}</Label> : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
       </div>

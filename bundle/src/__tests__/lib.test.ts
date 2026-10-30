@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { isInternalPath, isSameOriginPath, safeUrl, slugify, toApp, toBrowser } from "../lib";
+import { describe, expect, it, vi } from "vitest";
+import { isInternalPath, isSameOriginPath, safeUrl, slugify, toApp, toBrowser, signOutUrl } from "../lib";
 
 describe("slugify", () => {
   it("matches the server's anchor for a heading", () => {
@@ -36,5 +36,20 @@ describe("same-origin paths", () => {
     expect(isInternalPath("/_mw")).toBe(false);
     expect(isInternalPath("/public/x.pdf")).toBe(false);
     expect(isInternalPath("/publication")).toBe(true);
+  });
+});
+
+describe("signOutUrl", () => {
+  it("is the proxy's URL when the proxy signed the person in, else the login page", () => {
+    const boot = (mw: { base?: string; user?: { sign_out?: string | null } | null }) => vi.stubGlobal("window", { __mw: mw });
+    boot({ base: "/sales", user: { sign_out: "/oauth2/sign_out" } });
+    expect(signOutUrl()).toBe("/oauth2/sign_out");
+    boot({ base: "/sales", user: { sign_out: null } });
+    expect(signOutUrl()).toBe("/sales/_mw/login");
+    boot({ base: "", user: {} });
+    expect(signOutUrl()).toBe("/_mw/login");
+    boot({ base: "" });
+    expect(signOutUrl()).toBe("/_mw/login");
+    vi.unstubAllGlobals();
   });
 });

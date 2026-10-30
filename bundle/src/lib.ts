@@ -49,6 +49,14 @@ export function toApp(pathname: string, prefix: string = base()): string {
   return pathname;
 }
 
+// Where sign-out lands: the proxy's own sign-out page when one signed the
+// person in (the server puts its URL on the boot user), otherwise millwork's
+// login page.
+export function signOutUrl(): string {
+  const user = (window as unknown as { __mw?: { user?: { sign_out?: string | null } | null } }).__mw?.user;
+  return user?.sign_out || mw("/login");
+}
+
 // One of the framework's own routes, under the prefix: mw("/auth/logout").
 export function mw(path: string): string {
   return `${base()}/_mw${path}`;

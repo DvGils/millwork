@@ -14,7 +14,7 @@ import types
 from typing import Any, cast
 
 
-def load_app(target: str, debug: bool = False) -> object:
+def load_app(target: str, debug: bool = False, proxies: str | None = None) -> object:
     """Import ``module:attribute`` or ``path/to/file.py:attribute``; the attribute
     defaults to ``app``.
 
@@ -23,7 +23,8 @@ def load_app(target: str, debug: bool = False) -> object:
     can import its neighbours.
 
     ``--debug`` switches a millwork App into debug mode (page errors in the
-    tab, the theme file watched) as well as raising the log level.
+    tab, the theme file watched) as well as raising the log level, and
+    ``--proxy`` names the proxies the App believes.
     """
     module_name, attr = split_target(target)
     if module_name.endswith(".py") or os.sep in module_name:
@@ -34,6 +35,8 @@ def load_app(target: str, debug: bool = False) -> object:
     app = getattr(module, attr or "app")
     if debug and hasattr(app, "debug"):
         app.debug = True
+    if proxies is not None and hasattr(app, "proxies"):
+        app.proxies = proxies
     return getattr(app, "asgi", app)
 
 
@@ -62,7 +65,11 @@ def _import_file(path: str) -> types.ModuleType:
 
 def asgi_factory() -> object:
     """uvicorn's reloader needs an import string; this wraps ``load_app``."""
-    return load_app(os.environ["MILLWORK_TARGET"], os.environ.get("MILLWORK_DEBUG") == "1")
+    return load_app(
+        os.environ["MILLWORK_TARGET"],
+        os.environ.get("MILLWORK_DEBUG") == "1",
+        os.environ.get("MILLWORK_PROXY") or None,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,7 +92,8 @@ def main(argv: list[str] | None = None) -> int:
         "--proxy",
         default=None,
         metavar="IPS",
-        help="trust X-Forwarded-* from these proxy addresses (comma separated, or *)",
+        help="the reverse proxies to believe for X-Forwarded-* and identity headers: "
+        "addresses or networks, comma separated, or *; the local host by default",
     )
     docs = sub.add_parser("docs", help="serve the manual, with its live examples")
     docs.add_argument("--host", default="127.0.0.1")
@@ -105,6 +113,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"--root-path: {exc}", file=sys.stderr)
             return 2
 
+    if getattr(args, "proxy", None):
+        from millwork.proxy import TrustedProxies
+
+        try:
+            TrustedProxies(args.proxy)
+        except ValueError as exc:
+            print(f"--proxy: {exc}", file=sys.stderr)
+            return 2
+
     if args.command == "docs":
         import uvicorn
 
@@ -115,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             cast(Any, make_app(theme=args.theme).asgi),
             host=args.host,
             port=args.port,
+            proxy_headers=False,
             root_path=args.root_path,
         )
         return 0
@@ -142,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.reload:
         os.environ["MILLWORK_TARGET"] = args.target
         os.environ["MILLWORK_DEBUG"] = "1" if args.debug else "0"
+        os.environ["MILLWORK_PROXY"] = args.proxy or ""
         uvicorn.run(
             "millwork.cli:asgi_factory",
             factory=True,
@@ -149,16 +168,16 @@ def main(argv: list[str] | None = None) -> int:
             port=args.port,
             reload=True,
             reload_dirs=[os.getcwd()],
-            forwarded_allow_ips=args.proxy,
+            proxy_headers=False,
             root_path=args.root_path,
         )
         return 0
     uvicorn.run(
-        cast(Any, load_app(args.target, args.debug)),
+        cast(Any, load_app(args.target, args.debug, args.proxy)),
         host=args.host,
         port=args.port,
         log_level="debug" if args.debug else "info",
-        forwarded_allow_ips=args.proxy,
+        proxy_headers=False,
         root_path=args.root_path,
     )
     return 0

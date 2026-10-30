@@ -320,16 +320,115 @@ class Password(Provider):
         self.verify = verify
 
 
-class Header(Provider):
-    """An identity header set by a trusted reverse proxy (Container Apps auth, oauth2-proxy)."""
+class Headers(Provider):
+    """The visitor as an authenticating reverse proxy names them in request headers.
+
+    The proxy (oauth2-proxy, a platform's built-in sign-in, an access gateway)
+    does the signing in and passes who it saw: a header with the user name
+    or id, one with the e-mail, and perhaps the display name, the groups and a
+    picture. Name the headers the proxy uses; ``user`` or ``email`` is required.
+    The headers are believed only on a connection from a proxy the app trusts
+    (``App(proxies=...)``, ``millwork run --proxy``), and go through
+    ``on_login`` on every page load and socket connect, so keep that hook cheap.
+    ``sign_out`` is the proxy's own sign-out URL, where the user menu sends the
+    person; without one the menu has no sign-out, since the app has nothing to
+    clear.
+    """
 
     kind: Literal["oauth", "password", "header", "dev"] = "header"
+    VALUE_LIMIT = 1024
 
-    def __init__(self, name: str, *, trusted_proxies: list[str], label: str = "Proxy") -> None:
+    def __init__(
+        self,
+        *,
+        user: str | None = None,
+        email: str | None = None,
+        name: str | None = None,
+        groups: str | None = None,
+        picture: str | None = None,
+        sign_out: str | None = None,
+        label: str = "Proxy",
+    ) -> None:
+        if not (user or email):
+            raise ValueError("Headers needs the name of the user header, the e-mail header or both")
+        if sign_out is not None and not _sign_out_ok(sign_out):
+            raise ValueError("sign_out is a path on this host or an http(s) URL")
         self.id = "header"
         self.label = label
-        self.header = name.lower()
-        self.trusted_proxies = set(trusted_proxies)
+        self.headers = {
+            role: value.lower()
+            for role, value in (
+                ("user", user),
+                ("email", email),
+                ("name", name),
+                ("groups", groups),
+                ("picture", picture),
+            )
+            if value
+        }
+        self.sign_out = sign_out
+
+    def present(self, headers: Any) -> bool:
+        return any(headers.get(h) for h in self.headers.values())
+
+    def identity(self, headers: Any) -> Identity | None:
+        """What the proxy says, or None when it names nobody. A value that is
+        not plain text of a sane length is treated as absent, and so is a header
+        that arrives more than once: a proxy that appends rather than replaces
+        would otherwise let the visitor's own value through first."""
+        raw: dict[str, Any] = {}
+        for role, header in self.headers.items():
+            value = _header_text(_single(headers, header))
+            if value is None:
+                continue
+            raw[role] = (
+                [g.strip() for g in value.split(",") if g.strip()] if role == "groups" else value
+            )
+        user, email = raw.get("user"), raw.get("email")
+        if email is not None:
+            email = email.lower()
+        elif user is not None and "@" in user:
+            email = user.lower()
+        subject = user or email
+        if subject is None:
+            return None
+        return Identity(
+            provider=self.id,
+            subject=subject,
+            email=email,
+            name=raw.get("name"),
+            picture_url=raw.get("picture"),
+            raw=raw,
+        )
+
+
+def _single(headers: Any, name: str) -> str | None:
+    values = headers.getlist(name) if hasattr(headers, "getlist") else [headers.get(name)]
+    return values[0] if len(values) == 1 else None
+
+
+def _sign_out_ok(url: str) -> bool:
+    """A path on this host (no scheme-relative or backslash spelling) or an http(s) URL."""
+    if not url.isprintable() or " " in url or "\\" in url:
+        return False
+    if url.startswith("/"):
+        return not url.startswith("//")
+    return url.startswith(("https://", "http://")) and len(url) > 8
+
+
+def _header_text(value: str | None) -> str | None:
+    """A header value as text: UTF-8 when the proxy sent it that way, trimmed,
+    refused when empty, over the limit or not printable."""
+    if not value:
+        return None
+    try:
+        value = value.encode("latin-1").decode("utf-8")
+    except UnicodeError:
+        pass
+    value = value.strip()
+    if not value or len(value) > Headers.VALUE_LIMIT or not value.isprintable():
+        return None
+    return value
 
 
 class Dev(Provider):
@@ -398,6 +497,7 @@ class Auth:
         self.intents = intents or {}
         self.secret = ""
         self.debug = False
+        self._untrusted_peers: set[str] = set()
 
     def bind(self, secret: str, debug: bool, origins: list[str] | None = None) -> None:
         self.secret = secret
@@ -457,6 +557,7 @@ class Auth:
                 p.public() for p in self.providers.values() if p.kind in ("oauth", "password")
             ],
             "intents": [{"id": k, "label": v} for k, v in self.intents.items()],
+            "proxied": any(isinstance(p, Headers) for p in self.providers.values()),
             "next": next_path,
             "error": error,
         }
@@ -485,7 +586,13 @@ class Auth:
         if len(json.dumps(user.claims)) > CLAIMS_LIMIT:
             log.error("login denied: claims for %s exceed 2 KB", who)
             return None
-        log.info("login: %s via %s", who, identity.provider)
+        # A proxy identity is re-read on every page load, so it is not news.
+        log.log(
+            logging.DEBUG if identity.provider == "header" else logging.INFO,
+            "login: %s via %s",
+            who,
+            identity.provider,
+        )
         return user
 
     def _log_id(self, value: str) -> str:
@@ -628,34 +735,59 @@ class Auth:
     # ------------------------------------------------------------- request-time identity
 
     async def identify(self, request_or_scope: Any) -> User | None:
-        """The user behind a request or websocket: the cookie, a trusted header, or Dev.
+        """The user behind a request or websocket: the cookie, the proxy's headers, or Dev.
 
-        A proxy header goes through ``on_login`` like any other provider, on
-        every request: the hook still decides access and shapes the user.
+        The proxy's headers go through ``on_login`` like any other provider, on
+        every request: the hook still decides access and shapes the user. They
+        are read only on a connection the app knows to come from its proxy.
         """
         headers = request_or_scope.headers
         cookies = (
             request_or_scope.cookies if hasattr(request_or_scope, "cookies") else _cookies(headers)
         )
+        scope = request_or_scope.scope
         user = self.read(cookies.get(AUTH_COOKIE))
         if user is not None:
+            scope["millwork.identified_by"] = "cookie"
             return user
         for provider in self.providers.values():
             if isinstance(provider, Dev):
+                scope["millwork.identified_by"] = "dev"
                 return provider.user
-            if isinstance(provider, Header):
-                client = getattr(request_or_scope, "client", None)
-                peer = client.host if client else None
-                value = headers.get(provider.header)
-                if value and peer in provider.trusted_proxies:
-                    return await self.login(
-                        Identity(
-                            provider="header",
-                            subject=value,
-                            email=value if "@" in value else None,
-                            name=value,
-                        )
-                    )
+            if isinstance(provider, Headers):
+                if not scope.get("millwork.proxied"):
+                    if provider.present(headers):
+                        self._untrusted(request_or_scope)
+                    continue
+                identity = provider.identity(headers)
+                if identity is not None:
+                    user = await self.login(identity)
+                    if user is not None:
+                        scope["millwork.identified_by"] = "header"
+                    return user
+        return None
+
+    def _untrusted(self, request_or_scope: Any) -> None:
+        """Identity headers arrived from a peer that is not a trusted proxy: say so
+        once per peer, since this is nearly always a missing ``proxies`` setting."""
+        client = getattr(request_or_scope, "client", None)
+        peer = client.host if client else "a unix socket"
+        if peer not in self._untrusted_peers and len(self._untrusted_peers) < 100:
+            self._untrusted_peers.add(peer)
+            log.warning(
+                "identity headers ignored from %s: not a trusted proxy. Name the proxy "
+                "with App(proxies=...) or millwork run --proxy; under uvicorn directly, "
+                "pass --no-proxy-headers so the real peer is seen",
+                peer,
+            )
+
+    @property
+    def sign_out(self) -> str | None | bool:
+        """Where sign-out goes: the proxy's URL with a Headers provider, False
+        when that provider has none, None when millwork's own login is in charge."""
+        for provider in self.providers.values():
+            if isinstance(provider, Headers):
+                return provider.sign_out or False
         return None
 
 
@@ -712,7 +844,7 @@ __all__ = [
     "Dev",
     "Forbidden",
     "Google",
-    "Header",
+    "Headers",
     "Identity",
     "NotFound",
     "OAuth",

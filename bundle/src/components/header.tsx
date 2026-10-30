@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "cn";
 import { icon } from "../icons";
-import { mw, safeUrl } from "../lib";
+import { mw, safeUrl, signOutUrl } from "../lib";
 import { Render } from "../render";
 import { t, theme, useMode, useScheme, type Mode } from "../theme";
 import type { Renderer } from "../render";
@@ -25,6 +25,9 @@ interface BootUser {
   id: string;
   name: string;
   picture_url?: string | null;
+  // Present when a proxy signed the person in: its sign-out URL, or null when
+  // it has none and the menu offers no sign-out. Absent for millwork's own login.
+  sign_out?: string | null;
 }
 
 function bootUser(): BootUser | null {
@@ -60,8 +63,9 @@ export function UserMenu() {
   const scheme = useScheme();
   const ModeIcon = scheme === "dark" ? Moon : Sun;
   const signOut = () => {
-    void fetch(mw("/auth/logout"), { method: "POST" }).finally(() => window.location.assign(mw("/login")));
+    void fetch(mw("/auth/logout"), { method: "POST" }).finally(() => window.location.assign(signOutUrl()));
   };
+  const canSignOut = user !== null && user.sign_out !== null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -100,7 +104,7 @@ export function UserMenu() {
         {user ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut}>{t("sign_out")}</DropdownMenuItem>
+            {canSignOut ? <DropdownMenuItem onClick={signOut}>{t("sign_out")}</DropdownMenuItem> : null}
           </>
         ) : null}
       </DropdownMenuContent>

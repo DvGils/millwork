@@ -75,13 +75,66 @@ def verify(username: str, password: str) -> bool:
     return stored is not None and auth.check_password(password, stored)
 ```
 
-`auth.Header(name, trusted_proxies=[...])` trusts an identity header set by
-a reverse proxy in front of the app, such as a platform's built-in login,
-and refuses the header from any other peer. `auth.Dev(user)` signs every
-visitor in as that user and is refused outside `--debug`, so it cannot
-ship.
+`auth.Dev(user)` signs every visitor in as that user and is refused
+outside `--debug`, so it cannot ship.
 
 Several providers can be listed together; the login page offers each.
+
+## Behind an authenticating proxy
+
+When a proxy in front of the app does the signing in (oauth2-proxy, a
+platform's built-in authentication, an access gateway), it names who it saw
+in request headers, and `auth.Headers` reads them. Give it the header names
+the proxy uses: `user` or `email` is required, `name`, `groups` and
+`picture` are optional, and `groups` is split on commas into
+`identity.raw["groups"]`. The person goes through `on_login` on every page
+load and socket connect, so keep that hook cheap. `sign_out` is the proxy's
+own sign-out URL, which the user menu and `s.logout()` go to; without one
+the menu offers no sign-out, since the app holds nothing to clear, and
+`s.logout()` only ends the person's sessions, after which the proxy signs
+them in again on the next page. The proxy must replace these headers, not
+add to what the browser sent; a header that arrives twice is ignored.
+
+```python
+# oauth2-proxy in front of the app (its default --pass-user-headers)
+auth.Headers(
+    user="X-Forwarded-User",
+    email="X-Forwarded-Email",
+    name="X-Forwarded-Preferred-Username",
+    groups="X-Forwarded-Groups",
+    sign_out="/oauth2/sign_out",
+)
+
+# Azure App Service or Container Apps built-in authentication
+auth.Headers(
+    user="X-MS-CLIENT-PRINCIPAL-ID",
+    email="X-MS-CLIENT-PRINCIPAL-NAME",
+    sign_out="/.auth/logout",
+)
+
+# Cloudflare Access
+auth.Headers(email="Cf-Access-Authenticated-User-Email", sign_out="/cdn-cgi/access/logout")
+
+# Authelia and other proxies that speak the Remote-* convention
+auth.Headers(user="Remote-User", email="Remote-Email", name="Remote-Name", groups="Remote-Groups")
+```
+
+The headers are believed only on a connection from a proxy the app was
+told about, `App(proxies=["10.0.0.5"])` or `millwork run --proxy 10.0.0.5`,
+with addresses, networks such as `10.0.0.0/24`, or `*` when only the proxy
+can reach the process. When nothing is named the local host is trusted:
+the loopback addresses, and a unix socket, where the socket's file
+permissions decide who connects at all.
+From any other peer the headers are ignored, with one line in the log
+naming the peer, since that is nearly always a missing `proxies` setting.
+A request that reaches the app without an identity lands on the login
+page, which then only says that sign-in happens before the app.
+
+Whoever can open a connection the app takes for its proxy can name anyone,
+so the list is as much a part of the setup as the proxy itself. On a
+machine with other users, the local host includes them: bind the app to
+the proxy alone, over a unix socket or a container network, rather than to
+a port any process can reach.
 
 ## Deciding who gets in
 

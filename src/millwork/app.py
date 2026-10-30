@@ -37,6 +37,7 @@ from millwork.auth import Auth
 from millwork.files import Files
 from millwork.nodes import Component
 from millwork.protocol import Command
+from millwork.proxy import ASGIApp, Proxied, TrustedProxies
 from millwork.shell import Shell, plain, root_of
 from millwork.theme import Theme, find_theme, under
 
@@ -168,8 +169,10 @@ class App:
         keep_alive: bool = False,
         max_sessions: int = 1000,
         max_sessions_per_client: int = 20,
+        proxies: list[str] | str | None = None,
     ) -> None:
         self.name = name
+        self.proxies = proxies
         # Caps on live sessions, including those waiting out the grace period.
         # A client is a signed-in user, or the connecting address without auth.
         # Over a cap, the client's oldest session without a tab makes room, and
@@ -239,7 +242,7 @@ class App:
         self.shell = Shell(self.bundle_dir, prefix=PREFIX)
         self._routes: list[Any] = []
         self._middleware: list[Middleware] = []
-        self._asgi: Starlette | None = None
+        self._asgi: ASGIApp | None = None
 
     # ------------------------------------------------------------- pages
 
@@ -386,9 +389,21 @@ class App:
     # ------------------------------------------------------------- asgi
 
     @property
-    def asgi(self) -> Starlette:
+    def proxies(self) -> list[str] | str | None:
+        """The reverse proxies whose X-Forwarded-* and identity headers are believed:
+        addresses, CIDR networks or "*"; the local host when not set. Checked when
+        set, so a typo fails at startup rather than locking everyone out."""
+        return self._proxies
+
+    @proxies.setter
+    def proxies(self, value: list[str] | str | None) -> None:
+        self._trusted = TrustedProxies(value)
+        self._proxies = value
+
+    @property
+    def asgi(self) -> ASGIApp:
         if self._asgi is None:
-            self._asgi = self._build_asgi()
+            self._asgi = Proxied(self._build_asgi(), lambda: self._trusted)
         return self._asgi
 
     def _build_asgi(self) -> Starlette:
@@ -618,7 +633,8 @@ class App:
             status = 404
         page, _ = resolved
         base = root_of(request.scope)
-        if self.auth is not None and not page.public and await self.user_for(request) is None:
+        user = await self.user_for(request)
+        if self.auth is not None and not page.public and user is None:
             from urllib.parse import urlencode
 
             login = f"{base}{PREFIX}/login?{urlencode({'next': path})}"
@@ -630,10 +646,12 @@ class App:
                 return self._plain(request, 404, title, body)
             hint = "The bundle is not built. Run `pnpm build` in bundle/."
             return self._plain(request, 503, "millwork", hint)
-        user = await self.user_for(request)
         user_boot = (
             {"id": user.id, "name": user.name, "picture_url": user.picture_url} if user else None
         )
+        if user_boot is not None and request.scope.get("millwork.identified_by") == "header":
+            # The proxy signed this person in, so sign-out is its URL, or nothing to offer.
+            user_boot["sign_out"] = (self.auth.sign_out if self.auth else None) or None
         nonce = secrets.token_urlsafe(16)
         return self._html(
             self.shell.render(

@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { applyTheme, t, type ThemeBoot } from "./theme";
 import { store, type Node, type PatchOp } from "./store";
-import { mw, toApp, toBrowser } from "./lib";
+import { mw, signOutUrl, toApp, toBrowser } from "./lib";
 import { toast } from "@/components/ui/toast";
 import { invalidate, syncVersions } from "./custom";
 
@@ -428,7 +428,7 @@ function command(name: string, args: Record<string, unknown>) {
       break;
     case "logout":
       closedForGood = true;
-      void fetch(mw("/auth/logout"), { method: "POST" }).finally(() => window.location.assign(mw("/login")));
+      void fetch(mw("/auth/logout"), { method: "POST" }).finally(() => window.location.assign(signOutUrl()));
       break;
     case "reload_component":
       invalidate(args.name ? String(args.name) : undefined, args.version ? String(args.version) : undefined);

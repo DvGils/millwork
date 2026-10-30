@@ -94,10 +94,18 @@ per app behind a reverse proxy that passes the websocket upgrade through:
 uv run millwork run app.py --host 127.0.0.1 --port 8000
 ```
 
-A proxy on the same machine is trusted for `X-Forwarded-*` out of the box;
-one on another host is named with `--proxy 10.0.0.5` (or `--proxy '*'`
-when only the proxy can reach the process), so the app sees the visitor's
-address and scheme rather than the proxy's.
+A proxy on the same machine is believed for `X-Forwarded-For` and
+`X-Forwarded-Proto` out of the box; one on another host is named with
+`--proxy 10.0.0.5`, or `App(proxies=[...])`, with addresses, networks or
+`'*'` when only the proxy can reach the process; a typo in the list stops
+the app at startup. The app then sees the
+visitor's address and scheme rather than the proxy's, and the same list
+decides whose identity headers `auth.Headers` reads. millwork does this
+itself, so `millwork run` turns uvicorn's own forwarded-headers handling
+off. Under uvicorn directly, pass `--no-proxy-headers` yourself: with both
+on, uvicorn replaces the connecting address with the forwarded one before
+millwork looks, and a visitor who sends `X-Forwarded-For: 127.0.0.1` would
+pass for the proxy.
 
 A container image is Python plus the app's dependencies with that line as
 its command. The process exits cleanly on SIGTERM: sessions get their

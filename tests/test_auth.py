@@ -274,7 +274,7 @@ def test_resume_is_bound_to_the_user(tmp_path: Path) -> None:
         assert app.sessions[info["id"]].user.id == "demian"
 
 
-def test_the_header_provider_goes_through_on_login(tmp_path: Path) -> None:
+def test_the_headers_provider_goes_through_on_login(tmp_path: Path) -> None:
     seen: list[str] = []
 
     async def on_login(identity: auth.Identity) -> auth.User | None:
@@ -288,7 +288,8 @@ def test_the_header_provider_goes_through_on_login(tmp_path: Path) -> None:
         public=None,
         bundle_dir=tmp_path,
         secret="x" * 32,
-        auth=auth.Auth([auth.Header("x-user", trusted_proxies=["testclient"])], on_login=on_login),
+        proxies=["testclient"],
+        auth=auth.Auth([auth.Headers(user="x-user")], on_login=on_login),
     )
 
     @app.page("/")
