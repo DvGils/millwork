@@ -21,7 +21,7 @@ import logging
 import math
 import os
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Literal
 from urllib.parse import unquote, urlencode, urlsplit
@@ -512,8 +512,13 @@ class Auth:
         self.debug = False
         self._warned_unproxied = False
 
-    def bind(self, secret: str, debug: bool, origins: list[str] | None = None) -> None:
+    def bind(
+        self, secret: str, debug: bool, origins: list[str] | None = None, app: str = ""
+    ) -> None:
+        # Tokens are signed for this app by name, so apps that share a secret
+        # still keep their sign-ins apart.
         self.secret = secret
+        self.app = app
         self.debug = debug
         self.origins = list(origins or [])
         if any(isinstance(p, Dev) for p in self.providers.values()) and not debug:
@@ -521,9 +526,7 @@ class Auth:
 
     # ------------------------------------------------------------- tokens
 
-    def issue(self, user: User, path: str = "/") -> str:
-        """A token for the cookie at ``path``, the app's prefix: it is refused
-        at any other path, so apps side by side with one secret stay apart."""
+    def issue(self, user: User) -> str:
         if len(json.dumps(user.claims)) > CLAIMS_LIMIT:
             raise ValueError("user claims exceed 2 KB; keep the record small")
         now = dt.datetime.now(dt.UTC)
@@ -532,15 +535,12 @@ class Auth:
             "iat": int(now.timestamp()),
             "exp": int((now + self.session).timestamp()),
             "jti": secrets.token_urlsafe(8),
-            "path": path,
         }
-        return sign(self.secret, "auth", payload)
+        return sign(self.secret, f"auth:{self.app}", payload)
 
-    def read(self, token: str | None, path: str | None = None) -> User | None:
-        data = verify(self.secret, "auth", token)
+    def read(self, token: str | None) -> User | None:
+        data = verify(self.secret, f"auth:{self.app}", token)
         if data is None:
-            return None
-        if path is not None and data.get("path") != path:
             return None
         data = {k: v for k, v in data.items() if k in User.model_fields}
         try:
@@ -550,12 +550,12 @@ class Auth:
 
     def user_from(self, request: Request) -> User | None:
         """The signed-in user of an HTTP request (or a websocket's handshake)."""
-        return self.read(_cookies(request.headers).get(AUTH_COOKIE), _cookie_path(request))
+        return self.read(request.cookies.get(cookie_name(request.scope, AUTH_COOKIE)))
 
     def set_cookie(self, request: Request, response: Response, user: User) -> None:
         response.set_cookie(
-            AUTH_COOKIE,
-            self.issue(user, _cookie_path(request)),
+            cookie_name(request.scope, AUTH_COOKIE),
+            self.issue(user),
             httponly=True,
             secure=request.url.scheme == "https",
             samesite="lax",
@@ -564,7 +564,7 @@ class Auth:
         )
 
     def clear_cookie(self, request: Request, response: Response) -> None:
-        response.delete_cookie(AUTH_COOKIE, path=_cookie_path(request))
+        response.delete_cookie(cookie_name(request.scope, AUTH_COOKIE), path=_cookie_path(request))
 
     # ------------------------------------------------------------- login
 
@@ -698,12 +698,12 @@ class Auth:
             "intent": intent,
             "exp": int(dt.datetime.now(dt.UTC).timestamp()) + STATE_LIFETIME,
         }
-        signed = sign(self.secret, "oauth-state", payload)
+        signed = sign(self.secret, f"oauth-state:{self.app}", payload)
         response = RedirectResponse(
             provider.authorize(self._callback_url(request, provider), state), status_code=302
         )
         response.set_cookie(
-            STATE_COOKIE,
+            cookie_name(request.scope, STATE_COOKIE),
             signed,
             httponly=True,
             secure=request.url.scheme == "https",
@@ -718,7 +718,8 @@ class Auth:
         if not isinstance(provider, OAuth):
             return JSONResponse({"reason": "no such provider"}, status_code=404)
         q = request.query_params
-        state_data = verify(self.secret, "oauth-state", _cookies(request.headers).get(STATE_COOKIE))
+        state = request.cookies.get(cookie_name(request.scope, STATE_COOKIE))
+        state_data = verify(self.secret, f"oauth-state:{self.app}", state)
         if state_data is None:
             return self._login_redirect(request, "/", "Sign-in expired, try again.")
         next_path = _safe_next(state_data.get("next"))
@@ -740,7 +741,7 @@ class Auth:
             return self._login_redirect(request, next_path, "Access denied.")
         response = RedirectResponse(f"{root_of(request.scope)}{next_path}", status_code=302)
         self.set_cookie(request, response, user)
-        response.delete_cookie(STATE_COOKIE, path=_cookie_path(request))
+        response.delete_cookie(cookie_name(request.scope, STATE_COOKIE), path=_cookie_path(request))
         return response
 
     def _callback_url(self, request: Request, provider: OAuth) -> str:
@@ -766,7 +767,7 @@ class Auth:
         """
         headers = request_or_scope.headers
         scope = request_or_scope.scope
-        user = self.read(_cookies(headers).get(AUTH_COOKIE), root_of(scope) or "/")
+        user = self.read(request_or_scope.cookies.get(cookie_name(scope, AUTH_COOKIE)))
         if user is not None:
             scope["millwork.identified_by"] = "cookie"
             return user
@@ -821,21 +822,6 @@ def _same_origin(request: Request, origins: list[str]) -> bool:
     return host is not None and urlsplit(origin).netloc.lower() == host.lower()
 
 
-def _cookies(headers: Any) -> dict[str, str]:
-    """The request's cookies, the first of a repeated name winning: a browser
-    sends the cookie with the longer path first, so under a prefix the app's
-    own cookie comes before a root app's cookie of the same name."""
-    out: dict[str, str] = {}
-    for raw in (
-        headers.getlist("cookie") if hasattr(headers, "getlist") else [headers.get("cookie", "")]
-    ):
-        for part in (raw or "").split(";"):
-            if "=" in part:
-                k, _, v = part.strip().partition("=")
-                out.setdefault(k, v)
-    return out
-
-
 def _safe_next(value: str | None) -> str:
     """Only a path inside the app: never an absolute URL, a scheme-relative one,
     a dot segment that could climb out of the app's prefix, or a framework route.
@@ -857,8 +843,17 @@ def _safe_next(value: str | None) -> str:
     return value
 
 
+def cookie_name(scope: Mapping[str, Any], base: str) -> str:
+    """The cookie's name carries the app's prefix: ``mw_auth`` at the root,
+    ``mw_auth_sales`` under ``/sales``. Apps side by side on one host then each
+    read their own cookie, whatever the browser sends along. Two prefixes can
+    share a name (``/a/b`` and ``/a_b``), which is harmless: their paths never
+    overlap, so a browser never sends both cookies to one app."""
+    return base + root_of(scope).replace("/", "_")
+
+
 def _cookie_path(request: Request) -> str:
-    """The cookie's scope: the app's prefix, so apps side by side never share."""
+    """The cookie's path is the app's prefix, so the browser sends it there only."""
     return root_of(request.scope) or "/"
 
 

@@ -186,9 +186,10 @@ goes to the login page.
 
 The cookie is a signed token holding the `User`, `HttpOnly`, `SameSite=Lax`,
 `Secure` over HTTPS, with a fixed lifetime set by `session` (seven days by
-default). It is bound to the path it was set for, the app's prefix, so
-apps side by side on one host never accept each other's cookie, even with
-one secret between them. There is no sliding renewal: after that long a person signs in
+default). Its name and path carry the app's prefix, `mw_auth_sales` under
+`/sales`, so apps side by side on one host each read their own, and it is
+signed for the app by name, so apps that share a secret still keep their
+sign-ins apart. There is no sliding renewal: after that long a person signs in
 again. It is stateless, so any replica of the app validates it with the
 shared secret, and nothing about a person leaves the server beyond the
 `User` itself. Stateless also means signing out cannot revoke a copy of

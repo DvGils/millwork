@@ -178,9 +178,9 @@ def test_auth_redirects_and_callbacks_are_under_the_prefix(tmp_path: Path) -> No
         assert r.status_code == 302 and "Path=/sales" in r.headers["set-cookie"]
 
 
-def test_a_root_app_cookie_does_not_shadow_a_prefixed_app(tmp_path: Path) -> None:
-    """A browser sends the cookie with the longer path first; the first one is
-    read, and a token is only good at the path it was issued for."""
+def test_apps_side_by_side_each_read_their_own_cookie(tmp_path: Path) -> None:
+    """A root app and a prefixed app name their cookies apart, so whatever the
+    browser sends along, each app looks up its own."""
     secret = "s" * 32
 
     def on_login(identity: auth.Identity) -> auth.User:
@@ -203,24 +203,27 @@ def test_a_root_app_cookie_does_not_shadow_a_prefixed_app(tmp_path: Path) -> Non
     root, sales = make("root"), make("sales")
     with TestClient(root.asgi) as c:
         r = c.post("/_mw/auth/login", json={"username": "ada", "password": "x"})
+        assert "mw_auth=" in r.headers["set-cookie"] and "Path=/;" in r.headers["set-cookie"]
         root_token = r.cookies["mw_auth"]
     with TestClient(sales.asgi, root_path="/sales") as c:
         r = c.post("/sales/_mw/auth/login", json={"username": "ada", "password": "x"})
-        sales_token = r.cookies["mw_auth"]
+        assert (
+            "mw_auth_sales=" in r.headers["set-cookie"] and "Path=/sales" in r.headers["set-cookie"]
+        )
+        sales_token = r.cookies["mw_auth_sales"]
         c.cookies.clear()
-        both = f"mw_auth={sales_token}; mw_auth={root_token}"
+        both = f"mw_auth={root_token}; mw_auth_sales={sales_token}"
         assert c.get("/sales/", headers={"cookie": both}, follow_redirects=False).status_code == 200
-        # The root app's token alone, even with the same secret, is not a sign-in here.
-        only_root = f"mw_auth={root_token}"
-        r = c.get("/sales/", headers={"cookie": only_root}, follow_redirects=False)
+        # The root app's token is not a sign-in here, under either name: tokens
+        # are signed for their app by name, so one secret serves both safely.
+        r = c.get("/sales/", headers={"cookie": f"mw_auth={root_token}"}, follow_redirects=False)
         assert r.status_code == 302
-    # Two Cookie header lines are read the same way.
-    from starlette.datastructures import Headers as H
-
-    from millwork.auth import _cookies
-
-    two = H(raw=[(b"cookie", b"mw_auth=first"), (b"cookie", b"mw_auth=second; x=1")])
-    assert _cookies(two) == {"mw_auth": "first", "x": "1"}
+        renamed = {"cookie": f"mw_auth_sales={root_token}"}
+        assert c.get("/sales/", headers=renamed, follow_redirects=False).status_code == 302
+        r = c.post("/sales/_mw/auth/logout", headers={"cookie": both})
+        assert (
+            "mw_auth_sales=" in r.headers["set-cookie"] and "Path=/sales" in r.headers["set-cookie"]
+        )
 
 
 def test_an_unstripped_prefix_is_said_once_and_a_bad_one_refused(

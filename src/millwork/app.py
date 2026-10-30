@@ -208,7 +208,7 @@ class App:
         self.components_dir = Path(components) if components else None
         self.auth = auth
         if auth is not None:
-            auth.bind(secret, debug, origins)
+            auth.bind(secret, debug, origins, app=name)
         self._startup: list[Callable[[], Any]] = []
         self._shutdown: list[Callable[[], Any]] = []
         self.default_state = state

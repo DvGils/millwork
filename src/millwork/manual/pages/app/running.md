@@ -163,8 +163,9 @@ location /sales/ {
 
 That is the whole configuration. Every URL the server writes into the page,
 the bundle, the theme's fonts, the socket, the login and logout routes, the
-favicon, is under the prefix; the cookies' path is the prefix, so apps side
-by side on one host never share one; the OAuth callback URL carries it.
+favicon, is under the prefix; the cookies carry it in name and path, so
+apps side by side on one host each have their own; the OAuth callback URL
+carries it.
 Inside the app nothing changes: page paths, `ui.Link` targets, `s.navigate`,
 `s.path`, the `next` of a login, an image's `src`, a file's URL and a path
 in Markdown are the app's own paths, and the tab puts each one under the
