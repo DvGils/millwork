@@ -1,75 +1,87 @@
 <p align="center"><img src="bundle/public/favicon.svg" alt="" width="72"></p>
 
-# millwork
+<h1 align="center">millwork</h1>
 
-[![CI](https://github.com/DvGils/millwork/actions/workflows/ci.yml/badge.svg)](https://github.com/DvGils/millwork/actions/workflows/ci.yml)
+<p align="center">A modern UI framework for Python</p>
 
-A Python framework for data tools and AI applications. The browser runs one
-prebuilt React bundle; Python describes the page and handles its events.
-There is no JavaScript to write, no build step in your project, and no state
-in the browser that Python does not own.
+<p align="center">
+  <a href="https://github.com/DvGils/millwork/actions/workflows/ci.yml"><img src="https://github.com/DvGils/millwork/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/python-3.12%2B-3776AB" alt="Python 3.12 or newer">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
+</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/app-dark.png">
+  <img src=".github/readme/app-light.png" alt="A millwork page: three stat tiles with trends, a bar chart and a sortable table, in the default theme.">
+</picture>
+
+A page is a Python function of the session's state. A handler changes the
+state, the page renders again, and the browser receives a patch. The React bundle
+ships inside the package, so a project is Python only.
 
 ```python
 import millwork as mw
 from millwork import ui
+from pydantic import BaseModel
 
-app = mw.App("hello")
+
+class State(BaseModel):
+    clicks: int = 0
+
+
+app = mw.App("hello", state=State)
+
 
 @app.page("/")
-def home(s: mw.Session) -> ui.Component:
+def home(s: mw.Session[State]) -> ui.Component:
     return ui.Page(
-        ui.Text("Hello."),
-        ui.Button("Say it", on_click=lambda s, _: s.toast("Hello from Python.")),
+        ui.Text(f"Clicked {s.state.clicks} times."),
+        ui.Button("Add one", on_click=lambda s, _: setattr(s.state, "clicks", s.state.clicks + 1)),
     )
 ```
 
 ```
-millwork run app.py
+uv add git+https://github.com/DvGils/millwork
+uv run millwork run app.py
 ```
 
-millwork is early. The catalogue, the session model and the wire protocol
-are in place and every component has a live example, but the first
-production app has not been ported yet, and the API may still move.
+## What is in the box
 
-## What you get
-
-- **A catalogue of components** built on shadcn/ui: layout, text, inputs,
+- **A catalogue of components** on shadcn/ui: layout, text, inputs,
   feedback, tables, charts, forms from Pydantic models, files, tasks with
   progress, and a chat surface that streams replies from Python.
-- **One way to think about state.** A page is a function of the session's
-  state. A handler changes state; the page re-renders; the browser gets a
-  patch. Controls are owned by Python or by the browser, never both.
-- **Long work as tasks**, with progress, steps and cancellation drawn by the
-  page, and chat replies that stream with reasoning and tool steps.
-- **Files over the session's own socket.** Uploads, downloads and inline
-  images never need a URL, so a deployment needs no sticky sessions and no
-  shared storage.
-- **Auth** with password and OAuth providers behind one `on_login` hook,
-  and a theme file in the shadcn token vocabulary for colours, fonts and
-  logos.
-- **A test harness** that drives a page without a browser: open it, click,
-  change, submit, and read what the tab would have received.
-
-## Install
-
-millwork needs Python 3.12 or newer. The package carries the built bundle,
-so a machine without Node can install and run it.
-
-```
-uv add git+https://github.com/DvGils/millwork
-```
+- **One model of state.** Python owns the state; a control is owned by
+  Python or by the browser, and the page says which.
+- **Long work as tasks**, with progress, steps and cancellation drawn by
+  the page, and chat replies that stream text, reasoning and tool steps.
+- **Files over the session's socket.** Uploads, downloads and inline
+  images travel on the same connection as everything else, so replicas
+  need no sticky routing and no shared storage.
+- **Sign-in** with password, OAuth and proxy-header providers behind one
+  `on_login` hook, and a theme file in the shadcn token vocabulary for
+  colors, fonts and logos.
+- **A test harness** that drives a page without a browser: open it,
+  click, change, submit, and read what the tab would have received.
+- **One process to run.** `millwork run` serves an app on a port or a
+  unix socket, behind a proxy and under a path prefix, with a health
+  route for the host.
 
 ## The manual
 
-The manual is a millwork app: every example in it runs, with its Python
-beside it, and a search box finds the section you need.
+The manual is a millwork app. Every example in it runs, with the Python
+code beside it:
 
 ```
-millwork docs
+uv run millwork docs
 ```
 
-Then open http://127.0.0.1:8008. The manual is also the place to see what
-an app looks like: each chapter is a page of a running millwork app.
+Then open http://127.0.0.1:8008. The chapters cover pages and routing,
+state and handlers, signing in, theming, testing and running, and every
+component has a live example.
+
+## Status
+
+millwork is still in beta.
 
 ## Developing millwork
 
