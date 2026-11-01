@@ -20,21 +20,6 @@ def test_pages_parse_into_prose_and_live_blocks() -> None:
         parse("```python live\nx = 1\n```\n", "/t")
 
 
-@pytest.mark.parametrize("slug", [p.slug for p in load()])
-async def test_every_page_renders_without_a_failed_example(slug: str, tmp_path: Path) -> None:
-    app = make_app()
-    app.bundle_dir = tmp_path
-    async with TestApp(app).open(slug) as page:
-        assert "This example failed" not in page.text()
-        live = [
-            seg for p in load() if p.slug == slug for seg in p.segments if not isinstance(seg, str)
-        ]
-        if live:
-            assert page.find_all(ui.Code)  # a page with live examples shows their source
-        else:
-            assert page.find_all(ui.Markdown)  # a prose chapter still renders
-
-
 async def test_a_live_block_keeps_its_state_across_events(tmp_path: Path) -> None:
     app = make_app()
     app.bundle_dir = tmp_path

@@ -11,7 +11,8 @@ the thread the session keeps for it, and an `on_message` handler that gets a
 `mw.ChatTurn` and replies through it. The chat fills whatever height it is
 given, so give it one with `cls` inside a card. `attachments=ui.Accept(...)`
 says what a person may attach, of which types, how many and how large;
-without it the composer takes no files. `max_chars` caps a message.
+without it the composer takes no files. `max_chars` caps a message and
+`max_messages` the thread, as the section below says.
 `tools=[...]` puts your own buttons in the composer; the section below
 and the Custom chapter show what goes there.
 
@@ -68,7 +69,11 @@ ui.Card(
 
 `s.chat(key)` is the thread: `messages` holds what was said, `clear()`
 empties it, and `load(messages)` restores a stored conversation. `busy` is
-true while a reply is streaming.
+true while a reply is streaming. The session keeps the last `max_messages`
+of the Chat, 200 by default, each at most `max_chars` long, 16,000 by
+default, so a thread holds a known amount whatever a visitor sends.
+`s.drop_chat(key)` forgets a thread altogether, for an app that keeps its
+threads in a store and only the open one in the session.
 
 ```python live
 ui.Row(

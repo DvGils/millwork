@@ -304,7 +304,14 @@ def make_app(theme: Any = None) -> mw.App:
     sections = index(pages)
     # The manual's own look: the mainlines colours, Inter and the mark, from the
     # package's public folder. A theme passed in replaces it.
-    app = mw.App("millwork manual", state=State, public=PUBLIC, components=COMPONENTS, theme=theme)
+    app = mw.App(
+        "millwork manual",
+        state=State,
+        public=PUBLIC,
+        components=COMPONENTS,
+        theme=theme,
+        max_sessions=300,
+    )
 
     def results(query: str) -> list[ui.Component]:
         found = search(sections, query)

@@ -151,3 +151,28 @@ def test_reload_mode_passes_the_bound_socket_to_the_reloader(
     assert seen[0] == (socket.AF_UNIX, True)
     assert main(["run", str(tmp_path / "demo.py"), "--reload", "--port", "0"]) == 0
     assert seen[1][0] in (socket.AF_INET, socket.AF_INET6)
+
+
+def test_serve_bounds_what_a_tab_may_send_on_the_socket(monkeypatch: pytest.MonkeyPatch) -> None:
+    import uvicorn
+
+    from millwork.cli import WS_MAX_SIZE, serve
+
+    seen: dict[str, object] = {}
+
+    class Config:
+        def __init__(self, app: object, **kw: object) -> None:
+            seen.update(kw)
+            self.backlog = 2048
+
+    class Server:
+        def __init__(self, config: object) -> None:
+            pass
+
+        def run(self, sockets: object = None) -> None:
+            pass
+
+    monkeypatch.setattr(uvicorn, "Config", Config)
+    monkeypatch.setattr(uvicorn, "Server", Server)
+    assert serve(object(), host=None, port=None, uds=None, root_path="", debug=False) == 0
+    assert seen["ws_max_size"] == WS_MAX_SIZE == 1024 * 1024 and seen["proxy_headers"] is False

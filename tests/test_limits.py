@@ -253,9 +253,9 @@ async def test_a_chat_message_over_its_length_is_refused(tmp_path: Path) -> None
         )
 
     async with TestApp(app).open("/") as page:
-        await page.event("chat", "message", {"text": "x" * 64_000})
+        await page.event("chat", "message", {"text": "x" * 16_000})
         assert len(page.session.chat("chat").messages) == 1
-        await page.event("chat", "message", {"text": "x" * 64_001})
+        await page.event("chat", "message", {"text": "x" * 16_001})
         assert len(page.session.chat("chat").messages) == 1
         await page.event("short", "message", {"text": "x" * 11})
         assert page.session.chat("short").messages == []

@@ -386,3 +386,61 @@ async def test_messages_and_steps_carry_their_times(tmp_path: Path) -> None:
         output = next(c for c in chunks if c["type"] == "tool-output-available")
         assert output["took"] == step["took"]
         assert page.find("main").props["names"] is True
+
+
+async def test_a_thread_keeps_only_the_last_max_messages(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("c6", public=None, bundle_dir=tmp_path)
+
+    async def echo(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as r:
+            await r.text(f"re: {turn.text}")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Chat(key="main", on_message=echo, max_messages=3))
+
+    async with TestApp(app).open("/") as page:
+        thread = page.session.chat("main")
+        for n in range(3):
+            await page.send("main", f"m{n}")
+        assert [m.text for m in thread.messages] == ["re: m1", "m2", "re: m2"]
+        # A loaded conversation is cut the same way, from the front.
+        thread.load([{"id": str(i), "role": "user", "parts": []} for i in range(10)])
+        assert [m.id for m in thread.messages] == ["7", "8", "9"]
+
+
+async def test_drop_chat_forgets_a_thread_unless_it_is_replying(tmp_path: Path) -> None:
+    from millwork.protocol import Event
+    from millwork.testing import TestApp
+
+    app = mw.App("c7", public=None, bundle_dir=tmp_path)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as r:
+            started.set()
+            await release.wait()
+            await r.text("done")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Chat(key="main", on_message=slow))
+
+    async with TestApp(app).open("/") as page:
+        s = page.session
+        s.chat("old").load([{"id": "1", "role": "user", "parts": []}])
+        s.drop_chat("old")
+        assert "old" not in s._threads and s.chat("old").messages == []
+        s.spawn(s.dispatch(Event(node="root/main", name="message", payload={"text": "hi"})))
+
+        await started.wait()
+        s.drop_chat("main")
+        assert s.chat("main").busy  # still there: a reply is running in it
+        release.set()
+        await page.settle()
+        assert s.chat("main").messages[-1].text == "done"
+        s.drop_chat("main")
+        assert "main" not in s._threads

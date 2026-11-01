@@ -113,7 +113,9 @@ are cancelled, uploads in flight are cut. Logs go to standard error.
 
 `app.asgi` is the ASGI application itself, for a server of your own
 choosing; under uvicorn directly, pass `--no-proxy-headers`, since
-millwork applies the forwarded headers.
+millwork applies the forwarded headers, and `--ws-max-size 1048576`, the
+bound `millwork run` puts on a message from the tab (uploads travel in
+smaller frames).
 
 ## A unix socket
 

@@ -706,3 +706,33 @@ async def test_a_changed_custom_component_is_pushed_to_open_tabs(tmp_path: Path)
         # The new source has a new version, so the tab fetches it under a new URL.
         version = reloads[-1].args["version"]
         assert version == app.component_versions["Hello"] and len(version) == 16
+
+
+async def test_the_replay_window_is_bounded_in_bytes(tmp_path: Path) -> None:
+    from millwork.session import OUTBOX_KEEP_BYTES
+    from millwork.testing import TestApp
+
+    app = mw.App("outbox", public=None, bundle_dir=tmp_path)
+
+    class S(BaseModel):
+        n: int = 0
+
+    @app.page("/")
+    def home(s: mw.Session[S]) -> ui.Component:
+        return ui.Page(
+            ui.Text("x" * 300_000 + str(s.state.n), key="big"),
+            ui.Button(
+                "More", key="more", on_click=lambda s, _: setattr(s.state, "n", s.state.n + 1)
+            ),
+        )
+
+    async with TestApp(app).open("/", state=S()) as page:
+        for _ in range(30):
+            await page.click("more")
+        session = page.session
+        held = sum(len(t) for _, t in session._outbox)
+        assert held <= OUTBOX_KEEP_BYTES and len(session._outbox) < 30
+        assert session._outbox_bytes == held
+        # The newest message is always kept, so a tab one step behind still replays.
+        assert session._can_replay(session._seq - 1)
+        assert not session._can_replay(1)

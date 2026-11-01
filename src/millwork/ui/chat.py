@@ -52,7 +52,11 @@ class Chat(Component):
     suggestions: list[str] = []
     placeholder: str | None = None
     attachments: Accept | None = None
-    max_chars: int = 64_000
+    # The longest message and the most of them the session keeps for the
+    # thread, the oldest going first: together they bound what a thread can
+    # hold, whatever is sent.
+    max_chars: int = 16_000
+    max_messages: int = 200
     commands: list[Command] = []
     disabled: bool = False
     show_steps: Literal["full", "collapsed", "hidden"] = "collapsed"

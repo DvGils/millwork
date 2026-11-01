@@ -58,7 +58,11 @@ SendBytes = Callable[[bytes], Awaitable[None]]
 Close = Callable[[], Awaitable[None]]
 
 RENDER_COALESCE_SECONDS = 0.05
+# The replay window: what a tab that drops and comes back is caught up with.
+# Bounded in messages and in bytes, since one message can carry a whole chat;
+# a tab that fell behind the window is mounted afresh instead.
 OUTBOX_KEEP = 500
+OUTBOX_KEEP_BYTES = 4 * 1024 * 1024
 # Messages from the tab still being handled; further ones are dropped until
 # the backlog clears, so a flood cannot grow the task set without bound.
 MAX_INFLIGHT = 64
@@ -93,7 +97,8 @@ class Session[S]:
         self._send: Send | None = None
         self._close_socket: Close | None = None
         self._seq = 0
-        self._outbox: deque[tuple[int, str]] = deque(maxlen=OUTBOX_KEEP)
+        self._outbox: deque[tuple[int, str]] = deque()
+        self._outbox_bytes = 0
         self._render_scheduled = False
         self._render_handle: asyncio.TimerHandle | None = None
         self._lock = asyncio.Lock()
@@ -276,6 +281,11 @@ class Session[S]:
         self._seq += 1
         text = pack(self._seq, msg)
         self._outbox.append((self._seq, text))
+        self._outbox_bytes += len(text)
+        while len(self._outbox) > OUTBOX_KEEP or (
+            self._outbox_bytes > OUTBOX_KEEP_BYTES and len(self._outbox) > 1
+        ):
+            self._outbox_bytes -= len(self._outbox.popleft()[1])
         await self._deliver(text)
 
     async def _send_direct(self, msg: Any) -> None:
@@ -355,6 +365,14 @@ class Session[S]:
             thread = self._threads[key] = Thread()
         return thread
 
+    def drop_chat(self, key: str) -> None:
+        """Forget the thread under this key, unless a reply is running in it: the
+        Chat with that key starts empty next time. An app whose threads live in
+        a store keeps only the open one in the session this way."""
+        thread = self._threads.get(key)
+        if thread is not None and not thread.busy:
+            del self._threads[key]
+
     async def stream(self, node: str, chunk: dict[str, Any]) -> None:
         """One chunk of the AI SDK UI message stream to a Chat node. Never touches the tree."""
         await self._send_now(Stream(node=node, chunk=chunk))
@@ -365,6 +383,7 @@ class Session[S]:
             log.warning("a Chat needs a key to keep its messages")
             return
         thread = self.chat(component.key)
+        thread.limit = component.max_messages
         if thread.busy:
             self.toast(self.text("wait_for_reply"), tone="warning")
             return
@@ -405,7 +424,7 @@ class Session[S]:
         message = UIMessage(
             id=secrets.token_urlsafe(8), role="user", parts=parts, metadata=metadata
         )
-        thread.messages.append(message)
+        thread.append(message)
         self._chat_run(event.node, thread, message)
 
     def _chat_run(self, node_id: str, thread: Thread, message: UIMessage) -> None:
@@ -442,7 +461,7 @@ class Session[S]:
                 context.unbind(token)
                 thread.turn_task = None
                 if thread.inflight is not None:
-                    thread.messages.append(thread.inflight)
+                    thread.append(thread.inflight)
                     thread.inflight = None
                 self.refresh()
 

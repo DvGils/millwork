@@ -14,7 +14,7 @@ import contextlib
 import logging
 import secrets
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -54,6 +54,10 @@ class Thread:
         self.turn_task: asyncio.Task[Any] | None = None
         self.inline: dict[str, Component] = {}
         self.suggestions: list[str] = []
+        # The most messages the session keeps for this thread; the oldest go.
+        # The Chat's ``max_messages`` sets it, so a thread never outgrows what
+        # the app asked for, whatever a visitor sends.
+        self.limit = 200
 
     @property
     def busy(self) -> bool:
@@ -65,8 +69,19 @@ class Thread:
         self.inline.clear()
         self.suggestions.clear()
 
-    def load(self, messages: list[UIMessage | dict[str, Any]]) -> None:
+    def load(self, messages: Sequence[UIMessage | dict[str, Any]]) -> None:
         self.messages = [m if isinstance(m, UIMessage) else UIMessage(**m) for m in messages]
+        self._trim()
+
+    def append(self, message: UIMessage) -> None:
+        self.messages.append(message)
+        self._trim()
+
+    def _trim(self) -> None:
+        extra = len(self.messages) - self.limit
+        if extra > 0:
+            del self.messages[:extra]
+            self._sweep_inline()
 
     def find(self, message_id: str) -> int | None:
         return next((i for i, m in enumerate(self.messages) if m.id == message_id), None)
@@ -74,6 +89,11 @@ class Thread:
     def truncate(self, index: int) -> None:
         """Drop the messages from ``index`` on, and the inline components only they used."""
         del self.messages[index:]
+        self._sweep_inline()
+        self.suggestions.clear()
+
+    def _sweep_inline(self) -> None:
+        """Drop the inline components no remaining message uses."""
         kept = {
             p.get("data", {}).get("slot")
             for m in self.messages
@@ -82,7 +102,6 @@ class Thread:
         }
         for slot in [s for s in self.inline if s not in kept]:
             del self.inline[slot]
-        self.suggestions.clear()
 
 
 class ChatTurn:
@@ -169,7 +188,7 @@ class Reply:
         await self._send({"type": "message-metadata", "messageMetadata": {"took": took}})
         await self._send({"type": "finish-step"})
         await self._send({"type": "finish", "finishReason": reason})
-        self._thread.messages.append(self.message)
+        self._thread.append(self.message)
         self._thread.inflight = None
         self._s.refresh()
 

@@ -184,6 +184,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
 
+# The largest message a tab may send on the socket. Uploads travel in frames of
+# a quarter of this, so the bound costs nothing and caps every event's payload.
+WS_MAX_SIZE = 1024 * 1024
+
+
 def serve(
     app: object,
     *,
@@ -211,6 +216,7 @@ def serve(
         port=port or default_port,
         uds=uds,
         proxy_headers=False,
+        ws_max_size=WS_MAX_SIZE,
         root_path=root_path,
         log_level="debug" if debug else "info",
         reload=reload,
