@@ -123,6 +123,9 @@ class Task[T]:
         before = _snapshot(session.state) if watch else None
         runs = session._handler_runs
         result = await asyncio.to_thread(fn)
+        reporter = _reporter.get()
+        if reporter is not None:
+            await reporter.drain()
         if watch and before is not None and runs == session._handler_runs:
             if _snapshot(session.state) != before:
                 session.warn(
@@ -271,6 +274,11 @@ class Reporter:
     def __init__(self, task: Task[Any]) -> None:
         self._task = task
         self._loop = task._session._loop
+        # Reports handed over from a worker thread and not yet applied on the
+        # loop. The loop may resume the task before it runs them, so the task
+        # drains them before it finishes.
+        self._queued = 0
+        self._lock = threading.Lock()
 
     def _touch(self, fn: Callable[[], None]) -> None:
         """Run a mutation on the loop thread, then render. Safe from a worker thread.
@@ -288,7 +296,23 @@ class Reporter:
             fn()
             self._task._session.refresh()
         else:
-            self._loop.call_soon_threadsafe(self._touch, fn)
+            with self._lock:
+                self._queued += 1
+            self._loop.call_soon_threadsafe(self._handed_over, fn)
+
+    def _handed_over(self, fn: Callable[[], None]) -> None:
+        with self._lock:
+            self._queued -= 1
+        self._touch(fn)
+
+    async def drain(self) -> None:
+        """Wait until every report a thread handed over has been applied."""
+        while True:
+            with self._lock:
+                pending = self._queued
+            if not pending:
+                return
+            await asyncio.sleep(0)
 
     def set(self, value: float | None = None, message: str | None = None) -> None:
         def apply() -> None:
