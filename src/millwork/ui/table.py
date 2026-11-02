@@ -8,11 +8,12 @@ server's.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
 
+from millwork.icons import check_icon
 from millwork.nodes import Component
 
 Format = Literal[
@@ -54,7 +55,13 @@ class MenuItem(BaseModel):
     icon: str | None = None
     disabled: bool = False
     destructive: bool = False
+    confirm: str | None = None
     separator_after: bool = False
+
+    @field_validator("icon")
+    @classmethod
+    def _known_icon(cls, name: str | None) -> str | None:
+        return check_icon(name)
 
 
 def _row_dict(row: Any) -> dict[str, Any]:
@@ -143,3 +150,36 @@ class Table(Component):
             "tone_rows": {str(i): t for i, t in tone_rows.items()},
             "tone_cells": {str(i): t for i, t in tone_cells.items()},
         }
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            rows: Sequence[Any] = ...,
+            columns: list[Column] | None = None,
+            row_key: str = "id",
+            height: int | str | None = None,
+            sticky_header: bool = True,
+            sortable: bool = True,
+            default_sort: list[tuple[str, Literal["asc", "desc"]]] = ...,
+            filters: bool = False,
+            search: bool = False,
+            page_size: int | None = None,
+            selection: Literal["none", "row", "rows"] = "none",
+            selected: list[Any] = ...,
+            row_actions: list[MenuItem] = ...,
+            tones: Callable[[Any], str | None]
+            | Mapping[str, Callable[[Any, Any], str | None]]
+            | None = None,
+            summary: bool | str = True,
+            empty: str = "",
+            on_select: Any = None,
+            on_row_click: Any = None,
+            on_action: Any = None,
+            on_sort: Any = None,
+            on_filter: Any = None,
+        ) -> None: ...

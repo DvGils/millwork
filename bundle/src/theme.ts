@@ -14,6 +14,7 @@ export interface ThemeBoot {
   density: "comfortable" | "compact";
   scrollbars: "auto" | "thin";
   locale: string;
+  currency?: string;
   strings: Record<string, string>;
 }
 
@@ -46,6 +47,10 @@ export function t(key: string, vars?: Record<string, string | number>): string {
 
 export function locale(): string {
   return boot().locale;
+}
+
+export function currency(): string {
+  return boot().currency ?? "EUR";
 }
 
 export function getMode(): Mode {

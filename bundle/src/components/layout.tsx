@@ -36,13 +36,13 @@ export const Page: Renderer = ({ node, props, children }) => {
   const style = props.max_width ? { maxWidth: String(props.max_width) } : undefined;
   const sidebarId = node.children.find((cid) => store.get(cid)?.type === "Sidebar");
   if (sidebarId) {
-    return <PageWithSidebar sidebarId={sidebarId} rest={node.children.filter((c) => c !== sidebarId)} className={className} style={style} padding={props.padding} header={props.header} />;
+    return <PageWithSidebar sidebarId={sidebarId} rest={node.children.filter((c) => c !== sidebarId)} className={className} style={style} padding={props.padding} gap={gapClass(props.gap ?? 6)} header={props.header} />;
   }
   return (
     <div className="flex h-dvh flex-col">
       <Slot value={props.header} />
       <main className={pageBodyClass(props.padding)}>
-        <PageBody className={className} style={style}>
+        <PageBody className={cn(gapClass(props.gap ?? 6), className)} style={style}>
           {children}
         </PageBody>
       </main>

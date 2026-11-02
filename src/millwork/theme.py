@@ -230,6 +230,7 @@ class Theme(BaseModel):
     scrollbars: Scrollbars = "thin"
     density: Density = "comfortable"
     locale: str = "en"
+    currency: str = "EUR"
     strings: dict[str, str] = Field(default_factory=dict)
 
     _favicon = field_validator("favicon")(staticmethod(lambda v: v and _check_path(v, "favicon")))
@@ -258,6 +259,13 @@ class Theme(BaseModel):
     def _locale(cls, v: str) -> str:
         if not re.match(r"^[a-z]{2}(-[A-Za-z]{2,4})?$", v):
             raise ValueError(f"locale must look like 'nl' or 'en-GB', got {v!r}")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def _currency(cls, v: str) -> str:
+        if not re.match(r"^[A-Z]{3}$", v):
+            raise ValueError(f"currency is an ISO 4217 code such as 'EUR' or 'USD', got {v!r}")
         return v
 
     @field_validator("strings")
@@ -320,6 +328,7 @@ class Theme(BaseModel):
             "density": self.density,
             "scrollbars": self.scrollbars,
             "locale": self.locale,
+            "currency": self.currency,
             "strings": self.all_strings(),
         }
 

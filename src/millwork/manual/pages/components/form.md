@@ -39,13 +39,13 @@ class Saved(BaseModel):
 
 
 async def save(s, project: Project):
-    state(Saved).last = f"{project.title} ({project.language}, {project.count})"
+    s.state.saved.last = f"{project.title} ({project.language}, {project.count})"
 
 
 def example(s):
     return ui.Stack(
         ui.Form(Project, on_submit=save, layout=2),
-        ui.Text(f"Saved: {state(Saved).last}", variant="muted"),
+        ui.Text(f"Saved: {s.state.saved.last}", variant="muted"),
         gap=4,
     )
 ```
@@ -57,11 +57,21 @@ def example(s):
 `overrides` maps a pointer to any spec key, such as a `widget`, `min`,
 `max`, `step` or `rows`. `fields` picks a subset in order.
 
+The widgets are `input`, `textarea`, `password`, `number`, `slider`,
+`switch`, `checkbox`, `select`, `radio`, `toggle`, `multiselect`,
+`checkboxes`, `tags`, `date`, `datetime`, `file`, `files` and `hidden`.
+Each field gets one from its type, and an override swaps it for another
+that fits the same value, such as `radio` for a short enum or `toggle` for
+a boolean. A field with a `default_factory` opens with what the factory
+makes, so a date field defaulting to today shows today. A factory that
+makes a new value on every call, a uuid or the time of day, gives the form
+nothing, and the model makes that value on submit as it always did.
+
 ```python live
 from pydantic import BaseModel
 
 
-class Settings(BaseModel):
+class Prefs(BaseModel):
     name: str = ""
     level: int = 1
     mood: str = "ok"
@@ -69,7 +79,7 @@ class Settings(BaseModel):
 
 
 ui.Form(
-    Settings,
+    Prefs,
     fields=["name", "mood", "level", "tags"],
     labels={"name": {"label": "Display name", "help": "Shown to other users."}},
     overrides={

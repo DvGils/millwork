@@ -6,10 +6,11 @@ beneath it, so every example in the manual runs. The same blocks are the
 gallery a bundle upgrade is judged against and the coverage the tests check.
 
 The block contract: the code runs with ``mw`` and ``ui`` in scope and imports
-the rest, as an app would. It either defines ``example(s)``, a page function over the session,
-or ends in an expression that is the component. ``state(Model)`` returns an
-instance of ``Model`` kept for this block on the session, so an example can
-hold state across events.
+the rest, as an app would. It either defines ``example(s)``, a page function
+over the session, or ends in an expression that is the component. The manual's
+state is composed from the models the blocks define, one field per model
+named after the class, so an example holds state in ``s.state.<model>`` the
+way an app holds it in a field of its own model.
 """
 
 from __future__ import annotations
@@ -24,10 +25,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, create_model
+from starlette.responses import PlainTextResponse
 
 import millwork as mw
-from millwork import context, ui
+from millwork import ui
+from millwork.reference import reference
 
 log = logging.getLogger("millwork.manual")
 
@@ -61,14 +64,6 @@ class Page:
     chapter: str
     order: int
     segments: list[str | Live] = field(default_factory=list)
-
-
-class State(BaseModel):
-    """What the manual's session holds: one state object per live block that asks,
-    and the search box's query."""
-
-    blocks: dict[str, Any] = {}
-    query: str = ""
 
 
 @dataclass
@@ -241,24 +236,58 @@ def page_namespace(slug: str = "", session_id: str = "") -> dict[str, Any]:
     return ns
 
 
-def render_block(s: mw.Session[State], live: Live, ns: dict[str, Any]) -> ui.Component:
+def field_name(model: str) -> str:
+    """The state field a model lands in: ``Counter`` is ``s.state.counter``,
+    ``EditorState`` is ``s.state.editor_state``."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", model).lower()
+
+
+def state_model(pages: list[Page]) -> type[BaseModel]:
+    """The manual's state, composed from the models its examples define, the way
+    an app composes its own: one field per model, named after the class, made
+    fresh for every session. A model that needs arguments to construct is a form
+    model, not state, and gets no field. Two pages may define a model of one
+    name only with the same fields, since the session keeps one instance.
+    """
+    models: dict[str, tuple[type[BaseModel], str]] = {}
+    for page in pages:
+        ns = page_namespace(page.slug, "load")
+        for seg in page.segments:
+            if not isinstance(seg, Live):
+                continue
+            try:
+                exec(seg.body, ns)
+            except Exception:  # noqa: BLE001  the page shows the failure where the block is
+                log.exception("live block %s failed at load", seg.id)
+                continue
+            for name, value in list(ns.items()):
+                if not (isinstance(value, type) and issubclass(value, BaseModel)):
+                    continue
+                if value is BaseModel or value.__module__ != ns["__name__"]:
+                    continue
+                if name in models and models[name][0] is value:
+                    continue
+                try:
+                    value()
+                except Exception:  # noqa: BLE001  a model that needs arguments, or cannot be made
+                    continue
+                if name in models and set(models[name][0].model_fields) != set(value.model_fields):
+                    raise ValueError(
+                        f"{name} is defined with different fields in {models[name][1]} and "
+                        f"{seg.id}; the manual's state holds one {name}"
+                    )
+                models.setdefault(name, (value, seg.id))
+        sys.modules.pop(ns["__name__"], None)
+    fields: dict[str, Any] = {
+        field_name(name): (cls, Field(default_factory=cls)) for name, (cls, _) in models.items()
+    }
+    if "query" in fields:
+        raise ValueError("an example model may not be named Query; the search box holds that field")
+    return create_model("State", query=(str, ""), **fields)
+
+
+def render_block(s: mw.Session[Any], live: Live, ns: dict[str, Any]) -> ui.Component:
     """Run a live block for this session; a failure shows as an alert, never a dead page."""
-
-    def state(model: type[BaseModel]) -> Any:
-        # Held per page and model name, not per block: a handler defined in one
-        # block looks ``state`` up when it runs, by which time a later block may
-        # have rebound it. The block runs on every render, so ``model`` is a new
-        # class each time; the held instance is matched by name. The namespace
-        # is shared by every session on the page, so the session is the one
-        # running now (a handler's, a task's), not the one that rendered last.
-        owner = context.current() or s
-        key = f"{live.id.rsplit('#', 1)[0]}:{model.__name__}"
-        held = owner.state.blocks.get(key)
-        if type(held).__name__ != model.__name__:
-            held = owner.state.blocks[key] = model()
-        return held
-
-    ns["state"] = state
     try:
         exec(live.body, ns)
         view = eval(live.tail, ns) if live.tail is not None else ns["example"](s)
@@ -267,7 +296,7 @@ def render_block(s: mw.Session[State], live: Live, ns: dict[str, Any]) -> ui.Com
         if view.wire_type() in _INLINE:
             # A lone button or badge keeps its natural width instead of stretching
             # across the card, which is how it sits in a real page too.
-            return ui.Row(children=[view], wrap=True)
+            return ui.Row(view, wrap=True)
         return view
     except Exception:
         log.exception("live block %s failed", live.id)
@@ -281,18 +310,16 @@ def render_block(s: mw.Session[State], live: Live, ns: dict[str, Any]) -> ui.Com
 def specimen(view: ui.Component, source: str) -> ui.Component:
     """A live example: the component on a soft panel, its source beneath, one frame."""
     return ui.Stack(
-        children=[
-            ui.Stack(
-                children=[view],
-                cls="rounded-t-lg border border-b-0 bg-muted/40 px-6 py-6",
-            ),
-            ui.Code(
-                content=source,
-                language="python",
-                max_height="24rem",
-                cls="rounded-t-none border border-border [&_pre]:rounded-t-none",
-            ),
-        ],
+        ui.Stack(
+            view,
+            cls="rounded-t-lg border border-b-0 bg-muted/40 px-6 py-6",
+        ),
+        ui.Code(
+            content=source,
+            language="python",
+            max_height="24rem",
+            cls="rounded-t-none border border-border [&_pre]:rounded-t-none",
+        ),
         gap=0,
         cls="min-w-0",
     )
@@ -302,6 +329,7 @@ def make_app(theme: Any = None) -> mw.App:
     """The manual as an app, one page per Markdown file."""
     pages = load()
     sections = index(pages)
+    State = state_model(pages)  # noqa: N806
     # The manual's own look: the mainlines colours, Inter and the mark, from the
     # package's public folder. A theme passed in replaces it.
     # The manual is public: live sessions are capped, and the uploads its
@@ -316,6 +344,11 @@ def make_app(theme: Any = None) -> mw.App:
         files=mw.Files(max_session_mb=10, default_max_mb=10, max_total_mb=200),
     )
 
+    def llms(request: Any) -> PlainTextResponse:
+        return PlainTextResponse(reference())
+
+    app.route("/llms.txt", llms)
+
     def results(query: str) -> list[ui.Component]:
         found = search(sections, query)
         if not found:
@@ -325,17 +358,13 @@ def make_app(theme: Any = None) -> mw.App:
             sec = hit.section
             items.append(
                 ui.Stack(
-                    children=[
-                        ui.Link(
-                            label=sec.heading, href=f"{sec.page.slug}#{sec.anchor}", cls=HIT_LINK
-                        ),
-                        ui.Text(
-                            sec.page.title + (f" · {hit.snippet}" if hit.snippet else ""),
-                            variant="caption",
-                            cls="px-2 text-muted-foreground",
-                            truncate=True,
-                        ),
-                    ],
+                    ui.Link(label=sec.heading, href=f"{sec.page.slug}#{sec.anchor}", cls=HIT_LINK),
+                    ui.Text(
+                        sec.page.title + (f" · {hit.snippet}" if hit.snippet else ""),
+                        variant="caption",
+                        cls="px-2 text-muted-foreground",
+                        truncate=True,
+                    ),
                     gap=0,
                     cls="min-w-0",
                 )
@@ -355,7 +384,7 @@ def make_app(theme: Any = None) -> mw.App:
             cls="mb-2",
         )
         if query.strip():
-            return ui.Sidebar(children=[box, *results(query)], title="Manual")
+            return ui.Sidebar(box, *results(query), title="Manual")
         items: list[ui.Component] = [box]
         chapter = None
         for p in pages:
@@ -384,9 +413,9 @@ def make_app(theme: Any = None) -> mw.App:
                         cls=NAV_LINK,
                     )
                 )
-        return ui.Sidebar(children=items, title="Manual")
+        return ui.Sidebar(*items, title="Manual")
 
-    async def first_hit(s: mw.Session[State], query: str) -> None:
+    async def first_hit(s: mw.Session[Any], query: str) -> None:
         """Enter in the search box opens the best match."""
         s.state.query = query or ""
         found = search(sections, query)
@@ -394,11 +423,11 @@ def make_app(theme: Any = None) -> mw.App:
             s.navigate(f"{found[0].section.page.slug}#{found[0].section.anchor}")
 
     def register(page: Page) -> None:
-        def drop_namespace(s: mw.Session[State]) -> None:
+        def drop_namespace(s: mw.Session[Any]) -> None:
             sys.modules.pop(live_module_name(page.slug, s.id), None)
 
         @app.page(page.slug, title=f"{page.title} · millwork")
-        def view(s: mw.Session[State]) -> ui.Component:
+        def view(s: mw.Session[Any]) -> ui.Component:
             body: list[ui.Component] = []
             ns = page_namespace(page.slug, s.id)
             for seg in page.segments:
@@ -407,21 +436,17 @@ def make_app(theme: Any = None) -> mw.App:
                 else:
                     body.append(specimen(render_block(s, seg, ns), seg.source))
             return ui.Page(
-                children=[
-                    nav(page, s.state.query),
-                    ui.Stack(children=body, gap=6, cls="mx-auto w-full min-w-0 max-w-3xl py-6"),
-                ],
+                nav(page, s.state.query),
+                ui.Stack(*body, gap=6, cls="mx-auto w-full min-w-0 max-w-3xl py-6"),
                 header=ui.Header(
+                    ui.Link(
+                        label="GitHub",
+                        href="https://github.com/DvGils/millwork",
+                        target="_blank",
+                        icon="external-link",
+                        cls="text-sm text-muted-foreground hover:text-foreground",
+                    ),
                     title="millwork",
-                    children=[
-                        ui.Link(
-                            label="GitHub",
-                            href="https://github.com/DvGils/millwork",
-                            target="_blank",
-                            icon="external-link",
-                            cls="text-sm text-muted-foreground hover:text-foreground",
-                        )
-                    ],
                 ),
             )
 
@@ -438,14 +463,15 @@ __all__ = [
     "Hit",
     "Live",
     "Page",
-    "State",
     "app",
+    "field_name",
     "load",
     "make_app",
     "page_namespace",
     "parse",
     "render_block",
     "search",
+    "state_model",
     "Section",
     "index",
     "slugify",

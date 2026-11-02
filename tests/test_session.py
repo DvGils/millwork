@@ -736,3 +736,53 @@ async def test_the_replay_window_is_bounded_in_bytes(tmp_path: Path) -> None:
         # The newest message is always kept, so a tab one step behind still replays.
         assert session._can_replay(session._seq - 1)
         assert not session._can_replay(1)
+
+
+def test_the_tree_page_title_names_the_tab(tmp_path: Path) -> None:
+    app = mw.App("t", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/", title="App")
+    def home(s: mw.Session[State]) -> ui.Component:
+        title = f"Count {s.state.count}" if s.state.count else None
+        return ui.Page(ui.Button("+", key="inc", on_click=inc), title=title)
+
+    async def inc(s: mw.Session[State], _: Any) -> None:
+        s.state.count += 1
+
+    with TestClient(app.asgi) as client, client.websocket_connect("/_mw/ws") as ws:
+        hello(ws)
+        assert recv(ws)["title"] == "App"
+        send(ws, {"type": "event", "node": "root/inc", "name": "click"})
+        msgs = [recv(ws) for _ in range(2)]
+        assert {"type": "command", "name": "title", "args": {"title": "Count 1"}} in msgs
+
+
+def test_state_stays_across_pages_and_a_page_closes_on_leaving(tmp_path: Path) -> None:
+    app = mw.App("keep", state=State, public=None, bundle_dir=tmp_path)
+    left: list[str] = []
+
+    @app.page("/", title="Home")
+    def home(s: mw.Session[State]) -> ui.Component:
+        s.state.count += 1
+        return ui.Page(ui.Text(f"count={s.state.count}", key="t"))
+
+    @home.close
+    def leave_home(s: mw.Session[State]) -> None:
+        left.append(f"home at {s.state.count}")
+
+    @app.page("/other", title="Other")
+    def other(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text(f"still {s.state.count}", key="t"))
+
+    @other.close
+    def leave_other(s: mw.Session[State]) -> None:
+        left.append("other")
+
+    with TestClient(app.asgi) as client, client.websocket_connect("/_mw/ws") as ws:
+        hello(ws)
+        assert recv(ws)["nodes"]["root/t"]["props"]["content"] == "count=1"
+        send(ws, {"type": "navigate", "path": "/other"})
+        recv(ws)  # the navigate command
+        assert recv(ws)["nodes"]["root/t"]["props"]["content"] == "still 1"
+        assert left == ["home at 1"]
+    assert left == ["home at 1", "other"]

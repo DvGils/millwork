@@ -3,6 +3,48 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.1.4
+
+- One state per session. The app declares the model, `s.state` is the
+  session's instance of it, and it stays as the tab moves between pages,
+  so a value one page set is there for the next. `@app.page(state=)` is
+  gone, and a page's `close` hook runs when the session leaves the page
+  as well as when it ends. The State chapter shows how a bigger app
+  splits the model into a slice per feature, and how a page renders
+  components it cannot count.
+- The manual's examples read `s.state.<model>` as an app would. The
+  manual composes its state from the models the examples define.
+- An unknown icon name fails in Python, with the closest names in the
+  error, instead of a warning in the browser console. The set is
+  `mw.ICONS`.
+- `ui.Page(title=)` names the browser tab, and a title that changes
+  between renders follows.
+- `ui.NumberInput` reports on Enter as the manual said.
+- A `ui.MenuItem` asks before a destructive action wherever it is, in a
+  `DropdownMenu` too, and `confirm="..."` gives it the question's words.
+- A form opens with the value a field's `default_factory` makes.
+- A state model may hold a task as `mw.Task | None`.
+- `page.find("key")` in a test finds a keyed component in a slot such as a
+  card's footer.
+- The built-in not-found page draws its home icon again.
+- Every component carries a typed signature for mypy and pyright, so
+  positional children pass and a wrong prop or value shows in the editor.
+- `TestApp` raises in the test what a page function, handler or hook
+  raised, with a note saying where; `strict=False` keeps the old way.
+- A handler that cannot take `(session, payload)` is refused when the page
+  is built, with the expected shape in the error.
+- `ui.Page` lays its children out with a `gap`, six by default.
+- `Theme(currency=)` names the currency the `currency` format uses, and
+  number and date formats follow the theme's locale as the manual said.
+- `millwork reference` prints the catalog as a Markdown lookup table, and
+  the manual serves it at `/llms.txt`.
+- A chart's `colors={"name": slot}` fixes a series, or a pie's slice, to
+  one of the five chart colors, so two charts over the same categories
+  agree. A named slot stays reserved while its series is filtered away,
+  and the rest take the free slots in order.
+- The README has a whole page, the manual lists the form widgets, says
+  where an upload's bytes are, and that a `Stat` is a card of its own.
+
 ## 0.1.3
 
 - A `ui.Progress` draws one bar again. The progress primitive had started

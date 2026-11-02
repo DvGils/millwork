@@ -166,14 +166,14 @@ class Settings(BaseModel):
 
 
 async def answer(s, turn):
-    st = state(Settings)
+    st = s.state.settings
     async with turn.reply() as reply:
         text = turn.text.upper() if st.tone == "shout" else turn.text
         await reply.text(f"You said: {text}" + (" (sent from the manual)" if st.sign else ""))
 
 
 def example(s):
-    st = state(Settings)
+    st = s.state.settings
 
     def opened(value):
         def handler(s, _):
@@ -254,7 +254,7 @@ async def echo(s, turn):
 async def rated(s, message, value, comment):
     what = "cleared" if value is None else value
     note = f"{what}: {message.text[:30]}" + (f" ({comment})" if comment else "")
-    state(Feedback).notes.append(note)
+    s.state.feedback.notes.append(note)
 
 
 async def act(s, message, action):
@@ -262,7 +262,7 @@ async def act(s, message, action):
 
 
 def example(s):
-    notes = state(Feedback).notes
+    notes = s.state.feedback.notes
     return ui.Stack(
         ui.Card(
             ui.Chat(

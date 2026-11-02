@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, ClassVar, Literal, Type  # noqa: UP035
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Type  # noqa: UP035
 
 from pydantic import BaseModel
 
@@ -33,10 +33,35 @@ class Form(Component):
     on_submit: Any = None
     on_cancel: Any = None
 
-    def __init__(self, model: Any = None, **props: Any) -> None:
-        if model is not None:
-            props["model"] = model
-        super().__init__(**props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            model: Type[BaseModel],  # noqa: UP006
+            initial: Any = None,
+            submit: str | None = "Save",
+            cancel: str | None = None,
+            layout: Literal["vertical", "horizontal"] | int = "vertical",
+            fields: list[str] | None = None,
+            labels: Mapping[str, Mapping[str, Any]] | None = None,
+            overrides: Mapping[str, Mapping[str, Any]] | None = None,
+            issues: list[Issue] = ...,
+            disabled: bool = False,
+            read_only: bool = False,
+            dense: bool = False,
+            on_submit: Any = None,
+            on_cancel: Any = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, model: Any = None, **props: Any) -> None:
+            if model is not None:
+                props["model"] = model
+            super().__init__(**props)
 
     def wire_extra(self) -> dict[str, Any]:
         spec = field_spec(self.model)

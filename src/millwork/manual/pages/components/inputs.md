@@ -24,7 +24,7 @@ class Owner(BaseModel):
 
 
 def example(s):
-    st = state(Owner)
+    st = s.state.owner
     return ui.Stack(
         ui.Input(
             value=st.text,
@@ -53,7 +53,9 @@ def example(s):
 `ui.Button` takes a label, a `variant`, a `size`, an `icon` before the
 label or after it with `icon_position="end"`, `loading`, `disabled` and a
 `tooltip`. `confirm="..."` asks before the handler runs. `form="key"`
-submits the Form with that key from anywhere on the page.
+submits the Form with that key from anywhere on the page. An `icon` is one
+of lucide's names, the set in `mw.ICONS`, and a name outside it is refused
+when the component is made, with the closest names in the error.
 
 ```python live
 ui.Stack(
@@ -266,11 +268,11 @@ class Pipeline(BaseModel):
 
 
 def reorder(s, steps):
-    state(Pipeline).steps = steps
+    s.state.pipeline.steps = steps
 
 
 def example(s):
-    st = state(Pipeline)
+    st = s.state.pipeline
     return ui.Stack(
         ui.MultiSelect(
             options=["Collect", "Clean", "Model", "Report", "Share"],
@@ -329,7 +331,10 @@ ui.Row(
 
 `ui.DropdownMenu` opens a menu behind a `trigger` button. Items carry an
 `icon`, `disabled`, `destructive` and `separator_after`, and `on_select`
-receives the chosen id.
+receives the chosen id. A destructive item asks before its handler runs,
+with its label as the question, and `confirm="..."` on an item puts the
+question in the app's own words. The same holds for a table's
+`row_actions` and a file card's `actions`.
 
 ```python live
 ui.DropdownMenu(

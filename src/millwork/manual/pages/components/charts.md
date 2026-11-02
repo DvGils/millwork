@@ -8,9 +8,16 @@ order: 5
 A chart takes rows, like the Table does. `x` names the category or time
 column and `y` the value column, or several of them. Each series takes the
 next of the theme's five chart colors, in the order given, and keeps it
-when a neighbor disappears. Five series is the limit. A sixth has no
-color of its own, so fold it into another or draw a second chart. Every
-chart has a tooltip, and a legend appears from two series up.
+when a neighbor disappears. `colors={"Costs": 2}` fixes a series to a
+slot, by key or label, so two charts over the same categories paint each
+one alike. A named slot stays reserved while its series is filtered away,
+and the series not named take the free slots in order. Five series is the
+limit. A sixth has no
+color of its own, so a bar, line or area chart refuses it, and the app
+folds the rest into one series or draws a second chart. A pie folds its
+smallest slices into one for the same reason, since a slice is a row and
+the chart can see which are small. Every chart has a tooltip, and a legend
+appears from two series up.
 
 ## Bar chart
 
@@ -146,23 +153,24 @@ class Picked(BaseModel):
 
 
 def picked(s, point):
-    state(Picked).text = f"{point['series']} in {point['x']}: {point['value']}"
+    s.state.picked.text = f"{point['series']} in {point['x']}: {point['value']}"
 
 
 def example(s):
     return ui.Stack(
         ui.BarChart(MONTHS, x="month", y=["sales", "costs"], on_click=picked, height=180),
-        ui.Text(state(Picked).text, variant="muted"),
+        ui.Text(s.state.picked.text, variant="muted"),
         gap=2,
     )
 ```
 
 ## Stat
 
-`ui.Stat` is the headline number. `delta` is the change, drawn with its
-direction, and `good="down"` says a fall is the welcome move, as it is for
-costs or errors. `trend` draws a sparkline whose last point is the current
-one.
+`ui.Stat` is the headline number, drawn as a card of its own, so it goes
+straight into a `Grid` and not inside a `ui.Card`. `delta` is the change,
+drawn with its direction, and `good="down"` says a fall is the welcome
+move, as it is for costs or errors. `trend` draws a sparkline whose last
+point is the current one.
 
 ```python live
 ui.Grid(
@@ -177,8 +185,9 @@ ui.Grid(
 
 `ui.PieChart` shows how one whole splits, with one slice per row. `x`
 names the slice and `y` its value. Slices take the theme's five chart
-colors in row order, and over five the smallest fold into one gray slice
-named by `other`, which `other=None` turns into a refusal instead.
+colors in row order, or the slot `colors` names for a slice, and over five
+the smallest fold into one gray slice named by `other`, which `other=None`
+turns into a refusal instead.
 `labels=True` writes each slice's share beside it, `donut=True` leaves the
 middle open, and `center` writes a figure there. A pie reads well for a
 split at a glance with a few parts. When the parts need comparing with

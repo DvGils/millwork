@@ -15,13 +15,15 @@ from __future__ import annotations
 
 import datetime as dt
 import enum
+import inspect
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import PurePath
-from typing import Any, ClassVar, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
 
+from millwork.icons import check_icon
 from millwork.protocol import AddOp, ChildrenOp, Node, PatchOp, RemoveOp, SetOp, UnsetOp
 
 Handler = Callable[..., Any]
@@ -64,10 +66,23 @@ class Component(BaseModel):
     # Fields that never reach the wire as they are (a callable evaluated at
     # render, say); ``wire_extra`` supplies what goes instead.
     wire_exclude: ClassVar[frozenset[str]] = frozenset()
+    # What a handler receives after the session, for the props where it is not
+    # one payload: a chat's feedback handler gets the message, the value and
+    # the comment.
+    handler_args: ClassVar[dict[str, tuple[str, ...]]] = {}
 
     def wire_extra(self) -> dict[str, Any]:
         """Extra props computed at render time. Override in components that need it."""
         return {}
+
+    @field_validator("icon", "prefix_icon", check_fields=False)
+    @classmethod
+    def _known_icon(cls, name: str | None) -> str | None:
+        # The catalogue draws lucide icons. A component an app defines itself
+        # means by ``icon`` whatever its own renderer draws.
+        if cls.__module__.partition(".")[0] != "millwork":
+            return name
+        return check_icon(name)
 
     def wire_type(self) -> str:
         """The node type on the wire; a custom component names its own."""
@@ -82,8 +97,24 @@ class Text(Component):
     align: str | None = None
     tone: str | None = None
 
-    def __init__(self, content: str = "", **props: Any) -> None:
-        super().__init__(content=content, **props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            content: str = "",
+            variant: str = "body",
+            truncate: bool = False,
+            align: str | None = None,
+            tone: str | None = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, content: str = "", **props: Any) -> None:
+            super().__init__(content=content, **props)
 
 
 class Tree:
@@ -128,6 +159,7 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
             continue
         if callable(value) and not isinstance(value, type):
             if name.startswith("on_"):
+                check_handler(name, value, component.handler_args.get(name, ("payload",)))
                 tree.handlers[(node_id, name[3:])] = value
                 props[name] = True
             else:
@@ -200,6 +232,40 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
         id=node_id, type=component.wire_type(), props=props, children=children_ids
     )
     tree.components[node_id] = component
+
+
+# Handler shapes already checked, by code object: a lambda is a new object each
+# render and the same code every time, so the check is one per source line.
+_HANDLER_SHAPES: dict[tuple[Any, int], str | None] = {}
+
+
+def check_handler(prop: str, fn: Callable[..., Any], args: tuple[str, ...]) -> None:
+    """A handler takes the session and then ``args``, one payload for most
+    props. One that cannot fails here, when the tree is built, with the shape
+    in the message, instead of at the click with a toast."""
+    code = getattr(fn, "__code__", None)
+    key = (code, len(args))
+    if code is not None and key in _HANDLER_SHAPES:
+        problem = _HANDLER_SHAPES[key]
+    else:
+        problem = _handler_problem(fn, 1 + len(args))
+        if code is not None:
+            _HANDLER_SHAPES[key] = problem
+    if problem:
+        raise TypeError(f"{prop} takes a handler of (session, {', '.join(args)}); {problem}")
+
+
+def _handler_problem(fn: Callable[..., Any], count: int) -> str | None:
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return None
+    try:
+        signature.bind(*([None] * count))
+    except TypeError:
+        name = getattr(fn, "__name__", type(fn).__name__)
+        return f"{name}{signature} does not take {count} positional arguments"
+    return None
 
 
 def wire_value(value: Any) -> Any:

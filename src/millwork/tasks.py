@@ -19,7 +19,8 @@ from collections.abc import Callable, Iterator
 from contextvars import ContextVar, copy_context
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, GetCoreSchemaHandler
+from pydantic_core import core_schema
 
 if TYPE_CHECKING:
     from millwork.session import Session
@@ -83,6 +84,19 @@ class Task[T]:
         self._asyncio_task: asyncio.Task[Any] | None = None
         self._delay_handle: asyncio.TimerHandle | None = None
         self._on_done: Callable[..., Any] | None = None
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        """A field typed ``mw.Task | None`` holds the task itself; a JSON dump
+        of the model gets the snapshot the page renders."""
+        return core_schema.is_instance_schema(
+            cls,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda task: task.__millwork_wire__(), when_used="json"
+            ),
+        )
 
     # ------------------------------------------------------------- reading
 

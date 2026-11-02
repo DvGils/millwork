@@ -45,6 +45,81 @@ uv add millwork  # or `pip install millwork`
 uv run millwork run app.py
 ```
 
+A whole page is the same loop with more in it. This is the page in the
+screenshot: a row of stats, a chart in a card, and a table whose selection
+lives in the state.
+
+```python
+import millwork as mw
+from millwork import ui
+from pydantic import BaseModel
+
+MONTHS = [
+    {"month": "May", "revenue": 52, "costs": 31},
+    {"month": "Jun", "revenue": 48, "costs": 30},
+    {"month": "Jul", "revenue": 55, "costs": 34},
+    {"month": "Aug", "revenue": 51, "costs": 35},
+    {"month": "Sep", "revenue": 63, "costs": 38},
+    {"month": "Oct", "revenue": 70, "costs": 41},
+]
+
+ORDERS = [
+    {"id": 1041, "customer": "Lumen Labs", "amount": 1200.0, "status": "paid"},
+    {"id": 1042, "customer": "Wren & Co", "amount": 840.0, "status": "open"},
+    {"id": 1043, "customer": "Halvard", "amount": 2310.0, "status": "paid"},
+    {"id": 1044, "customer": "Pell Street", "amount": 460.0, "status": "overdue"},
+]
+
+
+class State(BaseModel):
+    selected: list[int] = []
+
+
+app = mw.App("ledger", state=State)
+
+
+def pick(s: mw.Session[State], keys: list[int]) -> None:
+    s.state.selected = keys
+
+
+@app.page("/", title="Ledger")
+def home(s: mw.Session[State]) -> ui.Component:
+    chosen = [o for o in ORDERS if o["id"] in s.state.selected]
+    return ui.Page(
+        ui.Stack(
+            ui.Grid(
+                ui.Stat(label="Revenue", value="€ 70k", delta=0.11, trend=[52, 48, 55, 51, 63, 70]),
+                ui.Stat(label="Costs", value="€ 41k", delta=0.08, good="down", trend=[31, 30, 34, 35, 38, 41]),
+                ui.Stat(label="Open orders", value=str(sum(o["status"] != "paid" for o in ORDERS))),
+                cols={"sm": 1, "md": 3},
+            ),
+            ui.Card(
+                ui.BarChart(MONTHS, x="month", y=["revenue", "costs"], height=220),
+                title="Revenue and costs",
+                description="Thousands of euros, by month.",
+            ),
+            ui.Card(
+                ui.Table(
+                    rows=ORDERS,
+                    columns=[
+                        ui.Column(key="id", header="Order"),
+                        ui.Column(key="customer"),
+                        ui.Column(key="amount", format="currency", align="right"),
+                        ui.Column(key="status", format="badge"),
+                    ],
+                    selection="rows",
+                    selected=s.state.selected,
+                    on_select=pick,
+                ),
+                title="Orders",
+                footer=ui.Text(f"{len(chosen)} selected", variant="muted"),
+            ),
+            gap=6,
+        ),
+        header=ui.Header(title="Ledger"),
+    )
+```
+
 ## What is in the box
 
 - **A catalog of components** on shadcn/ui: layout, text, inputs,
@@ -80,6 +155,13 @@ uv run millwork docs
 
 Then open http://127.0.0.1:8008.
 
+`millwork reference` prints the catalog as one Markdown table of every
+component, its props with their types and defaults, the session's and the
+app's calls, the icon names, the form widgets and the formats. The hosted
+manual serves the same text at
+[millwork-ui.com/llms.txt](https://millwork-ui.com/llms.txt), for a model
+that needs a lookup rather than a chapter.
+
 ## Status
 
 millwork is still in beta.
@@ -96,6 +178,10 @@ pnpm -C bundle exec tsc --noEmit       # the bundle's types
 CI=1 pnpm -C bundle exec vitest run    # the bundle's unit tests
 CI=1 pnpm -C bundle build              # rebuilds src/millwork/_bundle/dist
 ```
+
+A change to a component's fields is followed by `uv run python
+scripts/typed_inits.py`, which rewrites the typed signature under each
+class that mypy and pyright read, and a test checks that it was run.
 
 A change to the bundle is committed together with the rebuilt `dist`, so
 every checkout runs without Node. That includes a Dependabot bump of the

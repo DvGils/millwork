@@ -13,9 +13,11 @@ the screen it makes.
 
 `ui.Page` is the root of every page. It is as high as the viewport,
 scrolls its body under a fixed header, and lays itself out around a
-`ui.Sidebar` child when there is one. Give it a `title` for the browser
-tab and a `header` for the app bar. `padding=False` lets a child such as
-`ui.Chat` fill it edge to edge.
+`ui.Sidebar` child when there is one. Its children form a column with
+`gap` between them, six steps unless told otherwise, so a header, a row
+of stats, a chart and a table stand apart without a `Stack` around them.
+Give it a `title` for the browser tab and a `header` for the app bar.
+`padding=False` lets a child such as `ui.Chat` fill it edge to edge.
 
 This manual is a `Page` with a `Sidebar`, so it is not shown inline.
 

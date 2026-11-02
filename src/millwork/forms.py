@@ -9,9 +9,11 @@ way. ``json_schema_extra`` carries widget hints: ``widget``, ``choices``,
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any
+from types import UnionType
+from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic_core import to_jsonable_python
 
 Widget = str  # input, textarea, password, number, slider, switch, checkbox, select, radio,
 # toggle, checkboxes, multiselect, date, datetime, fieldset, list, union, file, hidden
@@ -33,6 +35,29 @@ class FormIssues(Exception):
             i if isinstance(i, Issue) else Issue(pointer=i[0], message=i[1]) for i in issues
         ]
         super().__init__(f"{len(self.issues)} issue(s)")
+
+
+WIDGETS: tuple[str, ...] = (
+    "input",
+    "textarea",
+    "password",
+    "number",
+    "slider",
+    "switch",
+    "checkbox",
+    "select",
+    "radio",
+    "toggle",
+    "multiselect",
+    "checkboxes",
+    "tags",
+    "date",
+    "datetime",
+    "file",
+    "files",
+    "hidden",
+)
+"""The widgets a form field may take, by ``overrides={"/field": {"widget": ...}}``."""
 
 
 def pointer_of(loc: tuple[Any, ...], tags: frozenset[str] = frozenset()) -> str:
@@ -150,13 +175,48 @@ def humanize(name: str) -> str:
 def field_spec(model: type[BaseModel]) -> dict[str, Any]:
     """The whole form as a spec: ``{"fields": [...], "title": ...}``."""
     schema = model.model_json_schema()
-    walker = _Walker(schema.get("$defs", {}))
+    walker = _Walker(schema.get("$defs", {}), factory_defaults(model))
     return {"title": schema.get("title"), "fields": walker.fields(schema, "")}
 
 
+def factory_defaults(model: type[BaseModel], base: str = "") -> dict[str, Any]:
+    """The defaults the JSON schema leaves out, by pointer, so a form opens with
+    today's date filled in. A ``default_factory`` is a default only when it
+    makes the same value each time it is called. One that makes a new value per
+    call, a uuid or the time of day, is the model's business on submit and
+    gives the form nothing, which keeps the spec the same from render to
+    render."""
+    out: dict[str, Any] = {}
+    for name, field in model.model_fields.items():
+        pointer = f"{base}/{name}"
+        if field.default_factory is not None:
+            try:
+                first = to_jsonable_python(field.get_default(call_default_factory=True))
+                second = to_jsonable_python(field.get_default(call_default_factory=True))
+            except Exception:  # noqa: BLE001  a factory that wants validated data, or fails
+                pass
+            else:
+                if first == second:
+                    out[pointer] = first
+        for inner in _models_of(field.annotation):
+            out.update(factory_defaults(inner, pointer))
+    return out
+
+
+def _models_of(annotation: Any) -> list[type[BaseModel]]:
+    """The models a field holds whole: ``Model``, ``Model | None`` and every
+    model in a union, whose fields share the field's pointer."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return [annotation]
+    if get_origin(annotation) in (Union, UnionType):
+        return [m for a in get_args(annotation) for m in _models_of(a)]
+    return []
+
+
 class _Walker:
-    def __init__(self, defs: Mapping[str, Any]) -> None:
+    def __init__(self, defs: Mapping[str, Any], defaults: Mapping[str, Any] = {}) -> None:
         self.defs = defs
+        self.defaults = defaults
 
     def resolve(self, node: Mapping[str, Any]) -> dict[str, Any]:
         """Follow ``$ref`` and merge the referenced schema under the local keys."""
@@ -191,13 +251,15 @@ class _Walker:
             "label": prop.get("title") or humanize(name),
             "help": prop.get("description"),
             "placeholder": (prop.get("examples") or [None])[0],
-            "required": required and "default" not in prop,
+            "required": required and "default" not in prop and pointer not in self.defaults,
             "group": prop.get("group"),
             "order": prop.get("order", 0),
             "widget": "input",
         }
         if "default" in prop:
             spec["default"] = prop["default"]
+        elif pointer in self.defaults:
+            spec["default"] = self.defaults[pointer]
         self.classify(prop, spec, name)
         if prop.get("widget"):
             spec["widget"] = prop["widget"]

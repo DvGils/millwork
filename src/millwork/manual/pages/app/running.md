@@ -16,7 +16,7 @@ a path prefix.
 ```python
 app = mw.App(
     "projects",
-    state=State,                      # the default state model for every page
+    state=State,                      # the session's state model
     public="public",                  # served at /public/; None for no static folder
     components="components",          # custom components, .jsx files; None for none
     theme="themes/dark.json",         # a path or a Theme; public/theme.json is found on its own
@@ -86,7 +86,9 @@ remounts when the server is back. `--debug` shows page errors in the tab,
 turns the framework's warnings into toasts, pushes a changed theme file or
 custom component to every open tab, and allows the `Dev` auth provider.
 Tests drive a session without a browser, so for most changes the loop is
-edit, run pytest, and open the browser only to look.
+edit, run pytest, and open the browser only to look. The catalog is typed
+for mypy and pyright, so a misspelled prop, a value outside a `Literal`
+or a missing required prop shows in the editor before the page runs.
 
 ## Serving
 

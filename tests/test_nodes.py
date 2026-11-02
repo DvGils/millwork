@@ -192,3 +192,21 @@ def test_duplicate_keys_in_a_list_prop_are_refused() -> None:
     build(Rich(items=[Text("a", key="a"), Text("b", key="b"), Text("c")]))
     with pytest.raises(ValueError, match="duplicate key 'a' in items"):
         build(Rich(items=[Text("a", key="a"), Text("b", key="a")]))
+
+
+def test_a_handler_must_take_session_and_payload() -> None:
+    import pytest
+
+    def fine(s: Any, payload: Any) -> None: ...
+    def loose(*args: Any) -> None: ...
+    def one(s: Any) -> None: ...
+
+    build(Box(on_click=fine))
+    build(Box(on_click=loose))
+    build(Box(on_click=lambda s, v=None: None))
+    with pytest.raises(
+        TypeError, match=r"on_click takes a handler of \(session, payload\); one\(s"
+    ):
+        build(Box(on_click=one))
+    with pytest.raises(TypeError, match="does not take 2 positional arguments"):
+        build(Box(on_click=lambda: None))

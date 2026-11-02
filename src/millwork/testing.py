@@ -55,9 +55,25 @@ class Found:
 class Page:
     """One open session, driven from the test and observed on its wire."""
 
-    def __init__(self, session: Session[Any]) -> None:
+    def __init__(self, session: Session[Any], strict: bool = True) -> None:
         self.session = session
         self.messages: list[Any] = []
+        self.failures: list[tuple[str, BaseException]] = []
+        """What the app's code raised, in order: ``(where, exception)``."""
+        self._strict = strict
+        session.on_failure = self._failed
+
+    def _failed(self, where: str, exc: BaseException) -> None:
+        self.failures.append((where, exc))
+
+    def _raise_failures(self) -> None:
+        """In a strict harness, what the app raised is raised in the test, where the
+        traceback points at the cause instead of at an empty page or a toast."""
+        if not self._strict or not self.failures:
+            return
+        where, exc = self.failures[0]
+        exc.add_note(f"raised by {where}")
+        raise exc
 
     # ------------------------------------------------------------- reading
 
@@ -77,7 +93,12 @@ class Page:
         out = []
         for node_id, node in tree.nodes.items():
             if isinstance(what, str):
-                hit = node_id == what or node_id.rsplit("/", 1)[-1] == what
+                component = tree.components.get(node_id)
+                hit = (
+                    node_id == what
+                    or node_id.rsplit("/", 1)[-1] == what
+                    or (component is not None and component.key == what)
+                )
             else:
                 hit = node.type == what.type
             if hit:
@@ -271,6 +292,7 @@ class Page:
                 s._render_handle = None
                 await s._render()
                 continue
+            self._raise_failures()
             return
         raise RuntimeError("the session did not settle")
 
@@ -280,8 +302,12 @@ class TestApp:
 
     __test__ = False  # not a pytest collectable, despite the name
 
-    def __init__(self, app: App) -> None:
+    def __init__(self, app: App, *, strict: bool = True) -> None:
+        """``strict`` raises in the test what the app's code raised: a page
+        function, a handler, a hook. ``strict=False`` leaves it in the log and
+        in ``page.failures``, the way a running app treats it."""
         self.app = app
+        self.strict = strict
         self._started = False
 
     async def startup(self) -> None:
@@ -316,7 +342,7 @@ class TestApp:
         session: Session[Any] = Session(self.app, page_def, params, path)
         session.user = user
         self.app.sessions[session.id] = session
-        page = Page(session)
+        page = Page(session, strict=self.strict)
 
         async def send(text: str) -> None:
             page.messages.append(server_message.validate_python(json.loads(text)["msg"]))
@@ -329,6 +355,7 @@ class TestApp:
             await session.attach(send, 0)
             await page.settle()
             yield page
+            await page.settle()
         finally:
             await session.close()
 

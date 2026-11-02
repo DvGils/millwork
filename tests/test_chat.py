@@ -444,3 +444,19 @@ async def test_drop_chat_forgets_a_thread_unless_it_is_replying(tmp_path: Path) 
         assert s.chat("main").messages[-1].text == "done"
         s.drop_chat("main")
         assert "main" not in s._threads
+
+
+def test_chat_handlers_are_checked_for_their_own_shapes() -> None:
+    import pytest
+
+    from millwork.nodes import build
+
+    build(ui.Chat(on_feedback=lambda s, message, value, comment: None))
+    with pytest.raises(
+        TypeError, match=r"on_feedback takes a handler of \(session, message, value, comment\)"
+    ):
+        build(ui.Chat(on_feedback=lambda s, payload: None))
+    with pytest.raises(
+        TypeError, match=r"on_action takes a handler of \(session, message, action\)"
+    ):
+        build(ui.Chat(on_action=lambda s, payload: None))

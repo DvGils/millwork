@@ -58,7 +58,7 @@ class Waves(BaseModel):
 
 
 def example(s):
-    st = state(Waves)
+    st = s.state.waves
 
     def waved(s, clicks):
         st.count += 1

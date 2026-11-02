@@ -15,7 +15,7 @@ task releases the handler lock, so the page stays live meanwhile.
 plain function runs in a thread. It returns a `mw.Task` whose `done`,
 `status`, `progress`, `steps` and `result` the page can read.
 `ui.Progress(task=)` and `ui.Steps(task=)` draw it, and `task.cancel()`
-stops it.
+stops it. A state model may hold one as `mw.Task | None`.
 
 ```python live
 import time
@@ -40,11 +40,11 @@ def crunch(n: int) -> str:
 
 
 class Job(BaseModel):
-    run: object = None
+    run: mw.Task | None = None
 
 
 def example(s):
-    st = state(Job)
+    st = s.state.job
     running = st.run is not None and not st.run.done
     return ui.Stack(
         ui.Row(
@@ -99,7 +99,7 @@ class Sum(BaseModel):
 
 
 async def compute(s, _):
-    st = state(Sum)
+    st = s.state.sum
     st.text = "computing"
     result = await s.task(slow_sum, 2, 3, label="Adding")
     st.text = f"2 + 3 = {result}"
@@ -108,7 +108,7 @@ async def compute(s, _):
 def example(s):
     return ui.Row(
         ui.Button("Compute", on_click=compute),
-        ui.Text(state(Sum).text, variant="muted"),
+        ui.Text(s.state.sum.text, variant="muted"),
         gap=3,
     )
 ```
@@ -128,7 +128,7 @@ class Tick(BaseModel):
 
 
 def example(s):
-    st = state(Tick)
+    st = s.state.tick
 
     def arm(s, _):
         st.text = "armed"

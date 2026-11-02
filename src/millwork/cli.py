@@ -114,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     docs.add_argument("--proxied", action="store_true", help="as for run; implied by --uds")
     docs.add_argument("--theme", default=None, help="a theme file to show the manual in")
     docs.add_argument("--root-path", default="", help="the path prefix the manual is served under")
+    sub.add_parser("reference", help="print the catalogue as a Markdown reference")
     sub.add_parser("secret", help="print a signing secret for App(secret=...)")
     hp = sub.add_parser("hash-password", help="hash a password for a Password provider")
     hp.add_argument("--user", default="", help="prefix the line with the user name")
@@ -142,6 +143,11 @@ def main(argv: list[str] | None = None) -> int:
             root_path=args.root_path,
             debug=False,
         )
+    if args.command == "reference":
+        from millwork.reference import reference
+
+        print(reference())
+        return 0
     if args.command == "secret":
         print(secrets.token_urlsafe(48))
         return 0

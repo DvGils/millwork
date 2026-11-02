@@ -43,7 +43,7 @@ from millwork.protocol import (
     pack_frame,
 )
 from millwork.tasks import Cancelled, Task
-from millwork.ui import Button, Dialog, Text, as_options
+from millwork.ui import Button, Dialog, DropdownMenu, Text, as_options
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -89,7 +89,7 @@ class Session[S]:
         self.detached_at = self.created
         self.connecting = False
         self.end_reason: str | None = None
-        self.state: S = page.make_state()
+        self.state: S = app.make_state()
         self.tree: Tree | None = None
         self.closed = False
         self.files = SessionFiles(self)
@@ -120,6 +120,12 @@ class Session[S]:
         self._catching_up: Send | None = None
         self._file_slots = asyncio.Semaphore(FILE_SLOTS)
         self._busy = False
+        self._title_shown: str | None = None
+        # The page's connect ran and its close has not: what close() still owes it.
+        self._page_open = False
+        self.on_failure: Callable[[str, BaseException], None] | None = None
+        """Told of every exception the session caught from the app's code, after the
+        log line: a page function, a handler, a hook. The test harness raises them."""
         # Development warnings: each is said once per session; counters tell a
         # handler that changed nothing, and a thread that changed state, apart.
         self._warned: set[str] = set()
@@ -266,12 +272,23 @@ class Session[S]:
         for ask in list(self._asks.values()):
             if not ask.future.done():
                 ask.future.cancel()
-        if self.page.on_close is not None:
-            try:
-                await _call(self.page.on_close, self)
-            except Exception:
-                log.exception("close hook failed for session %s", self.id)
+        await self._close_page(self.page)
         self.app.files.discard(self.id)
+
+    async def _close_page(self, page: PageDef) -> None:
+        """The page's close hook, once per visit: the session is done with it, by
+        moving to another page or by ending. The state is still as the page
+        left it. A page whose connect never finished has nothing to close."""
+        if not self._page_open:
+            return
+        self._page_open = False
+        if page.on_close is None:
+            return
+        try:
+            await _call(page.on_close, self)
+        except Exception as exc:
+            log.exception("close hook of %s failed for session %s", page.path, self.id)
+            self._failed(f"the close hook of {page.path}", exc)
 
     # ------------------------------------------------------------- sending
 
@@ -313,6 +330,10 @@ class Session[S]:
             # so the grace timer runs and the session cannot leak.
             log.debug("send failed for session %s; detached", self.id)
             self.detach(self._send)
+
+    def _failed(self, where: str, exc: BaseException) -> None:
+        if self.on_failure is not None:
+            self.on_failure(where, exc)
 
     def command(self, name: str, **args: Any) -> None:
         """Fire-and-forget instruction to the tab: toast, navigate, clipboard."""
@@ -454,8 +475,9 @@ class Session[S]:
                 await _call(handler, self, turn)
             except asyncio.CancelledError:
                 pass
-            except Exception:
+            except Exception as exc:
                 log.exception("chat handler failed")
+                self._failed("the chat handler", exc)
                 self.toast(self.text("reply_failed"), tone="destructive")
             finally:
                 context.unbind(token)
@@ -643,8 +665,9 @@ class Session[S]:
             self._handler_runs += 1
             try:
                 await _call(fn, *args)
-            except Exception:
+            except Exception as exc:
                 log.exception("handler %s failed", getattr(fn, "__name__", fn))
+                self._failed(f"the handler {getattr(fn, '__name__', fn)}", exc)
                 self.toast(self.text("something_went_wrong"), tone="destructive")
             finally:
                 context.unbind(token)
@@ -737,7 +760,7 @@ class Session[S]:
             ]
         )
         dialog = Dialog(
-            children=[Text(description)] if description else [],
+            *([Text(description)] if description else []),
             title=title,
             size="sm",
             footer=buttons,
@@ -781,7 +804,10 @@ class Session[S]:
     # ------------------------------------------------------------- navigation
 
     async def navigate_to(self, path: str) -> None:
-        """Switch this session to another page. State is per page; files and identity stay."""
+        """Switch this session to another page. The state stays; the page left is
+        closed before the next one connects."""
+        if self.closed:
+            return
         # A fragment names a heading: the tab scrolls to it after the mount.
         path, _, fragment = path.partition("#")
         resolved = self.app.resolve(path) or self.app.fallback("not_found", path)
@@ -790,21 +816,31 @@ class Session[S]:
             await self._send_now(ServerError(message=self.text("sign_in_hint"), fatal=True))
             return
         # Under the handler lock: no render runs against the new page before its
-        # connect has finished, and no handler runs across the switch. The switch
-        # is provisional until connect succeeds: a page that fails to start leaves
-        # the tab on the page it had, still working.
+        # connect has finished, and no handler runs across the switch.
         async with self._hold():
-            previous = (self.page, self.params, self.path, self.state, self.tree)
+            if self.closed:
+                return
+            previous = (self.page, self.params, self.path, self.tree)
+            # Leaving comes first. The page's close hook sees the state as the page
+            # left it, before the next page's connect writes to it, which matters
+            # most when the next page is this one with other parameters.
+            await self._close_page(previous[0])
+            if self.closed:
+                return
             self.page, self.params, self.path = page, params, path
-            self.state = page.make_state()
             self.tree = None
             self._slow_builds = 0
             try:
                 await self.connect_or_fall_back()
-            except Exception:
+            except Exception as exc:
                 log.exception("connect failed for %s", path)
-                self.page, self.params, self.path, self.state, self.tree = previous
+                self._failed(f"the connect hook of {path}", exc)
+                # The tab keeps the page it came from, already closed; what the
+                # failed connect wrote to the state stays.
+                self.page, self.params, self.path, self.tree = previous
                 await self._send_now(ServerError(message=self.text("page_failed"), fatal=False))
+                return
+            if self.closed:
                 return
             for ask in list(self._asks.values()):
                 if not ask.future.done():
@@ -837,7 +873,14 @@ class Session[S]:
         if tree is None:
             return
         self.tree = tree
-        await self._send_now(Mount(root=tree.root, nodes=tree.nodes, title=self.page.title))
+        self._title_shown = self._title(tree)
+        await self._send_now(Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown))
+
+    def _title(self, tree: Tree) -> str | None:
+        """The tab's title: the root ``Page``'s own when it has one, else the page's."""
+        root = tree.nodes[tree.root]
+        title = root.props.get("title") if root.type == "Page" else None
+        return title if isinstance(title, str) else self.page.title
 
     async def _render(self) -> None:
         """Render under the handler lock, so a page never sees half-mutated state."""
@@ -857,6 +900,10 @@ class Session[S]:
             self.tree = tree
             if ops:
                 await self._send_now(Patch(ops=ops))
+            title = self._title(tree)
+            if title != self._title_shown:
+                self._title_shown = title
+                self.command("title", title=title)
             self._signal_activity()
             watch, self._noop_watch = self._noop_watch, None
             if watch is not None and not ops and self._effects == watch[1]:
@@ -920,8 +967,9 @@ class Session[S]:
             for request, ask in self._asks.items():
                 root.children.append(ask.component.model_copy(update={"key": f"@ask:{request}"}))
             return build(root)
-        except Exception:
+        except Exception as exc:
             log.exception("page %s failed to render", self.page.path)
+            self._failed(f"the page function of {self.page.path}", exc)
             self._loop.create_task(
                 self._send_now(ServerError(message=self.text("render_failed"), fatal=False))
             )
@@ -941,8 +989,9 @@ class Session[S]:
             ctx = context.bind(self)
             try:
                 await _call(handler, self, None)
-            except Exception:
+            except Exception as exc:
                 log.exception("toast action failed")
+                self._failed("a toast action", exc)
                 self.toast(self.text("something_went_wrong"), tone="destructive")
             finally:
                 context.unbind(ctx)
@@ -995,8 +1044,9 @@ class Session[S]:
             token = context.bind(self)
             try:
                 self.download(component.filename, component.content, component.mime)
-            except Exception:
+            except Exception as exc:
                 log.exception("download %s failed", component.filename)
+                self._failed(f"the download of {component.filename}", exc)
                 self.toast(self.text("download_failed"), tone="destructive")
             finally:
                 context.unbind(token)
@@ -1049,8 +1099,9 @@ class Session[S]:
                 self.command(
                     "form_issues", node=event.node, issues=[i.model_dump() for i in exc.issues]
                 )
-            except Exception:
+            except Exception as exc:
                 log.exception("handler %s on %s failed", event.name, event.node)
+                self._failed(f"the {event.name} handler on {event.node}", exc)
                 self.toast(self.text("something_went_wrong"), tone="destructive")
             finally:
                 context.unbind(token)
@@ -1165,8 +1216,9 @@ class Session[S]:
             await self._reply(msg.request, payload=result)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             log.exception("request %s on %s failed", msg.name, msg.node)
+            self._failed(f"the {msg.name} handler on {msg.node}", exc)
             await self._reply(msg.request, error="The request failed.")
         finally:
             context.unbind(token)
@@ -1271,8 +1323,9 @@ class Session[S]:
             if writer is not None:
                 writer.abort()
             raise
-        except Exception:
+        except Exception as exc:
             log.exception("upload on %s failed", msg.node)
+            self._failed(f"the upload handler on {msg.node}", exc)
             if writer is not None:
                 writer.abort()
             await self._reply(msg.request, error="The upload failed.")
@@ -1284,14 +1337,15 @@ class Session[S]:
         log.warning("answer for unknown request %s", msg.request)
 
     async def connect(self) -> None:
-        """Run the page's connect hook, in the session context."""
-        if self.page.on_connect is None:
-            return
-        token = context.bind(self)
-        try:
-            await _call(self.page.on_connect, self, **self.params)
-        finally:
-            context.unbind(token)
+        """Run the page's connect hook, in the session context. The page is open
+        once it returns, and owed a close."""
+        if self.page.on_connect is not None:
+            token = context.bind(self)
+            try:
+                await _call(self.page.on_connect, self, **self.params)
+            finally:
+                context.unbind(token)
+        self._page_open = True
 
     async def connect_or_fall_back(self) -> None:
         """Connect, and when the hook refuses with NotFound or Forbidden, land on the
@@ -1301,26 +1355,38 @@ class Session[S]:
         except (Forbidden, NotFound) as exc:
             kind = "forbidden" if isinstance(exc, Forbidden) else "not_found"
             self.page, self.params = self.app.fallback(kind, self.path, exc.message)
-            self.state = self.page.make_state()
             await self.connect()
 
 
 def _confirmation(component: Component, event: Event) -> tuple[str, bool] | None:
     """The question to ask before this event's handler runs, if the component wants one.
 
-    ``Button.confirm`` carries its own text; a destructive menu item asks
-    with its label, so an irreversible row action is never one slip away.
+    ``Button.confirm`` and ``MenuItem.confirm`` carry their own text. A
+    destructive menu item without one asks with its label, wherever the menu
+    is, so an irreversible action is never one slip away.
     """
     if isinstance(component, Button) and event.name == "click" and component.confirm:
         return component.confirm, component.variant == "destructive"
-    if event.name == "action":
-        payload = event.payload
-        action = payload[0] if isinstance(payload, list | tuple) and payload else payload
-        items = getattr(component, "row_actions", None) or getattr(component, "actions", None)
-        for item in items or []:
-            if item.id == action and item.destructive:
-                return f"{item.label}?", True
+    payload = event.payload
+    action = payload[0] if isinstance(payload, list | tuple) and payload else payload
+    for item in _menu_items(component, event.name):
+        if item.id != action:
+            continue
+        confirm = getattr(item, "confirm", None)
+        destructive = bool(getattr(item, "destructive", False))
+        if confirm or destructive:
+            return confirm or f"{item.label}?", destructive
     return None
+
+
+def _menu_items(component: Component, event: str) -> list[Any]:
+    """The items the event picks from: a table's row actions, a file card's
+    actions, a chat message's actions, or a dropdown menu's items."""
+    if event == "action":
+        return getattr(component, "row_actions", None) or getattr(component, "actions", None) or []
+    if event == "select" and isinstance(component, DropdownMenu):
+        return component.items
+    return []
 
 
 async def _call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

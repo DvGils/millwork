@@ -469,3 +469,48 @@ async def test_a_reply_reaches_a_socket_still_catching_up(tmp_path: Path) -> Non
     assert replied == ["sent"]
     assert any(m.get("type") == "reply" and m.get("request") == "r" for m in again.messages)
     assert 0 in again.seqs
+
+
+async def test_a_page_closes_before_the_next_connects_and_only_once(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    class Project(BaseModel):
+        item: str = ""
+
+    calls: list[str] = []
+    app = mw.App("order", state=Project, public=None, bundle_dir=tmp_path)
+
+    @app.page("/p/{n:int}")
+    def project(s: mw.Session[Project]) -> ui.Component:
+        return ui.Page(ui.Text(f"project {s.state.item}", key="t"))
+
+    @project.connect
+    def load(s: mw.Session[Project], n: int) -> None:
+        s.state.item = f"#{n}"
+        calls.append(f"load {n}")
+
+    @project.close
+    def release(s: mw.Session[Project]) -> None:
+        calls.append(f"release {s.state.item}")
+
+    @app.page("/bad")
+    def bad(s: mw.Session[Project]) -> ui.Component:
+        return ui.Page(ui.Text("never", key="t"))
+
+    @bad.connect
+    def broken(s: mw.Session[Project], **_: Any) -> None:
+        raise RuntimeError("db down")
+
+    # The same page with other parameters: closed with the old state, then connected.
+    async with TestApp(app, strict=False).open("/p/1") as page:
+        await page.navigate("/p/2")
+        assert page.find("t").props["content"] == "project #2"
+        assert calls == ["load 1", "release #1", "load 2"]
+        # A page that fails to start: the one left has closed and is not closed again.
+        await page.navigate("/bad")
+        assert page.session.path == "/p/2" and page.failures[-1][0] == "the connect hook of /bad"
+        assert calls == ["load 1", "release #1", "load 2", "release #2"]
+        # A navigate after the end does nothing.
+        await page.session.close()
+        await page.session.navigate_to("/p/3")
+    assert calls == ["load 1", "release #1", "load 2", "release #2"]

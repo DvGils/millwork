@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import field_validator
 
@@ -34,6 +34,26 @@ class FileUpload(Component):
     on_upload: Any = None
     on_reject: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            accept: list[str] | None = None,
+            multiple: bool = False,
+            max_files: int = 10,
+            max_size_mb: int | None = None,
+            label: str | None = None,
+            description: str | None = None,
+            dropzone: bool = True,
+            disabled: bool = False,
+            on_upload: Any = None,
+            on_reject: Any = None,
+        ) -> None: ...
+
 
 class FileCard(Component):
     type: ClassVar[str] = "FileCard"
@@ -49,6 +69,26 @@ class FileCard(Component):
     on_action: Any = None
     on_click: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            file: FileRef | None = None,
+            name: str | None = None,
+            size: int | None = None,
+            kind: str | None = None,
+            url: str | None = None,
+            status: Literal["ready", "loading", "error"] = "ready",
+            meta: str | None = None,
+            actions: list[MenuItem] = ...,
+            on_action: Any = None,
+            on_click: Any = None,
+        ) -> None: ...
+
 
 class Image(Component):
     type: ClassVar[str] = "Image"
@@ -58,6 +98,21 @@ class Image(Component):
     size: Literal["sm", "md", "lg", "full"] = "md"
     fit: Literal["cover", "contain"] = "contain"
     on_click: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            src: FileRef | str,
+            alt: str = "",
+            size: Literal["sm", "md", "lg", "full"] = "md",
+            fit: Literal["cover", "contain"] = "contain",
+            on_click: Any = None,
+        ) -> None: ...
 
 
 class Pdf(Component):
@@ -70,6 +125,19 @@ class Pdf(Component):
     page: int | None = None
     _src = field_validator("src")(staticmethod(_safe_src))
     height: str = "70vh"
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            src: FileRef | str,
+            page: int | None = None,
+            height: str = "70vh",
+        ) -> None: ...
 
 
 class Download(Component):
@@ -86,8 +154,26 @@ class Download(Component):
     icon: str | None = "download"
     disabled: bool = False
 
-    def __init__(self, label: str = "Download", **props: Any) -> None:
-        super().__init__(label=label, **props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str = "Download",
+            filename: str,
+            content: Any,
+            mime: str | None = None,
+            variant: Literal["primary", "secondary", "outline", "ghost", "link"] = "outline",
+            icon: str | None = "download",
+            disabled: bool = False,
+        ) -> None: ...
+    else:
+
+        def __init__(self, label: str = "Download", **props: Any) -> None:
+            super().__init__(label=label, **props)
 
     def wire_extra(self) -> dict[str, Any]:
         # A session file downloads by id, straight over the socket: no click round

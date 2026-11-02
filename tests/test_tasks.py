@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 from pydantic import BaseModel
 from starlette.testclient import TestClient
 
@@ -388,3 +389,27 @@ async def test_parallel_steps_stay_siblings_and_a_timeout_stops_the_worker(tmp_p
         n = len(ticks)
         await asyncio.sleep(0.1)  # the thread is the thing under test: it stopped at its check
         assert len(ticks) == n and n < 100
+
+
+async def test_a_task_may_live_in_a_state_model(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    class Holder(BaseModel):
+        job: mw.Task | None = None
+
+    app = mw.App("th", state=Holder, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[Holder]) -> ui.Component:
+        return ui.Page(ui.Button("go", key="go", on_click=start))
+
+    def start(s: mw.Session[Holder], _: Any) -> None:
+        s.state.job = s.task(lambda: 1, label="One")
+
+    async with TestApp(app).open("/") as page:
+        await page.click("go")
+        assert page.state.job is not None and page.state.job.ok
+        dumped = json.loads(page.state.model_dump_json())
+        assert dumped["job"]["label"] == "One" and dumped["job"]["status"] == "done"
+    with pytest.raises(ValueError):
+        Holder(job="not a task")  # type: ignore[arg-type]

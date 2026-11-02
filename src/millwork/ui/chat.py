@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from millwork import context
+from millwork.icons import check_icon
 from millwork.nodes import Component
 
 
@@ -18,6 +19,11 @@ class Command(BaseModel):
     icon: str | None = None
     description: str | None = None
 
+    @field_validator("icon")
+    @classmethod
+    def _known_icon(cls, name: str | None) -> str | None:
+        return check_icon(name)
+
 
 class Action(BaseModel):
     """A button under an assistant message; ``on_action`` receives its id."""
@@ -27,6 +33,11 @@ class Action(BaseModel):
     id: str
     label: str
     icon: str | None = None
+
+    @field_validator("icon")
+    @classmethod
+    def _known_icon(cls, name: str | None) -> str | None:
+        return check_icon(name)
 
 
 class Accept(BaseModel):
@@ -78,6 +89,10 @@ class Chat(Component):
     # Components in the composer, left of Send: a Button with a handler, or a
     # Custom component, which receives ``chat`` with upload, send and busy.
     tools: list[Component] = []
+    handler_args: ClassVar[dict[str, tuple[str, ...]]] = {
+        "on_feedback": ("message", "value", "comment"),
+        "on_action": ("message", "action"),
+    }
     on_message: Any = None
     on_stop: Any = None
     on_feedback: Any = None
@@ -95,3 +110,36 @@ class Chat(Component):
             "live_suggestions": thread.suggestions,
             "inline": dict(thread.inline),
         }
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            welcome: str | None = None,
+            suggestions: list[str] = ...,
+            placeholder: str | None = None,
+            attachments: Accept | None = None,
+            max_chars: int = 16000,
+            max_messages: int = 200,
+            commands: list[Command] = ...,
+            disabled: bool = False,
+            show_steps: Literal["full", "collapsed", "hidden"] = "collapsed",
+            avatar: str | None = None,
+            assistant_name: str | None = None,
+            names: bool = False,
+            timestamps: bool = False,
+            durations: bool = False,
+            copyable: bool = True,
+            regenerate: bool = True,
+            edit: bool = True,
+            actions: list[Action] = ...,
+            tools: list[Component] = ...,
+            on_message: Any = None,
+            on_stop: Any = None,
+            on_feedback: Any = None,
+            on_action: Any = None,
+        ) -> None: ...

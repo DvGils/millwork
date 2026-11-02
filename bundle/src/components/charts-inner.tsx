@@ -29,6 +29,7 @@ import {
   divergingColors,
   divergingRows,
   rekey,
+  chartSlot,
   seriesColors,
   slot,
   type Row,
@@ -102,6 +103,7 @@ interface Slice {
   x: unknown;
   value: number;
   other: boolean;
+  color?: number;
 }
 
 // A pie: one slice per row, the theme's hues in row order, a folded tail in
@@ -129,7 +131,7 @@ function PieInner({ props, emit }: Omit<ChartProps, "kind">) {
   const labels = Boolean(props.labels);
   const center = typeof props.center === "string" ? props.center : null;
   const total = slices.reduce((a, s) => a + s.value, 0);
-  const colors = slices.map((s, i) => (s.other ? NEUTRAL : `var(--chart-${i + 1})`));
+  const colors = slices.map((s, i) => (s.other ? NEUTRAL : chartSlot(s, i)));
   const rows = slices.map((s, i) => ({ ...s, name: String(s.x), fill: colors[i] }));
   const series: Series[] = rows.map((r) => ({ key: r.name, label: r.name }));
   const showLegend = typeof props.legend === "boolean" ? props.legend : rows.length > 1;
@@ -206,8 +208,8 @@ export function Chart({ kind, props, emit }: ChartProps) {
     return diverging ? divergingRows(keyed, n) : keyed;
   }, [raw, series, diverging, n]);
   const colors = useMemo(
-    () => (diverging ? divergingColors(n) : seriesColors(n, emphasis === -1 ? null : emphasis)),
-    [diverging, n, emphasis],
+    () => (diverging ? divergingColors(n) : seriesColors(series, emphasis === -1 ? null : emphasis)),
+    [diverging, n, series, emphasis],
   );
   const config = useMemo(
     () => Object.fromEntries(series.map((s, i) => [slot(i), { label: s.label, color: colors[i] }])) as ChartConfig,
@@ -220,7 +222,7 @@ export function Chart({ kind, props, emit }: ChartProps) {
   };
   const valueFormat = stacked === "percent" ? "percent" : format;
   // A diverging chart stacks one side below zero; its axis still reads as counts.
-  const tick = (v: unknown) => formatNumber(diverging ? Math.abs(Number(v)) : v, valueFormat);
+  const tick = (v: unknown) => formatNumber(diverging ? Math.abs(Number(v)) : v, valueFormat, true);
 
   const click = props.on_click
     ? (row: Row, index: number | null) =>

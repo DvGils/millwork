@@ -46,20 +46,22 @@ that serves these pages. Try the button:
 ui.Button("Say hello", icon="sparkles", on_click=lambda s, _: s.toast("Hello from Python."))
 ```
 
-An example may hold state. `state(Model)` returns an instance of your model
-that lives for the session, so a handler can change it and the page renders
-again.
+An example may hold state. An app declares one state model and reads
+`s.state`, and the manual composes its own from the models its examples
+define, one field per model named after the class, so `Clicks` is
+`s.state.clicks`. A handler changes it and the page renders again. The
+State chapter has the whole picture.
 
 ```python live
 from pydantic import BaseModel
 
 
-class Counter(BaseModel):
+class Clicks(BaseModel):
     n: int = 0
 
 
 def example(s):
-    st = state(Counter)
+    st = s.state.clicks
     return ui.Row(
         ui.Button("Add one", on_click=lambda s, _: setattr(st, "n", st.n + 1)),
         ui.Text(f"Clicked {st.n} times.", variant="muted"),
@@ -75,4 +77,7 @@ in scope. Everything else is imported, as in an app.
 The App chapters cover how an app is put together, from pages and routing
 through state, signing in, theming and testing to running it somewhere.
 The Components chapters walk through the catalog one group at a time,
-with each component in its states and the Python that makes it.
+with each component in its states and the Python that makes it. For a
+lookup rather than a chapter, every component's props with their types
+and defaults are listed at [/llms.txt](/llms.txt), which `millwork
+reference` prints as well.

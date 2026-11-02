@@ -30,6 +30,8 @@ ui.Table(rows=ROWS)
 
 `format` renders a value as `text`, `number`, `integer`, `percent`,
 `currency`, `date`, `datetime`, `bool`, `badge`, `link` or `code`.
+Numbers and dates follow the theme's `locale`, and `currency` uses the
+theme's `currency`, euros unless the theme names another.
 
 ```python live
 ui.Table(
@@ -66,13 +68,13 @@ clicked row.
 from pydantic import BaseModel
 
 
-class Picked(BaseModel):
+class Selection(BaseModel):
     keys: list = []
     last: str = ""
 
 
 def example(s):
-    st = state(Picked)
+    st = s.state.selection
     return ui.Stack(
         ui.Table(
             rows=ROWS,
