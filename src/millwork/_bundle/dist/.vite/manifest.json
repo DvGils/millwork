@@ -29,20 +29,20 @@
     "src": "node_modules/.pnpm/@tailwindcss+browser@4.3.3/node_modules/@tailwindcss/browser/dist/index.global.js",
     "isDynamicEntry": true
   },
-  "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.0/node_modules/react-markdown/index.js": {
-    "file": "react-markdown-DLcbNoI3.js",
+  "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.1/node_modules/react-markdown/index.js": {
+    "file": "react-markdown-DJlUPiLY.js",
     "name": "react-markdown",
-    "src": "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.0/node_modules/react-markdown/index.js",
+    "src": "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.1/node_modules/react-markdown/index.js",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
       "_lib-3DI92Zxk.js"
     ]
   },
-  "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.0_react@19.3.0__react@19.3.0/node_modules/react-runner/dist/index.modern.js": {
-    "file": "index.modern-CITEfQrV.js",
+  "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/react-runner/dist/index.modern.js": {
+    "file": "index.modern-CdN3etHK.js",
     "name": "index.modern",
-    "src": "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.0_react@19.3.0__react@19.3.0/node_modules/react-runner/dist/index.modern.js",
+    "src": "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/react-runner/dist/index.modern.js",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx"
@@ -58,7 +58,7 @@
     ]
   },
   "src/components/charts-inner.tsx": {
-    "file": "charts-inner-Cq0vWbjt.js",
+    "file": "charts-inner-B2She2aa.js",
     "name": "charts-inner",
     "src": "src/components/charts-inner.tsx",
     "isDynamicEntry": true,
@@ -67,14 +67,14 @@
     ]
   },
   "src/main.tsx": {
-    "file": "main-BoZpFGOH.js",
+    "file": "main-D3lRHJW_.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
     "dynamicImports": [
       "node_modules/.pnpm/@tailwindcss+browser@4.3.3/node_modules/@tailwindcss/browser/dist/index.global.js",
-      "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.0_react@19.3.0__react@19.3.0/node_modules/react-runner/dist/index.modern.js",
-      "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.0/node_modules/react-markdown/index.js",
+      "node_modules/.pnpm/react-runner@1.0.5_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/react-runner/dist/index.modern.js",
+      "node_modules/.pnpm/react-markdown@10.1.0_@types+react@19.3.0_react@19.3.1/node_modules/react-markdown/index.js",
       "node_modules/.pnpm/remark-gfm@4.0.1/node_modules/remark-gfm/index.js",
       "src/components/charts-inner.tsx"
     ],
