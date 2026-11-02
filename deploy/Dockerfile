@@ -1,0 +1,15 @@
+# The hosted manual: the released wheel from PyPI, nothing from the checkout,
+# so what runs there is what `pip install millwork` gives.
+FROM python:3.12-slim
+
+ARG MILLWORK_VERSION
+RUN test -n "$MILLWORK_VERSION" \
+    && pip install --no-cache-dir "millwork==${MILLWORK_VERSION}" \
+    && useradd --system --create-home --shell /usr/sbin/nologin millwork
+
+USER millwork
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8080
+
+# Fly's proxy is in front: it ends TLS and forwards the visitor's address.
+CMD ["millwork", "docs", "--host", "0.0.0.0", "--port", "8080", "--proxied"]

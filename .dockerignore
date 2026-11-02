@@ -1,0 +1,3 @@
+# The only image, deploy/Dockerfile, installs the released wheel and copies
+# nothing from the checkout, so a build started here sends no context.
+*

@@ -1,0 +1,61 @@
+# The hosted manual follows PyPI: a published release deploys the
+# image that installs that version, once the index serves it. The workflow
+# can also be run by hand with a version.
+name: Deploy docs
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "the millwork version to deploy, as on PyPI"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: The version to deploy
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          INPUT: ${{ github.event.inputs.version }}
+        run: |
+          version="${INPUT:-${TAG#v}}"
+          if [ -z "$version" ]; then
+            echo "no version: run from a release or give one" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_ENV"
+
+      # PyPI serves a new version a minute or two after the publish.
+      - name: Wait until PyPI serves it
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null "https://pypi.org/pypi/millwork/$version/json"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "PyPI does not serve millwork $version" >&2
+          exit 1
+
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
+        with:
+          version: "0.5.1"
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        working-directory: deploy
+        run: flyctl deploy --remote-only --build-arg "MILLWORK_VERSION=$version"
