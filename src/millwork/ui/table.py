@@ -13,6 +13,7 @@ from typing import Any, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
 
+from millwork.icons import check_icon
 from millwork.nodes import Component
 
 Format = Literal[
@@ -54,7 +55,13 @@ class MenuItem(BaseModel):
     icon: str | None = None
     disabled: bool = False
     destructive: bool = False
+    confirm: str | None = None
     separator_after: bool = False
+
+    @field_validator("icon")
+    @classmethod
+    def _known_icon(cls, name: str | None) -> str | None:
+        return check_icon(name)
 
 
 def _row_dict(row: Any) -> dict[str, Any]:

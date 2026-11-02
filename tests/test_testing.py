@@ -223,3 +223,63 @@ async def test_settle_leaves_delayed_tasks_and_tasks_waiting_on_the_user(tmp_pat
         assert page.find(ui.Dialog).props["title"] == "Go?"
         await page.answer(True)
         assert page.state.confirmed is True and page.state.run.ok
+
+
+async def test_menu_items_confirm_everywhere(tmp_path: Path) -> None:
+    app = mw.App("m", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.DropdownMenu(
+                key="menu",
+                trigger=ui.Button("More"),
+                items=[
+                    ui.MenuItem(id="rm", label="Remove", destructive=True),
+                    ui.MenuItem(id="archive", label="Archive", confirm="Archive the file?"),
+                    ui.MenuItem(id="open", label="Open"),
+                ],
+                on_select=lambda s, item: s.state.__setattr__("asked", item),
+            ),
+            ui.Table(
+                rows=[{"id": 1}],
+                key="rows",
+                row_actions=[
+                    ui.MenuItem(id="rm", label="Remove", destructive=True, confirm="Drop row?")
+                ],
+                on_action=lambda s, p: s.state.__setattr__("asked", f"row {p[1]}"),
+            ),
+        )
+
+    async with TestApp(app).open("/") as page:
+        await page.event("menu", "select", "rm")
+        dialog = page.find(ui.Dialog)
+        assert dialog.props["title"] == "Remove?"
+        await page.answer(False)
+        assert page.state.asked is None
+        await page.event("menu", "select", "archive")
+        assert page.find(ui.Dialog).props["title"] == "Archive the file?"
+        await page.answer(True)
+        assert page.state.asked == "archive"
+        await page.event("menu", "select", "open")
+        assert not page.find_all(ui.Dialog) and page.state.asked == "open"
+        await page.event("rows", "action", ["rm", 1])
+        assert page.find(ui.Dialog).props["title"] == "Drop row?"
+        await page.answer(True)
+        assert page.state.asked == "row 1"
+
+
+async def test_find_sees_a_keyed_component_in_a_slot(tmp_path: Path) -> None:
+    app = mw.App("slot", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Card("body", footer=ui.Button("Import", key="import", on_click=more)))
+
+    def more(s: mw.Session[State], _: Any) -> None:
+        s.state.count += 1
+
+    async with TestApp(app).open("/") as page:
+        assert page.find("import").id == "root/0:Card/@footer"
+        await page.click("import")
+        assert page.state.count == 1
