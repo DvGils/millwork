@@ -149,3 +149,14 @@ def test_shell_picks_up_a_rebuilt_bundle(tmp_path: Path) -> None:
     write("main-new.js", 2_000)
     html = shell.render(title="t", path="/")
     assert "main-new.js" in html and "main-old.js" not in html
+
+
+def test_currency_is_an_iso_code_and_reaches_the_boot() -> None:
+    import pytest
+
+    from millwork.theme import Theme
+
+    assert Theme().boot()["currency"] == "EUR"
+    assert Theme(currency="USD").boot()["currency"] == "USD"
+    with pytest.raises(ValueError, match="ISO 4217"):
+        Theme(currency="euro")

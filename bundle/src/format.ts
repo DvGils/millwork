@@ -1,25 +1,48 @@
-// Number and date formats shared by the Table and the charts. Percent takes a
-// fraction, so 0.12 reads as 12%.
+// Number and date formats shared by the Table, the Stat and the charts, in the
+// theme's locale and currency. Percent takes a fraction, so 0.12 reads as 12%.
 
-const numberFormat = new Intl.NumberFormat(undefined);
-const integerFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-const percentFormat = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 });
-const currencyFormat = new Intl.NumberFormat(undefined, { style: "currency", currency: "EUR" });
-export const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
-export const dateTimeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+import { currency, locale } from "./theme";
 
-export function formatNumber(value: unknown, format?: string | null): string {
+const formats = new Map<string, Intl.NumberFormat>();
+
+function numberFormat(key: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  let f = formats.get(key);
+  if (!f) {
+    f = new Intl.NumberFormat(locale(), options);
+    formats.set(key, f);
+  }
+  return f;
+}
+
+let dates: { date: Intl.DateTimeFormat; dateTime: Intl.DateTimeFormat } | null = null;
+function dateFormats() {
+  if (!dates) {
+    dates = {
+      date: new Intl.DateTimeFormat(locale(), { dateStyle: "medium" }),
+      dateTime: new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }),
+    };
+  }
+  return dates;
+}
+
+export const dateFormat = { format: (d: Date) => dateFormats().date.format(d) };
+export const dateTimeFormat = { format: (d: Date) => dateFormats().dateTime.format(d) };
+
+// `axis` is for a tick: a currency in whole units, since a scale needs no cents.
+export function formatNumber(value: unknown, format?: string | null, axis = false): string {
   if (value === null || value === undefined || value === "") return "";
   const n = Number(value);
   if (Number.isNaN(n)) return String(value);
   switch (format) {
     case "integer":
-      return integerFormat.format(n);
+      return numberFormat("integer", { maximumFractionDigits: 0 }).format(n);
     case "percent":
-      return percentFormat.format(n);
+      return numberFormat("percent", { style: "percent", maximumFractionDigits: 1 }).format(n);
     case "currency":
-      return currencyFormat.format(n);
+      return axis
+        ? numberFormat("currency-axis", { style: "currency", currency: currency(), maximumFractionDigits: 0 }).format(n)
+        : numberFormat("currency", { style: "currency", currency: currency() }).format(n);
     default:
-      return numberFormat.format(n);
+      return numberFormat("number", {}).format(n);
   }
 }

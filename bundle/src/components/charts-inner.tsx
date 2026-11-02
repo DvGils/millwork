@@ -220,7 +220,7 @@ export function Chart({ kind, props, emit }: ChartProps) {
   };
   const valueFormat = stacked === "percent" ? "percent" : format;
   // A diverging chart stacks one side below zero; its axis still reads as counts.
-  const tick = (v: unknown) => formatNumber(diverging ? Math.abs(Number(v)) : v, valueFormat);
+  const tick = (v: unknown) => formatNumber(diverging ? Math.abs(Number(v)) : v, valueFormat, true);
 
   const click = props.on_click
     ? (row: Row, index: number | null) =>

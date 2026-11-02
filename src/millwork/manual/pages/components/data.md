@@ -30,7 +30,8 @@ ui.Table(rows=ROWS)
 
 `format` renders a value as `text`, `number`, `integer`, `percent`,
 `currency`, `date`, `datetime`, `bool`, `badge`, `link` or `code`.
-Numbers and dates follow the browser's locale, and `currency` is euros.
+Numbers and dates follow the theme's `locale`, and `currency` uses the
+theme's `currency`, euros unless the theme names another.
 
 ```python live
 ui.Table(

@@ -91,7 +91,9 @@ Layout belongs to the components.
 `density` is `comfortable` or `compact`. Compact tightens tables, forms,
 stacks and cards, which suits data tools. `scrollbars` is `thin`, the
 default, drawn in the page's own ink, or `auto` for the platform's.
-`locale` sets the page language and how dates and numbers are formatted.
+`locale` sets the page language and how dates and numbers are formatted,
+and `currency` is the ISO code the `currency` format uses, `EUR` unless
+the theme says otherwise.
 
 ## Strings
 
