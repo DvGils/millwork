@@ -179,6 +179,11 @@ CI=1 pnpm -C bundle exec vitest run    # the bundle's unit tests
 CI=1 pnpm -C bundle build              # rebuilds src/millwork/_bundle/dist
 ```
 
+Dependencies wait two weeks. `tool.uv` in `pyproject.toml` and the bundle's
+`pnpm-workspace.yaml` resolve only versions that have been on their index
+for fourteen days, Dependabot proposes a bump on the same schedule, and CI
+audits both package sets for known vulnerabilities.
+
 A change to a component's fields is followed by `uv run python
 scripts/typed_inits.py`, which rewrites the typed signature under each
 class that mypy and pyright read, and a test checks that it was run.

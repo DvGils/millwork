@@ -3,6 +3,19 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.1.5
+
+- Dependencies wait two weeks. uv and pnpm resolve only versions that have
+  been on their index for fourteen days, Dependabot proposes a bump on the
+  same schedule, and a Python dependency is installed from a wheel, never
+  built from a source distribution. CI audits both package sets for known
+  vulnerabilities.
+- The bundle's type check in CI checked nothing, since it ran against the
+  solution-style tsconfig; it now runs the build's check.
+- The State chapter says a session is one tab, shows a task that follows
+  changes made elsewhere, and the reference describes the session's state
+  as kept across pages.
+
 ## 0.1.4
 
 - One state per session. The app declares the model, `s.state` is the
