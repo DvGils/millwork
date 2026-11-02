@@ -27,11 +27,11 @@ class Uploads(BaseModel):
 
 
 async def uploaded(s, refs):
-    state(Uploads).files.extend(refs)
+    s.state.uploads.files.extend(refs)
 
 
 def example(s):
-    st = state(Uploads)
+    st = s.state.uploads
     return ui.Stack(
         ui.FileUpload(
             accept=[".txt", ".md", ".png", ".pdf"],
@@ -61,7 +61,7 @@ class Held(BaseModel):
 
 
 def example(s):
-    st = state(Held)
+    st = s.state.held
     if st.ref is None:
         st.ref = s.files.add("Notes for the pilot.\n", name="notes.txt")
     return ui.Stack(
@@ -114,7 +114,7 @@ class Pic(BaseModel):
 
 
 def example(s):
-    st = state(Pic)
+    st = s.state.pic
     if st.ref is None:
         st.ref = s.files.add(png(), name="square.png")
     return ui.Row(
@@ -160,7 +160,7 @@ class Doc(BaseModel):
     ref: object = None
 
 def example(s):
-    st = state(Doc)
+    st = s.state.doc
     if st.ref is None:
         st.ref = s.files.add(tiny_pdf("Hello from millwork"), name="hello.pdf")
     return ui.Pdf(src=st.ref, height="14rem")

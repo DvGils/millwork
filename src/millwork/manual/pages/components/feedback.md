@@ -74,7 +74,7 @@ class Modal(BaseModel):
 
 
 def example(s):
-    st = state(Modal)
+    st = s.state.modal
 
     def close(s, _):
         st.open = False
@@ -109,13 +109,13 @@ class Asked(BaseModel):
 
 
 async def confirm(s, _):
-    st = state(Asked)
+    st = s.state.asked
     ok = await s.confirm("Archive the project?", "You can restore it later.", destructive=True)
     st.answer = "archived" if ok else "kept"
 
 
 def example(s):
-    st = state(Asked)
+    st = s.state.asked
     return ui.Row(
         ui.Button("Archive", variant="outline", on_click=confirm),
         ui.Text(f"Result: {st.answer}", variant="muted"),
@@ -137,7 +137,7 @@ class Panel(BaseModel):
 
 
 def example(s):
-    st = state(Panel)
+    st = s.state.panel
     return ui.Row(
         ui.Button(
             "Open settings", variant="outline", on_click=lambda s, _: setattr(st, "open", True)

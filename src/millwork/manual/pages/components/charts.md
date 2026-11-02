@@ -149,13 +149,13 @@ class Picked(BaseModel):
 
 
 def picked(s, point):
-    state(Picked).text = f"{point['series']} in {point['x']}: {point['value']}"
+    s.state.picked.text = f"{point['series']} in {point['x']}: {point['value']}"
 
 
 def example(s):
     return ui.Stack(
         ui.BarChart(MONTHS, x="month", y=["sales", "costs"], on_click=picked, height=180),
-        ui.Text(state(Picked).text, variant="muted"),
+        ui.Text(s.state.picked.text, variant="muted"),
         gap=2,
     )
 ```

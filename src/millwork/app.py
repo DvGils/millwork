@@ -118,7 +118,6 @@ class PageDef:
     render: Callable[[Any], Component]
     title: str | None = None
     public: bool = False
-    state: Callable[[], Any] | type | None = None
     on_connect: Callable[..., Any] | None = None
     on_close: Callable[..., Any] | None = None
     _regex: Any = field(init=False, repr=False)
@@ -132,11 +131,6 @@ class PageDef:
         if m is None:
             return None
         return {k: self._param_convertors[k].convert(v) for k, v in m.groupdict().items()}
-
-    def make_state(self) -> Any:
-        if self.state is None:
-            return None
-        return self.state()
 
     def connect(self, fn: Callable[..., Any]) -> Callable[..., Any]:
         """Decorator: the page's connect hook, ``(session, **params)``."""
@@ -211,7 +205,7 @@ class App:
             auth.bind(secret, debug, origins, app=name)
         self._startup: list[Callable[[], Any]] = []
         self._shutdown: list[Callable[[], Any]] = []
-        self.default_state = state
+        self.state_model = state
         self.public_dir = Path(public) if public else None
         self._theme_path: Path | None = None
         if isinstance(theme, Theme):
@@ -256,20 +250,17 @@ class App:
         *,
         title: str | None = None,
         public: bool = False,
-        state: Callable[[], Any] | type | None = None,
     ) -> Callable[[Callable[[Any], Component]], PageDef]:
         def register(fn: Callable[[Any], Component]) -> PageDef:
-            page = PageDef(
-                path=path,
-                render=fn,
-                title=title or self.name,
-                public=public,
-                state=state or self.default_state,
-            )
+            page = PageDef(path=path, render=fn, title=title or self.name, public=public)
             self.pages.append(page)
             return page
 
         return register
+
+    def make_state(self) -> Any:
+        """A session's state: one instance of the app's model, kept for the session."""
+        return None if self.state_model is None else self.state_model()
 
     def resolve(self, path: str) -> tuple[PageDef, dict[str, str]] | None:
         for page in self.pages:
@@ -292,14 +283,12 @@ class App:
         *,
         title: str | None = None,
         public: bool = False,
-        state: Callable[[], Any] | type | None = None,
     ) -> PageDef:
         return PageDef(
             path=f"{PREFIX}/{kind.replace('_', '-')}",
             render=fn,
             title=title or self.theme.text(f"{kind}_title"),
             public=public,
-            state=state or self.default_state,
         )
 
     def not_found(
@@ -308,7 +297,6 @@ class App:
         *,
         title: str | None = None,
         public: bool = False,
-        state: Callable[[], Any] | type | None = None,
     ) -> Any:
         """Decorator: the page shown when no page matches, or connect raises ``NotFound``.
 
@@ -316,7 +304,7 @@ class App:
         ``s.params["message"]`` the text ``NotFound`` was raised with, or empty.
         The HTTP response that serves it is a 404.
         """
-        return self._set_error_page("not_found", fn, title=title, public=public, state=state)
+        return self._set_error_page("not_found", fn, title=title, public=public)
 
     def forbidden(
         self,
@@ -324,10 +312,9 @@ class App:
         *,
         title: str | None = None,
         public: bool = False,
-        state: Callable[[], Any] | type | None = None,
     ) -> Any:
         """Decorator: the page shown when connect raises ``Forbidden``; see ``not_found``."""
-        return self._set_error_page("forbidden", fn, title=title, public=public, state=state)
+        return self._set_error_page("forbidden", fn, title=title, public=public)
 
     def _set_error_page(self, kind: str, fn: Any, **options: Any) -> Any:
         def register(fn: Callable[[Any], Component]) -> PageDef:

@@ -113,3 +113,27 @@ async def test_block_state_belongs_to_the_session_that_acts(tmp_path: Path) -> N
         names = [live_module_name("/components/chat", s.id) for s in (one.session, two.session)]
         assert all(n in sys.modules for n in names)
     assert not any(n in sys.modules for n in names)
+
+
+async def test_every_live_block_renders(tmp_path: Path) -> None:
+    """Every example on every page runs, and none shows the failure alert."""
+    app = make_app()
+    app.bundle_dir = tmp_path
+    for page_def in load():
+        async with TestApp(app).open(page_def.slug) as page:
+            failed = [
+                a for a in page.find_all(ui.Alert) if a.props.get("title") == "This example failed"
+            ]
+            assert not failed, (page_def.slug, [a.props.get("description") for a in failed])
+
+
+def test_the_manuals_state_is_composed_from_its_examples() -> None:
+    from millwork.manual import field_name, state_model
+
+    State = state_model(load())  # noqa: N806
+    assert {"query", "counter", "clicks", "todo", "board"} <= set(State.model_fields)
+    assert "signup" not in State.model_fields  # a form model with required fields is not state
+    assert field_name("EditorState") == "editor_state"
+    one, two = State(), State()
+    one.counter.n = 3
+    assert two.counter.n == 0

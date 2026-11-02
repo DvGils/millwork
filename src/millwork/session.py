@@ -89,7 +89,7 @@ class Session[S]:
         self.detached_at = self.created
         self.connecting = False
         self.end_reason: str | None = None
-        self.state: S = page.make_state()
+        self.state: S = app.make_state()
         self.tree: Tree | None = None
         self.closed = False
         self.files = SessionFiles(self)
@@ -270,13 +270,19 @@ class Session[S]:
         for ask in list(self._asks.values()):
             if not ask.future.done():
                 ask.future.cancel()
-        if self.page.on_close is not None:
-            try:
-                await _call(self.page.on_close, self)
-            except Exception as exc:
-                log.exception("close hook failed for session %s", self.id)
-                self._failed("the close hook", exc)
+        await self._close_page(self.page)
         self.app.files.discard(self.id)
+
+    async def _close_page(self, page: PageDef) -> None:
+        """The page's close hook: the session is done with it, by moving to another
+        page or by ending. The state is still as the page left it."""
+        if page.on_close is None:
+            return
+        try:
+            await _call(page.on_close, self)
+        except Exception as exc:
+            log.exception("close hook of %s failed for session %s", page.path, self.id)
+            self._failed(f"the close hook of {page.path}", exc)
 
     # ------------------------------------------------------------- sending
 
@@ -805,9 +811,8 @@ class Session[S]:
         # is provisional until connect succeeds: a page that fails to start leaves
         # the tab on the page it had, still working.
         async with self._hold():
-            previous = (self.page, self.params, self.path, self.state, self.tree)
+            previous = (self.page, self.params, self.path, self.tree)
             self.page, self.params, self.path = page, params, path
-            self.state = page.make_state()
             self.tree = None
             self._slow_builds = 0
             try:
@@ -815,9 +820,12 @@ class Session[S]:
             except Exception as exc:
                 log.exception("connect failed for %s", path)
                 self._failed(f"the connect hook of {path}", exc)
-                self.page, self.params, self.path, self.state, self.tree = previous
+                self.page, self.params, self.path, self.tree = previous
                 await self._send_now(ServerError(message=self.text("page_failed"), fatal=False))
                 return
+            # The page left is closed once the next one has connected, so a page
+            # that fails to start leaves the one it came from untouched.
+            await self._close_page(previous[0])
             for ask in list(self._asks.values()):
                 if not ask.future.done():
                     ask.future.set_result(None)
@@ -1330,7 +1338,6 @@ class Session[S]:
         except (Forbidden, NotFound) as exc:
             kind = "forbidden" if isinstance(exc, Forbidden) else "not_found"
             self.page, self.params = self.app.fallback(kind, self.path, exc.message)
-            self.state = self.page.make_state()
             await self.connect()
 
 

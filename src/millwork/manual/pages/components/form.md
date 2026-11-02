@@ -39,13 +39,13 @@ class Saved(BaseModel):
 
 
 async def save(s, project: Project):
-    state(Saved).last = f"{project.title} ({project.language}, {project.count})"
+    s.state.saved.last = f"{project.title} ({project.language}, {project.count})"
 
 
 def example(s):
     return ui.Stack(
         ui.Form(Project, on_submit=save, layout=2),
-        ui.Text(f"Saved: {state(Saved).last}", variant="muted"),
+        ui.Text(f"Saved: {s.state.saved.last}", variant="muted"),
         gap=4,
     )
 ```
@@ -71,7 +71,7 @@ nothing, and the model makes that value on submit as it always did.
 from pydantic import BaseModel
 
 
-class Settings(BaseModel):
+class Prefs(BaseModel):
     name: str = ""
     level: int = 1
     mood: str = "ok"
@@ -79,7 +79,7 @@ class Settings(BaseModel):
 
 
 ui.Form(
-    Settings,
+    Prefs,
     fields=["name", "mood", "level", "tags"],
     labels={"name": {"label": "Display name", "help": "Shown to other users."}},
     overrides={

@@ -24,11 +24,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError, create_model
 from starlette.responses import PlainTextResponse
 
 import millwork as mw
-from millwork import context, ui
+from millwork import ui
 from millwork.reference import reference
 
 log = logging.getLogger("millwork.manual")
@@ -63,14 +63,6 @@ class Page:
     chapter: str
     order: int
     segments: list[str | Live] = field(default_factory=list)
-
-
-class State(BaseModel):
-    """What the manual's session holds: one state object per live block that asks,
-    and the search box's query."""
-
-    blocks: dict[str, Any] = {}
-    query: str = ""
 
 
 @dataclass
@@ -243,24 +235,49 @@ def page_namespace(slug: str = "", session_id: str = "") -> dict[str, Any]:
     return ns
 
 
-def render_block(s: mw.Session[State], live: Live, ns: dict[str, Any]) -> ui.Component:
+def field_name(model: str) -> str:
+    """The state field a model lands in: ``Counter`` is ``s.state.counter``,
+    ``EditorState`` is ``s.state.editor_state``."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", model).lower()
+
+
+def state_model(pages: list[Page]) -> type[BaseModel]:
+    """The manual's state, composed from the models its examples define, the way
+    an app composes its own: one field per model, named after the class, made
+    fresh for every session. A model that needs arguments to construct is a form
+    model, not state, and gets no field. Two pages may define a model of one
+    name only with the same fields, since the session keeps one instance.
+    """
+    models: dict[str, tuple[type[BaseModel], str]] = {}
+    for page in pages:
+        ns = page_namespace(page.slug, "load")
+        for seg in page.segments:
+            if isinstance(seg, Live):
+                exec(seg.body, ns)
+        for name, value in list(ns.items()):
+            if not (isinstance(value, type) and issubclass(value, BaseModel)):
+                continue
+            if value is BaseModel or value.__module__ != ns["__name__"]:
+                continue
+            try:
+                value()
+            except ValidationError:
+                continue
+            if name in models and set(models[name][0].model_fields) != set(value.model_fields):
+                raise ValueError(
+                    f"{name} is defined with different fields on {models[name][1]} and "
+                    f"{page.slug}; the manual's state holds one {name}"
+                )
+            models.setdefault(name, (value, page.slug))
+        sys.modules.pop(ns["__name__"], None)
+    fields: dict[str, Any] = {
+        field_name(name): (cls, Field(default_factory=cls)) for name, (cls, _) in models.items()
+    }
+    return create_model("State", query=(str, ""), **fields)
+
+
+def render_block(s: mw.Session[Any], live: Live, ns: dict[str, Any]) -> ui.Component:
     """Run a live block for this session; a failure shows as an alert, never a dead page."""
-
-    def state(model: type[BaseModel]) -> Any:
-        # Held per page and model name, not per block: a handler defined in one
-        # block looks ``state`` up when it runs, by which time a later block may
-        # have rebound it. The block runs on every render, so ``model`` is a new
-        # class each time; the held instance is matched by name. The namespace
-        # is shared by every session on the page, so the session is the one
-        # running now (a handler's, a task's), not the one that rendered last.
-        owner = context.current() or s
-        key = f"{live.id.rsplit('#', 1)[0]}:{model.__name__}"
-        held = owner.state.blocks.get(key)
-        if type(held).__name__ != model.__name__:
-            held = owner.state.blocks[key] = model()
-        return held
-
-    ns["state"] = state
     try:
         exec(live.body, ns)
         view = eval(live.tail, ns) if live.tail is not None else ns["example"](s)
@@ -302,6 +319,7 @@ def make_app(theme: Any = None) -> mw.App:
     """The manual as an app, one page per Markdown file."""
     pages = load()
     sections = index(pages)
+    State = state_model(pages)  # noqa: N806
     # The manual's own look: the mainlines colours, Inter and the mark, from the
     # package's public folder. A theme passed in replaces it.
     # The manual is public: live sessions are capped, and the uploads its
@@ -387,7 +405,7 @@ def make_app(theme: Any = None) -> mw.App:
                 )
         return ui.Sidebar(*items, title="Manual")
 
-    async def first_hit(s: mw.Session[State], query: str) -> None:
+    async def first_hit(s: mw.Session[Any], query: str) -> None:
         """Enter in the search box opens the best match."""
         s.state.query = query or ""
         found = search(sections, query)
@@ -395,11 +413,11 @@ def make_app(theme: Any = None) -> mw.App:
             s.navigate(f"{found[0].section.page.slug}#{found[0].section.anchor}")
 
     def register(page: Page) -> None:
-        def drop_namespace(s: mw.Session[State]) -> None:
+        def drop_namespace(s: mw.Session[Any]) -> None:
             sys.modules.pop(live_module_name(page.slug, s.id), None)
 
         @app.page(page.slug, title=f"{page.title} · millwork")
-        def view(s: mw.Session[State]) -> ui.Component:
+        def view(s: mw.Session[Any]) -> ui.Component:
             body: list[ui.Component] = []
             ns = page_namespace(page.slug, s.id)
             for seg in page.segments:
@@ -435,14 +453,15 @@ __all__ = [
     "Hit",
     "Live",
     "Page",
-    "State",
     "app",
+    "field_name",
     "load",
     "make_app",
     "page_namespace",
     "parse",
     "render_block",
     "search",
+    "state_model",
     "Section",
     "index",
     "slugify",

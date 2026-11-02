@@ -140,15 +140,15 @@ async def run_test(s, _):
             assert page.state.n == 1
             assert page.find("count").props["content"] == "count 1"
             ops = [op.op for op in page.last_patch.ops]
-        state(Outcome).text = f"Passed. The click produced a patch with {ops}."
+        s.state.outcome.text = f"Passed. The click produced a patch with {ops}."
     except AssertionError as exc:
-        state(Outcome).text = f"Failed: {exc}"
+        s.state.outcome.text = f"Failed: {exc}"
 
 
 def example(s):
     return ui.Row(
         ui.Button("Run the test", icon="play", on_click=run_test),
-        ui.Text(state(Outcome).text, variant="muted"),
+        ui.Text(s.state.outcome.text, variant="muted"),
         gap=4,
     )
 ```

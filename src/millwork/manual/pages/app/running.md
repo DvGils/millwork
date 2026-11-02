@@ -16,7 +16,7 @@ a path prefix.
 ```python
 app = mw.App(
     "projects",
-    state=State,                      # the default state model for every page
+    state=State,                      # the session's state model
     public="public",                  # served at /public/; None for no static folder
     components="components",          # custom components, .jsx files; None for none
     theme="themes/dark.json",         # a path or a Theme; public/theme.json is found on its own

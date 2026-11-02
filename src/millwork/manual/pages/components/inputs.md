@@ -24,7 +24,7 @@ class Owner(BaseModel):
 
 
 def example(s):
-    st = state(Owner)
+    st = s.state.owner
     return ui.Stack(
         ui.Input(
             value=st.text,
@@ -268,11 +268,11 @@ class Pipeline(BaseModel):
 
 
 def reorder(s, steps):
-    state(Pipeline).steps = steps
+    s.state.pipeline.steps = steps
 
 
 def example(s):
-    st = state(Pipeline)
+    st = s.state.pipeline
     return ui.Stack(
         ui.MultiSelect(
             options=["Collect", "Clean", "Model", "Report", "Share"],

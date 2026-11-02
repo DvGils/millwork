@@ -46,20 +46,22 @@ that serves these pages. Try the button:
 ui.Button("Say hello", icon="sparkles", on_click=lambda s, _: s.toast("Hello from Python."))
 ```
 
-An example may hold state. `state(Model)` returns an instance of your model
-that lives for the session, so a handler can change it and the page renders
-again.
+An example may hold state. An app declares one state model and reads
+`s.state`, and the manual composes its own from the models its examples
+define, one field per model named after the class, so `Clicks` is
+`s.state.clicks`. A handler changes it and the page renders again. The
+State chapter has the whole picture.
 
 ```python live
 from pydantic import BaseModel
 
 
-class Counter(BaseModel):
+class Clicks(BaseModel):
     n: int = 0
 
 
 def example(s):
-    st = state(Counter)
+    st = s.state.clicks
     return ui.Row(
         ui.Button("Add one", on_click=lambda s, _: setattr(st, "n", st.n + 1)),
         ui.Text(f"Clicked {st.n} times.", variant="muted"),

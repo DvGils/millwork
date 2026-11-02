@@ -5,6 +5,15 @@ versions; a release says so here when it does.
 
 ## 0.1.4
 
+- One state per session. The app declares the model, `s.state` is the
+  session's instance of it, and it stays as the tab moves between pages,
+  so a value one page set is there for the next. `@app.page(state=)` is
+  gone, and a page's `close` hook runs when the session leaves the page
+  as well as when it ends. The State chapter shows how a bigger app
+  splits the model into a slice per feature, and how a page renders
+  components it cannot count.
+- The manual's examples read `s.state.<model>` as an app would. The
+  manual composes its state from the models the examples define.
 - An unknown icon name fails in Python, with the closest names in the
   error, instead of a warning in the browser console. The set is
   `mw.ICONS`.

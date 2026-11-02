@@ -132,18 +132,23 @@ mode a crash shows Starlette's own traceback page instead.
 
 ## State and the session
 
-A page's state is a Pydantic model named on the page, or on the app as the
-default for every page. `s.state` is an instance of it, made new when the
-page is opened and again on every navigation to a page. The session itself
-outlives the page. Its files, its identity and its tasks stay while the
-tab moves around the app.
+The app declares one state model, and `s.state` is the session's instance
+of it. It is made when the session starts and kept while the tab moves
+around the app, so a value one page set is there for the next. The
+session's files, its identity and its tasks stay in the same way. The
+State chapter shows how a bigger app splits the model into one slice per
+feature.
 
 ```python
 class State(BaseModel):
+    project: Project | None = None
     selected: list[int] = []
 
 
-@app.page("/projects/{project_id:int}", state=State)
+app = mw.App("projects", state=State)
+
+
+@app.page("/projects/{project_id:int}")
 def project(s: mw.Session[State]) -> ui.Component:
     ...
 ```
@@ -179,10 +184,13 @@ async def leave(s: mw.Session[State]) -> None:
     await db.release(s.state.project.id)
 ```
 
-The `close` hook runs once when the session ends, with the state still
-intact, because the tab said goodbye or has been gone longer than the
-grace period. `App(session_grace=300)` sets that period in seconds. A tab
-that reconnects within it, after a sleep or a dropped network, gets its
+The `close` hook runs once when the session is done with the page, with
+the state still as the page left it. That is when the tab moves to
+another page, once that page has connected, so a page that fails to start
+leaves this one untouched, and when the session ends, because the tab
+said goodbye or has been gone longer than the grace period.
+`App(session_grace=300)` sets that period in seconds. A tab that
+reconnects within it, after a sleep or a dropped network, gets its
 session back with everything in it.
 
 ## Navigation in the frame

@@ -68,13 +68,13 @@ clicked row.
 from pydantic import BaseModel
 
 
-class Picked(BaseModel):
+class Selection(BaseModel):
     keys: list = []
     last: str = ""
 
 
 def example(s):
-    st = state(Picked)
+    st = s.state.selection
     return ui.Stack(
         ui.Table(
             rows=ROWS,
