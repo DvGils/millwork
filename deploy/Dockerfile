@@ -1,10 +1,11 @@
-# The hosted manual: the released wheel from PyPI, nothing from the checkout,
-# so what runs there is what `pip install millwork` gives.
+# The hosted manual: the released wheel, nothing from the checkout, so what
+# runs there is what `pip install millwork` gives. The wheel comes from the
+# GitHub release and sits next to this file when the image is built.
 FROM python:3.12-slim
 
-ARG MILLWORK_VERSION
-RUN test -n "$MILLWORK_VERSION" \
-    && pip install --no-cache-dir "millwork==${MILLWORK_VERSION}" \
+COPY millwork-*.whl /tmp/wheel/
+RUN pip install --no-cache-dir /tmp/wheel/millwork-*.whl \
+    && rm -r /tmp/wheel \
     && useradd --system --create-home --shell /usr/sbin/nologin millwork
 
 USER millwork
