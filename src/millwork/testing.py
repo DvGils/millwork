@@ -77,7 +77,12 @@ class Page:
         out = []
         for node_id, node in tree.nodes.items():
             if isinstance(what, str):
-                hit = node_id == what or node_id.rsplit("/", 1)[-1] == what
+                component = tree.components.get(node_id)
+                hit = (
+                    node_id == what
+                    or node_id.rsplit("/", 1)[-1] == what
+                    or (component is not None and component.key == what)
+                )
             else:
                 hit = node.type == what.type
             if hit:
