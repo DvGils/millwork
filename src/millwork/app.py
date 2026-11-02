@@ -696,7 +696,7 @@ def _error_view(s: Any, kind: str) -> Component:
     home = ui.Button(
         label=s.text("home"),
         variant="outline",
-        icon="house",
+        icon="home",
         on_click=lambda s, _: s.navigate("/"),
     )
     card = ui.Stack(

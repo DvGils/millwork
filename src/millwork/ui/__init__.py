@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from millwork.files import FileRef
 from millwork.forms import FormIssues, Issue
+from millwork.icons import check_icon
 from millwork.nodes import Component, Text
 from millwork.ui.charts import AreaChart, BarChart, LineChart, PieChart
 from millwork.ui.chat import Accept, Action, Chat, Command
@@ -39,6 +40,11 @@ class Option(BaseModel):
     icon: str | None = None
     disabled: bool = False
     group: str | None = None
+
+    @field_validator("icon")
+    @classmethod
+    def _known_icon(cls, name: str | None) -> str | None:
+        return check_icon(name)
 
 
 def as_options(values: Any) -> list[Option]:

@@ -19,9 +19,10 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import PurePath
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
 
+from millwork.icons import check_icon
 from millwork.protocol import AddOp, ChildrenOp, Node, PatchOp, RemoveOp, SetOp, UnsetOp
 
 Handler = Callable[..., Any]
@@ -68,6 +69,11 @@ class Component(BaseModel):
     def wire_extra(self) -> dict[str, Any]:
         """Extra props computed at render time. Override in components that need it."""
         return {}
+
+    @field_validator("icon", "prefix_icon", check_fields=False)
+    @classmethod
+    def _known_icon(cls, name: str | None) -> str | None:
+        return check_icon(name)
 
     def wire_type(self) -> str:
         """The node type on the wire; a custom component names its own."""

@@ -13,6 +13,7 @@ from millwork.app import App, PageDef
 from millwork.auth import Forbidden, NotFound, User
 from millwork.chat import ChatTurn, Reply, UIMessage
 from millwork.files import FileRef, Files
+from millwork.icons import ICONS
 from millwork.nodes import Component
 from millwork.session import Session
 from millwork.tasks import Cancelled, Step, Task, progress
@@ -29,6 +30,7 @@ __all__ = [
     "FileRef",
     "Forbidden",
     "Files",
+    "ICONS",
     "NotFound",
     "PageDef",
     "Reply",

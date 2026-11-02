@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from millwork import context
+from millwork.icons import check_icon
 from millwork.nodes import Component
 
 
@@ -18,6 +19,11 @@ class Command(BaseModel):
     icon: str | None = None
     description: str | None = None
 
+    @field_validator("icon")
+    @classmethod
+    def _known_icon(cls, name: str | None) -> str | None:
+        return check_icon(name)
+
 
 class Action(BaseModel):
     """A button under an assistant message; ``on_action`` receives its id."""
@@ -27,6 +33,11 @@ class Action(BaseModel):
     id: str
     label: str
     icon: str | None = None
+
+    @field_validator("icon")
+    @classmethod
+    def _known_icon(cls, name: str | None) -> str | None:
+        return check_icon(name)
 
 
 class Accept(BaseModel):
