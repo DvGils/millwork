@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://millwork-docs.fly.dev"
+Documentation = "https://millwork-ui.com"
 Repository = "https://github.com/DvGils/millwork"
 
 [project.optional-dependencies]

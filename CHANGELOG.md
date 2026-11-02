@@ -3,6 +3,18 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.1.1
+
+- What can be pressed shows it: buttons, toggles, table rows, file cards
+  and badges take the theme's `accent` tint under the pointer, buttons get
+  the pointer cursor and a pressed shade, and a toggle that is on carries
+  the primary colour. Under a theme whose `muted` is close to white, the
+  composer's buttons and command chips had shown nothing.
+- The manual is hosted at millwork-ui.com, deployed from PyPI by each
+  release; its examples take uploads under a small quota.
+- Bundle packages updated: cn 0.5, lucide-react 1.59, React 19.3.1,
+  recharts 3.10.1.
+
 ## 0.1.0
 
 The first release on PyPI.
