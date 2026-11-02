@@ -101,6 +101,14 @@ every checkout runs without Node. The manual's pages under
 `src/millwork/manual/pages` are the gallery a bundle upgrade is judged
 against.
 
+## Releasing
+
+A release is a tag. Write the version's section in `CHANGELOG.md`, set the
+version with `uv version 0.2.0`, commit, tag `v0.2.0` and push the tag. The
+release workflow waits for approval, checks the tagged commit, builds the
+wheel, publishes it to PyPI and makes the GitHub release from the changelog
+section.
+
 ## License
 
 Apache-2.0.

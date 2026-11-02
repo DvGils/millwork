@@ -76,7 +76,10 @@ def asgi_factory() -> object:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from millwork import __version__
+
     parser = argparse.ArgumentParser(prog="millwork")
+    parser.add_argument("--version", action="version", version=f"millwork {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="serve an app")
     run.add_argument(

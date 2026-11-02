@@ -1,6 +1,12 @@
 """millwork: a Python framework for data tools and AI applications."""
 
-__version__ = "0.0.1"
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _version
+
+try:
+    __version__ = _version("millwork")
+except PackageNotFoundError:  # a checkout that is not installed
+    __version__ = "0.0.0"
 
 from millwork import auth, context, theme
 from millwork.app import App, PageDef
