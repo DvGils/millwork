@@ -273,6 +273,9 @@ export const NumberInput: Renderer = ({ props, emit }) => {
         onBlur={() => {
           if (props.on_change) emit("change", parse(current));
         }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && props.on_change) emit("change", parse(current));
+        }}
       />
       {props.suffix ? <span className="text-sm text-muted-foreground">{String(props.suffix)}</span> : null}
     </div>
