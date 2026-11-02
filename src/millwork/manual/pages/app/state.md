@@ -7,8 +7,10 @@ order: 1
 
 A session has one state. It is a Pydantic model the app declares, it lives
 for as long as the session does, and every page is a function of it. A
-handler changes that state, the page renders again, and the browser gets
-the difference. There is nothing reactive to subscribe to and nothing to
+session is one tab, so two tabs of one visitor are two sessions with two
+states, and nothing is shared by being in the same browser or signed in
+as the same person. A handler changes that state, the page renders again,
+and the browser gets the difference. There is nothing reactive to subscribe to and nothing to
 invalidate. Whatever a page shows comes from `s.state`, and a handler is
 the only place where things change.
 
@@ -300,7 +302,20 @@ work spawned on the loop that changes state on its own. Many calls in one
 tick become one render. Data that several visitors share lives in a
 database, not in the session, and a page that should follow changes made
 elsewhere runs a task that waits for them and calls `s.refresh()` when one
-arrives.
+arrives. The task is started in `connect` and dies with the session.
+
+```python
+@board.connect
+async def follow(s: mw.Session[State]) -> None:
+    s.state.notices = await db.notices()
+    s.task(watch_notices(s), label="Following notices", quiet=True)
+
+
+async def watch_notices(s: mw.Session[State]) -> None:
+    async for notice in db.listen("notices"):
+        s.state.notices.append(notice)
+        s.refresh()
+```
 
 ## What the framework notices
 

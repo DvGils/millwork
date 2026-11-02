@@ -94,9 +94,10 @@ def reference() -> str:
     out += [
         "## The session",
         "",
-        "`s` in a page or handler. `s.state` is the page's model, `s.user` the",
-        "signed-in user or `None`, `s.params` the URL's parameters, `s.files` the",
-        "session's files, `s.tasks` its tasks.",
+        "`s` in a page or handler. `s.state` is the session's instance of the model",
+        "the app declares, kept across pages. `s.user` is the signed-in user or",
+        "`None`, `s.params` the URL's parameters, `s.files` the session's files,",
+        "`s.tasks` its tasks.",
         "",
     ]
     for name in SESSION_API:
