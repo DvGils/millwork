@@ -121,6 +121,9 @@ class Session[S]:
         self._file_slots = asyncio.Semaphore(FILE_SLOTS)
         self._busy = False
         self._title_shown: str | None = None
+        self.on_failure: Callable[[str, BaseException], None] | None = None
+        """Told of every exception the session caught from the app's code, after the
+        log line: a page function, a handler, a hook. The test harness raises them."""
         # Development warnings: each is said once per session; counters tell a
         # handler that changed nothing, and a thread that changed state, apart.
         self._warned: set[str] = set()
@@ -270,8 +273,9 @@ class Session[S]:
         if self.page.on_close is not None:
             try:
                 await _call(self.page.on_close, self)
-            except Exception:
+            except Exception as exc:
                 log.exception("close hook failed for session %s", self.id)
+                self._failed("the close hook", exc)
         self.app.files.discard(self.id)
 
     # ------------------------------------------------------------- sending
@@ -314,6 +318,10 @@ class Session[S]:
             # so the grace timer runs and the session cannot leak.
             log.debug("send failed for session %s; detached", self.id)
             self.detach(self._send)
+
+    def _failed(self, where: str, exc: BaseException) -> None:
+        if self.on_failure is not None:
+            self.on_failure(where, exc)
 
     def command(self, name: str, **args: Any) -> None:
         """Fire-and-forget instruction to the tab: toast, navigate, clipboard."""
@@ -455,8 +463,9 @@ class Session[S]:
                 await _call(handler, self, turn)
             except asyncio.CancelledError:
                 pass
-            except Exception:
+            except Exception as exc:
                 log.exception("chat handler failed")
+                self._failed("the chat handler", exc)
                 self.toast(self.text("reply_failed"), tone="destructive")
             finally:
                 context.unbind(token)
@@ -644,8 +653,9 @@ class Session[S]:
             self._handler_runs += 1
             try:
                 await _call(fn, *args)
-            except Exception:
+            except Exception as exc:
                 log.exception("handler %s failed", getattr(fn, "__name__", fn))
+                self._failed(f"the handler {getattr(fn, '__name__', fn)}", exc)
                 self.toast(self.text("something_went_wrong"), tone="destructive")
             finally:
                 context.unbind(token)
@@ -802,8 +812,9 @@ class Session[S]:
             self._slow_builds = 0
             try:
                 await self.connect_or_fall_back()
-            except Exception:
+            except Exception as exc:
                 log.exception("connect failed for %s", path)
+                self._failed(f"the connect hook of {path}", exc)
                 self.page, self.params, self.path, self.state, self.tree = previous
                 await self._send_now(ServerError(message=self.text("page_failed"), fatal=False))
                 return
@@ -932,8 +943,9 @@ class Session[S]:
             for request, ask in self._asks.items():
                 root.children.append(ask.component.model_copy(update={"key": f"@ask:{request}"}))
             return build(root)
-        except Exception:
+        except Exception as exc:
             log.exception("page %s failed to render", self.page.path)
+            self._failed(f"the page function of {self.page.path}", exc)
             self._loop.create_task(
                 self._send_now(ServerError(message=self.text("render_failed"), fatal=False))
             )
@@ -953,8 +965,9 @@ class Session[S]:
             ctx = context.bind(self)
             try:
                 await _call(handler, self, None)
-            except Exception:
+            except Exception as exc:
                 log.exception("toast action failed")
+                self._failed("a toast action", exc)
                 self.toast(self.text("something_went_wrong"), tone="destructive")
             finally:
                 context.unbind(ctx)
@@ -1007,8 +1020,9 @@ class Session[S]:
             token = context.bind(self)
             try:
                 self.download(component.filename, component.content, component.mime)
-            except Exception:
+            except Exception as exc:
                 log.exception("download %s failed", component.filename)
+                self._failed(f"the download of {component.filename}", exc)
                 self.toast(self.text("download_failed"), tone="destructive")
             finally:
                 context.unbind(token)
@@ -1061,8 +1075,9 @@ class Session[S]:
                 self.command(
                     "form_issues", node=event.node, issues=[i.model_dump() for i in exc.issues]
                 )
-            except Exception:
+            except Exception as exc:
                 log.exception("handler %s on %s failed", event.name, event.node)
+                self._failed(f"the {event.name} handler on {event.node}", exc)
                 self.toast(self.text("something_went_wrong"), tone="destructive")
             finally:
                 context.unbind(token)
@@ -1177,8 +1192,9 @@ class Session[S]:
             await self._reply(msg.request, payload=result)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             log.exception("request %s on %s failed", msg.name, msg.node)
+            self._failed(f"the {msg.name} handler on {msg.node}", exc)
             await self._reply(msg.request, error="The request failed.")
         finally:
             context.unbind(token)
@@ -1283,8 +1299,9 @@ class Session[S]:
             if writer is not None:
                 writer.abort()
             raise
-        except Exception:
+        except Exception as exc:
             log.exception("upload on %s failed", msg.node)
+            self._failed(f"the upload handler on {msg.node}", exc)
             if writer is not None:
                 writer.abort()
             await self._reply(msg.request, error="The upload failed.")

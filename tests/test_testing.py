@@ -283,3 +283,46 @@ async def test_find_sees_a_keyed_component_in_a_slot(tmp_path: Path) -> None:
         assert page.find("import").id == "root/0:Card/@footer"
         await page.click("import")
         assert page.state.count == 1
+
+
+async def test_strict_harness_raises_what_the_app_raised(tmp_path: Path) -> None:
+    app = mw.App("strict", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        if s.state.count > 1:
+            raise RuntimeError("no page for that")
+        return ui.Page(ui.Button("more", key="more", on_click=more))
+
+    def more(s: mw.Session[State], _: Any) -> None:
+        s.state.count += 1
+        if s.state.count == 1:
+            raise ValueError("the handler broke")
+
+    with pytest.raises(ValueError, match="the handler broke") as caught:
+        async with TestApp(app).open("/") as page:
+            await page.click("more")
+    assert any("click handler" in note for note in caught.value.__notes__)
+
+    # Not strict: the failure stays in the log and on the page, as a running app has it.
+    async with TestApp(app, strict=False).open("/") as page:
+        await page.click("more")
+        assert page.state.count == 1 and page.toasts == ["Something went wrong."]
+        await page.click("more")
+        assert [where for where, _ in page.failures] == [
+            "the click handler on root/more",
+            "the page function of /",
+        ]
+        assert isinstance(page.failures[1][1], RuntimeError)
+
+
+async def test_a_page_that_fails_to_render_raises_in_the_test(tmp_path: Path) -> None:
+    app = mw.App("strict2", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Button("x", on_click=lambda s: None))  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match=r"on_click takes a handler of \(session, payload\)"):
+        async with TestApp(app).open("/"):
+            pass

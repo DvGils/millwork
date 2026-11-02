@@ -94,6 +94,12 @@ work are awaited, the coalesced render runs at once, and a handler waiting
 on an open question is left for `answer`. Every action settles before it
 returns, so a test can read the result on the next line.
 
+What the app's own code raises, in a page function, a handler or a hook,
+is raised in the test, with a note saying where, so the traceback points
+at the cause rather than at an empty page or a toast. `TestApp(app,
+strict=False)` leaves such failures in the log and in `page.failures`,
+which is how a running app treats them.
+
 ## Running one here
 
 The manual can run a test on itself. The button below builds a small app,
