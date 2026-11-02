@@ -40,7 +40,8 @@ versions; a release says so here when it does.
   the manual serves it at `/llms.txt`.
 - A chart's `colors={"name": slot}` fixes a series, or a pie's slice, to
   one of the five chart colors, so two charts over the same categories
-  agree. The rest take the free slots in order.
+  agree. A named slot stays reserved while its series is filtered away,
+  and the rest take the free slots in order.
 - The README has a whole page, the manual lists the form widgets, says
   where an upload's bytes are, and that a `Stat` is a card of its own.
 

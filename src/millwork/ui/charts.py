@@ -46,28 +46,30 @@ def assign_colors(
     """Give each item its color slot, 1 to ``MAX_SERIES``. An item ``colors``
     names takes the slot named; the rest take the free slots in drawing order.
     Color follows the entity, never its rank, so two charts over the same
-    categories agree when both are told the same names. A name that is not
-    among the items is allowed, since a filter may have removed it."""
+    categories agree when both are told the same names. A named slot stays
+    reserved when its item is absent, since a filter may have removed it and
+    the others keep their colors when it comes back."""
     colors = dict(colors or {})
+    taken: dict[int, str] = {}
     for name, slot in colors.items():
         if not isinstance(slot, int) or not 1 <= slot <= MAX_SERIES:
             raise ValueError(
                 f"colors maps a name to a slot from 1 to {MAX_SERIES}; {name!r} is {slot!r}"
             )
-    taken: dict[int, str] = {}
+        if slot in taken:
+            raise ValueError(f"colors gives slot {slot} to both {taken[slot]!r} and {name!r}")
+        taken[slot] = name
+    free = [slot for slot in range(1, MAX_SERIES + 1) if slot not in taken]
     for item in items:
         slot = next((colors[n] for n in names(item) if n in colors), None)
-        if slot is not None:
-            if slot in taken:
+        if slot is None:
+            if not free:
                 raise ValueError(
-                    f"colors gives slot {slot} to both {taken[slot]!r} and {names(item)[0]!r}"
+                    f"colors reserves {len(taken)} of {MAX_SERIES} slots, leaving none for "
+                    f"{names(item)[0]!r}; name it too, or reserve fewer"
                 )
-            taken[slot] = names(item)[0]
-            item["color"] = slot
-    free = (slot for slot in range(1, MAX_SERIES + 1) if slot not in taken)
-    for item in items:
-        if "color" not in item:
-            item["color"] = next(free)
+            slot = free.pop(0)
+        item["color"] = slot
 
 
 def _series_spec(y: Any) -> list[dict[str, str]]:
@@ -234,7 +236,7 @@ class BarChart(_Chart):
     def _check_bars(self) -> BarChart:
         if self.diverging and self.stacked == "percent":
             raise ValueError("a diverging chart is stacked around its midpoint; percent is not")
-        if self.diverging and self.emphasis is not None:
+        if self.diverging and (self.emphasis is not None or self.colors is not None):
             raise ValueError("a diverging chart colours a scale, not one series")
         if self.diverging:
             for point in self.points():

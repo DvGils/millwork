@@ -182,11 +182,12 @@ def test_a_pie_takes_one_slice_per_row_and_folds_the_rest() -> None:
 def test_colors_fix_a_series_or_slice_to_a_slot() -> None:
     rows = [{"m": "Jan", "sales": 1, "costs": 2, "tax": 3}]
     chart = ui.BarChart(rows, x="m", y=["sales", "costs", "tax"], colors={"costs": 1, "Gone": 3})
-    # costs takes slot 1 as told; sales and tax take the free slots in order.
+    # costs takes slot 1 as told, slot 3 stays reserved for the absent Gone, and
+    # sales and tax take the free slots in order.
     assert [(s["key"], s["color"]) for s in chart.series()] == [
         ("sales", 2),
         ("costs", 1),
-        ("tax", 3),
+        ("tax", 4),
     ]
     labeled = ui.LineChart(rows, x="m", y={"sales": "Sales"}, colors={"Sales": 5})
     assert labeled.series()[0]["color"] == 5
@@ -199,3 +200,14 @@ def test_colors_fix_a_series_or_slice_to_a_slot() -> None:
         ui.BarChart(rows, x="m", y="sales", colors={"sales": 6})
     with pytest.raises(ValueError, match="both 'sales' and 'costs'"):
         ui.BarChart(rows, x="m", y=["sales", "costs"], colors={"sales": 1, "costs": 1})
+
+
+def test_a_named_slot_stays_reserved_and_diverging_takes_no_colors() -> None:
+    rows = [{"m": "Jan", "a": 1, "b": 2, "c": 3}]
+    # b is filtered away, and c keeps slot 3 because slot 2 stays b's.
+    chart = ui.BarChart(rows, x="m", y=["a", "c"], colors={"a": 1, "b": 2})
+    assert [s["color"] for s in chart.series()] == [1, 3]
+    with pytest.raises(ValueError, match="leaving none for 'c'"):
+        ui.BarChart(rows, x="m", y=["c"], colors={"p": 1, "q": 2, "r": 3, "s": 4, "t": 5})
+    with pytest.raises(ValueError, match="colours a scale"):
+        ui.BarChart(rows, x="m", y=["a", "b"], diverging=True, colors={"a": 1})

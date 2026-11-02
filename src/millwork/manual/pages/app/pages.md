@@ -163,9 +163,9 @@ A page can have a `connect` hook. It runs once each time the page is
 opened, before the first render, with the path parameters as keyword
 arguments, and it may be async. This is where a page loads what it needs,
 starts a task, or decides that the visitor may not be here. Raising
-`mw.NotFound()` or `mw.Forbidden(message)` from it keeps the tab on the
-page it came from and shows the message. A page opened directly shows the
-message and stops there.
+`mw.NotFound()` or `mw.Forbidden(message)` from it lands the session on
+the app's page for that, under the path that was asked for, with the
+message.
 
 ```python
 @project.connect
@@ -184,14 +184,16 @@ async def leave(s: mw.Session[State]) -> None:
     await db.release(s.state.project.id)
 ```
 
-The `close` hook runs once when the session is done with the page, with
-the state still as the page left it. That is when the tab moves to
-another page, once that page has connected, so a page that fails to start
-leaves this one untouched, and when the session ends, because the tab
-said goodbye or has been gone longer than the grace period.
-`App(session_grace=300)` sets that period in seconds. A tab that
-reconnects within it, after a sleep or a dropped network, gets its
-session back with everything in it.
+The `close` hook runs once per visit, when the session is done with the
+page, with the state still as the page left it. That is when the tab
+moves to another page, before that page's connect runs, which holds when
+the next page is this one with other parameters, and when the session
+ends, because the tab said goodbye or has been gone longer than the grace
+period. A page whose connect raises is reported with a toast, and the tab
+keeps the page it came from, already closed, with whatever the failed
+connect wrote to the state. `App(session_grace=300)` sets the grace period
+in seconds. A tab that reconnects within it, after a sleep or a dropped
+network, gets its session back with everything in it.
 
 ## Navigation in the frame
 

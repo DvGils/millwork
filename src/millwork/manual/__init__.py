@@ -6,10 +6,11 @@ beneath it, so every example in the manual runs. The same blocks are the
 gallery a bundle upgrade is judged against and the coverage the tests check.
 
 The block contract: the code runs with ``mw`` and ``ui`` in scope and imports
-the rest, as an app would. It either defines ``example(s)``, a page function over the session,
-or ends in an expression that is the component. ``state(Model)`` returns an
-instance of ``Model`` kept for this block on the session, so an example can
-hold state across events.
+the rest, as an app would. It either defines ``example(s)``, a page function
+over the session, or ends in an expression that is the component. The manual's
+state is composed from the models the blocks define, one field per model
+named after the class, so an example holds state in ``s.state.<model>`` the
+way an app holds it in a field of its own model.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError, create_model
+from pydantic import BaseModel, Field, create_model
 from starlette.responses import PlainTextResponse
 
 import millwork as mw
@@ -252,27 +253,36 @@ def state_model(pages: list[Page]) -> type[BaseModel]:
     for page in pages:
         ns = page_namespace(page.slug, "load")
         for seg in page.segments:
-            if isinstance(seg, Live):
-                exec(seg.body, ns)
-        for name, value in list(ns.items()):
-            if not (isinstance(value, type) and issubclass(value, BaseModel)):
-                continue
-            if value is BaseModel or value.__module__ != ns["__name__"]:
+            if not isinstance(seg, Live):
                 continue
             try:
-                value()
-            except ValidationError:
+                exec(seg.body, ns)
+            except Exception:  # noqa: BLE001  the page shows the failure where the block is
+                log.exception("live block %s failed at load", seg.id)
                 continue
-            if name in models and set(models[name][0].model_fields) != set(value.model_fields):
-                raise ValueError(
-                    f"{name} is defined with different fields on {models[name][1]} and "
-                    f"{page.slug}; the manual's state holds one {name}"
-                )
-            models.setdefault(name, (value, page.slug))
+            for name, value in list(ns.items()):
+                if not (isinstance(value, type) and issubclass(value, BaseModel)):
+                    continue
+                if value is BaseModel or value.__module__ != ns["__name__"]:
+                    continue
+                if name in models and models[name][0] is value:
+                    continue
+                try:
+                    value()
+                except Exception:  # noqa: BLE001  a model that needs arguments, or cannot be made
+                    continue
+                if name in models and set(models[name][0].model_fields) != set(value.model_fields):
+                    raise ValueError(
+                        f"{name} is defined with different fields in {models[name][1]} and "
+                        f"{seg.id}; the manual's state holds one {name}"
+                    )
+                models.setdefault(name, (value, seg.id))
         sys.modules.pop(ns["__name__"], None)
     fields: dict[str, Any] = {
         field_name(name): (cls, Field(default_factory=cls)) for name, (cls, _) in models.items()
     }
+    if "query" in fields:
+        raise ValueError("an example model may not be named Query; the search box holds that field")
     return create_model("State", query=(str, ""), **fields)
 
 

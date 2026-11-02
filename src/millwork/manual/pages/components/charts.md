@@ -10,8 +10,9 @@ column and `y` the value column, or several of them. Each series takes the
 next of the theme's five chart colors, in the order given, and keeps it
 when a neighbor disappears. `colors={"Costs": 2}` fixes a series to a
 slot, by key or label, so two charts over the same categories paint each
-one alike, and the series not named take the free slots in order. Five
-series is the limit. A sixth has no
+one alike. A named slot stays reserved while its series is filtered away,
+and the series not named take the free slots in order. Five series is the
+limit. A sixth has no
 color of its own, so a bar, line or area chart refuses it, and the app
 folds the rest into one series or draws a second chart. A pie folds its
 smallest slices into one for the same reason, since a slice is a row and

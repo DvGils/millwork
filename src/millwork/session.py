@@ -121,6 +121,8 @@ class Session[S]:
         self._file_slots = asyncio.Semaphore(FILE_SLOTS)
         self._busy = False
         self._title_shown: str | None = None
+        # The page's connect ran and its close has not: what close() still owes it.
+        self._page_open = False
         self.on_failure: Callable[[str, BaseException], None] | None = None
         """Told of every exception the session caught from the app's code, after the
         log line: a page function, a handler, a hook. The test harness raises them."""
@@ -274,8 +276,12 @@ class Session[S]:
         self.app.files.discard(self.id)
 
     async def _close_page(self, page: PageDef) -> None:
-        """The page's close hook: the session is done with it, by moving to another
-        page or by ending. The state is still as the page left it."""
+        """The page's close hook, once per visit: the session is done with it, by
+        moving to another page or by ending. The state is still as the page
+        left it. A page whose connect never finished has nothing to close."""
+        if not self._page_open:
+            return
+        self._page_open = False
         if page.on_close is None:
             return
         try:
@@ -798,7 +804,10 @@ class Session[S]:
     # ------------------------------------------------------------- navigation
 
     async def navigate_to(self, path: str) -> None:
-        """Switch this session to another page. State is per page; files and identity stay."""
+        """Switch this session to another page. The state stays; the page left is
+        closed before the next one connects."""
+        if self.closed:
+            return
         # A fragment names a heading: the tab scrolls to it after the mount.
         path, _, fragment = path.partition("#")
         resolved = self.app.resolve(path) or self.app.fallback("not_found", path)
@@ -807,11 +816,17 @@ class Session[S]:
             await self._send_now(ServerError(message=self.text("sign_in_hint"), fatal=True))
             return
         # Under the handler lock: no render runs against the new page before its
-        # connect has finished, and no handler runs across the switch. The switch
-        # is provisional until connect succeeds: a page that fails to start leaves
-        # the tab on the page it had, still working.
+        # connect has finished, and no handler runs across the switch.
         async with self._hold():
+            if self.closed:
+                return
             previous = (self.page, self.params, self.path, self.tree)
+            # Leaving comes first. The page's close hook sees the state as the page
+            # left it, before the next page's connect writes to it, which matters
+            # most when the next page is this one with other parameters.
+            await self._close_page(previous[0])
+            if self.closed:
+                return
             self.page, self.params, self.path = page, params, path
             self.tree = None
             self._slow_builds = 0
@@ -820,12 +835,13 @@ class Session[S]:
             except Exception as exc:
                 log.exception("connect failed for %s", path)
                 self._failed(f"the connect hook of {path}", exc)
+                # The tab keeps the page it came from, already closed; what the
+                # failed connect wrote to the state stays.
                 self.page, self.params, self.path, self.tree = previous
                 await self._send_now(ServerError(message=self.text("page_failed"), fatal=False))
                 return
-            # The page left is closed once the next one has connected, so a page
-            # that fails to start leaves the one it came from untouched.
-            await self._close_page(previous[0])
+            if self.closed:
+                return
             for ask in list(self._asks.values()):
                 if not ask.future.done():
                     ask.future.set_result(None)
@@ -1321,14 +1337,15 @@ class Session[S]:
         log.warning("answer for unknown request %s", msg.request)
 
     async def connect(self) -> None:
-        """Run the page's connect hook, in the session context."""
-        if self.page.on_connect is None:
-            return
-        token = context.bind(self)
-        try:
-            await _call(self.page.on_connect, self, **self.params)
-        finally:
-            context.unbind(token)
+        """Run the page's connect hook, in the session context. The page is open
+        once it returns, and owed a close."""
+        if self.page.on_connect is not None:
+            token = context.bind(self)
+            try:
+                await _call(self.page.on_connect, self, **self.params)
+            finally:
+                context.unbind(token)
+        self._page_open = True
 
     async def connect_or_fall_back(self) -> None:
         """Connect, and when the hook refuses with NotFound or Forbidden, land on the

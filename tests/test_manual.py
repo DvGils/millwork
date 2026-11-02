@@ -137,3 +137,28 @@ def test_the_manuals_state_is_composed_from_its_examples() -> None:
     one, two = State(), State()
     one.counter.n = 3
     assert two.counter.n == 0
+
+
+def test_load_skips_a_broken_block_and_refuses_a_renamed_model(tmp_path: Path) -> None:
+    from millwork.manual import Page, parse, state_model
+
+    def page(slug: str, *blocks: str) -> Page:
+        text = "\n\n".join(f"```python live\n{b}\n```" for b in blocks) + "\n"
+        _, segments = parse(text, slug)
+        return Page(slug=slug, title=slug, chapter="", order=1, segments=segments)
+
+    model = "from pydantic import BaseModel\n\nclass Held(BaseModel):\n    n: int = 0\n"
+    broken = page("/a", "raise RuntimeError('needs the network')\n\nui.Text('never')")
+    fine = page("/b", model + "\nui.Text(str(s.state.held.n))")
+    State = state_model([broken, fine])  # noqa: N806
+    assert "held" in State.model_fields
+    twice = page(
+        "/c", model + "\nui.Text('x')", "class Held(BaseModel):\n    other: int = 0\n\nui.Text('y')"
+    )
+    with pytest.raises(ValueError, match="Held is defined with different fields"):
+        state_model([twice])
+    query = (
+        "from pydantic import BaseModel\n\nclass Query(BaseModel):\n    q: str = ''\n\nui.Text('z')"
+    )
+    with pytest.raises(ValueError, match="may not be named Query"):
+        state_model([page("/d", query)])
