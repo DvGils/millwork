@@ -5,19 +5,20 @@ order: 1
 
 # State and handlers
 
-A page is a function of the session's state. A handler changes that state;
-the page renders again; the browser gets the difference. There is nothing
-reactive to subscribe to and nothing to invalidate: whatever a page shows
-comes from `s.state`, and the only place where things change is a handler.
+A page is a function of the session's state. A handler changes that state,
+the page renders again, and the browser gets the difference. There is
+nothing reactive to subscribe to and nothing to invalidate. Whatever a page
+shows comes from `s.state`, and a handler is the only place where things
+change.
 
 ## The loop
 
 `s.state` is an instance of the model named on the page, or on the app for
 every page. A handler is any callable bound to an `on_*` prop. It receives
-the session and the event's payload: the new value for `on_change`, the
-validated model for a form's `on_submit`, nothing of use for `on_click`.
-It may be sync or async. When it returns, the page renders once, under a
-lock, so a render sees state as a handler left it.
+the session and the event's payload, which is the new value for
+`on_change`, the validated model for a form's `on_submit`, and nothing of
+use for `on_click`. It may be sync or async. When it returns, the page
+renders once, under a lock, so a render sees state as the handler left it.
 
 ```python live
 from pydantic import BaseModel
@@ -50,18 +51,18 @@ def example(s):
     )
 ```
 
-A handler that raises shows "Something went wrong." as a toast and the log
-has the traceback; the page stays as it was. A handler that needs to ask
-first uses `s.confirm` or `s.ask`, in the Feedback chapter.
+A handler that raises shows "Something went wrong." as a toast and puts
+the traceback in the log. The page stays as it was. A handler that needs
+to ask first uses `s.confirm` or `s.ask`, both in the Feedback chapter.
 
 ## Keys
 
-Every component takes a `key`. A key is a component's identity across
-renders: a keyed node keeps its browser-side state (what is typed, which
-tab is open, where a list is scrolled) when the tree around it changes,
-and a list of keyed rows that is reordered moves the rows instead of
-redrawing them. Siblings without keys are told apart by position, which is
-right for a fixed layout and wrong for a list built from data.
+Every component takes a `key`, which is its identity across renders. A
+keyed node keeps its browser-side state when the tree around it changes,
+whether that is what was typed, which tab is open or where a list is
+scrolled. A list of keyed rows that gets reordered moves the rows instead
+of redrawing them. Siblings without keys are told apart by position, which
+is right for a fixed layout and wrong for a list built from data.
 
 ```python live
 from pydantic import BaseModel
@@ -100,22 +101,23 @@ def example(s):
 A key is also how `s.reset(key)` returns a browser-owned control to its
 `default`, and how `ui.Button(form=key)` finds its form. `hidden=True`
 keeps a component in the tree without showing it, so its browser-side
-state survives; `cls` adds Tailwind classes for a spacing or sizing tweak.
+state survives. `cls` adds Tailwind classes for a spacing or sizing tweak.
 
 ## Who owns a value
 
-A control shows either what Python says (`value=`, with every change
-reported through `on_change`) or what the browser holds (`default=`, with
-changes reported but not required), one or the other. The Inputs chapter shows
-the two side by side. Inside a `ui.Form` every control is browser-owned
-draft state until the form is submitted.
+A control shows either what Python says or what the browser holds. With
+`value=`, every change is reported through `on_change` and Python decides
+what the control shows. With `default=`, the browser holds the value and
+changes are reported but not required. The Inputs chapter shows the two
+side by side. Inside a `ui.Form` every control is browser-owned draft
+state until the form is submitted.
 
 ## Reaching the session from anywhere
 
 Handlers get the session as their first argument. Code further down, a
-helper or a library that wants to show a toast, calls `mw.session()`: it
-returns the session of the handler or task that is running, on the loop
-or in the thread of a sync task.
+helper or a library that wants to show a toast, calls `mw.session()`. It
+returns the session of the handler or task that is running, whether on the
+loop or in the thread of a sync task.
 
 ```python live
 import millwork as mw
@@ -131,21 +133,21 @@ def example(s):
 
 `s.refresh()` asks for a render from code that is not a handler, such as
 work spawned on the loop that changes state on its own. Many calls in one
-tick are one render.
+tick become one render.
 
 ## What the framework notices
 
-Some mistakes the framework can see, and says so: once per session, as a
+Some mistakes the framework can see, and it says so once per session, as a
 log line with the page's path, and in debug mode as a toast as well.
 
-- **A slow page function**, over 20 ms. The page function builds the tree;
-  I/O belongs in `connect` or a task.
-- **A list without keys**: four or more siblings of one type without a
-  key whose number changed between renders.
-- **A handler that changed nothing**: no state, no command, no task.
+- **A slow page function**, over 20 ms. The page function builds the tree,
+  and I/O belongs in `connect` or a task.
+- **A list without keys**, meaning four or more siblings of one type
+  without a key whose number changed between renders.
+- **A handler that changed nothing**, no state, no command, no task.
   Usually a forgotten `await`.
 - **A sync task that changed state from its thread.** A task reports
-  through `progress()` and returns a result; the handler that awaits it
+  through `progress()` and returns a result, and the handler that awaits it
   puts the result in state.
 
 The Running chapter says how to turn debug mode on.

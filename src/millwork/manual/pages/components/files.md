@@ -5,17 +5,17 @@ order: 7
 
 # Files
 
-Files belong to the session. An upload becomes a `mw.FileRef` with an id, a
-name, a size and a type; the bytes live on the server for as long as the
-session does and travel to the browser over the session's own socket, so a
-file has no URL and needs no signing.
+Files belong to the session. An upload becomes a `mw.FileRef` with an
+id, a name, a size and a type. The bytes live on the server for as long as
+the session does and travel to the browser over the session's own socket,
+so a file has no URL and needs no signing.
 
 ## FileUpload
 
-`ui.FileUpload` is a drop zone (`dropzone=False` makes it a button). `accept`
-lists extensions, `multiple` and `max_files` allow more than one,
-`max_size_mb` caps each. `on_upload` receives the `FileRef`s; `on_reject`
-receives `{name, reason}` for a file that was refused.
+`ui.FileUpload` is a drop zone, or a button with `dropzone=False`.
+`accept` lists extensions, `multiple` and `max_files` allow more than one,
+and `max_size_mb` caps each. `on_upload` receives the `FileRef`s, and
+`on_reject` receives `{name, reason}` for a file that was refused.
 
 ```python live
 from pydantic import BaseModel
@@ -49,7 +49,7 @@ def example(s):
 
 `ui.FileCard` shows a file with its size and kind, an optional `meta` line,
 a `status` and `actions`. Given a `FileRef`, Open shows the bytes in a new
-tab; given a `url`, it links there.
+tab. Given a `url`, it links there.
 
 ```python live
 from pydantic import BaseModel
@@ -82,11 +82,11 @@ def example(s):
 
 ## Image and Pdf
 
-`ui.Image` and `ui.Pdf` take a `FileRef` or an outside URL. An image has a
-`size` and a `fit`; a PDF a `page` and a `height`. The browser's own viewer
-shows the PDF, so a form or a link inside it looks like part of the app:
-show files the app made or the person uploaded themselves, not documents
-from strangers.
+`ui.Image` and `ui.Pdf` take a `FileRef` or an outside URL. An image has
+a `size` and a `fit`, and a PDF a `page` and a `height`. The browser's own
+viewer shows the PDF, so a form or a link inside it looks like part of the
+app. Show files the app made or the person uploaded themselves, and keep
+documents from strangers out of it.
 
 ```python live
 import struct, zlib
@@ -128,7 +128,7 @@ def example(s):
     )
 ```
 
-A PDF the session holds shows the same way, from its bytes:
+A PDF the session holds shows the same way, from its bytes.
 
 ```python live
 from pydantic import BaseModel

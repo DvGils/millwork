@@ -11,10 +11,11 @@ task releases the handler lock, so the page stays live meanwhile.
 
 ## Starting one
 
-`s.task(work, *args, label=)` runs a coroutine or a plain function (a
-function runs in a thread). It returns a `mw.Task` whose `done`, `status`,
-`progress`, `steps` and `result` the page can read. `ui.Progress(task=)`
-and `ui.Steps(task=)` draw it, and `task.cancel()` stops it.
+`s.task(work, *args, label=)` runs a coroutine or a plain function, and a
+plain function runs in a thread. It returns a `mw.Task` whose `done`,
+`status`, `progress`, `steps` and `result` the page can read.
+`ui.Progress(task=)` and `ui.Steps(task=)` draw it, and `task.cancel()`
+stops it.
 
 ```python live
 import time
@@ -77,9 +78,10 @@ user cancelled, so a loop stops at its next check.
 
 ## Waiting for a result
 
-A handler can `await` the task to use its result; the lock is released while
-it waits. `on_done=` names a handler to run when the task ends, with the
-task as its argument. `timeout=` cancels a task that runs too long.
+A handler can `await` the task to use its result, and the lock is
+released while it waits. `on_done=` names a handler to run when the task
+ends, with the task as its argument. `timeout=` cancels a task that runs
+too long.
 
 ```python live
 import asyncio
@@ -113,9 +115,9 @@ def example(s):
 
 ## Later and threads
 
-`s.later(seconds, work)` runs work after a delay; `s.thread(fn, *args)`
-runs a blocking function in the thread pool and is what `s.task` does for a
-plain function.
+`s.later(seconds, work)` runs work after a delay. `s.thread(fn, *args)`
+runs a blocking function in the thread pool, which is what `s.task` does
+for a plain function.
 
 ```python live
 from pydantic import BaseModel

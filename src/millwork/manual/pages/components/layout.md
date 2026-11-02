@@ -5,23 +5,24 @@ order: 0
 
 # Layout
 
-A page is a tree. Layout components arrange their children; they carry no
-state and emit no events. Children are positional, so a page reads like the
-screen it makes.
+A page is a tree. Layout components arrange their children, carry no
+state and emit no events. Children are positional, so a page reads like
+the screen it makes.
 
 ## Page
 
-`ui.Page` is the root of every page. It is as high as the viewport, scrolls its
-body under a fixed header, and lays itself out around a `ui.Sidebar` child when
-there is one. Give it a `title` for the browser tab and a `header` for the app
-bar; `padding=False` lets a child such as `ui.Chat` fill it edge to edge.
+`ui.Page` is the root of every page. It is as high as the viewport,
+scrolls its body under a fixed header, and lays itself out around a
+`ui.Sidebar` child when there is one. Give it a `title` for the browser
+tab and a `header` for the app bar. `padding=False` lets a child such as
+`ui.Chat` fill it edge to edge.
 
 This manual is a `Page` with a `Sidebar`, so it is not shown inline.
 
 ## Stack and Row
 
-`ui.Stack` lays children out vertically, `ui.Row` horizontally. Both take
-`gap`, `align` and `justify`; a `Row` can `wrap`.
+`ui.Stack` lays children out vertically and `ui.Row` horizontally. Both
+take `gap`, `align` and `justify`, and a `Row` can `wrap`.
 
 ```python live
 ui.Stack(
@@ -54,8 +55,9 @@ ui.Grid(
 
 ## Card
 
-`ui.Card` frames content with an optional `title`, `description` and `footer`.
-`tone` colours its border; `on_click` makes the whole card a target.
+`ui.Card` frames content with an optional `title`, `description` and
+`footer`. `tone` colours its border, and `on_click` makes the whole card a
+target.
 
 ```python live
 ui.Grid(
@@ -109,10 +111,11 @@ ui.Split(
 
 ## Tabs
 
-`ui.Tabs` holds `ui.Tab` children, each with an `id` and a `label`, and an
-optional `icon` or `badge`. The chosen tab is the tab's business unless the
-page passes `value`; `default` names the first one shown. Panels stay mounted
-when hidden, so what the user typed in one survives a switch.
+`ui.Tabs` holds `ui.Tab` children, each with an `id` and a `label`, and
+an optional `icon` or `badge`. The chosen tab is the tab's own business
+unless the page passes `value`, and `default` names the first one shown.
+Panels stay mounted when hidden, so what the user typed in one survives a
+switch.
 
 ```python live
 ui.Tabs(

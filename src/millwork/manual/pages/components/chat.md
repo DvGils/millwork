@@ -5,24 +5,25 @@ order: 9
 
 # Chat
 
-`ui.Chat` is a conversation: messages, a composer with attachments and
-commands, and a streamed reply from Python. It needs a `key`, which names
-the thread the session keeps for it, and an `on_message` handler that gets a
-`mw.ChatTurn` and replies through it. The chat fills whatever height it is
-given, so give it one with `cls` inside a card. `attachments=ui.Accept(...)`
-says what a person may attach, of which types, how many and how large;
-without it the composer takes no files. `max_chars` caps a message and
-`max_messages` the thread, as the section below says.
-`tools=[...]` puts your own buttons in the composer; the section below
-and the Custom chapter show what goes there.
+`ui.Chat` is a conversation, with messages, a composer that takes
+attachments and commands, and a streamed reply from Python. It needs a
+`key`, which names the thread the session keeps for it, and an
+`on_message` handler that gets a `mw.ChatTurn` and replies through it.
+The chat fills whatever height it is given, so give it one with `cls`
+inside a card. `attachments=ui.Accept(...)` says what a person may attach,
+of which types, how many and how large. Without it the composer takes no
+files. `max_chars` caps a message and `max_messages` the thread, as the
+section below says. `tools=[...]` puts your own buttons in the composer.
+The section below and the Custom chapter show what goes there.
 
 ## A streamed reply
 
-`turn.text`, `turn.files` and `turn.command` are what the user sent. Inside
-`async with turn.reply() as reply`, `reply.text(chunk)` streams words,
-`reply.reasoning()` opens a thinking block, `reply.step(label)` a tool
-step, `reply.status(text)` a transient marker, and `reply.suggestions([...])`
-follow-up chips. The whole turn is a task: the stop button cancels it.
+`turn.text`, `turn.files` and `turn.command` are what the user sent.
+Inside `async with turn.reply() as reply`, `reply.text(chunk)` streams
+words, `reply.reasoning()` opens a thinking block, `reply.step(label)`
+opens a tool step, `reply.status(text)` shows a transient marker, and
+`reply.suggestions([...])` offers follow-up chips. The whole turn is a
+task, so the stop button cancels it.
 
 ```python live
 import asyncio
@@ -67,13 +68,13 @@ ui.Card(
 
 ## The thread
 
-`s.chat(key)` is the thread: `messages` holds what was said, `clear()`
+`s.chat(key)` is the thread. `messages` holds what was said, `clear()`
 empties it, and `load(messages)` restores a stored conversation. `busy` is
 true while a reply is streaming. The session keeps the last `max_messages`
 of the Chat, 200 by default, each at most `max_chars` long, 16,000 by
 default, so a thread holds a known amount whatever a visitor sends.
-`s.drop_chat(key)` forgets a thread altogether, for an app that keeps its
-threads in a store and only the open one in the session.
+`s.drop_chat(key)` forgets a thread altogether, which suits an app that
+keeps its threads in a store and only the open one in the session.
 
 ```python live
 ui.Row(
@@ -109,10 +110,10 @@ ui.Row(
 ## Reading aids
 
 Four things are off until asked for, since a chat is often clean enough
-without them: `avatar` puts a picture beside the assistant's messages,
+without them. `avatar` puts a picture beside the assistant's messages.
 `names=True` and `timestamps=True` write who said it and when above each
-message (on hover, always on a touch screen; `assistant_name` sets the
-name), and `durations=True` shows how long the reply took and how long
+message, on hover, or always on a touch screen, and `assistant_name` sets
+the name. `durations=True` shows how long the reply took and how long
 each step ran. The times are kept on the messages, so a loaded thread
 shows them too.
 
@@ -148,10 +149,10 @@ ui.Card(
 
 `tools=[...]` renders components left of Send. A `ui.Button` there is an
 ordinary button with a handler in Python, and nothing says it must touch
-the conversation: this gear opens a `ui.Dialog` that lives next to the
+the conversation. This gear opens a `ui.Dialog` that lives next to the
 chat, the dialog changes state, and the next reply reads it. Nothing is
 sent and no message appears. A custom component in the slot gets a `chat`
-prop to upload and send with; the Custom chapter builds a voice note
+prop to upload and send with. The Custom chapter builds a voice note
 button on it.
 
 ```python live
@@ -227,15 +228,15 @@ def example(s):
 
 ## Under a message
 
-Hover an answer and a row of buttons appears: copy, thumbs up and down
-when the chat has an `on_feedback` handler, regenerate on the latest
-answer, and any `actions` of the app's own. A thumbs down asks for a
-comment. The choice stays on the message, so it is there after a reload,
-and millwork keeps nothing else: `on_feedback` gets the message, the value
-and the comment, and the app stores them where it wants. A user message
-has an edit button; the edited message is answered again and what followed
-it goes. `regenerate=False`, `edit=False` and `copyable=False` switch each
-off.
+Hover an answer and a row of buttons appears. There is copy, thumbs up
+and down when the chat has an `on_feedback` handler, regenerate on the
+latest answer, and any `actions` of the app's own. A thumbs down asks for
+a comment. The choice stays on the message, so it is there after a
+reload, and millwork keeps nothing else. `on_feedback` gets the message,
+the value and the comment, and the app stores them where it wants. A user
+message has an edit button. The edited message is answered again and
+whatever followed it goes. `regenerate=False`, `edit=False` and
+`copyable=False` switch each of these off.
 
 ```python live
 from pydantic import BaseModel

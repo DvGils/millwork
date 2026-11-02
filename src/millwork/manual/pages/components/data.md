@@ -5,9 +5,10 @@ order: 4
 
 # Data
 
-`ui.Table` shows rows: dicts, Pydantic models or dataclasses. Columns come
-from the rows unless `columns` names them, with a `header`, a `format`, a
-`width`, an `align`, and whether they are `sortable` or `filterable`.
+`ui.Table` shows rows, which can be dicts, Pydantic models or
+dataclasses. Columns come from the rows unless `columns` names them, each
+with a `header`, a `format`, a `width`, an `align`, and whether it is
+`sortable` or `filterable`.
 
 ## A plain table
 
@@ -46,9 +47,9 @@ ui.Table(
 
 ## Search, filters and pages
 
-`search=True` adds a box that matches any column; `filters=True` adds a
-filter row whose kind follows each column's values; `page_size` pages the
-rows. `summary` is the count line under the table, or custom text.
+`search=True` adds a box that matches any column. `filters=True` adds a
+filter row whose kind follows each column's values, and `page_size` pages
+the rows. `summary` is the count line under the table, or custom text.
 
 ```python live
 ui.Table(rows=ROWS, search=True, filters=True, page_size=3, summary="People in the pilot")
@@ -56,9 +57,10 @@ ui.Table(rows=ROWS, search=True, filters=True, page_size=3, summary="People in t
 
 ## Selection and row actions
 
-`selection="row"` or `"rows"` lets the user pick; `on_select` receives the
-keys. `row_actions` adds a menu per row and `on_action` receives
-`(action id, row key)`. `on_row_click` receives the key of the clicked row.
+`selection="row"` or `"rows"` lets the user pick, and `on_select`
+receives the keys. `row_actions` adds a menu per row, and `on_action`
+receives `(action id, row key)`. `on_row_click` receives the key of the
+clicked row.
 
 ```python live
 from pydantic import BaseModel
@@ -92,8 +94,8 @@ def example(s):
 
 ## Tones
 
-`tones` colours rows: a function of the row returning a tone, or a mapping
-from column key to a function of the row and the cell.
+`tones` colours rows. It is a function of the row returning a tone, or a
+mapping from column key to a function of the row and the cell.
 
 ```python live
 ui.Table(

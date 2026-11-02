@@ -6,9 +6,9 @@ order: 10
 # Custom components
 
 When the catalogue has no component for something, an app writes one in
-JSX. The file lives in the app's `components/` folder, is compiled in the
-browser, and composes the same primitives the catalogue is built from.
-Python reaches it by name with `ui.Custom`.
+JSX. The file lives in the app's `components/` folder, gets compiled in
+the browser, and composes the same primitives the catalogue is built
+from. Python reaches it by name with `ui.Custom`.
 
 ## The contract
 
@@ -72,21 +72,22 @@ def example(s):
     )
 ```
 
-The import map a custom component can draw on is React, lucide icons, and
-every `@/components/ui/*` module the catalogue uses. Tailwind classes work;
+A custom component can import React, lucide icons, and every
+`@/components/ui/*` module the catalogue uses. Tailwind classes work, and
 ones the bundle never saw are compiled in the browser on first use.
 
 ## In a chat's composer
 
-`ui.Chat(tools=[...])` puts components in the composer, left of Send: a
-`ui.Button` with a handler in Python, or a custom component, which then
-receives a `chat` prop with `upload(file)`, `send(text, files)` and
-`busy`. That is enough for anything the browser can capture. This voice
-note button records with the browser's own recorder, uploads the clip
-under the chat's `attachments` limits and sends it; the handler gets it as
-`turn.files[0]`. `paperclip=False` keeps the attach button away when the
-tool is the only way files come in, and `capture="environment"` on
-`Accept` makes the paperclip open the camera on a phone.
+`ui.Chat(tools=[...])` puts components in the composer, left of Send.
+That can be a `ui.Button` with a handler in Python, or a custom component,
+which then receives a `chat` prop with `upload(file)`, `send(text, files)`
+and `busy`. That is enough for anything the browser can capture. This
+voice note button records with the browser's own recorder, uploads the
+clip under the chat's `attachments` limits and sends it, and the handler
+gets it as `turn.files[0]`. `paperclip=False` keeps the attach button
+away when the tool is the only way files come in, and
+`capture="environment"` on `Accept` makes the paperclip open the camera
+on a phone.
 
 ```python live
 async def heard(s, turn):

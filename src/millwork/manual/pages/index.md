@@ -5,20 +5,20 @@ order: 0
 
 # millwork
 
-millwork is a Python framework for data tools and AI applications. The browser
-runs one prebuilt React bundle; Python describes the page and handles its
-events. The project is Python only: the bundle is prebuilt, and Python owns
-every piece of state.
+millwork is a Python framework for data tools and AI applications. The
+browser runs one prebuilt React bundle, and Python describes the page and
+handles what happens on it. You write Python only. There is no JavaScript
+to build, and every piece of state lives on the server.
 
 ## Install
 
-millwork is on PyPI and needs Python 3.12 or newer:
+millwork is on PyPI and needs Python 3.12 or newer.
 
 ```
 uv add millwork
 ```
 
-or `pip install millwork`. Then an app is one file:
+`pip install millwork` works too. An app is one file:
 
 ```python
 import millwork as mw
@@ -36,18 +36,19 @@ Run it with `uv run millwork run app.py` and open the address it prints.
 
 ## How this manual works
 
-This manual is itself a millwork app. `millwork docs` serves it; its pages
+This manual is itself a millwork app. `millwork docs` serves it. Its pages
 are Markdown files inside the package, and the sidebar, the search box and
-the header are catalogue components. Every example runs: the component you
-see is produced by the Python shown beneath it, executed by the server that
-serves these pages. Try the button:
+the header are catalogue components. Every example runs. The component you
+see is produced by the Python shown beneath it, executed by the same server
+that serves these pages. Try the button:
 
 ```python live
 ui.Button("Say hello", icon="sparkles", on_click=lambda s, _: s.toast("Hello from Python."))
 ```
 
 An example may hold state. `state(Model)` returns an instance of your model
-that lives for the session, so a handler can change it and the page re-renders:
+that lives for the session, so a handler can change it and the page renders
+again.
 
 ```python live
 from pydantic import BaseModel
@@ -65,13 +66,13 @@ def example(s):
     )
 ```
 
-A block ends in an expression, which is the component, or defines
-`example(s)`, a page function over the session. `mw` and `ui` are in scope;
-everything else is imported, as in an app.
+A block either ends in an expression, which is the component, or defines
+`example(s)`, a page function over the session. `mw` and `ui` are already
+in scope. Everything else is imported, as in an app.
 
 ## Where to go next
 
-The App chapters say how an app is put together: pages and routing, state
-and handlers, signing in, theming, testing, running and deploying. The
-Components chapters walk through the catalogue, one group at a time, each
-component in its states with the Python that makes it.
+The App chapters cover how an app is put together, from pages and routing
+through state, signing in, theming and testing to running it somewhere.
+The Components chapters walk through the catalogue one group at a time,
+with each component in its states and the Python that makes it.

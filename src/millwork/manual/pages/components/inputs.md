@@ -11,9 +11,9 @@ happened through an `on_change` handler, and most can be owned by either side.
 ## Who owns the value
 
 A control with `default=` keeps its own value in the browser and reports
-changes; a control with `value=` shows what Python says and only changes when
-Python changes it. Give one or the other, never both. Pass `value` when the
-page needs to read or reset the control, `default` when it does not.
+changes. A control with `value=` shows what Python says and only changes
+when Python changes it. Give one or the other. Pass `value` when the page
+needs to read or reset the control, and `default` when it does not.
 
 ```python live
 from pydantic import BaseModel
@@ -50,10 +50,10 @@ def example(s):
 
 ## Button
 
-`ui.Button` takes a label, a `variant`, a `size`, an `icon` (before the label,
-or after with `icon_position="end"`), `loading`, `disabled` and a `tooltip`.
-`confirm="..."` asks before the handler runs. `form="key"` submits the Form
-with that key from anywhere on the page.
+`ui.Button` takes a label, a `variant`, a `size`, an `icon` before the
+label or after it with `icon_position="end"`, `loading`, `disabled` and a
+`tooltip`. `confirm="..."` asks before the handler runs. `form="key"`
+submits the Form with that key from anywhere on the page.
 
 ```python live
 ui.Stack(
@@ -107,11 +107,11 @@ ui.ButtonGroup(
 
 ## Input
 
-`ui.Input` is a single line of text. `kind` chooses the keyboard and
-validation (`text`, `password`, `email`, `number`, `search`, `url`),
-`prefix_icon` and `suffix` decorate it, `clearable` adds a clear button.
-`on_change` fires after a pause in typing (`debounce_ms`, 250 by default);
-`on_submit` fires on Enter.
+`ui.Input` is a single line of text. `kind` chooses the keyboard and the
+validation, from `text`, `password`, `email`, `number`, `search` and
+`url`. `prefix_icon` and `suffix` decorate it, and `clearable` adds a
+clear button. `on_change` fires after a pause in typing, set by
+`debounce_ms` and 250 ms by default, and `on_submit` fires on Enter.
 
 ```python live
 ui.Stack(
@@ -132,8 +132,9 @@ ui.Stack(
 
 ## Textarea
 
-`ui.Textarea` is several lines. `rows` sets the starting height, `autosize`
-grows it with the text, `max_length` caps it. Ctrl+Enter submits.
+`ui.Textarea` is several lines. `rows` sets the starting height,
+`autosize` grows it with the text, and `max_length` caps it. Ctrl+Enter
+submits.
 
 ```python live
 ui.Textarea(
@@ -161,7 +162,8 @@ ui.Row(
 ## Slider
 
 `ui.Slider` picks a number by dragging. `marks` labels points under the
-track; `show_value` prints the value beside it. It reports on release.
+track, and `show_value` prints the value beside it. It reports on
+release.
 
 ```python live
 ui.Stack(
@@ -213,10 +215,10 @@ ui.Row(
 
 ## Combobox
 
-`ui.Combobox` is a Select with a search box. With `options` it filters in the
-browser; with `on_search` Python answers each search over the session's
-socket, without a render. `allow_custom=True` lets typed text that matches
-nothing be the value.
+`ui.Combobox` is a Select with a search box. With `options` it filters in
+the browser. With `on_search`, Python answers each search over the
+session's socket, without a render. `allow_custom=True` lets typed text
+that matches nothing be the value.
 
 ```python live
 PEOPLE = [("ada", "Ada Lovelace"), ("grace", "Grace Hopper"), ("edsger", "Edsger Dijkstra")]
@@ -249,10 +251,11 @@ ui.MultiSelect(
 )
 ```
 
-The chips keep the order they were picked in, and that is the order Python
-receives. `sortable=True` lets the order be changed afterwards: drag a chip
-to its place, or focus it and press Alt with an arrow key. In a form, the
-same hint on the field (`json_schema_extra={"sortable": True}`) does it.
+The chips keep the order they were picked in, and that is the order
+Python receives. `sortable=True` lets the order be changed afterwards, by
+dragging a chip to its place or focusing it and pressing Alt with an arrow
+key. In a form, the same hint on the field, `json_schema_extra={"sortable":
+True}`, does it.
 
 ```python live
 from pydantic import BaseModel
@@ -282,8 +285,8 @@ def example(s):
 
 ## RadioGroup, CheckboxGroup and ToggleGroup
 
-Three ways to choose from a short list: one with radios, several with
-checkboxes, or either with pressed buttons (`multiple=True` for several).
+Three ways to choose from a short list. Radios pick one, checkboxes pick
+several, and pressed buttons do either, with `multiple=True` for several.
 
 ```python live
 ui.Stack(
@@ -307,9 +310,9 @@ ui.Stack(
 
 ## DatePicker
 
-`ui.DatePicker` picks a date from a calendar; `range=True` picks a span.
-Values are ISO strings on the wire, `date` objects are accepted. `min` and
-`max` bound the pickable days.
+`ui.DatePicker` picks a date from a calendar, and `range=True` picks a
+span. Values are ISO strings on the wire, and `date` objects are accepted.
+`min` and `max` bound the days that can be picked.
 
 ```python live
 ui.Row(
@@ -325,8 +328,8 @@ ui.Row(
 ## DropdownMenu
 
 `ui.DropdownMenu` opens a menu behind a `trigger` button. Items carry an
-`icon`, `disabled`, `destructive` and `separator_after`; `on_select` receives
-the chosen id.
+`icon`, `disabled`, `destructive` and `separator_after`, and `on_select`
+receives the chosen id.
 
 ```python live
 ui.DropdownMenu(

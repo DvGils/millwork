@@ -5,9 +5,9 @@ order: 5
 
 # Running
 
-One process serves an app: Python with the built bundle inside the
-package. What the app needs is said on the `App`, in Python, with values
-from wherever the app keeps its secrets. `millwork run` starts the
+One process serves an app, Python with the built bundle inside the
+package. Everything the app needs is said on the `App`, in Python, with
+values from wherever the app keeps its secrets. `millwork run` starts the
 process, and a handful of flags cover a reverse proxy, a unix socket and
 a path prefix.
 
@@ -33,7 +33,7 @@ app = mw.App(
 )
 ```
 
-- `origins` is the allow-list for the socket and the login route; the
+- `origins` is the allow-list for the socket and the login route. The
   default is the app's own origin.
 - `files` is where uploads and generated files live while a session
   lives, with a quota per session and one for the process. The folder is
@@ -44,16 +44,15 @@ app = mw.App(
   after the socket drops, with its state intact.
 - `max_sessions_per_client` and `max_sessions` count live sessions,
   those in grace included. Over the client's cap, that client's session
-  longest without a tab makes room; over the process cap, anyone's. A
-  new session is refused when every one still has a tab. A session ended
-  that way, or by a sign-out in another tab, tells its tab so: the page
-  stays readable, takes no more input, and offers a reload.
-- `threads` sizes the pool that runs sync tasks; the default is Python's.
+  longest without a tab makes room. Over the process cap, anyone's does. A
+  new session is refused only when every one still has a tab. A session
+  ended that way, or by a sign-out in another tab, tells its tab so. The
+  page stays readable, takes no more input, and offers a reload.
+- `threads` sizes the pool that runs sync tasks. The default is Python's.
 - `keep_alive=True` makes every open tab fetch the health route every
-  thirty seconds, for a host that stops an idle process; by default a tab
-  does so while a task or a reply runs.
-- `proxied=True` says a reverse proxy is in front; the Serving section
-  below.
+  thirty seconds, for a host that stops an idle process. By default a tab
+  only does so while a task or a reply runs.
+- `proxied=True` says a reverse proxy is in front. See Serving below.
 
 The settings this manual runs with:
 
@@ -82,17 +81,17 @@ def example(s):
 ## Development
 
 `millwork run app.py --reload --debug` is the loop. `--reload` restarts
-the process when a Python file changes; the tab shows "Reconnecting" and
-remounts when the server is back. `--debug` shows page errors in the
-tab, turns the framework's warnings into toasts, pushes a changed theme
-file or custom component to every open tab, and allows the `Dev` auth
-provider. Tests drive a session without a browser, so for most changes
-the loop is edit, run pytest, and the browser is for looking.
+the process when a Python file changes. The tab shows "Reconnecting" and
+remounts when the server is back. `--debug` shows page errors in the tab,
+turns the framework's warnings into toasts, pushes a changed theme file or
+custom component to every open tab, and allows the `Dev` auth provider.
+Tests drive a session without a browser, so for most changes the loop is
+edit, run pytest, and open the browser only to look.
 
 ## Serving
 
 In production one process serves one app behind a reverse proxy that
-ends TLS and passes the websocket upgrade through:
+ends TLS and passes the websocket upgrade through.
 
 ```
 uv run millwork run app.py --host 127.0.0.1 --port 8000 --proxied
@@ -103,26 +102,26 @@ The app then takes the visitor's address and scheme from the proxy's
 `X-Forwarded-For` and `X-Forwarded-Proto`, and the visitor's identity from
 the headers an `auth.Headers` provider names. Anyone who can reach the
 process can send those headers too, so a proxied app listens where only
-its proxy connects: a unix socket, a loopback port, or a container
-network.
+its proxy connects, whether that is a unix socket, a loopback port or a
+container network.
 
-`/_mw/health` answers 200 once the startup hooks have run and 503 before
+`/_mw/health` answers 200 once the startup hooks have run, and 503 before
 that and during shutdown, for a host that waits for readiness. The
-process exits cleanly on SIGTERM: sessions get their `close` hook, tasks
-are cancelled, uploads in flight are cut. Logs go to standard error.
+process exits cleanly on SIGTERM. Sessions get their `close` hook, tasks
+are cancelled, and uploads in flight are cut. Logs go to standard error.
 
 `app.asgi` is the ASGI application itself, for a server of your own
-choosing; under uvicorn directly, pass `--no-proxy-headers`, since
+choosing. Under uvicorn directly, pass `--no-proxy-headers`, since
 millwork applies the forwarded headers, and `--ws-max-size 1048576`, the
-bound `millwork run` puts on a message from the tab (uploads travel in
-smaller frames).
+bound `millwork run` puts on a message from the tab. Uploads travel in
+smaller frames, so the bound costs nothing.
 
 ## A unix socket
 
 On one machine with the proxy, `--uds` listens on a unix socket. The
-socket is created with mode 0660, whatever the umask, so the proxy
-connects when it runs in the app's group. A socket is reached through a
-proxy, so `--uds` implies `--proxied`.
+socket is created with mode 0660 whatever the umask, so the proxy
+connects when it runs in the app's group. A socket is only ever reached
+through a proxy, so `--uds` implies `--proxied`.
 
 ```
 uv run millwork run app.py --uds /run/sales/app.sock
@@ -143,12 +142,13 @@ location / {
 Like a port, the path is refused while another process answers on it. A
 socket file nobody answers on is replaced at the next start, and anything
 else at the path stops the start. The health route is reached the same
-way: `curl --unix-socket /run/sales/app.sock http://app/_mw/health`.
+way, with `curl --unix-socket /run/sales/app.sock http://app/_mw/health`.
 
 ## Under a path prefix
 
-An app can live under a path on a shared host, `https://apps.example/sales/`,
-next to other apps. The proxy strips the prefix and the server is told it:
+An app can live under a path on a shared host, say
+`https://apps.example/sales/`, next to other apps. The proxy strips the
+prefix and the server is told about it.
 
 ```
 uv run millwork run app.py --port 8000 --root-path /sales --proxied
@@ -168,25 +168,25 @@ location /sales/ {
 
 Every URL the server writes into the page is under the prefix, and the
 cookies carry it in name and path, so apps side by side on one host each
-have their own. Inside the app everything is an app path: page paths,
-`ui.Link` targets, `s.navigate`, an image's `src`, a path in Markdown;
-the tab puts each one under the prefix as it renders it. A custom
-component that builds a URL itself reads the prefix from
+have their own. Inside the app everything is an app path, whether a page
+path, a `ui.Link` target, `s.navigate`, an image's `src` or a path in
+Markdown. The tab puts each one under the prefix as it renders it. A
+custom component that builds a URL itself reads the prefix from
 `window.__mw.base`, which is empty at the root. The manual takes the flag
-too: `millwork docs --root-path /manual`.
+too, as `millwork docs --root-path /manual`.
 
 ## What a host needs
 
-Any host that runs one process and routes HTTPS to it serves a millwork
-app. It provides:
+Any host that runs one process and routes HTTPS to it can serve a
+millwork app. It provides:
 
 - TLS at the proxy or the platform's edge, with the websocket upgrade
   passed through.
-- `--proxied`, and a listener only the proxy can reach: a unix socket, a
-  loopback port, or the container's network.
-- `/_mw/health` as the readiness probe: 200 once the startup hooks have
-  run, 503 before that and during shutdown. As a liveness probe it would
-  restart a slow start, so that one gets a generous threshold.
+- `--proxied`, and a listener only the proxy can reach, whether a unix
+  socket, a loopback port or the container's network.
+- `/_mw/health` as the readiness probe, 200 once the startup hooks have
+  run and 503 before that and during shutdown. As a liveness probe it
+  would restart a slow start, so that one gets a generous threshold.
 - A files directory with room, named with `Files(...)`, when uploads are
   larger than the temporary directory should hold.
 - The `secret` and the provider's credentials from the environment or the
@@ -215,8 +215,8 @@ CMD ["/app/.venv/bin/millwork", "run", "app.py", "--host", "0.0.0.0", "--port", 
 
 ## More than one replica
 
-HTTP is stateless and the socket is the session: identity comes from the
-cookie, and everything a session owns, its state, its files, its tasks,
+HTTP is stateless and the socket is the session. Identity comes from the
+cookie, and everything a session owns, its state, its files and its tasks,
 travels over the socket to the process that holds it. Replicas need no
 sticky routing and no shared storage. When a replica goes away, its
 sessions go with it, and their tabs start fresh sessions elsewhere, as
@@ -225,18 +225,18 @@ same `secret`.
 
 ## The page's security headers
 
-Every page carries a Content Security Policy: scripts from the app's
-origin with a nonce, connections to the app's origin, images and media
-from anywhere over HTTPS, and no framing by other sites. An app with a
-`components/` folder also allows `eval`, since custom components are
-compiled in the tab. A custom component that needs a library loads it
-from `public/`, as the Charts chapter shows. `App(csp=None)` drops the
-header, and a string of your own replaces it; `{scripts}` in it is where
-millwork puts the script sources.
+Every page carries a Content Security Policy. Scripts come from the app's
+origin with a nonce, connections go to the app's origin, images and media
+may come from anywhere over HTTPS, and no other site may frame the page.
+An app with a `components/` folder also allows `eval`, since custom
+components are compiled in the tab. A custom component that needs a
+library loads it from `public/`, as the Charts chapter shows.
+`App(csp=None)` drops the header, and a string of your own replaces it,
+with `{scripts}` marking where millwork puts the script sources.
 
 ## Hooks around the process
 
 `app.on_startup` and `app.on_shutdown` register functions, sync or async,
-that run once around the process: warm a cache, open and close a pool.
-`app.route`, `app.mount` and `app.middleware` add to the Starlette
+that run once around the process, to warm a cache or open and close a
+pool. `app.route`, `app.mount` and `app.middleware` add to the Starlette
 application, as the Pages chapter shows.

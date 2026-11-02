@@ -6,9 +6,10 @@ order: 0
 # Pages and routing
 
 An app is a `mw.App` with pages on it. A page is a path and a function of
-the session that returns the component tree for that path. The browser
-opens the path, the tab connects a socket, and from then on Python renders
-and handles events over that socket. There is one session per tab.
+the session that returns the component tree for that path. When the
+browser opens the path, the tab connects a socket, and from then on Python
+renders the page and handles its events over that socket. Each tab is one
+session.
 
 ## An app and its pages
 
@@ -29,23 +30,24 @@ def about(s: mw.Session) -> ui.Component:
     return ui.Page(ui.Text("About this app"))
 ```
 
-`title` is the browser tab's title; without one the app's name is used.
-Paths match in the order the pages are registered, and a path no page
-matches is a 404.
+`title` sets the browser tab's title, and the app's name is used when a
+page has none. Paths match in the order the pages were registered. A path
+no page matches is a 404.
 
-`millwork run app.py` serves the file's `app`; `millwork run package.module:app`
-names the object. `--port` picks the port, `--reload` restarts the process
-when a Python file changes, `--debug` shows page errors in the tab and
-watches the theme file and the custom components for changes. Under
-uvicorn or another ASGI server, `app.asgi` is the application.
+`millwork run app.py` serves the file's `app`, and `millwork run
+package.module:app` names the object instead. `--port` picks the port.
+`--reload` restarts the process when a Python file changes, and `--debug`
+shows page errors in the tab and watches the theme file and the custom
+components for changes. Under uvicorn or another ASGI server, `app.asgi`
+is the application.
 
 ## Parameters in the path
 
 A path can carry parameters in Starlette's syntax. `{name}` takes one
-segment as a string; `{name:int}`, `{name:float}` and `{name:uuid}` convert
-it, and a path that does not convert does not match. `{name:path}` takes
-the rest of the path. The values arrive in `s.params`, and `s.path` is the
-path as opened.
+segment as a string. `{name:int}`, `{name:float}` and `{name:uuid}` convert
+the segment, and a path that does not convert simply does not match.
+`{name:path}` takes the rest of the path. The values arrive in `s.params`,
+and `s.path` holds the path as it was opened.
 
 ```python
 @app.page("/projects/{project_id:int}")
@@ -56,10 +58,10 @@ def project(s: mw.Session) -> ui.Component:
 ## Moving between pages
 
 A `ui.Link` whose `href` is a path inside the app navigates over the
-session: no reload, the tab's history gets an entry, the back button
-works. From a handler, `s.navigate(path)` does the same. A `#heading` on
-the path scrolls to that heading once the page is up, which is how this
-manual's search opens a section.
+session. Nothing reloads, the tab's history gets an entry, and the back
+button works. From a handler, `s.navigate(path)` does the same. A
+`#heading` on the path scrolls to that heading once the page is up, which
+is how this manual's search opens a section.
 
 ```python live
 def example(s):
@@ -71,24 +73,24 @@ def example(s):
     )
 ```
 
-A link to another site is an ordinary link; give it `target="_blank"` to
+A link to another site is an ordinary link. Give it `target="_blank"` to
 open a new tab.
 
 ## When a page is missing
 
-A path no page matches lands on the app's not-found page: over HTTP as a
-404 that serves the shell, and over the session when a link or
-`s.navigate` asks for it, so the tab keeps its session and can go on from
-there. `connect` reaches the same pages by raising: `mw.NotFound(message)`
-when what the path names does not exist, `mw.Forbidden(message)` when this
-person may not open it. The session lands on the error page under the path
-that was asked for, with the message if one was given.
+A path no page matches lands on the app's not-found page. Over HTTP that
+is a 404 that still serves the shell. Over the session, when a link or
+`s.navigate` asks for it, the tab keeps its session and can go on from
+there. A `connect` hook reaches the same pages by raising. `mw.NotFound(message)`
+says that what the path names does not exist, and `mw.Forbidden(message)`
+that this person may not open it. The session lands on the error page
+under the path that was asked for, with the message if one was given.
 
-Without any app code the framework's own pages are shown: the theme's
-logo, a title and a line from the string table, and a way home, in the
-same frame as the login page. An app replaces them with pages of its own,
-written like any other page: `s.params["path"]` is the path asked for and
-`s.params["message"]` what `connect` raised with, or empty.
+Without any app code the framework's own pages are shown, in the same
+frame as the login page, with the theme's logo, a title, a line from the
+string table and a way home. An app replaces them with pages of its own,
+written like any other page. `s.params["path"]` is the path that was asked
+for, and `s.params["message"]` is what `connect` raised with, or empty.
 
 ```python
 @app.not_found
@@ -112,7 +114,8 @@ def private(s):
 
 `ui.Logo` is the theme's logo, light or dark with the scheme, for a page
 outside the app bar. The link below goes to a page this manual does not
-have, which is the framework's own not-found page in this manual's theme.
+have, so it shows the framework's own not-found page in this manual's
+theme.
 
 ```python live
 ui.Row(
@@ -122,18 +125,18 @@ ui.Row(
 )
 ```
 
-A failure before the bundle can run, a crash in an app's own route or the
-bundle missing, is a plain HTML page with the same title and text, in the
-theme's colours and font; the traceback goes to the log. In debug mode a
-crash shows Starlette's own traceback page.
+A failure before the bundle can run, say a crash in an app's own route or
+a missing bundle, produces a plain HTML page with the same title and text
+in the theme's colours and font. The traceback goes to the log. In debug
+mode a crash shows Starlette's own traceback page instead.
 
 ## State and the session
 
 A page's state is a Pydantic model named on the page, or on the app as the
 default for every page. `s.state` is an instance of it, made new when the
 page is opened and again on every navigation to a page. The session itself
-outlives the page: its files, its identity and its tasks stay while the tab
-moves around the app.
+outlives the page. Its files, its identity and its tasks stay while the
+tab moves around the app.
 
 ```python
 class State(BaseModel):
@@ -145,19 +148,19 @@ def project(s: mw.Session[State]) -> ui.Component:
     ...
 ```
 
-Everything a page shows comes from `s.state` and from what its handlers put
-there, so a page is a plain function and handlers are where things
-change.
+Everything a page shows comes from `s.state` and from what its handlers
+put there. That keeps a page a plain function, and handlers the place
+where things change.
 
 ## Connect and close
 
-A page can have a `connect` hook, run once each time the page is opened,
-before the first render, with the path parameters as keyword arguments. It
-may be async, and it is where a page loads what it needs, starts a task,
-or decides that the visitor may not be here. `mw.NotFound()` and
-`mw.Forbidden(message)` raised from it keep the tab on the page it came
-from and show the message; a page opened directly shows the message and
-stops there.
+A page can have a `connect` hook. It runs once each time the page is
+opened, before the first render, with the path parameters as keyword
+arguments, and it may be async. This is where a page loads what it needs,
+starts a task, or decides that the visitor may not be here. Raising
+`mw.NotFound()` or `mw.Forbidden(message)` from it keeps the tab on the
+page it came from and shows the message. A page opened directly shows the
+message and stops there.
 
 ```python
 @project.connect
@@ -176,25 +179,25 @@ async def leave(s: mw.Session[State]) -> None:
     await db.release(s.state.project.id)
 ```
 
-The `close` hook runs once, with the state still intact, when the session
-ends: the tab said goodbye, or it has been gone longer than the grace
-period. `App(session_grace=300)` sets that period in seconds; a tab that
-reconnects within it, after a sleep or a dropped network, gets its session
-back with everything in it.
+The `close` hook runs once when the session ends, with the state still
+intact, because the tab said goodbye or has been gone longer than the
+grace period. `App(session_grace=300)` sets that period in seconds. A tab
+that reconnects within it, after a sleep or a dropped network, gets its
+session back with everything in it.
 
 ## Navigation in the frame
 
-`ui.Header(links=[...])` puts links in the app bar and `ui.Sidebar` holds
+`ui.Header(links=[...])` puts links in the app bar, and `ui.Sidebar` holds
 a longer list. This manual's sidebar is a `Sidebar` of `Link`s with the
-current page drawn as text instead; the Layout chapter shows both.
+current page drawn as text instead. The Layout chapter shows both.
 
 ## Beyond pages
 
-`App` is a Starlette application, and an app adds to it through Starlette:
-`app.route(path, endpoint, methods=[...])` for an API endpoint,
-`app.mount(path, asgi_app)` for anything ASGI, FastAPI included,
-`app.middleware(cls)` for pure ASGI middleware, and `app.on_startup` and
-`app.on_shutdown` for hooks around the process. The `public/` folder next
-to the app is served at `/public/`. Everything millwork owns lives under
-`/_mw/`, leaving every other path to the app; `/_mw/health` answers 200
-once the startup hooks are done.
+`App` is a Starlette application, and an app adds to it the Starlette way.
+`app.route(path, endpoint, methods=[...])` adds an API endpoint,
+`app.mount(path, asgi_app)` mounts anything ASGI, FastAPI included, and
+`app.middleware(cls)` adds pure ASGI middleware. `app.on_startup` and
+`app.on_shutdown` register hooks around the process. The `public/` folder
+next to the app is served at `/public/`. Everything millwork owns lives
+under `/_mw/`, which leaves every other path to the app. `/_mw/health`
+answers 200 once the startup hooks are done.

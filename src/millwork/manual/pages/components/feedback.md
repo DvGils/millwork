@@ -5,8 +5,8 @@ order: 3
 
 # Feedback
 
-Telling the user what is going on: alerts, toasts, dialogs, progress and the
-empty and loading states.
+Telling the user what is going on, with alerts, toasts, dialogs, progress
+and the empty and loading states.
 
 ## Alert
 
@@ -31,9 +31,9 @@ ui.Stack(
 
 ## Toast
 
-A toast is not a component but a command: `s.toast(message, tone=, title=)`
-from any handler. `action=(label, handler)` puts a button on it that runs
-the handler once.
+A toast is a command rather than a component. Call `s.toast(message,
+tone=, title=)` from any handler. `action=(label, handler)` puts a button
+on it that runs the handler once.
 
 ```python live
 ui.Row(
@@ -60,9 +60,10 @@ ui.Row(
 
 ## Dialog
 
-`ui.Dialog` is open when state says so. It has a `title`, a `description`, a
-`footer`, a `size` from `sm` to `full`, and `on_close` fires when the user
-dismisses it, so the handler sets state and it closes.
+`ui.Dialog` is open when state says so. It has a `title`, a
+`description`, a `footer` and a `size` from `sm` to `full`. `on_close`
+fires when the user dismisses it, and the handler sets state so it
+closes.
 
 ```python live
 from pydantic import BaseModel
@@ -96,8 +97,8 @@ def example(s):
 Two session calls wait for the user from inside a handler. `await s.confirm(
 title, description=, destructive=)` shows a dialog and returns True or
 False. `await s.ask(component)` shows any component and returns what it
-submits: a `Form` answers with its validated model, a closed dialog answers
-None.
+submits. A `Form` answers with its validated model, and a closed dialog
+answers None.
 
 ```python live
 from pydantic import BaseModel
@@ -179,7 +180,7 @@ ui.Stack(
 
 ## Empty
 
-`ui.Empty` is the state before there is anything: a `title`, a
+`ui.Empty` is the state before there is anything, with a `title`, a
 `description`, an `icon` and an `action`.
 
 ```python live
@@ -194,8 +195,8 @@ ui.Empty(
 ## Progress and Steps
 
 `ui.Progress` is a bar for a `value` from 0 to 1 with a `label` and a
-`description`, or for a running task (see the Tasks chapter). `ui.Steps`
-draws a list of `mw.Step` items with their status.
+`description`, or for a running task, as the Tasks chapter shows.
+`ui.Steps` draws a list of `mw.Step` items with their status.
 
 ```python live
 ui.Stack(
