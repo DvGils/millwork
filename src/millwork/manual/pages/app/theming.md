@@ -33,6 +33,9 @@ The tokens are shadcn's: `background`, `foreground`, `card`, `popover`,
 `primary`, `secondary`, `muted`, `accent`, `destructive`, each with its
 `-foreground`, then `border`, `input`, `ring`, `chart-1` to `chart-5`, the
 `sidebar-*` group, `radius`, `font-sans`, `font-mono` and `font-heading`.
+`accent` is the tint a button or a row takes under the pointer, so it
+wants to stand apart from `background` and `card`; `muted` is the quiet
+fill behind a code block or a skeleton.
 Three are millwork's own, with their `-foreground`: `success` and
 `warning`, which the catalogue's `tone` vocabulary needs, and `info`, which
 a custom component may use as `bg-info text-info-foreground`. A value is

@@ -180,6 +180,11 @@ body.mw-dragging * {
   html {
     @apply font-sans;
     }
+  /* A button says it can be pressed. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 /* Inside a sidebar the page tokens follow the sidebar's own, so an ordinary
    button, text or separator placed there sits on the sidebar's colours

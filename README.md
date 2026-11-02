@@ -68,7 +68,7 @@ uv run millwork run app.py
 
 ## The manual
 
-The manual is at [millwork-docs.fly.dev](https://millwork-docs.fly.dev). It is a
+The manual is at [millwork-ui.com](https://millwork-ui.com). It is a
 millwork app: every example in it runs, with the Python code beside it.
 The chapters cover pages and routing, state and handlers, signing in,
 theming, testing and running, and every component has a live example. It
@@ -107,13 +107,13 @@ against.
 ## Releasing
 
 A release is a tag. Write the version's section in `CHANGELOG.md`, set the
-version with `uv version 0.2.0`, commit, tag `v0.2.0` and push the tag. The
-release workflow waits for approval, checks the tagged commit, builds the
-wheel, publishes it to PyPI and makes the GitHub release from the changelog
-section. The published release then deploys the hosted manual from that
-version on PyPI; `deploy/` holds its image and Fly configuration,
-and `flyctl deploy ./deploy --build-arg MILLWORK_VERSION=0.2.0` deploys one
-by hand.
+version with `uv version`, commit, tag it `v` plus the version and push the
+tag. The release workflow waits for approval, checks the tagged commit,
+builds the wheel, publishes it to PyPI and makes the GitHub release from
+the changelog section. The published release then deploys the hosted
+manual from that version on PyPI; `deploy/` holds its image and Fly
+configuration, and `flyctl deploy ./deploy --build-arg
+MILLWORK_VERSION=<version>` deploys one by hand.
 
 ## License
 

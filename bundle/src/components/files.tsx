@@ -230,7 +230,7 @@ export const FileCard: Renderer = ({ props, emit }) => {
     <div
       className={cn(
         "flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm",
-        props.on_click && "cursor-pointer hover:bg-muted/50",
+        props.on_click && "cursor-pointer hover:bg-accent/50",
         status === "error" && "border-destructive/50",
         props.cls as string,
       )}

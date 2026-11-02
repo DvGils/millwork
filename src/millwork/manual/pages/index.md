@@ -10,6 +10,16 @@ runs one prebuilt React bundle; Python describes the page and handles its
 events. The project is Python only: the bundle is prebuilt, and Python owns
 every piece of state.
 
+## Install
+
+millwork is on PyPI and needs Python 3.12 or newer:
+
+```
+uv add millwork
+```
+
+or `pip install millwork`. Then an app is one file:
+
 ```python
 import millwork as mw
 from millwork import ui
@@ -22,7 +32,7 @@ def home(s: mw.Session) -> ui.Component:
     return ui.Page(ui.Text("Hello."))
 ```
 
-Run it with `millwork run app.py` and open the address it prints.
+Run it with `uv run millwork run app.py` and open the address it prints.
 
 ## How this manual works
 
