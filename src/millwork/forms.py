@@ -9,9 +9,11 @@ way. ``json_schema_extra`` carries widget hints: ``widget``, ``choices``,
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any
+from types import UnionType
+from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic_core import to_jsonable_python
 
 Widget = str  # input, textarea, password, number, slider, switch, checkbox, select, radio,
 # toggle, checkboxes, multiselect, date, datetime, fieldset, list, union, file, hidden
@@ -150,13 +152,44 @@ def humanize(name: str) -> str:
 def field_spec(model: type[BaseModel]) -> dict[str, Any]:
     """The whole form as a spec: ``{"fields": [...], "title": ...}``."""
     schema = model.model_json_schema()
-    walker = _Walker(schema.get("$defs", {}))
+    walker = _Walker(schema.get("$defs", {}), factory_defaults(model))
     return {"title": schema.get("title"), "fields": walker.fields(schema, "")}
 
 
+def factory_defaults(model: type[BaseModel], base: str = "") -> dict[str, Any]:
+    """The defaults the JSON schema leaves out, by pointer: a ``default_factory``
+    is called once per spec, so a form opens with today's date filled in."""
+    out: dict[str, Any] = {}
+    for name, field in model.model_fields.items():
+        pointer = f"{base}/{name}"
+        if field.default_factory is not None:
+            try:
+                out[pointer] = to_jsonable_python(field.get_default(call_default_factory=True))
+            except Exception:  # noqa: BLE001  a factory that wants validated data, or fails
+                pass
+        inner = _model_of(field.annotation)
+        if inner is not None:
+            out.update(factory_defaults(inner, pointer))
+    return out
+
+
+def _model_of(annotation: Any) -> type[BaseModel] | None:
+    """The model behind ``Model`` or ``Model | None``; nothing for anything else."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    if get_origin(annotation) in (Union, UnionType):
+        models = [
+            a for a in get_args(annotation) if isinstance(a, type) and issubclass(a, BaseModel)
+        ]
+        if len(models) == 1 and len(get_args(annotation)) == 2:
+            return models[0]
+    return None
+
+
 class _Walker:
-    def __init__(self, defs: Mapping[str, Any]) -> None:
+    def __init__(self, defs: Mapping[str, Any], defaults: Mapping[str, Any] = {}) -> None:
         self.defs = defs
+        self.defaults = defaults
 
     def resolve(self, node: Mapping[str, Any]) -> dict[str, Any]:
         """Follow ``$ref`` and merge the referenced schema under the local keys."""
@@ -191,13 +224,15 @@ class _Walker:
             "label": prop.get("title") or humanize(name),
             "help": prop.get("description"),
             "placeholder": (prop.get("examples") or [None])[0],
-            "required": required and "default" not in prop,
+            "required": required and "default" not in prop and pointer not in self.defaults,
             "group": prop.get("group"),
             "order": prop.get("order", 0),
             "widget": "input",
         }
         if "default" in prop:
             spec["default"] = prop["default"]
+        elif pointer in self.defaults:
+            spec["default"] = self.defaults[pointer]
         self.classify(prop, spec, name)
         if prop.get("widget"):
             spec["widget"] = prop["widget"]

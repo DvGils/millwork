@@ -355,3 +355,22 @@ def test_dates_and_multiselect_hints_reach_the_spec() -> None:
     assert by_name["when"]["widget"] == "date" and by_name["when"]["min_date"] == "2025-01-01"
     assert by_name["tags"]["widget"] == "multiselect" and by_name["tags"]["max_items"] == 2
     assert by_name["tags"]["sortable"] is True and "sortable" not in by_name["plain"]
+
+
+def test_factory_defaults_reach_the_spec() -> None:
+    class Inner(BaseModel):
+        tags: list[str] = Field(default_factory=lambda: ["a"])
+
+    class Model(BaseModel):
+        when: date = Field(default_factory=lambda: date(2026, 1, 2))
+        inner: Inner = Field(default_factory=Inner)
+        maybe: Inner | None = None
+        plain: int
+
+    by_name = {f["name"]: f for f in field_spec(Model)["fields"]}
+    assert by_name["when"]["default"] == "2026-01-02" and not by_name["when"]["required"]
+    assert by_name["plain"]["required"]
+    inner = {f["name"]: f for f in by_name["inner"]["fields"]}
+    assert inner["tags"]["default"] == ["a"]
+    maybe = {f["name"]: f for f in by_name["maybe"]["fields"]}
+    assert maybe["tags"]["default"] == ["a"]
