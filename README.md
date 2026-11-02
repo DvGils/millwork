@@ -98,7 +98,9 @@ CI=1 pnpm -C bundle build              # rebuilds src/millwork/_bundle/dist
 ```
 
 A change to the bundle is committed together with the rebuilt `dist`, so
-every checkout runs without Node. The manual's pages under
+every checkout runs without Node. That includes a Dependabot bump of the
+bundle's packages: apply it, rebuild, look at the manual, and commit the
+`dist` with it, or CI refuses the branch. The manual's pages under
 `src/millwork/manual/pages` are the gallery a bundle upgrade is judged
 against.
 
