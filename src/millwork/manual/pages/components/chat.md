@@ -103,7 +103,7 @@ ui.Row(
 | `await reply.source(title, url, snippet)` | a source chip |
 | `await reply.file(ref)` and `reply.image(ref)` | an attachment, an inline image |
 | `await reply.status(text)` | a marker that disappears when the reply ends |
-| `await reply.component(component)` | any catalogue component inside the message |
+| `await reply.component(component)` | any catalog component inside the message |
 | `await reply.suggestions([...])` | follow-up chips |
 | `await reply.error(text)` | an error line |
 

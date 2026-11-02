@@ -94,7 +94,7 @@ def example(s):
 
 ## Tones
 
-`tones` colours rows. It is a function of the row returning a tone, or a
+`tones` colors rows. It is a function of the row returning a tone, or a
 mapping from column key to a function of the row and the cell.
 
 ```python live

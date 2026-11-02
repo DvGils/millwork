@@ -28,7 +28,7 @@ easy is welcome.
 
 ## What the framework does on its own account
 
-The Running and Signing in chapters of the manual describe the behaviour a
+The Running and Signing in chapters of the manual describe the behavior a
 report can hold the framework to: the session cookie and its signing, the
 origin checks on the socket and the login route, the content security
 policy on every page, the handling of forwarded headers behind a proxy,

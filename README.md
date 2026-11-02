@@ -47,7 +47,7 @@ uv run millwork run app.py
 
 ## What is in the box
 
-- **A catalogue of components** on shadcn/ui: layout, text, inputs,
+- **A catalog of components** on shadcn/ui: layout, text, inputs,
   feedback, tables, charts, forms from Pydantic models, files, tasks with
   progress, and a chat surface that streams replies from Python.
 - **One model of state.** Python owns the state; a control is owned by

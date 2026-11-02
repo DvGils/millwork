@@ -6,7 +6,7 @@ order: 3
 # Theming
 
 An app's look is one JSON file, either `public/theme.json`, which is found
-on its own, or any path given as `App(theme=...)`. It holds the colour
+on its own, or any path given as `App(theme=...)`. It holds the color
 tokens for light and dark, the fonts, the logo and a few options. The
 server renders it into the page before the bundle loads, so there is no
 flash of the default look. Without a file the app looks like stock shadcn.
@@ -37,7 +37,7 @@ each with its `-foreground`, then `border`, `input`, `ring`, `chart-1` to
 pointer, so it wants to stand apart from `background` and `card`, while
 `muted` is the quiet fill behind a code block or a skeleton. Three tokens
 are millwork's own, with their `-foreground`. `success` and `warning` are
-what the catalogue's `tone` vocabulary needs, and `info` is there for a
+what the catalog's `tone` vocabulary needs, and `info` is there for a
 custom component to use as `bg-info text-info-foreground`.
 
 A value is one CSS value, so hex, `oklch(...)`, a length or a font stack.
@@ -47,7 +47,7 @@ app starts.
 
 Light and dark are both always there. `mode` is `light`, `dark` or
 `system`, and the user menu in the header lets a person choose, which
-their browser remembers. The tones below take their colours from this
+their browser remembers. The tones below take their colors from this
 manual's theme file, in whichever scheme you are reading.
 
 ```python live
@@ -67,7 +67,7 @@ ui.Stack(
 ```
 
 The five chart tokens are read in order by the charts. Pick them as a set
-that stays apart for colour-blind readers in both schemes.
+that stays apart for color-blind readers in both schemes.
 
 ## Fonts
 
@@ -83,7 +83,7 @@ as a reminder that every page view then calls a third party.
 unless `logo=False`, and `ui.Logo` puts it on a page of the app's own,
 such as an error page. `favicon` and `login_image` are paths under
 `/public/` as well. The login page and the framework's error pages show
-the logo and the app's name. A theme sets colours, fonts and these images.
+the logo and the app's name. A theme sets colors, fonts and these images.
 Layout belongs to the components.
 
 ## Options

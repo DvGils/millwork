@@ -108,7 +108,7 @@ container network.
 `/_mw/health` answers 200 once the startup hooks have run, and 503 before
 that and during shutdown, for a host that waits for readiness. The
 process exits cleanly on SIGTERM. Sessions get their `close` hook, tasks
-are cancelled, and uploads in flight are cut. Logs go to standard error.
+are canceled, and uploads in flight are cut. Logs go to standard error.
 
 `app.asgi` is the ASGI application itself, for a server of your own
 choosing. Under uvicorn directly, pass `--no-proxy-headers`, since

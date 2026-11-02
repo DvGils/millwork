@@ -153,7 +153,7 @@ and the hook decides what it means.
 ## In a page
 
 `s.user` is the `User`, or `None` on a public page when nobody is signed
-in. Authorisation is the app's job. Read `s.user.claims` in `connect` and
+in. Authorization is the app's job. Read `s.user.claims` in `connect` and
 raise `mw.Forbidden(message)` when this page or this project is not for
 this person. The Pages chapter shows the hook.
 
