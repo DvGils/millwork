@@ -25,10 +25,10 @@ from pydantic import BaseModel
 
 def crunch(n: int) -> str:
     p = mw.progress()
-    p.plan(["Read", "Analyse", "Write"])
+    p.plan(["Read", "Analyze", "Write"])
     with p.step("Read"):
         time.sleep(0.4)
-    with p.step("Analyse") as step:
+    with p.step("Analyze") as step:
         for i in range(n):
             p.check()
             p.set((i + 1) / n, f"row {i + 1} of {n}")
@@ -36,7 +36,7 @@ def crunch(n: int) -> str:
         step.note(f"{n} rows")
     with p.step("Write"):
         time.sleep(0.3)
-    return f"{n} rows analysed"
+    return f"{n} rows analyzed"
 
 
 class Job(BaseModel):
@@ -74,7 +74,7 @@ Inside the work, `mw.progress()` is the reporter. `set(value, message)`
 moves the bar, `plan([...])` declares steps up front, `step(label)` opens
 one as a context manager, `note(text)` leaves a short result on it,
 `log(line)` appends output, and `check()` raises `mw.Cancelled` when the
-user cancelled, so a loop stops at its next check.
+user canceled, so a loop stops at its next check.
 
 ## Waiting for a result
 

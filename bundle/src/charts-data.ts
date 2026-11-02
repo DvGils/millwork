@@ -28,7 +28,7 @@ export function rekey(rows: Row[], series: Series[]): Row[] {
 
 // A series that is not the emphasised one recedes into a grey off the surface.
 const DIM = "color-mix(in oklab, var(--muted-foreground) 40%, var(--background))";
-const NEUTRAL = "color-mix(in oklab, var(--muted-foreground) 55%, var(--background))";
+export const NEUTRAL = "color-mix(in oklab, var(--muted-foreground) 55%, var(--background))";
 
 export function seriesColors(n: number, emphasis: number | null): string[] {
   return Array.from({ length: n }, (_, i) =>

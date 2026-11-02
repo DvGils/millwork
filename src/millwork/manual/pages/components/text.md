@@ -11,7 +11,7 @@ and the small pieces that label things.
 ## Text
 
 `ui.Text` is a string with a `variant`, one of `body`, `muted`, `caption`,
-`label`, `title`, `heading`, `subheading` and `mono`. `tone` colours it,
+`label`, `title`, `heading`, `subheading` and `mono`. `tone` colors it,
 `truncate` keeps it to one line, and `align` sets the alignment.
 
 ```python live
@@ -41,7 +41,7 @@ ui.Stack(
 
 ## Markdown
 
-`ui.Markdown` renders GitHub-flavoured Markdown as real elements, with
+`ui.Markdown` renders GitHub-flavored Markdown as real elements, with
 headings, lists, tables, links and code. `tight=True` removes the outer
 spacing for use inside a card or a table cell.
 

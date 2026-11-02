@@ -3,6 +3,17 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.1.3
+
+- A `ui.Progress` draws one bar again. The progress primitive had started
+  drawing a second track of its own.
+- The hosted manual is deployed from the release's own wheel, so a deploy
+  no longer waits on PyPI's index.
+- A security policy, in `SECURITY.md`.
+- `ui.PieChart`, one slice per row, with the smallest folding into one
+  gray slice past five, a donut with a figure in the middle, share labels
+  and a click per slice.
+
 ## 0.1.2
 
 - Fix the automatic docs release.
@@ -13,7 +24,7 @@ versions; a release says so here when it does.
 - What can be pressed shows it: buttons, toggles, table rows, file cards
   and badges take the theme's `accent` tint under the pointer, buttons get
   the pointer cursor and a pressed shade, and a toggle that is on carries
-  the primary colour. Under a theme whose `muted` is close to white, the
+  the primary color. Under a theme whose `muted` is close to white, the
   composer's buttons and command chips had shown nothing.
 - The manual is hosted at millwork-ui.com, deployed from PyPI by each
   release; its examples take uploads under a small quota.
@@ -24,7 +35,7 @@ versions; a release says so here when it does.
 
 The first release on PyPI.
 
-- A catalogue of components on shadcn/ui: layout, text, inputs, feedback,
+- A catalog of components on shadcn/ui: layout, text, inputs, feedback,
   tables, charts, forms from Pydantic models, files, tasks with progress,
   and a chat surface that streams replies from Python.
 - One model of state: Python owns it, a page is a function of it, and the

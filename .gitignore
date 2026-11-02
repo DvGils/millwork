@@ -12,3 +12,5 @@ dist/
 # Internal: the design notes and spikes stay on this machine.
 docs/
 spikes/
+# the release's wheel, downloaded next to the image when the manual is deployed
+deploy/*.whl

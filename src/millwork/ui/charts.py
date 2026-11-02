@@ -211,4 +211,75 @@ class AreaChart(_Chart):
     curve: bool = False
 
 
-__all__ = ["AreaChart", "BarChart", "LineChart", "MAX_SERIES"]
+class PieChart(Component):
+    """Shares of a whole: one slice per row, ``x`` naming the slice and ``y``
+    the value. Slices take ``chart-1`` to ``chart-5`` in row order. Over five,
+    the smallest fold into one slice named by ``other``, drawn in grey; with
+    ``other=None`` a sixth row is refused instead. ``donut`` leaves the middle
+    open and ``center`` writes a figure there. ``labels`` writes each slice's
+    share beside it."""
+
+    type: ClassVar[str] = "PieChart"
+    wire_exclude: ClassVar[frozenset[str]] = frozenset({"rows", "y", "other"})
+
+    rows: Sequence[Any]
+    x: str
+    y: str
+    format: ValueFormat | None = None
+    labels: bool = False
+    legend: bool | None = None
+    donut: bool = False
+    center: str | None = None
+    other: str | None = "Other"
+    height: int | None = None
+    on_click: Any = None
+
+    _slices: list[dict[str, Any]] = PrivateAttr()
+
+    def __init__(self, rows: Sequence[Any] = (), **props: Any) -> None:
+        super().__init__(rows=rows, **props)
+
+    @model_validator(mode="after")
+    def _check(self) -> PieChart:
+        if self.x == self.y:
+            raise ValueError("x names the slice and y its value; they are different columns")
+        dicts = [_row_dict(r) for r in self.rows]
+        if dicts:
+            for c in (self.x, self.y):
+                if c not in dicts[0]:
+                    raise ValueError(f"the rows have no column {c!r}")
+        slices: list[dict[str, Any]] = []
+        for r in dicts:
+            v = r.get(self.y)
+            if v is None:
+                continue
+            if not isinstance(v, int | float):
+                raise ValueError(f"a slice's value is a number, not {v!r}")
+            if v < 0:
+                raise ValueError(
+                    f"a pie has no negative slice; {self.x}={r.get(self.x)!r} is {v!r}"
+                )
+            slices.append({"x": r.get(self.x), "value": v, "other": False})
+        if len(slices) > MAX_SERIES:
+            if self.other is None:
+                raise ValueError(
+                    f"a pie draws {MAX_SERIES} slices at most; fold the rest into one, "
+                    "or let other= name the slice they fold into"
+                )
+            # The largest keep their place and their colour; the rest become one.
+            ranked = sorted(range(len(slices)), key=lambda i: slices[i]["value"], reverse=True)
+            kept = sorted(ranked[: MAX_SERIES - 1])
+            rest = sum(slices[i]["value"] for i in ranked[MAX_SERIES - 1 :])
+            slices = [slices[i] for i in kept] + [{"x": self.other, "value": rest, "other": True}]
+        self._slices = slices
+        return self
+
+    def slices(self) -> list[dict[str, Any]]:
+        """The slices on the wire: ``{x, value, other}`` in drawing order."""
+        return self._slices
+
+    def wire_extra(self) -> dict[str, Any]:
+        return {"data": self._slices}
+
+
+__all__ = ["AreaChart", "BarChart", "LineChart", "PieChart", "MAX_SERIES"]

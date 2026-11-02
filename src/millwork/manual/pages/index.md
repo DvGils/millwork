@@ -38,7 +38,7 @@ Run it with `uv run millwork run app.py` and open the address it prints.
 
 This manual is itself a millwork app. `millwork docs` serves it. Its pages
 are Markdown files inside the package, and the sidebar, the search box and
-the header are catalogue components. Every example runs. The component you
+the header are catalog components. Every example runs. The component you
 see is produced by the Python shown beneath it, executed by the same server
 that serves these pages. Try the button:
 
@@ -74,5 +74,5 @@ in scope. Everything else is imported, as in an app.
 
 The App chapters cover how an app is put together, from pages and routing
 through state, signing in, theming and testing to running it somewhere.
-The Components chapters walk through the catalogue one group at a time,
+The Components chapters walk through the catalog one group at a time,
 with each component in its states and the Python that makes it.

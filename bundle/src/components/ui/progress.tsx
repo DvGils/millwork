@@ -1,6 +1,8 @@
 import { Progress as ProgressPrimitive } from "@base-ui/react/progress"
 import { cn } from "cn"
 
+// The root draws nothing of its own: the caller places the label, the
+// track and any description in the order the page wants.
 function Progress({
   className,
   children,
@@ -15,9 +17,6 @@ function Progress({
       {...props}
     >
       {children}
-      <ProgressTrack>
-        <ProgressIndicator />
-      </ProgressTrack>
     </ProgressPrimitive.Root>
   )
 }

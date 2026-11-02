@@ -38,7 +38,7 @@ import { Progress as TaskProgress, Steps } from "./tasks";
 import { Form } from "./form";
 import { Chat } from "./chat";
 import { Download, FileCard, FileUpload, Image, Pdf } from "./files";
-import { AreaChart, BarChart, LineChart } from "./charts";
+import { AreaChart, BarChart, LineChart, PieChart } from "./charts";
 
 export const registry: Record<string, Renderer> = {
   Progress: TaskProgress,
@@ -101,4 +101,5 @@ export const registry: Record<string, Renderer> = {
   BarChart,
   LineChart,
   AreaChart,
+  PieChart,
 };

@@ -127,7 +127,7 @@ ui.Row(
 
 A failure before the bundle can run, say a crash in an app's own route or
 a missing bundle, produces a plain HTML page with the same title and text
-in the theme's colours and font. The traceback goes to the log. In debug
+in the theme's colors and font. The traceback goes to the log. In debug
 mode a crash shows Starlette's own traceback page instead.
 
 ## State and the session

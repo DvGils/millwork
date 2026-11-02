@@ -28,7 +28,7 @@ take `gap`, `align` and `justify`, and a `Row` can `wrap`.
 ui.Stack(
     ui.Row(ui.Badge("one"), ui.Badge("two"), ui.Badge("three"), gap=2),
     ui.Row(ui.Button("Left", variant="outline"), ui.Button("Right"), justify="between"),
-    ui.Row(ui.Text("Centred", variant="muted"), justify="center"),
+    ui.Row(ui.Text("Centered", variant="muted"), justify="center"),
     gap=4,
 )
 ```
@@ -56,7 +56,7 @@ ui.Grid(
 ## Card
 
 `ui.Card` frames content with an optional `title`, `description` and
-`footer`. `tone` colours its border, and `on_click` makes the whole card a
+`footer`. `tone` colors its border, and `on_click` makes the whole card a
 target.
 
 ```python live

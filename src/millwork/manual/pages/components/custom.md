@@ -5,9 +5,9 @@ order: 10
 
 # Custom components
 
-When the catalogue has no component for something, an app writes one in
+When the catalog has no component for something, an app writes one in
 JSX. The file lives in the app's `components/` folder, gets compiled in
-the browser, and composes the same primitives the catalogue is built
+the browser, and composes the same primitives the catalog is built
 from. Python reaches it by name with `ui.Custom`.
 
 ## The contract
@@ -73,7 +73,7 @@ def example(s):
 ```
 
 A custom component can import React, lucide icons, and every
-`@/components/ui/*` module the catalogue uses. Tailwind classes work, and
+`@/components/ui/*` module the catalog uses. Tailwind classes work, and
 ones the bundle never saw are compiled in the browser on first use.
 
 ## In a chat's composer

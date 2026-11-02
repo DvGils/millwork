@@ -47,7 +47,7 @@ uv run millwork run app.py
 
 ## What is in the box
 
-- **A catalogue of components** on shadcn/ui: layout, text, inputs,
+- **A catalog of components** on shadcn/ui: layout, text, inputs,
   feedback, tables, charts, forms from Pydantic models, files, tasks with
   progress, and a chat surface that streams replies from Python.
 - **One model of state.** Python owns the state; a control is owned by
@@ -112,8 +112,9 @@ tag. The release workflow waits for approval, checks the tagged commit,
 builds the wheel, publishes it to PyPI and makes the GitHub release from
 the changelog section. The published release then deploys the hosted
 manual from that version on PyPI; `deploy/` holds its image and Fly
-configuration, and `flyctl deploy ./deploy --build-arg
-MILLWORK_VERSION=<version>` deploys one by hand.
+configuration. To deploy one by hand, put the release's wheel next to the
+image with `gh release download v<version> --pattern "millwork-*.whl" --dir
+deploy`, then `flyctl deploy ./deploy`.
 
 ## License
 

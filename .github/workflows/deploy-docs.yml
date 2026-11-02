@@ -1,7 +1,7 @@
-# The hosted manual follows PyPI: the release workflow starts this one with
-# the version it published, and the image installs that version once the
-# index serves it. It also runs for a release made by hand on GitHub, and
-# by hand with a version.
+# The hosted manual follows the releases: the release workflow starts this
+# one with the version it published, and the image installs that release's
+# own wheel, the same file that went to PyPI. It also runs for a release
+# made by hand on GitHub, and by hand with a version.
 name: Deploy docs
 
 on:
@@ -40,17 +40,11 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_ENV"
 
-      # PyPI serves a new version a minute or two after the publish.
-      - name: Wait until PyPI serves it
-        run: |
-          for _ in $(seq 1 30); do
-            if curl -fsS -o /dev/null "https://pypi.org/pypi/millwork/$version/json"; then
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "PyPI does not serve millwork $version" >&2
-          exit 1
+      # The release's wheel, so the deploy never waits for PyPI's index.
+      - name: The wheel from the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "v$version" --pattern "millwork-*.whl" --dir deploy && ls -l deploy
 
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
         with:
@@ -59,4 +53,4 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         working-directory: deploy
-        run: flyctl deploy --remote-only --build-arg "MILLWORK_VERSION=$version"
+        run: flyctl deploy --remote-only

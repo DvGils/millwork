@@ -7,9 +7,9 @@ order: 5
 
 A chart takes rows, like the Table does. `x` names the category or time
 column and `y` the value column, or several of them. Each series takes the
-next of the theme's five chart colours, in the order given, and keeps it
-when a neighbour disappears. Five series is the limit. A sixth has no
-colour of its own, so fold it into another or draw a second chart. Every
+next of the theme's five chart colors, in the order given, and keeps it
+when a neighbor disappears. Five series is the limit. A sixth has no
+color of its own, so fold it into another or draw a second chart. Every
 chart has a tooltip, and a legend appears from two series up.
 
 ## Bar chart
@@ -76,8 +76,8 @@ ui.BarChart(REGIONS, x="quarter", y="orders", by="region", height=200)
 ## A diverging scale
 
 When the series are steps of one ordered scale, `diverging=True` draws
-them to either side of the midpoint, coloured from one hue through grey to
-another instead of five unrelated colours. The middle step, when there is
+them to either side of the midpoint, colored from one hue through gray to
+another instead of five unrelated colors. The middle step, when there is
 one, straddles the axis.
 
 ```python live
@@ -101,7 +101,7 @@ ui.BarChart(
 ## Emphasis
 
 Often one series is the point and the rest are context. `emphasis` names
-the one that keeps its colour, and the others recede into grey.
+the one that keeps its color, and the others recede into gray.
 
 ```python live
 ui.LineChart(
@@ -173,9 +173,42 @@ ui.Grid(
 )
 ```
 
+## Pie and donut
+
+`ui.PieChart` shows how one whole splits, with one slice per row. `x`
+names the slice and `y` its value. Slices take the theme's five chart
+colors in row order, and over five the smallest fold into one gray slice
+named by `other`, which `other=None` turns into a refusal instead.
+`labels=True` writes each slice's share beside it, `donut=True` leaves the
+middle open, and `center` writes a figure there. A pie reads well for a
+split at a glance with a few parts. When the parts need comparing with
+each other, ranked bars show the differences more exactly.
+
+```python live
+CHANNELS = [
+    {"channel": "Direct", "visits": 1200},
+    {"channel": "Search", "visits": 4100},
+    {"channel": "Social", "visits": 2300},
+    {"channel": "Newsletter", "visits": 400},
+    {"channel": "Partners", "visits": 900},
+    {"channel": "Ads", "visits": 300},
+    {"channel": "Print", "visits": 150},
+]
+
+ui.Grid(
+    ui.PieChart(CHANNELS, x="channel", y="visits", labels=True, height=220),
+    ui.PieChart(
+        CHANNELS, x="channel", y="visits", donut=True, center="9,350", format="integer", height=220
+    ),
+    cols={"sm": 1, "md": 2},
+)
+```
+
+`on_click` receives the slice, with its `x`, `value` and `share`.
+
 ## Plotly and other libraries
 
-The catalogue draws the forms most pages need. For anything else, an app
+The catalog draws the forms most pages need. For anything else, an app
 brings its own library through a custom component. Plotly is the common
 case, and the same shape works for any library that draws into a div.
 
@@ -221,8 +254,8 @@ export default function Plotly({ props }) {
 ```
 
 On the Python side a figure is built as usual and sent as JSON. A
-transparent background lets the page's own colours through in both
-schemes, though the figure's own colours stay Plotly's rather than the
+transparent background lets the page's own colors through in both
+schemes, though the figure's own colors stay Plotly's rather than the
 theme's. Plotly Express wants pandas installed next to it. Graph objects
 need nothing.
 
