@@ -20,6 +20,7 @@ jobs:
       contents: write # the GitHub release
       id-token: write # Trusted Publishing and provenance
       attestations: write
+      actions: write # start the docs deploy
     defaults:
       run:
         shell: bash
@@ -98,3 +99,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/*.whl --title "millwork $version" --notes-file RELEASE_NOTES.md
+
+      # A release this job creates starts no other workflow on its own: GitHub
+      # does not chain runs made with the workflow token. The deploy is asked
+      # for by name, which is the one kind of start that is allowed.
+      - name: Deploy the docs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-docs.yml --ref "$GITHUB_REF_NAME" -f "version=$version"
