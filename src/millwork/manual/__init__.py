@@ -304,6 +304,8 @@ def make_app(theme: Any = None) -> mw.App:
     sections = index(pages)
     # The manual's own look: the mainlines colours, Inter and the mark, from the
     # package's public folder. A theme passed in replaces it.
+    # The manual is public: live sessions are capped, and the uploads its
+    # examples take are bounded per session and in all.
     app = mw.App(
         "millwork manual",
         state=State,
@@ -311,6 +313,7 @@ def make_app(theme: Any = None) -> mw.App:
         components=COMPONENTS,
         theme=theme,
         max_sessions=300,
+        files=mw.Files(max_session_mb=10, default_max_mb=10, max_total_mb=200),
     )
 
     def results(query: str) -> list[ui.Component]:
