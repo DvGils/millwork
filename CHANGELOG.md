@@ -38,6 +38,9 @@ versions; a release says so here when it does.
   number and date formats follow the theme's locale as the manual said.
 - `millwork reference` prints the catalog as a Markdown lookup table, and
   the manual serves it at `/llms.txt`.
+- A chart's `colors={"name": slot}` fixes a series, or a pie's slice, to
+  one of the five chart colors, so two charts over the same categories
+  agree. The rest take the free slots in order.
 - The README has a whole page, the manual lists the form widgets, says
   where an upload's bytes are, and that a `Stat` is a card of its own.
 

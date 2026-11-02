@@ -10,7 +10,7 @@ so a series keeps its colour when a filter removes a neighbour.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
@@ -40,6 +40,36 @@ def _row_dict(row: Any) -> dict[str, Any]:
     raise TypeError(f"a chart row is a mapping or a model, not {type(row).__name__}")
 
 
+def assign_colors(
+    items: list[dict[str, Any]], names: Callable[[dict[str, Any]], list[str]], colors: Any
+) -> None:
+    """Give each item its color slot, 1 to ``MAX_SERIES``. An item ``colors``
+    names takes the slot named; the rest take the free slots in drawing order.
+    Color follows the entity, never its rank, so two charts over the same
+    categories agree when both are told the same names. A name that is not
+    among the items is allowed, since a filter may have removed it."""
+    colors = dict(colors or {})
+    for name, slot in colors.items():
+        if not isinstance(slot, int) or not 1 <= slot <= MAX_SERIES:
+            raise ValueError(
+                f"colors maps a name to a slot from 1 to {MAX_SERIES}; {name!r} is {slot!r}"
+            )
+    taken: dict[int, str] = {}
+    for item in items:
+        slot = next((colors[n] for n in names(item) if n in colors), None)
+        if slot is not None:
+            if slot in taken:
+                raise ValueError(
+                    f"colors gives slot {slot} to both {taken[slot]!r} and {names(item)[0]!r}"
+                )
+            taken[slot] = names(item)[0]
+            item["color"] = slot
+    free = (slot for slot in range(1, MAX_SERIES + 1) if slot not in taken)
+    for item in items:
+        if "color" not in item:
+            item["color"] = next(free)
+
+
 def _series_spec(y: Any) -> list[dict[str, str]]:
     if isinstance(y, str):
         return [{"key": y, "label": y}]
@@ -61,7 +91,7 @@ def _series_spec(y: Any) -> list[dict[str, str]]:
 class _Chart(Component):
     """What every chart shares: rows, the x column, series, formats, a click."""
 
-    wire_exclude: ClassVar[frozenset[str]] = frozenset({"rows", "y", "by"})
+    wire_exclude: ClassVar[frozenset[str]] = frozenset({"rows", "y", "by", "colors"})
 
     rows: Sequence[Any]
     x: str
@@ -71,11 +101,12 @@ class _Chart(Component):
     labels: bool = False
     legend: bool | None = None
     emphasis: str | None = None
+    colors: dict[str, int] | None = None
     height: int | None = None
     on_click: Any = None
 
     # Built once from the rows: the series in drawing order and the wide points.
-    _series: list[dict[str, str]] = PrivateAttr()
+    _series: list[dict[str, Any]] = PrivateAttr()
     _points: list[dict[str, Any]] = PrivateAttr()
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
@@ -94,6 +125,7 @@ class _Chart(Component):
             labels: bool = False,
             legend: bool | None = None,
             emphasis: str | None = None,
+            colors: dict[str, int] | None = None,
             height: int | None = None,
             on_click: Any = None,
         ) -> None: ...
@@ -134,11 +166,12 @@ class _Chart(Component):
                 if isinstance(self.y, tuple) and len(self.y) == 2:
                     hint = " (a (column, label) pair goes inside a list)"
                 raise ValueError(f"the rows have no column {missing[0]!r}{hint}")
+        assign_colors(series, lambda s: [s["key"], s["label"]], self.colors)
         self._series = series
         self._points = self._build_points(dicts, keys)
         return self
 
-    def _build_series(self, dicts: list[dict[str, Any]]) -> list[dict[str, str]]:
+    def _build_series(self, dicts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if self.by is None:
             return _series_spec(self.y)
         value = str(self.y)
@@ -170,8 +203,8 @@ class _Chart(Component):
             point[str(name)] = r.get(value)
         return [{"x": p["x"], **{k: p.get(k) for k in keys}} for p in order.values()]
 
-    def series(self) -> list[dict[str, str]]:
-        """The series on the wire: ``{key, label}`` in drawing order."""
+    def series(self) -> list[dict[str, Any]]:
+        """The series on the wire: ``{key, label, color}`` in drawing order."""
         return self._series
 
     def points(self) -> list[dict[str, Any]]:
@@ -228,6 +261,7 @@ class BarChart(_Chart):
             labels: bool = False,
             legend: bool | None = None,
             emphasis: str | None = None,
+            colors: dict[str, int] | None = None,
             height: int | None = None,
             on_click: Any = None,
             stacked: bool | Literal["percent"] = False,
@@ -262,6 +296,7 @@ class LineChart(_Chart):
             labels: bool = False,
             legend: bool | None = None,
             emphasis: str | None = None,
+            colors: dict[str, int] | None = None,
             height: int | None = None,
             on_click: Any = None,
             curve: bool = False,
@@ -292,6 +327,7 @@ class AreaChart(_Chart):
             labels: bool = False,
             legend: bool | None = None,
             emphasis: str | None = None,
+            colors: dict[str, int] | None = None,
             height: int | None = None,
             on_click: Any = None,
             stacked: bool | Literal["percent"] = False,
@@ -301,14 +337,15 @@ class AreaChart(_Chart):
 
 class PieChart(Component):
     """Shares of a whole: one slice per row, ``x`` naming the slice and ``y``
-    the value. Slices take ``chart-1`` to ``chart-5`` in row order. Over five,
-    the smallest fold into one slice named by ``other``, drawn in grey; with
+    the value. Slices take ``chart-1`` to ``chart-5`` in row order, or the slot
+    ``colors`` names for them. Over five, the smallest fold into one slice
+    named by ``other``, drawn in grey; with
     ``other=None`` a sixth row is refused instead. ``donut`` leaves the middle
     open and ``center`` writes a figure there. ``labels`` writes each slice's
     share beside it."""
 
     type: ClassVar[str] = "PieChart"
-    wire_exclude: ClassVar[frozenset[str]] = frozenset({"rows", "y", "other"})
+    wire_exclude: ClassVar[frozenset[str]] = frozenset({"rows", "y", "other", "colors"})
 
     rows: Sequence[Any]
     x: str
@@ -319,6 +356,7 @@ class PieChart(Component):
     donut: bool = False
     center: str | None = None
     other: str | None = "Other"
+    colors: dict[str, int] | None = None
     height: int | None = None
     on_click: Any = None
 
@@ -341,6 +379,7 @@ class PieChart(Component):
             donut: bool = False,
             center: str | None = None,
             other: str | None = "Other",
+            colors: dict[str, int] | None = None,
             height: int | None = None,
             on_click: Any = None,
         ) -> None: ...
@@ -381,11 +420,13 @@ class PieChart(Component):
             kept = sorted(ranked[: MAX_SERIES - 1])
             rest = sum(slices[i]["value"] for i in ranked[MAX_SERIES - 1 :])
             slices = [slices[i] for i in kept] + [{"x": self.other, "value": rest, "other": True}]
+        assign_colors([s for s in slices if not s["other"]], lambda s: [str(s["x"])], self.colors)
         self._slices = slices
         return self
 
     def slices(self) -> list[dict[str, Any]]:
-        """The slices on the wire: ``{x, value, other}`` in drawing order."""
+        """The slices on the wire: ``{x, value, other, color}`` in drawing order,
+        the folded slice without a color since it is drawn in grey."""
         return self._slices
 
     def wire_extra(self) -> dict[str, Any]:

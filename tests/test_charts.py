@@ -24,8 +24,8 @@ def test_wide_rows_on_the_wire() -> None:
     props = node.nodes["root"].props
     assert "rows" not in props and "y" not in props
     assert props["series"] == [
-        {"key": "sales", "label": "sales"},
-        {"key": "costs", "label": "costs"},
+        {"key": "sales", "label": "sales", "color": 1},
+        {"key": "costs", "label": "costs", "color": 2},
     ]
     assert props["data"] == [
         {"x": "Jan", "sales": 10, "costs": 7},
@@ -38,8 +38,10 @@ def test_series_labels_from_a_mapping_or_pairs() -> None:
     chart = ui.LineChart(WIDE, x="month", y={"sales": "Sales", "costs": "Costs"})
     assert [s["label"] for s in chart.series()] == ["Sales", "Costs"]
     chart = ui.LineChart(WIDE, x="month", y=[("sales", "Sales")])
-    assert chart.series() == [{"key": "sales", "label": "Sales"}]
-    assert ui.LineChart(WIDE, x="month", y="sales").series() == [{"key": "sales", "label": "sales"}]
+    assert chart.series() == [{"key": "sales", "label": "Sales", "color": 1}]
+    assert ui.LineChart(WIDE, x="month", y="sales").series() == [
+        {"key": "sales", "label": "sales", "color": 1}
+    ]
 
 
 def test_long_rows_pivot_in_first_seen_order() -> None:
@@ -87,7 +89,9 @@ def test_validation() -> None:
 
 def test_empty_rows_are_fine() -> None:
     props = build(ui.LineChart(x="month", y="sales")).nodes["root"].props
-    assert props["data"] == [] and props["series"] == [{"key": "sales", "label": "sales"}]
+    assert props["data"] == [] and props["series"] == [
+        {"key": "sales", "label": "sales", "color": 1}
+    ]
 
 
 def test_stat_delta_and_trend() -> None:
@@ -173,3 +177,25 @@ def test_a_pie_takes_one_slice_per_row_and_folds_the_rest() -> None:
     with pytest.raises(ValueError, match="different columns"):
         ui.PieChart(rows, x="visits", y="visits")
     assert build(ui.PieChart(x="c", y="v")).nodes["root"].props["data"] == []
+
+
+def test_colors_fix_a_series_or_slice_to_a_slot() -> None:
+    rows = [{"m": "Jan", "sales": 1, "costs": 2, "tax": 3}]
+    chart = ui.BarChart(rows, x="m", y=["sales", "costs", "tax"], colors={"costs": 1, "Gone": 3})
+    # costs takes slot 1 as told; sales and tax take the free slots in order.
+    assert [(s["key"], s["color"]) for s in chart.series()] == [
+        ("sales", 2),
+        ("costs", 1),
+        ("tax", 3),
+    ]
+    labeled = ui.LineChart(rows, x="m", y={"sales": "Sales"}, colors={"Sales": 5})
+    assert labeled.series()[0]["color"] == 5
+    pie = ui.PieChart(
+        [{"k": "a", "v": 1}, {"k": "b", "v": 2}, {"k": "c", "v": 3}], x="k", y="v", colors={"c": 1}
+    )
+    assert [s["color"] for s in pie.slices()] == [2, 3, 1]
+    assert "colors" not in build(pie).nodes["root"].props
+    with pytest.raises(ValueError, match="slot from 1 to 5"):
+        ui.BarChart(rows, x="m", y="sales", colors={"sales": 6})
+    with pytest.raises(ValueError, match="both 'sales' and 'costs'"):
+        ui.BarChart(rows, x="m", y=["sales", "costs"], colors={"sales": 1, "costs": 1})

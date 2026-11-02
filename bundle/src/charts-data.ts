@@ -6,6 +6,7 @@
 export interface Series {
   key: string;
   label: string;
+  color?: number; // the theme's chart slot, 1 to 5; position when absent
 }
 
 export type Row = Record<string, unknown>;
@@ -30,10 +31,12 @@ export function rekey(rows: Row[], series: Series[]): Row[] {
 const DIM = "color-mix(in oklab, var(--muted-foreground) 40%, var(--background))";
 export const NEUTRAL = "color-mix(in oklab, var(--muted-foreground) 55%, var(--background))";
 
-export function seriesColors(n: number, emphasis: number | null): string[] {
-  return Array.from({ length: n }, (_, i) =>
-    emphasis === null || emphasis === i ? `var(--chart-${i + 1})` : DIM,
-  );
+export function chartSlot(series: { color?: number }, i: number): string {
+  return `var(--chart-${series.color ?? i + 1})`;
+}
+
+export function seriesColors(series: { color?: number }[], emphasis: number | null): string[] {
+  return series.map((s, i) => (emphasis === null || emphasis === i ? chartSlot(s, i) : DIM));
 }
 
 // An ordered scale: one hue to the left of the midpoint, another to the right,

@@ -19,8 +19,10 @@ describe("rekey", () => {
 
 describe("colours", () => {
   it("assigns tokens by position and dims the rest under emphasis", () => {
-    expect(seriesColors(3, null)).toEqual(["var(--chart-1)", "var(--chart-2)", "var(--chart-3)"]);
-    const c = seriesColors(3, 1);
+    const three = [{}, {}, {}];
+    expect(seriesColors(three, null)).toEqual(["var(--chart-1)", "var(--chart-2)", "var(--chart-3)"]);
+    expect(seriesColors([{ color: 4 }, {}], null)).toEqual(["var(--chart-4)", "var(--chart-2)"]);
+    const c = seriesColors(three, 1);
     expect(c[1]).toBe("var(--chart-2)");
     expect(c[0]).toBe(c[2]);
     expect(c[0]).toContain("muted-foreground");
