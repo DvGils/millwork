@@ -1,6 +1,7 @@
-# The hosted manual follows PyPI: a published release deploys the
-# image that installs that version, once the index serves it. The workflow
-# can also be run by hand with a version.
+# The hosted manual follows PyPI: the release workflow starts this one with
+# the version it published, and the image installs that version once the
+# index serves it. It also runs for a release made by hand on GitHub, and
+# by hand with a version.
 name: Deploy docs
 
 on:
