@@ -18,7 +18,7 @@ import enum
 import inspect
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import PurePath
-from typing import Any, ClassVar, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
@@ -97,8 +97,24 @@ class Text(Component):
     align: str | None = None
     tone: str | None = None
 
-    def __init__(self, content: str = "", **props: Any) -> None:
-        super().__init__(content=content, **props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            content: str = "",
+            variant: str = "body",
+            truncate: bool = False,
+            align: str | None = None,
+            tone: str | None = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, content: str = "", **props: Any) -> None:
+            super().__init__(content=content, **props)
 
 
 class Tree:

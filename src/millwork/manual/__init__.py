@@ -267,7 +267,7 @@ def render_block(s: mw.Session[State], live: Live, ns: dict[str, Any]) -> ui.Com
         if view.wire_type() in _INLINE:
             # A lone button or badge keeps its natural width instead of stretching
             # across the card, which is how it sits in a real page too.
-            return ui.Row(children=[view], wrap=True)
+            return ui.Row(view, wrap=True)
         return view
     except Exception:
         log.exception("live block %s failed", live.id)
@@ -281,18 +281,16 @@ def render_block(s: mw.Session[State], live: Live, ns: dict[str, Any]) -> ui.Com
 def specimen(view: ui.Component, source: str) -> ui.Component:
     """A live example: the component on a soft panel, its source beneath, one frame."""
     return ui.Stack(
-        children=[
-            ui.Stack(
-                children=[view],
-                cls="rounded-t-lg border border-b-0 bg-muted/40 px-6 py-6",
-            ),
-            ui.Code(
-                content=source,
-                language="python",
-                max_height="24rem",
-                cls="rounded-t-none border border-border [&_pre]:rounded-t-none",
-            ),
-        ],
+        ui.Stack(
+            view,
+            cls="rounded-t-lg border border-b-0 bg-muted/40 px-6 py-6",
+        ),
+        ui.Code(
+            content=source,
+            language="python",
+            max_height="24rem",
+            cls="rounded-t-none border border-border [&_pre]:rounded-t-none",
+        ),
         gap=0,
         cls="min-w-0",
     )
@@ -325,17 +323,13 @@ def make_app(theme: Any = None) -> mw.App:
             sec = hit.section
             items.append(
                 ui.Stack(
-                    children=[
-                        ui.Link(
-                            label=sec.heading, href=f"{sec.page.slug}#{sec.anchor}", cls=HIT_LINK
-                        ),
-                        ui.Text(
-                            sec.page.title + (f" · {hit.snippet}" if hit.snippet else ""),
-                            variant="caption",
-                            cls="px-2 text-muted-foreground",
-                            truncate=True,
-                        ),
-                    ],
+                    ui.Link(label=sec.heading, href=f"{sec.page.slug}#{sec.anchor}", cls=HIT_LINK),
+                    ui.Text(
+                        sec.page.title + (f" · {hit.snippet}" if hit.snippet else ""),
+                        variant="caption",
+                        cls="px-2 text-muted-foreground",
+                        truncate=True,
+                    ),
                     gap=0,
                     cls="min-w-0",
                 )
@@ -355,7 +349,7 @@ def make_app(theme: Any = None) -> mw.App:
             cls="mb-2",
         )
         if query.strip():
-            return ui.Sidebar(children=[box, *results(query)], title="Manual")
+            return ui.Sidebar(box, *results(query), title="Manual")
         items: list[ui.Component] = [box]
         chapter = None
         for p in pages:
@@ -384,7 +378,7 @@ def make_app(theme: Any = None) -> mw.App:
                         cls=NAV_LINK,
                     )
                 )
-        return ui.Sidebar(children=items, title="Manual")
+        return ui.Sidebar(*items, title="Manual")
 
     async def first_hit(s: mw.Session[State], query: str) -> None:
         """Enter in the search box opens the best match."""
@@ -407,21 +401,17 @@ def make_app(theme: Any = None) -> mw.App:
                 else:
                     body.append(specimen(render_block(s, seg, ns), seg.source))
             return ui.Page(
-                children=[
-                    nav(page, s.state.query),
-                    ui.Stack(children=body, gap=6, cls="mx-auto w-full min-w-0 max-w-3xl py-6"),
-                ],
+                nav(page, s.state.query),
+                ui.Stack(*body, gap=6, cls="mx-auto w-full min-w-0 max-w-3xl py-6"),
                 header=ui.Header(
+                    ui.Link(
+                        label="GitHub",
+                        href="https://github.com/DvGils/millwork",
+                        target="_blank",
+                        icon="external-link",
+                        cls="text-sm text-muted-foreground hover:text-foreground",
+                    ),
                     title="millwork",
-                    children=[
-                        ui.Link(
-                            label="GitHub",
-                            href="https://github.com/DvGils/millwork",
-                            target="_blank",
-                            icon="external-link",
-                            cls="text-sm text-muted-foreground hover:text-foreground",
-                        )
-                    ],
                 ),
             )
 

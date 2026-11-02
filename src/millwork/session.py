@@ -748,7 +748,7 @@ class Session[S]:
             ]
         )
         dialog = Dialog(
-            children=[Text(description)] if description else [],
+            *([Text(description)] if description else []),
             title=title,
             size="sm",
             footer=buttons,

@@ -172,6 +172,10 @@ CI=1 pnpm -C bundle exec vitest run    # the bundle's unit tests
 CI=1 pnpm -C bundle build              # rebuilds src/millwork/_bundle/dist
 ```
 
+A change to a component's fields is followed by `uv run python
+scripts/typed_inits.py`, which rewrites the typed signature under each
+class that mypy and pyright read, and a test checks that it was run.
+
 A change to the bundle is committed together with the rebuilt `dist`, so
 every checkout runs without Node. That includes a Dependabot bump of the
 bundle's packages: apply it, rebuild, look at the manual, and commit the

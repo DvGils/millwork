@@ -86,7 +86,9 @@ remounts when the server is back. `--debug` shows page errors in the tab,
 turns the framework's warnings into toasts, pushes a changed theme file or
 custom component to every open tab, and allows the `Dev` auth provider.
 Tests drive a session without a browser, so for most changes the loop is
-edit, run pytest, and open the browser only to look.
+edit, run pytest, and open the browser only to look. The catalog is typed
+for mypy and pyright, so a misspelled prop, a value outside a `Literal`
+or a missing required prop shows in the editor before the page runs.
 
 ## Serving
 

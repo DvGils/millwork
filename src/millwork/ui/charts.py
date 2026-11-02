@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
-from typing import Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel, PrivateAttr, model_validator
 from pydantic_core import to_jsonable_python
@@ -78,8 +78,29 @@ class _Chart(Component):
     _series: list[dict[str, str]] = PrivateAttr()
     _points: list[dict[str, Any]] = PrivateAttr()
 
-    def __init__(self, rows: Sequence[Any] = (), **props: Any) -> None:
-        super().__init__(rows=rows, **props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            rows: Sequence[Any],
+            x: str,
+            y: Any,
+            by: str | None = None,
+            format: ValueFormat | None = None,
+            labels: bool = False,
+            legend: bool | None = None,
+            emphasis: str | None = None,
+            height: int | None = None,
+            on_click: Any = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, rows: Sequence[Any] = (), **props: Any) -> None:
+            super().__init__(rows=rows, **props)
 
     @model_validator(mode="after")
     def _check(self) -> _Chart:
@@ -191,6 +212,29 @@ class BarChart(_Chart):
                         )
         return self
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            rows: Sequence[Any],
+            x: str,
+            y: Any,
+            by: str | None = None,
+            format: ValueFormat | None = None,
+            labels: bool = False,
+            legend: bool | None = None,
+            emphasis: str | None = None,
+            height: int | None = None,
+            on_click: Any = None,
+            stacked: bool | Literal["percent"] = False,
+            horizontal: bool = False,
+            diverging: bool = False,
+        ) -> None: ...
+
 
 class LineChart(_Chart):
     """Lines over an ordered x: one per series, a crosshair tooltip across them.
@@ -202,6 +246,28 @@ class LineChart(_Chart):
     curve: bool = False
     dots: bool = False
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            rows: Sequence[Any],
+            x: str,
+            y: Any,
+            by: str | None = None,
+            format: ValueFormat | None = None,
+            labels: bool = False,
+            legend: bool | None = None,
+            emphasis: str | None = None,
+            height: int | None = None,
+            on_click: Any = None,
+            curve: bool = False,
+            dots: bool = False,
+        ) -> None: ...
+
 
 class AreaChart(_Chart):
     """Lines with the space under them filled; ``stacked`` adds the series up."""
@@ -209,6 +275,28 @@ class AreaChart(_Chart):
     type: ClassVar[str] = "AreaChart"
     stacked: bool | Literal["percent"] = False
     curve: bool = False
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            rows: Sequence[Any],
+            x: str,
+            y: Any,
+            by: str | None = None,
+            format: ValueFormat | None = None,
+            labels: bool = False,
+            legend: bool | None = None,
+            emphasis: str | None = None,
+            height: int | None = None,
+            on_click: Any = None,
+            stacked: bool | Literal["percent"] = False,
+            curve: bool = False,
+        ) -> None: ...
 
 
 class PieChart(Component):
@@ -236,8 +324,30 @@ class PieChart(Component):
 
     _slices: list[dict[str, Any]] = PrivateAttr()
 
-    def __init__(self, rows: Sequence[Any] = (), **props: Any) -> None:
-        super().__init__(rows=rows, **props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            rows: Sequence[Any],
+            x: str,
+            y: str,
+            format: ValueFormat | None = None,
+            labels: bool = False,
+            legend: bool | None = None,
+            donut: bool = False,
+            center: str | None = None,
+            other: str | None = "Other",
+            height: int | None = None,
+            on_click: Any = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, rows: Sequence[Any] = (), **props: Any) -> None:
+            super().__init__(rows=rows, **props)
 
     @model_validator(mode="after")
     def _check(self) -> PieChart:

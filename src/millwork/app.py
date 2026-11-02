@@ -700,16 +700,14 @@ def _error_view(s: Any, kind: str) -> Component:
         on_click=lambda s, _: s.navigate("/"),
     )
     card = ui.Stack(
-        children=[
-            ui.Logo(cls="h-9 self-start"),
-            ui.Text(s.text(f"{kind}_title"), variant="title"),
-            ui.Text(message, variant="muted"),
-            ui.Row(children=[home]),
-        ],
+        ui.Logo(cls="h-9 self-start"),
+        ui.Text(s.text(f"{kind}_title"), variant="title"),
+        ui.Text(message, variant="muted"),
+        ui.Row(home),
         gap=3,
         cls="w-full max-w-sm",
     )
-    return ui.Stack(children=[card], align="center", justify="center", cls="min-h-dvh p-6")
+    return ui.Stack(card, align="center", justify="center", cls="min-h-dvh p-6")
 
 
 def _not_found_view(s: Any) -> Component:

@@ -8,7 +8,7 @@ Stateful components take ``value`` (server-owned) or ``default``
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -83,6 +83,16 @@ class _Owned(Component):
                 )
         return self
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+        ) -> None: ...
+
 
 # ------------------------------------------------------------------ layout
 
@@ -97,12 +107,36 @@ class Header(Component):
     links: list[Link] = []
     user_menu: bool = True
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            title: str | None = None,
+            logo: bool = True,
+            links: list[Link] = ...,
+            user_menu: bool = True,
+        ) -> None: ...
+
 
 class Logo(Component):
     """The theme's logo, the light or dark file with the scheme; nothing when the
     theme has none. For a page outside the app bar: a login-like page, an error page."""
 
     type: ClassVar[str] = "Logo"
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+        ) -> None: ...
 
 
 class Page(Component):
@@ -116,6 +150,21 @@ class Page(Component):
     gap: int = 6
     max_width: str | None = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            title: str | None = None,
+            header: Header | None = None,
+            padding: bool = True,
+            gap: int = 6,
+            max_width: str | None = None,
+        ) -> None: ...
+
 
 class Stack(Component):
     type: ClassVar[str] = "Stack"
@@ -125,6 +174,21 @@ class Stack(Component):
     grow: bool = False
     divided: bool = False
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            gap: int = 4,
+            align: Align = "stretch",
+            justify: Justify = "start",
+            grow: bool = False,
+            divided: bool = False,
+        ) -> None: ...
+
 
 class Row(Component):
     type: ClassVar[str] = "Row"
@@ -133,11 +197,37 @@ class Row(Component):
     justify: Justify = "start"
     wrap: bool = False
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            gap: int = 4,
+            align: Align = "center",
+            justify: Justify = "start",
+            wrap: bool = False,
+        ) -> None: ...
+
 
 class Grid(Component):
     type: ClassVar[str] = "Grid"
     cols: int | dict[str, int] = 2
     gap: int = 4
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            cols: int | dict[str, int] = 2,
+            gap: int = 4,
+        ) -> None: ...
 
 
 class Card(Component):
@@ -149,6 +239,22 @@ class Card(Component):
     tone: Tone | None = None
     on_click: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            title: str | None = None,
+            description: str | None = None,
+            footer: Component | None = None,
+            padding: bool = True,
+            tone: Tone | None = None,
+            on_click: Any = None,
+        ) -> None: ...
+
 
 class Split(Component):
     """Resizable panes. Sizes are percentages; the user's drag is client-owned."""
@@ -159,6 +265,20 @@ class Split(Component):
     direction: Literal["horizontal", "vertical"] = "horizontal"
     # True: every pane collapses when dragged under its minimum; a list says which.
     collapsible: bool | list[bool] = False
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            sizes: list[int] | None = None,
+            min_sizes: list[int] | None = None,
+            direction: Literal["horizontal", "vertical"] = "horizontal",
+            collapsible: bool | list[bool] = False,
+        ) -> None: ...
 
 
 class Sidebar(_Owned):
@@ -173,6 +293,23 @@ class Sidebar(_Owned):
     title: str | None = None
     on_toggle: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            side: Literal["left", "right"] = "left",
+            width: str | None = None,
+            collapsible: Literal["offcanvas", "icon", "none"] = "offcanvas",
+            open: bool | None = None,
+            default_open: bool | None = None,
+            title: str | None = None,
+            on_toggle: Any = None,
+        ) -> None: ...
+
 
 class Tabs(_Owned):
     type: ClassVar[str] = "Tabs"
@@ -180,6 +317,20 @@ class Tabs(_Owned):
     default: str | None = None
     variant: Literal["line", "pill"] = "line"
     on_change: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            value: str | None = None,
+            default: str | None = None,
+            variant: Literal["line", "pill"] = "line",
+            on_change: Any = None,
+        ) -> None: ...
 
 
 class Tab(Component):
@@ -190,6 +341,21 @@ class Tab(Component):
     badge: str | None = None
     disabled: bool = False
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            id: str,
+            label: str,
+            icon: str | None = None,
+            badge: str | None = None,
+            disabled: bool = False,
+        ) -> None: ...
+
 
 class Accordion(_Owned):
     type: ClassVar[str] = "Accordion"
@@ -198,11 +364,37 @@ class Accordion(_Owned):
     default: list[str] | None = None
     on_change: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            multiple: bool = False,
+            value: list[str] | None = None,
+            default: list[str] | None = None,
+            on_change: Any = None,
+        ) -> None: ...
+
 
 class AccordionItem(Component):
     type: ClassVar[str] = "AccordionItem"
     id: str
     title: str
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            id: str,
+            title: str,
+        ) -> None: ...
 
 
 class Collapsible(_Owned):
@@ -211,6 +403,20 @@ class Collapsible(_Owned):
     open: bool | None = None
     default_open: bool | None = None
     on_toggle: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            title: str,
+            open: bool | None = None,
+            default_open: bool | None = None,
+            on_toggle: Any = None,
+        ) -> None: ...
 
 
 class Dialog(Component):
@@ -225,6 +431,23 @@ class Dialog(Component):
     dismissable: bool = True
     on_close: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            open: bool = False,
+            title: str | None = None,
+            description: str | None = None,
+            footer: Component | None = None,
+            size: Literal["sm", "md", "lg", "xl", "full"] = "md",
+            dismissable: bool = True,
+            on_close: Any = None,
+        ) -> None: ...
+
 
 class Sheet(Component):
     type: ClassVar[str] = "Sheet"
@@ -234,16 +457,54 @@ class Sheet(Component):
     description: str | None = None
     on_close: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            open: bool = False,
+            side: Literal["left", "right", "top", "bottom"] = "right",
+            title: str | None = None,
+            description: str | None = None,
+            on_close: Any = None,
+        ) -> None: ...
+
 
 class ScrollArea(Component):
     type: ClassVar[str] = "ScrollArea"
     height: str | None = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            height: str | None = None,
+        ) -> None: ...
 
 
 class Separator(Component):
     type: ClassVar[str] = "Separator"
     orientation: Literal["horizontal", "vertical"] = "horizontal"
     label: str | None = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            orientation: Literal["horizontal", "vertical"] = "horizontal",
+            label: str | None = None,
+        ) -> None: ...
 
 
 class Empty(Component):
@@ -252,6 +513,20 @@ class Empty(Component):
     description: str | None = None
     icon: str | None = None
     action: Component | None = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            title: str,
+            description: str | None = None,
+            icon: str | None = None,
+            action: Component | None = None,
+        ) -> None: ...
 
 
 # ------------------------------------------------------------------ text
@@ -262,8 +537,21 @@ class Markdown(Component):
     content: str = ""
     tight: bool = False
 
-    def __init__(self, content: str = "", **props: Any) -> None:
-        super().__init__(content=content, **props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            content: str = "",
+            tight: bool = False,
+        ) -> None: ...
+    else:
+
+        def __init__(self, content: str = "", **props: Any) -> None:
+            super().__init__(content=content, **props)
 
 
 class Code(Component):
@@ -275,8 +563,25 @@ class Code(Component):
     wrap: bool = False
     max_height: str | None = None
 
-    def __init__(self, content: str = "", **props: Any) -> None:
-        super().__init__(content=content, **props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            content: str = "",
+            language: str | None = None,
+            title: str | None = None,
+            copyable: bool = True,
+            wrap: bool = False,
+            max_height: str | None = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, content: str = "", **props: Any) -> None:
+            super().__init__(content=content, **props)
 
 
 class Badge(Component):
@@ -285,13 +590,38 @@ class Badge(Component):
     tone: Tone = "default"
     icon: str | None = None
 
-    def __init__(self, label: str = "", **props: Any) -> None:
-        super().__init__(label=label, **props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str = "",
+            tone: Tone = "default",
+            icon: str | None = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, label: str = "", **props: Any) -> None:
+            super().__init__(label=label, **props)
 
 
 class Kbd(Component):
     type: ClassVar[str] = "Kbd"
     keys: list[str]
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            keys: list[str],
+        ) -> None: ...
 
 
 def safe_href(value: str) -> str:
@@ -314,6 +644,20 @@ class Link(Component):
 
     _href = field_validator("href")(staticmethod(safe_href))
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str,
+            href: str,
+            target: Literal["_self", "_blank"] = "_self",
+            icon: str | None = None,
+        ) -> None: ...
+
 
 Header.model_rebuild()
 
@@ -333,6 +677,25 @@ class Stat(Component):
     good: Literal["up", "down"] = "up"
     trend: list[float] | None = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str,
+            value: str,
+            hint: str | None = None,
+            tone: Tone | None = None,
+            icon: str | None = None,
+            delta: float | None = None,
+            delta_format: Literal["percent", "number"] = "percent",
+            good: Literal["up", "down"] = "up",
+            trend: list[float] | None = None,
+        ) -> None: ...
+
 
 class Alert(Component):
     type: ClassVar[str] = "Alert"
@@ -343,6 +706,23 @@ class Alert(Component):
     dismissable: bool = False
     actions: list[Component] = []
     on_dismiss: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            title: str | None = None,
+            description: str | None = None,
+            tone: Tone = "default",
+            icon: str | None = None,
+            dismissable: bool = False,
+            actions: list[Component] = ...,
+            on_dismiss: Any = None,
+        ) -> None: ...
 
 
 # ------------------------------------------------------------------ inputs
@@ -363,14 +743,46 @@ class Button(Component):
     form: str | None = None
     on_click: Any = None
 
-    def __init__(self, label: str = "", **props: Any) -> None:
-        super().__init__(label=label, **props)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str = "",
+            variant: Variant = "primary",
+            size: Size = "md",
+            icon: str | None = None,
+            icon_position: Literal["start", "end"] = "start",
+            disabled: bool = False,
+            loading: bool = False,
+            tooltip: str | None = None,
+            confirm: str | None = None,
+            form: str | None = None,
+            on_click: Any = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, label: str = "", **props: Any) -> None:
+            super().__init__(label=label, **props)
 
 
 class ButtonGroup(Component):
     """Buttons joined into one control."""
 
     type: ClassVar[str] = "ButtonGroup"
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+        ) -> None: ...
 
 
 class DropdownMenu(Component):
@@ -382,6 +794,20 @@ class DropdownMenu(Component):
     align: Literal["start", "end"] = "start"
     on_select: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            trigger: Component,
+            items: list[MenuItem],
+            align: Literal["start", "end"] = "start",
+            on_select: Any = None,
+        ) -> None: ...
+
 
 class Field(Component):
     """A label, help text and an error around one control, for a form built by hand."""
@@ -391,6 +817,20 @@ class Field(Component):
     help: str | None = None
     error: str | None = None
     required: bool = False
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str,
+            help: str | None = None,
+            error: str | None = None,
+            required: bool = False,
+        ) -> None: ...
 
 
 class ToggleGroup(_Owned):
@@ -403,6 +843,22 @@ class ToggleGroup(_Owned):
     on_change: Any = None
 
     _options = field_validator("options", mode="before")(staticmethod(as_options))
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            options: list[Option],
+            value: str | list[str] | None = None,
+            default: str | list[str] | None = None,
+            multiple: bool = False,
+            size: Size = "md",
+            on_change: Any = None,
+        ) -> None: ...
 
 
 class Input(_Owned):
@@ -420,6 +876,28 @@ class Input(_Owned):
     on_change: Any = None
     on_submit: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            value: str | None = None,
+            default: str | None = None,
+            placeholder: str | None = None,
+            kind: Literal["text", "password", "email", "number", "search", "url"] = "text",
+            prefix_icon: str | None = None,
+            suffix: str | None = None,
+            disabled: bool = False,
+            readonly: bool = False,
+            clearable: bool = False,
+            debounce_ms: int = 250,
+            on_change: Any = None,
+            on_submit: Any = None,
+        ) -> None: ...
+
 
 class Textarea(_Owned):
     type: ClassVar[str] = "Textarea"
@@ -435,6 +913,27 @@ class Textarea(_Owned):
     on_change: Any = None
     on_submit: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            value: str | None = None,
+            default: str | None = None,
+            placeholder: str | None = None,
+            rows: int = 3,
+            autosize: bool = False,
+            max_length: int | None = None,
+            disabled: bool = False,
+            readonly: bool = False,
+            debounce_ms: int = 250,
+            on_change: Any = None,
+            on_submit: Any = None,
+        ) -> None: ...
+
 
 class NumberInput(_Owned):
     type: ClassVar[str] = "NumberInput"
@@ -447,6 +946,25 @@ class NumberInput(_Owned):
     placeholder: str | None = None
     disabled: bool = False
     on_change: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            value: float | None = None,
+            default: float | None = None,
+            min: float | None = None,
+            max: float | None = None,
+            step: float | None = None,
+            suffix: str | None = None,
+            placeholder: str | None = None,
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
 
 
 class Combobox(_Owned):
@@ -467,6 +985,25 @@ class Combobox(_Owned):
 
     _options = field_validator("options", mode="before")(staticmethod(as_options))
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            options: list[Option] = ...,
+            value: str | None = None,
+            default: str | None = None,
+            placeholder: str | None = None,
+            allow_custom: bool = False,
+            clearable: bool = False,
+            disabled: bool = False,
+            on_change: Any = None,
+            on_search: Any = None,
+        ) -> None: ...
+
 
 class MultiSelect(_Owned):
     """Several choices from a list, shown as chips; typing filters the list."""
@@ -485,6 +1022,25 @@ class MultiSelect(_Owned):
     on_change: Any = None
 
     _options = field_validator("options", mode="before")(staticmethod(as_options))
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            options: list[Option],
+            value: list[str] | None = None,
+            default: list[str] | None = None,
+            placeholder: str | None = None,
+            searchable: bool = True,
+            max: int | None = None,
+            sortable: bool = False,
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
 
 
 def _iso_date(value: Any) -> Any:
@@ -516,6 +1072,25 @@ class DatePicker(_Owned):
         staticmethod(_iso_date)
     )
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            value: str | list[str | None] | None = None,
+            default: str | list[str | None] | None = None,
+            min: str | None = None,
+            max: str | None = None,
+            range: bool = False,
+            placeholder: str | None = None,
+            clearable: bool = False,
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
+
 
 class Select(_Owned):
     type: ClassVar[str] = "Select"
@@ -529,6 +1104,23 @@ class Select(_Owned):
 
     _options = field_validator("options", mode="before")(staticmethod(as_options))
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            options: list[Option],
+            value: str | None = None,
+            default: str | None = None,
+            placeholder: str | None = None,
+            clearable: bool = False,
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
+
 
 class Checkbox(_Owned):
     type: ClassVar[str] = "Checkbox"
@@ -538,6 +1130,22 @@ class Checkbox(_Owned):
     default_checked: bool | None = None
     disabled: bool = False
     on_change: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str | None = None,
+            description: str | None = None,
+            checked: bool | None = None,
+            default_checked: bool | None = None,
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
 
 
 class CheckboxGroup(_Owned):
@@ -550,6 +1158,22 @@ class CheckboxGroup(_Owned):
     on_change: Any = None
 
     _options = field_validator("options", mode="before")(staticmethod(as_options))
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            options: list[Option],
+            value: list[str] | None = None,
+            default: list[str] | None = None,
+            label: str | None = None,
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
 
 
 class RadioGroup(_Owned):
@@ -564,6 +1188,23 @@ class RadioGroup(_Owned):
 
     _options = field_validator("options", mode="before")(staticmethod(as_options))
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            options: list[Option],
+            value: str | None = None,
+            default: str | None = None,
+            label: str | None = None,
+            orientation: Literal["vertical", "horizontal"] = "vertical",
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
+
 
 class Switch(_Owned):
     type: ClassVar[str] = "Switch"
@@ -573,6 +1214,22 @@ class Switch(_Owned):
     default_checked: bool | None = None
     disabled: bool = False
     on_change: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str | None = None,
+            description: str | None = None,
+            checked: bool | None = None,
+            default_checked: bool | None = None,
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
 
 
 class Slider(_Owned):
@@ -595,10 +1252,40 @@ class Slider(_Owned):
             return {"marks": [{"value": v, "label": label} for v, label in self.marks.items()]}
         return {"marks": [{"value": v, "label": None} for v in self.marks]}
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            min: float = 0,
+            max: float = 100,
+            step: float = 1,
+            value: float | None = None,
+            default: float | None = None,
+            show_value: bool = True,
+            marks: list[float] | dict[float, str] | None = None,
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
+
 
 class Tooltip(Component):
     type: ClassVar[str] = "Tooltip"
     content: str
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            content: str,
+        ) -> None: ...
 
 
 class Custom(Component):
@@ -617,8 +1304,23 @@ class Custom(Component):
     events: dict[str, Any] = {}
     on_event: Any = None
 
-    def __init__(self, name: str, *children: Any, **kw: Any) -> None:
-        super().__init__(*children, name=name, **kw)
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            name: str,
+            props: dict[str, Any] = ...,
+            events: dict[str, Any] = ...,
+            on_event: Any = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, name: str, *children: Any, **kw: Any) -> None:
+            super().__init__(*children, name=name, **kw)
 
     def wire_type(self) -> str:
         return self.name
@@ -639,6 +1341,20 @@ class Progress(Component):
     description: str | None = None
     task: Any = None
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            value: float | None = None,
+            label: str | None = None,
+            description: str | None = None,
+            task: Any = None,
+        ) -> None: ...
+
 
 class Steps(Component):
     """A step tree on Trace: the task's steps, or ``items`` given directly."""
@@ -648,17 +1364,54 @@ class Steps(Component):
     task: Any = None
     compact: bool = False
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            items: list[Any] | None = None,
+            task: Any = None,
+            compact: bool = False,
+        ) -> None: ...
+
 
 class Skeleton(Component):
     type: ClassVar[str] = "Skeleton"
     rows: int = 3
     shape: Literal["text", "card", "table"] = "text"
 
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            rows: int = 3,
+            shape: Literal["text", "card", "table"] = "text",
+        ) -> None: ...
+
 
 class Spinner(Component):
     type: ClassVar[str] = "Spinner"
     size: Size = "md"
     label: str | None = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            size: Size = "md",
+            label: str | None = None,
+        ) -> None: ...
 
 
 __all__ = [
