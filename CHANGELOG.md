@@ -8,8 +8,7 @@ versions; a release says so here when it does.
 - Dependencies wait two weeks. uv and pnpm resolve only versions that have
   been on their index for fourteen days, Dependabot proposes a bump on the
   same schedule, and a Python dependency is installed from a wheel, never
-  built from a source distribution. CI audits both package sets for known
-  vulnerabilities.
+  built from a source distribution.
 - The bundle's type check in CI checked nothing, since it ran against the
   solution-style tsconfig; it now runs the build's check.
 - The State chapter says a session is one tab, shows a task that follows
