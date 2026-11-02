@@ -43,7 +43,7 @@ from millwork.protocol import (
     pack_frame,
 )
 from millwork.tasks import Cancelled, Task
-from millwork.ui import Button, Dialog, Text, as_options
+from millwork.ui import Button, Dialog, DropdownMenu, Text, as_options
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -120,6 +120,7 @@ class Session[S]:
         self._catching_up: Send | None = None
         self._file_slots = asyncio.Semaphore(FILE_SLOTS)
         self._busy = False
+        self._title_shown: str | None = None
         # Development warnings: each is said once per session; counters tell a
         # handler that changed nothing, and a thread that changed state, apart.
         self._warned: set[str] = set()
@@ -837,7 +838,14 @@ class Session[S]:
         if tree is None:
             return
         self.tree = tree
-        await self._send_now(Mount(root=tree.root, nodes=tree.nodes, title=self.page.title))
+        self._title_shown = self._title(tree)
+        await self._send_now(Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown))
+
+    def _title(self, tree: Tree) -> str | None:
+        """The tab's title: the root ``Page``'s own when it has one, else the page's."""
+        root = tree.nodes[tree.root]
+        title = root.props.get("title") if root.type == "Page" else None
+        return title if isinstance(title, str) else self.page.title
 
     async def _render(self) -> None:
         """Render under the handler lock, so a page never sees half-mutated state."""
@@ -857,6 +865,10 @@ class Session[S]:
             self.tree = tree
             if ops:
                 await self._send_now(Patch(ops=ops))
+            title = self._title(tree)
+            if title != self._title_shown:
+                self._title_shown = title
+                self.command("title", title=title)
             self._signal_activity()
             watch, self._noop_watch = self._noop_watch, None
             if watch is not None and not ops and self._effects == watch[1]:
@@ -1308,19 +1320,32 @@ class Session[S]:
 def _confirmation(component: Component, event: Event) -> tuple[str, bool] | None:
     """The question to ask before this event's handler runs, if the component wants one.
 
-    ``Button.confirm`` carries its own text; a destructive menu item asks
-    with its label, so an irreversible row action is never one slip away.
+    ``Button.confirm`` and ``MenuItem.confirm`` carry their own text. A
+    destructive menu item without one asks with its label, wherever the menu
+    is, so an irreversible action is never one slip away.
     """
     if isinstance(component, Button) and event.name == "click" and component.confirm:
         return component.confirm, component.variant == "destructive"
-    if event.name == "action":
-        payload = event.payload
-        action = payload[0] if isinstance(payload, list | tuple) and payload else payload
-        items = getattr(component, "row_actions", None) or getattr(component, "actions", None)
-        for item in items or []:
-            if item.id == action and item.destructive:
-                return f"{item.label}?", True
+    payload = event.payload
+    action = payload[0] if isinstance(payload, list | tuple) and payload else payload
+    for item in _menu_items(component, event.name):
+        if item.id != action:
+            continue
+        confirm = getattr(item, "confirm", None)
+        destructive = bool(getattr(item, "destructive", False))
+        if confirm or destructive:
+            return confirm or f"{item.label}?", destructive
     return None
+
+
+def _menu_items(component: Component, event: str) -> list[Any]:
+    """The items the event picks from: a table's row actions, a file card's
+    actions, a chat message's actions, or a dropdown menu's items."""
+    if event == "action":
+        return getattr(component, "row_actions", None) or getattr(component, "actions", None) or []
+    if event == "select" and isinstance(component, DropdownMenu):
+        return component.items
+    return []
 
 
 async def _call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

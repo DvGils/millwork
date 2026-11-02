@@ -415,6 +415,9 @@ function command(name: string, args: Record<string, unknown>) {
       if (args.title) document.title = String(args.title);
       break;
     }
+    case "title":
+      document.title = String(args.title ?? "");
+      break;
     case "clipboard":
       void navigator.clipboard?.writeText(String(args.text ?? ""));
       toast.add({ title: t("copied"), type: "success", timeout: 1500 });
