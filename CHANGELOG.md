@@ -3,6 +3,14 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.1.3
+
+- A `ui.Progress` draws one bar again. The progress primitive had started
+  drawing a second track of its own.
+- The hosted manual is deployed from the release's own wheel, so a deploy
+  no longer waits on PyPI's index.
+- A security policy, in `SECURITY.md`.
+
 ## 0.1.2
 
 - Fix the automatic docs release.
