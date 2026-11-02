@@ -63,7 +63,9 @@ The widgets are `input`, `textarea`, `password`, `number`, `slider`,
 Each field gets one from its type, and an override swaps it for another
 that fits the same value, such as `radio` for a short enum or `toggle` for
 a boolean. A field with a `default_factory` opens with what the factory
-makes, so a date field defaulting to today shows today.
+makes, so a date field defaulting to today shows today. A factory that
+makes a new value on every call, a uuid or the time of day, gives the form
+nothing, and the model makes that value on submit as it always did.
 
 ```python live
 from pydantic import BaseModel

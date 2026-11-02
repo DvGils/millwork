@@ -41,3 +41,16 @@ def test_a_component_refuses_an_unknown_icon() -> None:
     with pytest.raises(ValidationError, match="no icon named"):
         ui.Input(prefix_icon="magnifier")
     assert mw.ICONS is ICONS
+
+
+def test_an_apps_own_component_keeps_its_icon_meaning() -> None:
+    from typing import ClassVar
+
+    from millwork.nodes import Component
+
+    class Avatar(Component):
+        type: ClassVar[str] = "x-avatar"
+        icon: str | None = None
+
+    assert Avatar(icon="https://example.com/a.png").icon == "https://example.com/a.png"
+    assert ui.Button("x", icon="").icon == ""

@@ -73,6 +73,10 @@ class Component(BaseModel):
     @field_validator("icon", "prefix_icon", check_fields=False)
     @classmethod
     def _known_icon(cls, name: str | None) -> str | None:
+        # The catalogue draws lucide icons. A component an app defines itself
+        # means by ``icon`` whatever its own renderer draws.
+        if cls.__module__.partition(".")[0] != "millwork":
+            return name
         return check_icon(name)
 
     def wire_type(self) -> str:

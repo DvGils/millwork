@@ -259,6 +259,19 @@ export const NumberInput: Renderer = ({ props, emit }) => {
     const n = Number(s);
     return Number.isNaN(n) ? null : n;
   };
+  // Enter reports, and so does leaving the field. The value the server last
+  // heard is not sent again, so Enter and then Tab is one change, not two.
+  const sent = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    sent.current = undefined;
+  }, [props.value]);
+  const report = () => {
+    if (!props.on_change) return;
+    const value = parse(current);
+    if (sent.current !== undefined && sent.current === value) return;
+    sent.current = value;
+    emit("change", value);
+  };
   return (
     <div className={cn("flex items-center gap-2", props.cls as string)}>
       <UiInput
@@ -270,11 +283,9 @@ export const NumberInput: Renderer = ({ props, emit }) => {
         placeholder={props.placeholder ? String(props.placeholder) : undefined}
         disabled={Boolean(props.disabled)}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          if (props.on_change) emit("change", parse(current));
-        }}
+        onBlur={report}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && props.on_change) emit("change", parse(current));
+          if (e.key === "Enter") report();
         }}
       />
       {props.suffix ? <span className="text-sm text-muted-foreground">{String(props.suffix)}</span> : null}

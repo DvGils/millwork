@@ -157,33 +157,37 @@ def field_spec(model: type[BaseModel]) -> dict[str, Any]:
 
 
 def factory_defaults(model: type[BaseModel], base: str = "") -> dict[str, Any]:
-    """The defaults the JSON schema leaves out, by pointer: a ``default_factory``
-    is called once per spec, so a form opens with today's date filled in."""
+    """The defaults the JSON schema leaves out, by pointer, so a form opens with
+    today's date filled in. A ``default_factory`` is a default only when it
+    makes the same value each time it is called. One that makes a new value per
+    call, a uuid or the time of day, is the model's business on submit and
+    gives the form nothing, which keeps the spec the same from render to
+    render."""
     out: dict[str, Any] = {}
     for name, field in model.model_fields.items():
         pointer = f"{base}/{name}"
         if field.default_factory is not None:
             try:
-                out[pointer] = to_jsonable_python(field.get_default(call_default_factory=True))
+                first = to_jsonable_python(field.get_default(call_default_factory=True))
+                second = to_jsonable_python(field.get_default(call_default_factory=True))
             except Exception:  # noqa: BLE001  a factory that wants validated data, or fails
                 pass
-        inner = _model_of(field.annotation)
-        if inner is not None:
+            else:
+                if first == second:
+                    out[pointer] = first
+        for inner in _models_of(field.annotation):
             out.update(factory_defaults(inner, pointer))
     return out
 
 
-def _model_of(annotation: Any) -> type[BaseModel] | None:
-    """The model behind ``Model`` or ``Model | None``; nothing for anything else."""
+def _models_of(annotation: Any) -> list[type[BaseModel]]:
+    """The models a field holds whole: ``Model``, ``Model | None`` and every
+    model in a union, whose fields share the field's pointer."""
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-        return annotation
+        return [annotation]
     if get_origin(annotation) in (Union, UnionType):
-        models = [
-            a for a in get_args(annotation) if isinstance(a, type) and issubclass(a, BaseModel)
-        ]
-        if len(models) == 1 and len(get_args(annotation)) == 2:
-            return models[0]
-    return None
+        return [m for a in get_args(annotation) for m in _models_of(a)]
+    return []
 
 
 class _Walker:

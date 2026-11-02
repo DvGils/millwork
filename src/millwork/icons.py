@@ -30,7 +30,7 @@ _ACCEPTED: frozenset[str] = frozenset(
 def check_icon(name: str | None) -> str | None:
     """The name back when the bundle draws it; ``ValueError`` with the closest
     names otherwise."""
-    if name is None or name in _ACCEPTED:
+    if not name or name in _ACCEPTED:
         return name
     close = difflib.get_close_matches(name.lower(), ICONS, n=3, cutoff=0.5)
     hint = f"; the closest are {', '.join(close)}" if close else ""

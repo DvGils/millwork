@@ -374,3 +374,25 @@ def test_factory_defaults_reach_the_spec() -> None:
     assert inner["tags"]["default"] == ["a"]
     maybe = {f["name"]: f for f in by_name["maybe"]["fields"]}
     assert maybe["tags"]["default"] == ["a"]
+
+
+def test_an_unstable_factory_gives_the_form_no_default() -> None:
+    from itertools import count
+    from uuid import uuid4
+
+    class Variant(BaseModel):
+        kind: Literal["v"] = "v"
+        tags: list[str] = Field(default_factory=lambda: ["x"])
+
+    ticks = count()
+
+    class Model(BaseModel):
+        id: str = Field(default_factory=lambda: uuid4().hex)
+        n: int = Field(default_factory=lambda: next(ticks))
+        v: Variant | int = Field(default_factory=Variant)
+
+    by_name = {f["name"]: f for f in field_spec(Model)["fields"]}
+    assert "default" not in by_name["id"] and not by_name["id"]["required"]
+    assert "default" not in by_name["n"]
+    assert field_spec(Model)["fields"] == field_spec(Model)["fields"]
+    assert by_name["v"]["default"] == {"kind": "v", "tags": ["x"]}
