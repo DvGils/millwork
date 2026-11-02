@@ -19,6 +19,9 @@ the session and the event's payload, which is the new value for
 `on_change`, the validated model for a form's `on_submit`, and nothing of
 use for `on_click`. It may be sync or async. When it returns, the page
 renders once, under a lock, so a render sees state as the handler left it.
+A handler that cannot take those two arguments is refused when the page
+is built, with the expected shape in the error, so a one-argument lambda
+fails before anyone clicks.
 
 ```python live
 from pydantic import BaseModel

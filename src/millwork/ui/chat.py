@@ -89,6 +89,10 @@ class Chat(Component):
     # Components in the composer, left of Send: a Button with a handler, or a
     # Custom component, which receives ``chat`` with upload, send and busy.
     tools: list[Component] = []
+    handler_args: ClassVar[dict[str, tuple[str, ...]]] = {
+        "on_feedback": ("message", "value", "comment"),
+        "on_action": ("message", "action"),
+    }
     on_message: Any = None
     on_stop: Any = None
     on_feedback: Any = None
