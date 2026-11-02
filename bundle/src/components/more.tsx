@@ -71,6 +71,7 @@ export function PageWithSidebar({
   className,
   style,
   padding,
+  gap,
   header,
 }: {
   sidebarId: string;
@@ -78,6 +79,7 @@ export function PageWithSidebar({
   className: string;
   style?: React.CSSProperties;
   padding?: unknown;
+  gap: string;
   header?: unknown;
 }) {
   const sidebar = useNode(sidebarId);
@@ -115,7 +117,7 @@ export function PageWithSidebar({
           <SidebarTrigger />
         </div>
         <div className={pageBodyClass(padding)}>
-          <PageBody className={className} style={style}>
+          <PageBody className={cn(gap, className)} style={style}>
             {rest.map((cid) => (
               <Render key={cid} id={cid} />
             ))}

@@ -106,10 +106,14 @@ class Logo(Component):
 
 
 class Page(Component):
+    """The root of a page: a column of its children with ``gap`` between them,
+    under a ``header``, beside a ``Sidebar`` child when there is one."""
+
     type: ClassVar[str] = "Page"
     title: str | None = None
     header: Header | None = None
     padding: bool = True
+    gap: int = 6
     max_width: str | None = None
 
 
