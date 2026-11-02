@@ -5,14 +5,14 @@ order: 1
 
 # Text
 
-Words on a page: plain text with a variant and a tone, Markdown, code, and
-the small pieces that label things.
+Words on a page. Plain text with a variant and a tone, Markdown, code,
+and the small pieces that label things.
 
 ## Text
 
-`ui.Text` is a string with a `variant`: `body`, `muted`, `caption`, `label`,
-`title`, `heading`, `subheading` or `mono`. `tone` colours it, `truncate`
-keeps it to one line, `align` sets the alignment.
+`ui.Text` is a string with a `variant`, one of `body`, `muted`, `caption`,
+`label`, `title`, `heading`, `subheading` and `mono`. `tone` colours it,
+`truncate` keeps it to one line, and `align` sets the alignment.
 
 ```python live
 ui.Stack(
@@ -41,9 +41,9 @@ ui.Stack(
 
 ## Markdown
 
-`ui.Markdown` renders GitHub-flavoured Markdown as real elements: headings,
-lists, tables, links and code. `tight=True` removes the outer spacing for use
-inside a card or a table cell.
+`ui.Markdown` renders GitHub-flavoured Markdown as real elements, with
+headings, lists, tables, links and code. `tight=True` removes the outer
+spacing for use inside a card or a table cell.
 
 ```python live
 ui.Markdown("""
@@ -64,8 +64,8 @@ Text with **bold**, *italic*, `code` and a [link](https://example.com).
 ## Code
 
 `ui.Code` shows a block of code with a `language` for highlighting, an
-optional `title`, a copy button (`copyable`, on by default), `wrap` for long
-lines and `max_height` to scroll past.
+optional `title`, a copy button that `copyable` controls and is on by
+default, `wrap` for long lines and `max_height` to scroll past.
 
 ```python live
 ui.Code(
@@ -109,8 +109,8 @@ ui.Row(
 
 ## Link
 
-`ui.Link` is a hyperlink. A path inside the app navigates over the session
-without a reload; `target="_blank"` opens a new tab.
+`ui.Link` is a hyperlink. A path inside the app navigates over the
+session without a reload, and `target="_blank"` opens a new tab.
 
 ```python live
 ui.Row(

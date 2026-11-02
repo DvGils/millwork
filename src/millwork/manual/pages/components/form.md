@@ -6,10 +6,11 @@ order: 6
 # Form
 
 `ui.Form` renders a Pydantic model as fields and hands `on_submit` a
-validated instance. Types choose the controls: `str` an input, `int` and
-`float` a number, `bool` a switch, `Literal` and `Enum` a select, `date` a
-date picker, a nested model a fieldset, a list of models a repeatable list.
-Validation errors land on the field they concern.
+validated instance. The types choose the controls. A `str` becomes an
+input, `int` and `float` a number, `bool` a switch, `Literal` and `Enum` a
+select, `date` a date picker, a nested model a fieldset, and a list of
+models a repeatable list. Validation errors land on the field they
+concern.
 
 ## From a model
 
@@ -53,8 +54,8 @@ def example(s):
 
 `labels` maps a field's pointer, or its name, to a `label`, `help`,
 `placeholder` and `choices`, so the model stays free of interface copy.
-`overrides` maps a pointer to any spec key: a `widget`, `min`, `max`,
-`step`, `rows`. `fields` picks a subset in order.
+`overrides` maps a pointer to any spec key, such as a `widget`, `min`,
+`max`, `step` or `rows`. `fields` picks a subset in order.
 
 ```python live
 from pydantic import BaseModel
@@ -82,9 +83,9 @@ ui.Form(
 
 ## Rejecting a valid draft
 
-A handler that finds something wrong raises `ui.FormIssues` with a list of
-`(pointer, message)` pairs; the form shows each at its field and keeps the
-draft.
+A handler that finds something wrong raises `ui.FormIssues` with a list
+of `(pointer, message)` pairs. The form shows each at its field and keeps
+the draft.
 
 ```python live
 from pydantic import BaseModel, Field
@@ -109,8 +110,8 @@ ui.Form(Signup, on_submit=register, submit="Register", cancel="Clear")
 
 ## Submitting from outside
 
-`submit=None` hides the form's own button; a `ui.Button(form=key)` anywhere
-on the page submits the form with that key.
+`submit=None` hides the form's own button, and a `ui.Button(form=key)`
+anywhere on the page submits the form with that key.
 
 ```python live
 from pydantic import BaseModel, Field

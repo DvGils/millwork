@@ -8,14 +8,14 @@ order: 5
 A chart takes rows, like the Table does. `x` names the category or time
 column and `y` the value column, or several of them. Each series takes the
 next of the theme's five chart colours, in the order given, and keeps it
-when a neighbour disappears. Five series is the limit: a sixth has no colour
-of its own, so fold it into another or draw a second chart. Every chart has
-a tooltip; a legend appears from two series up.
+when a neighbour disappears. Five series is the limit. A sixth has no
+colour of its own, so fold it into another or draw a second chart. Every
+chart has a tooltip, and a legend appears from two series up.
 
 ## Bar chart
 
 `ui.BarChart` compares magnitudes by category. `labels=True` writes the
-value at the end of each bar; `format` chooses `number`, `integer`,
+value at the end of each bar, and `format` chooses `number`, `integer`,
 `percent` or `currency`.
 
 ```python live
@@ -33,9 +33,9 @@ ui.BarChart(MONTHS, x="month", y={"sales": "Sales", "costs": "Costs"}, labels=Tr
 
 ## Stacked, percent and horizontal
 
-`stacked=True` adds the series up; `stacked="percent"` draws every bar full
-and shows each series' share. `horizontal=True` turns the chart on its side,
-which suits long category names.
+`stacked=True` adds the series up, and `stacked="percent"` draws every bar
+full to show each series' share. `horizontal=True` turns the chart on its
+side, which suits long category names.
 
 ```python live
 SHARE = [
@@ -57,8 +57,8 @@ ui.Grid(
 ## Long rows
 
 Data often arrives with one row per series and category. `by` names the
-column that holds the series name, and `y` the one column with the values;
-Python pivots the rows before they leave.
+column that holds the series name, and `y` the one column with the
+values. Python pivots the rows before they leave.
 
 ```python live
 REGIONS = [
@@ -75,8 +75,8 @@ ui.BarChart(REGIONS, x="quarter", y="orders", by="region", height=200)
 
 ## A diverging scale
 
-When the series are steps of one ordered scale, `diverging=True` draws them
-to either side of the midpoint, coloured from one hue through grey to
+When the series are steps of one ordered scale, `diverging=True` draws
+them to either side of the midpoint, coloured from one hue through grey to
 another instead of five unrelated colours. The middle step, when there is
 one, straddles the axis.
 
@@ -101,7 +101,7 @@ ui.BarChart(
 ## Emphasis
 
 Often one series is the point and the rest are context. `emphasis` names
-the one that keeps its colour; the others recede into grey.
+the one that keeps its colour, and the others recede into grey.
 
 ```python live
 ui.LineChart(
@@ -118,8 +118,8 @@ ui.LineChart(
 
 `ui.LineChart` draws a trend over an ordered x. `curve=True` smooths it,
 `dots=True` marks the points, and `labels=True` names each line at its end
-rather than numbering every point. `ui.AreaChart` fills under the line and
-`stacked=True` adds the series up.
+rather than numbering every point. `ui.AreaChart` fills under the line,
+and `stacked=True` adds the series up.
 
 ```python live
 ui.Grid(
@@ -133,9 +133,9 @@ ui.Grid(
 
 ## Clicks
 
-`on_click` receives the point: its `x`, the `series` key and `value` for a
-bar, and `values` for every series at that x. On a line or area chart the
-click lands on the nearest x.
+`on_click` receives the point. It has the `x`, the `series` key and
+`value` for a bar, and `values` for every series at that x. On a line or
+area chart the click lands on the nearest x.
 
 ```python live
 from pydantic import BaseModel
@@ -160,8 +160,9 @@ def example(s):
 ## Stat
 
 `ui.Stat` is the headline number. `delta` is the change, drawn with its
-direction; `good="down"` says a fall is the welcome move, for costs or
-errors. `trend` draws a sparkline whose last point is the current one.
+direction, and `good="down"` says a fall is the welcome move, as it is for
+costs or errors. `trend` draws a sparkline whose last point is the current
+one.
 
 ```python live
 ui.Grid(
@@ -176,10 +177,10 @@ ui.Grid(
 
 The catalogue draws the forms most pages need. For anything else, an app
 brings its own library through a custom component. Plotly is the common
-case; the same shape works for any library that draws into a div.
+case, and the same shape works for any library that draws into a div.
 
-The page may only run scripts from its own origin, so the library is served
-by the app itself: put `plotly.min.js` in the app's `public/` folder. The
+The page may only run scripts from its own origin, so the app serves the
+library itself. Put `plotly.min.js` in the app's `public/` folder. The
 custom component loads it once, then hands the figure to Plotly whenever
 the props change.
 
@@ -221,8 +222,9 @@ export default function Plotly({ props }) {
 
 On the Python side a figure is built as usual and sent as JSON. A
 transparent background lets the page's own colours through in both
-schemes; the figure's own colours are Plotly's, not the theme's. Plotly
-Express wants pandas installed next to it; graph objects need nothing.
+schemes, though the figure's own colours stay Plotly's rather than the
+theme's. Plotly Express wants pandas installed next to it. Graph objects
+need nothing.
 
 ```python
 import json
@@ -240,13 +242,13 @@ def example(s):
 ```
 
 A click on a bar or a point can come back the same way as in the Hello
-component: register a Plotly event on the div and call `emit`.
+component. Register a Plotly event on the div and call `emit`.
 
 ## Images from Python
 
-Any library that renders to SVG or PNG works without a component at all:
-the session keeps the bytes and `ui.Image` shows them. No tooltip, no theme
-awareness, no script in the browser.
+Any library that renders to SVG or PNG works without a component at all.
+The session keeps the bytes and `ui.Image` shows them. There is no
+tooltip, no theme awareness and no script in the browser.
 
 ```python
 import io
