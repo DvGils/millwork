@@ -139,3 +139,37 @@ def test_the_data_layer_rejects_what_would_draw_wrong() -> None:
 def test_a_diverging_chart_takes_counts_only() -> None:
     with pytest.raises(ValueError, match="negative"):
         ui.BarChart([{"m": "a", "lo": -1, "hi": 2}], x="m", y=["lo", "hi"], diverging=True)
+
+
+def test_a_pie_takes_one_slice_per_row_and_folds_the_rest() -> None:
+    rows = [
+        {"channel": "Direct", "visits": 120},
+        {"channel": "Search", "visits": 410},
+        {"channel": "Social", "visits": 230},
+        {"channel": "Mail", "visits": 40},
+        {"channel": "Ads", "visits": 90},
+        {"channel": "Partners", "visits": 30},
+        {"channel": "Print", "visits": None},
+    ]
+    props = (
+        build(ui.PieChart(rows, x="channel", y="visits", on_click=lambda s, p: None))
+        .nodes["root"]
+        .props
+    )
+    assert "rows" not in props and "y" not in props and "other" not in props
+    assert [s["x"] for s in props["data"]] == ["Direct", "Search", "Social", "Ads", "Other"]
+    assert props["data"][-1] == {"x": "Other", "value": 70, "other": True}
+    assert props["on_click"] is True and props["donut"] is False
+    five = ui.PieChart(rows[:5], x="channel", y="visits")
+    assert [s["other"] for s in five.slices()] == [False] * 5
+    with pytest.raises(ValueError, match="at most"):
+        ui.PieChart(rows, x="channel", y="visits", other=None)
+    with pytest.raises(ValueError, match="negative"):
+        ui.PieChart([{"c": "a", "v": -1}], x="c", y="v")
+    with pytest.raises(ValueError, match="is a number"):
+        ui.PieChart([{"c": "a", "v": "lots"}], x="c", y="v")
+    with pytest.raises(ValueError, match="no column 'nope'"):
+        ui.PieChart(rows, x="channel", y="nope")
+    with pytest.raises(ValueError, match="different columns"):
+        ui.PieChart(rows, x="visits", y="visits")
+    assert build(ui.PieChart(x="c", y="v")).nodes["root"].props["data"] == []

@@ -10,6 +10,9 @@ versions; a release says so here when it does.
 - The hosted manual is deployed from the release's own wheel, so a deploy
   no longer waits on PyPI's index.
 - A security policy, in `SECURITY.md`.
+- `ui.PieChart`, one slice per row, with the smallest folding into one
+  grey slice past five, a donut with a figure in the middle, share labels
+  and a click per slice.
 
 ## 0.1.2
 

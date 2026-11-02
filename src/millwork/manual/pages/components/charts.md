@@ -173,6 +173,39 @@ ui.Grid(
 )
 ```
 
+## Pie and donut
+
+`ui.PieChart` shows how one whole splits, with one slice per row. `x`
+names the slice and `y` its value. Slices take the theme's five chart
+colours in row order, and over five the smallest fold into one grey slice
+named by `other`, which `other=None` turns into a refusal instead.
+`labels=True` writes each slice's share beside it, `donut=True` leaves the
+middle open, and `center` writes a figure there. A pie reads well for a
+split at a glance with a few parts. When the parts need comparing with
+each other, ranked bars show the differences more exactly.
+
+```python live
+CHANNELS = [
+    {"channel": "Direct", "visits": 1200},
+    {"channel": "Search", "visits": 4100},
+    {"channel": "Social", "visits": 2300},
+    {"channel": "Newsletter", "visits": 400},
+    {"channel": "Partners", "visits": 900},
+    {"channel": "Ads", "visits": 300},
+    {"channel": "Print", "visits": 150},
+]
+
+ui.Grid(
+    ui.PieChart(CHANNELS, x="channel", y="visits", labels=True, height=220),
+    ui.PieChart(
+        CHANNELS, x="channel", y="visits", donut=True, center="9,350", format="integer", height=220
+    ),
+    cols={"sm": 1, "md": 2},
+)
+```
+
+`on_click` receives the slice, with its `x`, `value` and `share`.
+
 ## Plotly and other libraries
 
 The catalogue draws the forms most pages need. For anything else, an app

@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from millwork.files import FileRef
 from millwork.forms import FormIssues, Issue
 from millwork.nodes import Component, Text
-from millwork.ui.charts import AreaChart, BarChart, LineChart
+from millwork.ui.charts import AreaChart, BarChart, LineChart, PieChart
 from millwork.ui.chat import Accept, Action, Chat, Command
 from millwork.ui.files import Download, FileCard, FileUpload, Image, Pdf
 from millwork.ui.form import Form
@@ -659,6 +659,7 @@ __all__ = [
     "Alert",
     "AreaChart",
     "BarChart",
+    "PieChart",
     "Badge",
     "Button",
     "Card",

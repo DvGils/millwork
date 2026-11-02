@@ -9,16 +9,22 @@ import {
   Bar,
   BarChart as RBarChart,
   CartesianGrid,
+  Cell,
+  Label,
   LabelList,
   Line,
   LineChart as RLineChart,
+  Pie,
+  PieChart as RPieChart,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
 import { formatNumber } from "../format";
+import { cn } from "cn";
 import {
+  NEUTRAL,
   divergingBars,
   divergingColors,
   divergingRows,
@@ -92,7 +98,97 @@ export interface ChartProps {
   emit: (name: string, payload?: unknown) => void;
 }
 
+interface Slice {
+  x: unknown;
+  value: number;
+  other: boolean;
+}
+
+// A pie: one slice per row, the theme's hues in row order, a folded tail in
+// grey. The legend carries the names and the tooltip the value and the share;
+// labels on the slices are the shares, left off a slice too thin to hold one.
+function PieTip({ active, payload, format, total }: { active?: boolean; payload?: { payload: Slice & { fill: string } }[]; format?: string | null; total: number }) {
+  if (!active || !payload?.length) return null;
+  const s = payload[0].payload;
+  return (
+    <div className="grid min-w-32 gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+      <div className="flex items-center gap-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ background: s.fill }} />
+        <span className="flex-1 text-muted-foreground">{String(s.x)}</span>
+        <span className="font-mono font-medium tabular-nums text-foreground">{formatNumber(s.value, format)}</span>
+      </div>
+      <div className="text-right text-muted-foreground">{total > 0 ? `${Math.round((s.value / total) * 100)}%` : ""}</div>
+    </div>
+  );
+}
+
+function PieInner({ props, emit }: Omit<ChartProps, "kind">) {
+  const slices = (props.data as Slice[] | undefined) ?? [];
+  const format = props.format as string | null | undefined;
+  const donut = Boolean(props.donut);
+  const labels = Boolean(props.labels);
+  const center = typeof props.center === "string" ? props.center : null;
+  const total = slices.reduce((a, s) => a + s.value, 0);
+  const colors = slices.map((s, i) => (s.other ? NEUTRAL : `var(--chart-${i + 1})`));
+  const rows = slices.map((s, i) => ({ ...s, name: String(s.x), fill: colors[i] }));
+  const series: Series[] = rows.map((r) => ({ key: r.name, label: r.name }));
+  const showLegend = typeof props.legend === "boolean" ? props.legend : rows.length > 1;
+  const click = props.on_click
+    ? (d: unknown) => {
+        const s = (d as { payload?: Slice })?.payload;
+        if (s) emit("click", { x: s.x ?? null, value: s.value, share: total > 0 ? s.value / total : null });
+      }
+    : undefined;
+  const share = (p: { percent?: number; x?: number; y?: number; textAnchor?: string }): ReactElement | null =>
+    typeof p.percent === "number" && p.percent >= 0.04 && typeof p.x === "number" && typeof p.y === "number" ? (
+      <text x={p.x} y={p.y} dy={4} textAnchor={p.textAnchor === "start" || p.textAnchor === "end" ? p.textAnchor : "middle"} className="fill-foreground text-[10px]">
+        {`${Math.round(p.percent * 100)}%`}
+      </text>
+    ) : null;
+  return (
+    <div className="flex w-full flex-col">
+      <ChartContainer config={{}} className={cn("aspect-auto w-full", click && "cursor-pointer")} style={{ height: chartHeight(props) }}>
+        <RPieChart margin={{ top: 8, right: labels ? 24 : 8, bottom: 8, left: labels ? 24 : 8 }} accessibilityLayer>
+          <Tooltip content={<PieTip format={format} total={total} />} isAnimationActive={false} />
+          <Pie
+            data={rows}
+            dataKey="value"
+            nameKey="name"
+            innerRadius={donut ? "58%" : 0}
+            outerRadius={labels ? "78%" : "92%"}
+            paddingAngle={rows.length > 1 ? 1.5 : 0}
+            stroke="var(--background)"
+            strokeWidth={2}
+            isAnimationActive={false}
+            label={labels ? share : false}
+            labelLine={false}
+            onClick={click}
+          >
+            {colors.map((fill, i) => (
+              <Cell key={i} fill={fill} />
+            ))}
+            {donut && center ? (
+              <Label
+                position="center"
+                content={(p: { x?: number; y?: number }) =>
+                  typeof p.x === "number" && typeof p.y === "number" ? (
+                    <text x={p.x} y={p.y} dy={6} textAnchor="middle" className="fill-foreground text-lg font-semibold tabular-nums">
+                      {center}
+                    </text>
+                  ) : null
+                }
+              />
+            ) : null}
+          </Pie>
+        </RPieChart>
+      </ChartContainer>
+      {showLegend && rows.length > 0 ? <Legend series={series} colors={colors} line={false} /> : null}
+    </div>
+  );
+}
+
 export function Chart({ kind, props, emit }: ChartProps) {
+  if (kind === "pie") return <PieInner props={props} emit={emit} />;
   const series = (props.series as Series[] | undefined) ?? [];
   const raw = (props.data as Row[] | undefined) ?? [];
   const format = props.format as string | null | undefined;
