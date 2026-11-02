@@ -6,9 +6,10 @@ order: 7
 # Files
 
 Files belong to the session. An upload becomes a `mw.FileRef` with an
-id, a name, a size and a type. The bytes live on the server for as long as
-the session does and travel to the browser over the session's own socket,
-so a file has no URL and needs no signing.
+id, a name, a size and a type, and `ref.path` is where the bytes are on
+the server, for `ref.path.read_bytes()` or a library that takes a path.
+The bytes live for as long as the session does and travel to the browser
+over the session's own socket, so a file has no URL and needs no signing.
 
 ## FileUpload
 

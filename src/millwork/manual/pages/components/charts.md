@@ -9,8 +9,11 @@ A chart takes rows, like the Table does. `x` names the category or time
 column and `y` the value column, or several of them. Each series takes the
 next of the theme's five chart colors, in the order given, and keeps it
 when a neighbor disappears. Five series is the limit. A sixth has no
-color of its own, so fold it into another or draw a second chart. Every
-chart has a tooltip, and a legend appears from two series up.
+color of its own, so a bar, line or area chart refuses it, and the app
+folds the rest into one series or draws a second chart. A pie folds its
+smallest slices into one for the same reason, since a slice is a row and
+the chart can see which are small. Every chart has a tooltip, and a legend
+appears from two series up.
 
 ## Bar chart
 
@@ -159,10 +162,11 @@ def example(s):
 
 ## Stat
 
-`ui.Stat` is the headline number. `delta` is the change, drawn with its
-direction, and `good="down"` says a fall is the welcome move, as it is for
-costs or errors. `trend` draws a sparkline whose last point is the current
-one.
+`ui.Stat` is the headline number, drawn as a card of its own, so it goes
+straight into a `Grid` and not inside a `ui.Card`. `delta` is the change,
+drawn with its direction, and `good="down"` says a fall is the welcome
+move, as it is for costs or errors. `trend` draws a sparkline whose last
+point is the current one.
 
 ```python live
 ui.Grid(

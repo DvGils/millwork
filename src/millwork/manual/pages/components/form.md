@@ -57,6 +57,14 @@ def example(s):
 `overrides` maps a pointer to any spec key, such as a `widget`, `min`,
 `max`, `step` or `rows`. `fields` picks a subset in order.
 
+The widgets are `input`, `textarea`, `password`, `number`, `slider`,
+`switch`, `checkbox`, `select`, `radio`, `toggle`, `multiselect`,
+`checkboxes`, `tags`, `date`, `datetime`, `file`, `files` and `hidden`.
+Each field gets one from its type, and an override swaps it for another
+that fits the same value, such as `radio` for a short enum or `toggle` for
+a boolean. A field with a `default_factory` opens with what the factory
+makes, so a date field defaulting to today shows today.
+
 ```python live
 from pydantic import BaseModel
 
