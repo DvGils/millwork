@@ -174,7 +174,7 @@ Node.
 ```
 uv run pytest -q                       # the Python suite
 uv run mypy src && uv run ruff check src tests
-pnpm -C bundle exec tsc --noEmit       # the bundle's types
+pnpm -C bundle exec tsc -b             # the bundle's types
 CI=1 pnpm -C bundle exec vitest run    # the bundle's unit tests
 CI=1 pnpm -C bundle build              # rebuilds src/millwork/_bundle/dist
 ```

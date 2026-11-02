@@ -26,3 +26,7 @@ updates:
     groups:
       bundle-minor:
         update-types: [minor, patch]
+    ignore:
+      # The Node types follow the Node the bundle is built with, not the newest Node.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
