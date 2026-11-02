@@ -92,6 +92,8 @@ STRINGS: dict[str, str] = {
     "copy": "Copy",
     "you": "You",
     "assistant": "Assistant",
+    "messages": "Messages",
+    "scroll_to_end": "Scroll to end",
     "good_response": "Good response",
     "bad_response": "Bad response",
     "feedback_prompt": "What could be better?",

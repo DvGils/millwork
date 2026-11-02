@@ -1,21 +1,11 @@
-// The Table on TanStack Table: every row in the browser, sort and filter here,
+// The Table: every row in the browser, sorted, filtered and paged here;
 // selection reported to the server, tones instead of styles.
 
 import { dateFormat, dateTimeFormat, formatNumber } from "../format";
 import { t } from "../theme";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  type ColumnDef,
-  type ColumnFiltersState,
-  type SortingState,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
+import { type Sort, emptyFilter, equalsFilter, includesFilter, rangeFilter, sortRows } from "../table-rows";
 import { cn } from "cn";
 import { icon } from "../icons";
 import { safeUrl } from "../lib";
@@ -79,22 +69,6 @@ function filterKind(c: Column, rows: Record<string, unknown>[]): FilterKind {
   const distinct = Array.from(new Set(present.map((v) => String(v))));
   if (distinct.length <= 12 && distinct.length < present.length) return { kind: "select", values: distinct.sort((a, b) => a.localeCompare(b)) };
   return { kind: "text" };
-}
-
-function rangeFilter(row: { getValue: (id: string) => unknown }, id: string, filter: unknown): boolean {
-  const [min, max] = (Array.isArray(filter) ? filter : [null, null]) as [number | null, number | null];
-  const v = row.getValue(id);
-  if (min === null && max === null) return true;
-  if (v === null || v === undefined || v === "") return false;
-  const n = Number(v);
-  if (Number.isNaN(n)) return false;
-  return (min === null || n >= min) && (max === null || n <= max);
-}
-
-function equalsFilter(row: { getValue: (id: string) => unknown }, id: string, filter: unknown): boolean {
-  if (filter === null || filter === undefined || filter === "") return true;
-  const v = row.getValue(id);
-  return v !== null && v !== undefined && String(v) === String(filter);
 }
 
 function FilterCell({ kind, value, onChange }: { kind: FilterKind; value: unknown; onChange: (v: unknown) => void }) {
@@ -180,6 +154,16 @@ function formatCell(value: unknown, format: string, tone?: string) {
   }
 }
 
+type Col = {
+  id: string;
+  header: ReactNode;
+  cell: (row: RowData) => ReactNode;
+  sortable: boolean;
+  filterable: boolean;
+  size?: number;
+  column?: Column;
+};
+
 export const Table: Renderer = ({ props, emit }) => {
   const rows = (Array.isArray(props.rows) ? (props.rows as Record<string, unknown>[]) : []);
   const keys = (Array.isArray(props.keys) ? (props.keys as unknown[]) : []);
@@ -193,11 +177,12 @@ export const Table: Renderer = ({ props, emit }) => {
 
   const data = useMemo<RowData[]>(() => rows.map((r, i) => ({ ...r, __i: i, __key: keys[i] })), [rows, keys]);
 
-  const [sorting, setSorting] = useState<SortingState>(() =>
+  const [sorting, setSorting] = useState<Sort[]>(() =>
     (Array.isArray(props.default_sort) ? (props.default_sort as [string, string][]) : []).map(([id, dir]) => ({ id, desc: dir === "desc" })),
   );
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [filters, setFilters] = useState<Record<string, unknown>>({});
   const [globalFilter, setGlobalFilter] = useState("");
+  const [pageIndex, setPageIndex] = useState(0);
   const kinds = useMemo(() => Object.fromEntries(columns.map((c) => [c.key, filterKind(c, rows)])) as Record<string, FilterKind>, [columns, rows]);
 
   // The initial sort and the empty filter are the server's own: only a change
@@ -208,17 +193,36 @@ export const Table: Renderer = ({ props, emit }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorting]);
   useEffect(() => {
-    if (settled.current && props.on_filter) emit("filter", { columns: Object.fromEntries(columnFilters.map((f) => [f.id, f.value])), search: globalFilter });
+    if (settled.current && props.on_filter) emit("filter", { columns: filters, search: globalFilter });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnFilters, globalFilter]);
+  }, [filters, globalFilter]);
   useEffect(() => {
     settled.current = true;
   }, []);
 
+  const setFilter = (id: string, value: unknown) =>
+    setFilters((old) => {
+      const next = { ...old };
+      if (emptyFilter(value)) delete next[id];
+      else next[id] = value;
+      return next;
+    });
+
+  // A click sorts by that column, again reverses it, a third time clears it;
+  // with shift the column joins the sort, or turns in its place.
+  const toggleSort = (id: string, multi: boolean) =>
+    setSorting((old) => {
+      const current = old.find((s) => s.id === id) ?? null;
+      const next: Sort | null = current === null ? { id, desc: false } : current.desc ? null : { id, desc: true };
+      if (!multi) return next ? [next] : [];
+      if (current === null) return next ? [...old, next] : old;
+      return next ? old.map((s) => (s.id === id ? next : s)) : old.filter((s) => s.id !== id);
+    });
+
   const selectedSet = useMemo(() => new Set(selected.map((k) => JSON.stringify(k))), [selected]);
   const isSelected = (row: RowData) => selectedSet.has(JSON.stringify(row.__key));
 
-  const select = (row: RowData, additive: boolean) => {
+  const select = (row: RowData) => {
     if (selection === "none" || !props.on_select) return;
     const key = row.__key;
     if (selection === "row") {
@@ -227,21 +231,47 @@ export const Table: Renderer = ({ props, emit }) => {
     }
     const next = selected.filter((k) => JSON.stringify(k) !== JSON.stringify(key));
     if (!isSelected(row)) next.push(key);
-    emit("select", additive ? next : next);
+    emit("select", next);
   };
 
-  const columnDefs = useMemo<ColumnDef<RowData>[]>(() => {
-    const defs: ColumnDef<RowData>[] = [];
+  const shown = useMemo(() => {
+    const needle = globalFilter.trim().toLowerCase();
+    const dataColumns = columns.filter((c) => !c.hidden);
+    const kept = data.filter((r) => {
+      for (const [id, value] of Object.entries(filters)) {
+        // A filter on a column the server has since dropped filters nothing.
+        if (!kinds[id]) continue;
+        const kind = kinds[id].kind;
+        const ok = kind === "number" ? rangeFilter(r[id], value) : kind === "select" ? equalsFilter(r[id], value) : includesFilter(r[id], value);
+        if (!ok) return false;
+      }
+      if (!needle) return true;
+      return dataColumns.some((c) => includesFilter(r[c.key], needle));
+    });
+    return sortRows(kept, sorting);
+  }, [data, columns, filters, globalFilter, kinds, sorting]);
+
+  // A rows patch (a task updating a column) must not bounce the reader to page
+  // 1; a page that no longer exists falls back to the last one.
+  const pageCount = pageSize ? Math.max(1, Math.ceil(shown.length / pageSize)) : 1;
+  useEffect(() => {
+    if (pageIndex >= pageCount) setPageIndex(pageCount - 1);
+  }, [pageIndex, pageCount]);
+  const page = pageSize ? shown.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize) : shown;
+
+  const cols = useMemo<Col[]>(() => {
+    const defs: Col[] = [];
     if (selection === "rows") {
       defs.push({
         id: "__select",
-        enableSorting: false,
-        enableColumnFilter: false,
-        header: ({ table }) => (
+        sortable: false,
+        filterable: false,
+        size: 32,
+        header: (
           <Checkbox
-            checked={table.getRowModel().rows.length > 0 && table.getRowModel().rows.every((r) => isSelected(r.original))}
+            checked={page.length > 0 && page.every(isSelected)}
             onCheckedChange={(checked) => {
-              const visible = table.getRowModel().rows.map((r) => r.original.__key);
+              const visible = page.map((r) => r.__key);
               const visibleSet = new Set(visible.map((k) => JSON.stringify(k)));
               const others = selected.filter((k) => !visibleSet.has(JSON.stringify(k)));
               emit("select", checked ? [...others, ...visible] : others);
@@ -249,68 +279,37 @@ export const Table: Renderer = ({ props, emit }) => {
             aria-label={t("select_all")}
           />
         ),
-        cell: ({ row }) => (
-          <Checkbox checked={isSelected(row.original)} onCheckedChange={() => select(row.original, true)} aria-label={t("select_row")} />
-        ),
-        size: 32,
+        cell: (row) => <Checkbox checked={isSelected(row)} onCheckedChange={() => select(row)} aria-label={t("select_row")} />,
       });
     }
     for (const c of columns) {
       if (c.hidden) continue;
       defs.push({
         id: c.key,
-        accessorFn: (r) => r[c.key],
         header: c.header ?? c.key,
-        enableSorting: c.sortable !== false && props.sortable !== false,
-        enableColumnFilter: c.filterable !== false,
-        filterFn: kinds[c.key]?.kind === "number" ? rangeFilter : kinds[c.key]?.kind === "select" ? equalsFilter : "includesString",
+        sortable: c.sortable !== false && props.sortable !== false,
+        filterable: c.filterable !== false,
         size: typeof c.width === "number" ? c.width : undefined,
-        cell: ({ row, getValue }) => {
-          const tone = toneCells[String(row.original.__i)]?.[c.key];
-          return formatCell(getValue(), c.format ?? "text", tone);
-        },
-        meta: { column: c },
+        cell: (row) => formatCell(row[c.key], c.format ?? "text", toneCells[String(row.__i)]?.[c.key]),
+        column: c,
       });
     }
     if (actions.length) {
       defs.push({
         id: "__actions",
-        enableSorting: false,
-        enableColumnFilter: false,
+        sortable: false,
+        filterable: false,
         header: "",
         size: 40,
-        cell: ({ row }) => <RowActions items={actions} onPick={(id) => emit("action", [id, row.original.__key])} />,
+        cell: (row) => <RowActions items={actions} onPick={(id) => emit("action", [id, row.__key])} />,
       });
     }
     return defs;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, selection, actions, selected, toneCells, kinds]);
-
-  const table = useReactTable({
-    data,
-    columns: columnDefs,
-    state: { sorting, columnFilters, globalFilter },
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    onGlobalFilterChange: setGlobalFilter,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: pageSize ? getPaginationRowModel() : undefined,
-    initialState: pageSize ? { pagination: { pageSize } } : undefined,
-    globalFilterFn: "includesString",
-    // A rows patch (a task updating a column) must not bounce the user to page 1.
-    autoResetPageIndex: false,
-  });
-  const pageCount = table.getPageCount();
-  const pageIndex = table.getState().pagination.pageIndex;
-  useEffect(() => {
-    if (pageSize && pageCount > 0 && pageIndex >= pageCount) table.setPageIndex(pageCount - 1);
-  }, [pageSize, pageCount, pageIndex, table]);
+  }, [columns, selection, actions, selected, toneCells, page]);
 
   const total = data.length;
-  const shown = table.getFilteredRowModel().rows.length;
-  const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown === total ? `${total} rows` : `${shown} of ${total} rows`;
+  const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown.length === total ? `${total} rows` : `${shown.length} of ${total} rows`;
 
   return (
     <div className={cn("flex flex-col gap-2", props.cls as string)}>
@@ -323,83 +322,76 @@ export const Table: Renderer = ({ props, emit }) => {
       >
         <UiTable>
           <TableHeader className={cn(props.sticky_header !== false && "sticky top-0 z-10 bg-background")}>
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id}>
-                {hg.headers.map((h) => {
-                  const col = (h.column.columnDef.meta as { column?: Column } | undefined)?.column;
-                  const sorted = h.column.getIsSorted();
-                  const Arrow = sorted ? icon(sorted === "asc" ? "arrow-up" : "arrow-down") : icon("arrow-up-down");
-                  return (
-                    <TableHead
-                      key={h.id}
-                      style={h.column.getSize() !== 150 ? { width: h.column.getSize() } : undefined}
-                      className={cn(col?.align === "right" && "text-right", col?.align === "center" && "text-center")}
-                    >
-                      {h.isPlaceholder ? null : h.column.getCanSort() ? (
-                        <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={h.column.getToggleSortingHandler()}>
-                          {flexRender(h.column.columnDef.header, h.getContext())}
-                          {Arrow ? <Arrow className={cn("size-3", !sorted && "opacity-40")} /> : null}
-                        </button>
-                      ) : (
-                        flexRender(h.column.columnDef.header, h.getContext())
-                      )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
+            <TableRow>
+              {cols.map((c) => {
+                const sorted = sorting.find((s) => s.id === c.id);
+                const Arrow = sorted ? icon(sorted.desc ? "arrow-down" : "arrow-up") : icon("arrow-up-down");
+                return (
+                  <TableHead
+                    key={c.id}
+                    style={c.size !== undefined ? { width: c.size } : undefined}
+                    aria-sort={sorted ? (sorted.desc ? "descending" : "ascending") : undefined}
+                    className={cn(c.column?.align === "right" && "text-right", c.column?.align === "center" && "text-center")}
+                  >
+                    {c.sortable ? (
+                      <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={(e) => toggleSort(c.id, e.shiftKey)}>
+                        {c.header}
+                        {Arrow ? <Arrow className={cn("size-3", !sorted && "opacity-40")} /> : null}
+                      </button>
+                    ) : (
+                      c.header
+                    )}
+                  </TableHead>
+                );
+              })}
+            </TableRow>
             {props.filters ? (
               <TableRow>
-                {table.getHeaderGroups()[0]?.headers.map((h) => (
-                  <TableHead key={h.id} className="py-1">
-                    {h.column.getCanFilter() ? (
-                      <FilterCell kind={kinds[h.column.id] ?? { kind: "text" }} value={h.column.getFilterValue()} onChange={(v) => h.column.setFilterValue(v)} />
-                    ) : null}
+                {cols.map((c) => (
+                  <TableHead key={c.id} className="py-1">
+                    {c.filterable ? <FilterCell kind={kinds[c.id] ?? { kind: "text" }} value={filters[c.id]} onChange={(v) => setFilter(c.id, v)} /> : null}
                   </TableHead>
                 ))}
               </TableRow>
             ) : null}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => {
-                const tone = toneRows[String(row.original.__i)];
+            {page.length ? (
+              page.map((row) => {
+                const tone = toneRows[String(row.__i)];
                 const clickable = selection === "row" || Boolean(props.on_row_click);
                 return (
                   <TableRow
-                    key={row.id}
-                    data-state={isSelected(row.original) ? "selected" : undefined}
+                    key={row.__i}
+                    data-state={isSelected(row) ? "selected" : undefined}
                     className={cn(tone && rowTone[tone], clickable && "cursor-pointer")}
                     onClick={(e) => {
                       // Clicks inside a portal (the actions menu) bubble through React, not the DOM.
                       if (!e.currentTarget.contains(e.target as Node)) return;
                       if ((e.target as HTMLElement).closest("button, a, [role=checkbox], [data-slot=dropdown-menu-trigger]")) return;
-                      if (props.on_row_click) emit("row_click", row.original.__key);
-                      if (selection === "row") select(row.original, false);
+                      if (props.on_row_click) emit("row_click", row.__key);
+                      if (selection === "row") select(row);
                     }}
                   >
-                    {row.getVisibleCells().map((cell) => {
-                      const col = (cell.column.columnDef.meta as { column?: Column } | undefined)?.column;
-                      return (
-                        <TableCell
-                          key={cell.id}
-                          className={cn(
-                            "py-(--mw-cell-y)",
-                            col?.align === "right" && "text-right tabular-nums",
-                            col?.align === "center" && "text-center",
-                            !col?.wrap && "whitespace-nowrap",
-                          )}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      );
-                    })}
+                    {cols.map((c) => (
+                      <TableCell
+                        key={c.id}
+                        className={cn(
+                          "py-(--mw-cell-y)",
+                          c.column?.align === "right" && "text-right tabular-nums",
+                          c.column?.align === "center" && "text-center",
+                          !c.column?.wrap && "whitespace-nowrap",
+                        )}
+                      >
+                        {c.cell(row)}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 );
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={columnDefs.length} className="h-20 text-center text-muted-foreground">
+                <TableCell colSpan={cols.length} className="h-20 text-center text-muted-foreground">
                   {String(props.empty || "No rows")}
                 </TableCell>
               </TableRow>
@@ -410,13 +402,13 @@ export const Table: Renderer = ({ props, emit }) => {
       {summary || pageSize ? (
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{summary}</span>
-          {pageSize && table.getPageCount() > 1 ? (
+          {pageSize && pageCount > 1 ? (
             <span className="inline-flex items-center gap-1">
-              <Button variant="ghost" size="xs" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+              <Button variant="ghost" size="xs" onClick={() => setPageIndex((i) => Math.max(0, i - 1))} disabled={pageIndex === 0}>
                 {t("previous")}
               </Button>
-              {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
-              <Button variant="ghost" size="xs" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
+              {pageIndex + 1} / {pageCount}
+              <Button variant="ghost" size="xs" onClick={() => setPageIndex((i) => Math.min(pageCount - 1, i + 1))} disabled={pageIndex >= pageCount - 1}>
                 {t("next")}
               </Button>
             </span>

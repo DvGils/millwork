@@ -13,10 +13,8 @@
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@fontsource-variable/geist": "^5.3.0",
-    "@shadcn/react": "^0.3.1",
     "@tailwindcss/browser": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",
-    "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
     "date-fns": "^4.4.0",
@@ -25,7 +23,6 @@
     "react-day-picker": "^10.0.2",
     "react-dom": "19",
     "react-markdown": "^10.1.0",
-    "react-resizable-panels": "^4.14.4",
     "react-runner": "^1.0.5",
     "recharts": "3.8.0",
     "remark-gfm": "^4.0.1",
