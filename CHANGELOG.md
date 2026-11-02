@@ -18,6 +18,17 @@ versions; a release says so here when it does.
 - `page.find("key")` in a test finds a keyed component in a slot such as a
   card's footer.
 - The built-in not-found page draws its home icon again.
+- Every component carries a typed signature for mypy and pyright, so
+  positional children pass and a wrong prop or value shows in the editor.
+- `TestApp` raises in the test what a page function, handler or hook
+  raised, with a note saying where; `strict=False` keeps the old way.
+- A handler that cannot take `(session, payload)` is refused when the page
+  is built, with the expected shape in the error.
+- `ui.Page` lays its children out with a `gap`, six by default.
+- `Theme(currency=)` names the currency the `currency` format uses, and
+  number and date formats follow the theme's locale as the manual said.
+- `millwork reference` prints the catalog as a Markdown lookup table, and
+  the manual serves it at `/llms.txt`.
 - The README has a whole page, the manual lists the form widgets, says
   where an upload's bytes are, and that a `Stat` is a card of its own.
 

@@ -155,6 +155,13 @@ uv run millwork docs
 
 Then open http://127.0.0.1:8008.
 
+`millwork reference` prints the catalog as one Markdown table of every
+component, its props with their types and defaults, the session's and the
+app's calls, the icon names, the form widgets and the formats. The hosted
+manual serves the same text at
+[millwork-ui.com/llms.txt](https://millwork-ui.com/llms.txt), for a model
+that needs a lookup rather than a chapter.
+
 ## Status
 
 millwork is still in beta.

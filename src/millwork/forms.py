@@ -37,6 +37,29 @@ class FormIssues(Exception):
         super().__init__(f"{len(self.issues)} issue(s)")
 
 
+WIDGETS: tuple[str, ...] = (
+    "input",
+    "textarea",
+    "password",
+    "number",
+    "slider",
+    "switch",
+    "checkbox",
+    "select",
+    "radio",
+    "toggle",
+    "multiselect",
+    "checkboxes",
+    "tags",
+    "date",
+    "datetime",
+    "file",
+    "files",
+    "hidden",
+)
+"""The widgets a form field may take, by ``overrides={"/field": {"widget": ...}}``."""
+
+
 def pointer_of(loc: tuple[Any, ...], tags: frozenset[str] = frozenset()) -> str:
     """A pydantic error ``loc`` as a JSON pointer: ``("a", 0, "b")`` is ``/a/0/b``.
 

@@ -25,9 +25,11 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+from starlette.responses import PlainTextResponse
 
 import millwork as mw
 from millwork import context, ui
+from millwork.reference import reference
 
 log = logging.getLogger("millwork.manual")
 
@@ -313,6 +315,11 @@ def make_app(theme: Any = None) -> mw.App:
         max_sessions=300,
         files=mw.Files(max_session_mb=10, default_max_mb=10, max_total_mb=200),
     )
+
+    def llms(request: Any) -> PlainTextResponse:
+        return PlainTextResponse(reference())
+
+    app.route("/llms.txt", llms)
 
     def results(query: str) -> list[ui.Component]:
         found = search(sections, query)

@@ -75,4 +75,7 @@ in scope. Everything else is imported, as in an app.
 The App chapters cover how an app is put together, from pages and routing
 through state, signing in, theming and testing to running it somewhere.
 The Components chapters walk through the catalog one group at a time,
-with each component in its states and the Python that makes it.
+with each component in its states and the Python that makes it. For a
+lookup rather than a chapter, every component's props with their types
+and defaults are listed at [/llms.txt](/llms.txt), which `millwork
+reference` prints as well.
