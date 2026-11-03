@@ -391,3 +391,38 @@ async def test_a_toast_action_can_be_pressed(tmp_path: Path) -> None:
         assert page.state.count == 0
         with pytest.raises(LookupError, match="no toast with a 'Redo' button"):
             await page.toast_action("Redo")
+
+
+async def test_a_failed_task_is_reported_and_a_toast_button_presses_once(tmp_path: Path) -> None:
+    app = mw.App("fail", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Button("boom", key="boom", on_click=boom),
+            ui.Button("delete", key="delete", on_click=delete),
+        )
+
+    def boom(s: mw.Session[State], _: Any) -> None:
+        s.task(explode, label="Explode")  # not awaited: the failure is nobody's but the task's
+
+    def explode() -> None:
+        raise ValueError("the task broke")
+
+    def delete(s: mw.Session[State], _: Any) -> None:
+        s.toast("Deleted.", action=("Undo", lambda s, _: setattr(s.state, "count", 1)))
+
+    with pytest.raises(ValueError, match="the task broke") as caught:
+        async with TestApp(app).open("/") as page:
+            await page.click("boom")
+    assert any("the task 'Explode'" in note for note in caught.value.__notes__)
+
+    async with TestApp(app, strict=False).open("/") as page:
+        await page.click("boom")
+        assert page.toasts == ["Explode failed: the task broke"]
+        assert [where for where, _ in page.failures] == ["the task 'Explode'"]
+        await page.click("delete")
+        await page.toast_action("Undo")
+        assert page.state.count == 1
+        with pytest.raises(LookupError, match="already pressed"):
+            await page.toast_action("Undo")

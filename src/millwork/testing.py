@@ -168,6 +168,8 @@ class Page:
                 break
         else:
             raise LookupError(f"no toast with a {label!r} button")
+        if token not in self.session._toast_actions:
+            raise LookupError(f"the {label!r} button was already pressed, or its toast is gone")
         self.session.spawn(
             self.session.dispatch(Event(node=f"toast:{token}", name="action")), "test toast action"
         )
@@ -305,7 +307,9 @@ class Page:
                     + (", ".join(names) or "nothing the harness can see")
                 )
             if running:
-                _, still = await asyncio.wait([t.future for t in running], timeout=_TICK)
+                # The harness waiting is not the app observing the task, so a
+                # failure nobody awaits still gets its toast and its report.
+                _, still = await asyncio.wait([t._future for t in running], timeout=_TICK)
                 if not (still and asking):
                     continue
             if spawned:

@@ -66,13 +66,20 @@ def _import_file(path: str) -> types.ModuleType:
     return module
 
 
+def configure_logging(debug: bool) -> None:
+    """millwork's own lines at debug when asked; uvicorn stays at info, since its
+    debug log, a line per socket frame, would bury them."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    if debug:
+        logging.getLogger("millwork").setLevel(logging.DEBUG)
+
+
 def asgi_factory() -> object:
-    """uvicorn's reloader needs an import string; this wraps ``load_app``."""
-    return load_app(
-        os.environ["MILLWORK_TARGET"],
-        os.environ.get("MILLWORK_DEBUG") == "1",
-        os.environ.get("MILLWORK_PROXIED") == "1",
-    )
+    """uvicorn's reloader needs an import string; this wraps ``load_app``. The
+    reloader's server is a fresh process, so logging is configured here too."""
+    debug = os.environ.get("MILLWORK_DEBUG") == "1"
+    configure_logging(debug)
+    return load_app(os.environ["MILLWORK_TARGET"], debug, os.environ.get("MILLWORK_PROXIED") == "1")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -163,11 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.user}:{line}" if args.user else line)
         return 0
 
-    # Debug mode is for seeing what millwork notices; uvicorn's own debug log,
-    # a line per socket frame, would bury it.
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    if args.debug:
-        logging.getLogger("millwork").setLevel(logging.DEBUG)
+    configure_logging(args.debug)
     # A unix socket is only ever reached through a proxy.
     proxied = args.proxied or bool(args.uds)
     if args.reload:

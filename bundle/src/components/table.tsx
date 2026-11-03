@@ -152,7 +152,8 @@ function formatCell(value: unknown, format: string, tone?: string) {
       return dateTimeFormat.format(new Date(String(value)));
     case "bool": {
       const Icon = icon(value ? "check" : "minus");
-      return Icon ? <Icon className={cn("size-4", value ? "text-success" : "text-muted-foreground")} /> : String(value);
+      const own = value ? "text-success" : "text-muted-foreground";
+      return Icon ? <Icon className={cn("size-4", tone ? cellTone[tone] : own)} /> : String(value);
     }
     case "badge":
       return (
@@ -162,7 +163,7 @@ function formatCell(value: unknown, format: string, tone?: string) {
       );
     case "link":
       return (
-        <a href={safeUrl(value)} target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">
+        <a href={safeUrl(value)} target="_blank" rel="noreferrer" className={cn(tone ? cellTone[tone] : "text-primary", "underline-offset-4 hover:underline")}>
           {String(value)}
         </a>
       );

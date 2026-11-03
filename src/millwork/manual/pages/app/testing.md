@@ -103,15 +103,21 @@ A test of what a page shows while a task runs starts the action as work
 of its own and waits for the page to catch up, as a tab would.
 
 ```python
-async def test_an_import_can_be_canceled(app):
+async def test_an_import_can_be_canceled(app, tmp_path):
+    big = tmp_path / "big.csv"
+    big.write_text(big_csv())
     async with TestApp(app).open("/import") as page:
-        started = asyncio.create_task(page.upload("file", "big.csv", big_csv()))
+        started = asyncio.create_task(page.upload("file", big))
         while not page.find_all("cancel"):
             await asyncio.sleep(0.01)
         await page.click("cancel")
         await started
         assert page.session.tasks[-1].status == "cancelled"
 ```
+
+A task that fails and that no handler awaits is reported like a handler
+that raised, so a strict harness raises it in the test, and `strict=False`
+lists it in `page.failures` next to the toast a running app would show.
 
 What the app's own code raises, in a page function, a handler or a hook,
 is raised in the test, with a note saying where, so the traceback points

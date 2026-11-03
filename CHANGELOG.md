@@ -26,7 +26,10 @@ versions; a release says so here when it does.
 - `ui.Progress(task=)` shows a canceled task as canceled instead of
   freezing at its last value.
 - `--debug` no longer turns on uvicorn's frame-level log, which buried
-  millwork's own warnings.
+  millwork's own warnings, and reaches the server `--reload` starts, which
+  had no log of its own before.
+- A task that fails and that no handler awaits is reported like a handler
+  that raised, so a strict `TestApp` raises it in the test.
 - The "changed nothing" warning says what it checks: nothing the page
   shows changed.
 
