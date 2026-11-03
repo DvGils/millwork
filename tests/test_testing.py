@@ -326,3 +326,68 @@ async def test_a_page_that_fails_to_render_raises_in_the_test(tmp_path: Path) ->
     with pytest.raises(TypeError, match=r"on_click takes a handler of \(session, payload\)"):
         async with TestApp(app).open("/"):
             pass
+
+
+async def test_settle_skips_a_quiet_task_and_names_what_still_runs(tmp_path: Path) -> None:
+    import asyncio
+
+    app = mw.App("quiet", state=State, public=None, bundle_dir=tmp_path)
+    changed = asyncio.Event()
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Text(f"count {s.state.count}", key="count"),
+            ui.Button("loud", key="loud", on_click=loud),
+        )
+
+    def loud(s: mw.Session[State], _: Any) -> None:
+        s.task(asyncio.sleep(30), label="sleep")
+
+    @home.connect
+    def follow(s: mw.Session[State]) -> None:
+        s.task(watch(s), label="Following", quiet=True)
+
+    async def watch(s: mw.Session[State]) -> None:
+        while True:
+            await changed.wait()
+            changed.clear()
+            s.state.count += 1
+            s.refresh()
+
+    async with TestApp(app).open("/") as page:
+        assert page.find("count").props["content"] == "count 0"
+        changed.set()
+        await page.settle()
+        assert page.find("count").props["content"] == "count 1"
+        # A loud task is waited for, so the click is dispatched without settling.
+        from millwork.protocol import Event
+
+        session = page.session
+        session.spawn(session.dispatch(Event(node=page.find("loud").id, name="click")), "x")
+        with pytest.raises(RuntimeError, match="did not settle in 0.2 s; still running: task "):
+            await page.settle(timeout=0.2)
+        page.session.tasks[-1].cancel()
+        await page.settle()
+
+
+async def test_a_toast_action_can_be_pressed(tmp_path: Path) -> None:
+    app = mw.App("toast", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Button("delete", key="delete", on_click=delete))
+
+    def delete(s: mw.Session[State], _: Any) -> None:
+        s.state.count -= 1
+        s.toast(
+            "Deleted.", action=("Undo", lambda s, _: setattr(s.state, "count", s.state.count + 1))
+        )
+
+    async with TestApp(app).open("/") as page:
+        await page.click("delete")
+        assert page.state.count == -1
+        await page.toast_action("Undo")
+        assert page.state.count == 0
+        with pytest.raises(LookupError, match="no toast with a 'Redo' button"):
+            await page.toast_action("Redo")

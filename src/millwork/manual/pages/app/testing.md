@@ -31,8 +31,9 @@ Tests are `async def`, run by pytest-asyncio in auto mode. `open(path)`
 runs the page's `connect` and the first render and yields a `Page`.
 Leaving the block closes the session, `close` hook included. `open(path,
 user=User(...))` signs a person in. Without one, a gated page raises
-`Forbidden`, which makes a test of its own. `open(path, state=State(...))`
-starts from a prepared state and skips `connect`.
+`Forbidden`, and a `connect` that raises `NotFound` or `Forbidden` raises
+it from `open` too, which makes a test of its own. `open(path,
+state=State(...))` starts from a prepared state and skips `connect`.
 
 ## Finding things
 
@@ -88,11 +89,29 @@ async def test_wiping_asks_first(app):
 
 `page.messages` is every message the server sent. `patches`,
 `last_patch`, `commands` (toasts, downloads, navigations, form issues),
-`toasts` as plain text, `stream` and `errors` are views on it. `settle()`
-waits until the session has nothing left to do. Running tasks and spawned
-work are awaited, the coalesced render runs at once, and a handler waiting
-on an open question is left for `answer`. Every action settles before it
-returns, so a test can read the result on the next line.
+`toasts` as plain text, `stream` and `errors` are views on it.
+`toast_action("Undo")` presses the button of the latest toast that has
+one. `settle()` waits until the session has nothing left to do. Running
+tasks and spawned work are awaited, the coalesced render runs at once,
+and a handler waiting on an open question is left for `answer`. A quiet
+task is not waited for, since it waits for something outside the session,
+and after ten seconds `settle` gives up and names what still runs. Every
+action settles before it returns, so a test can read the result on the
+next line.
+
+A test of what a page shows while a task runs starts the action as work
+of its own and waits for the page to catch up, as a tab would.
+
+```python
+async def test_an_import_can_be_canceled(app):
+    async with TestApp(app).open("/import") as page:
+        started = asyncio.create_task(page.upload("file", "big.csv", big_csv()))
+        while not page.find_all("cancel"):
+            await asyncio.sleep(0.01)
+        await page.click("cancel")
+        await started
+        assert page.session.tasks[-1].status == "cancelled"
+```
 
 What the app's own code raises, in a page function, a handler or a hook,
 is raised in the test, with a note saying where, so the traceback points

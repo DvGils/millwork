@@ -159,6 +159,20 @@ class Page:
     async def click(self, node: Found | str) -> None:
         await self.event(node, "click")
 
+    async def toast_action(self, label: str) -> None:
+        """Press the button of the latest toast that has one with this label."""
+        for command in reversed(self.commands):
+            action = command.args.get("action") if command.name == "toast" else None
+            if isinstance(action, dict) and action.get("label") == label:
+                token = action["id"]
+                break
+        else:
+            raise LookupError(f"no toast with a {label!r} button")
+        self.session.spawn(
+            self.session.dispatch(Event(node=f"toast:{token}", name="action")), "test toast action"
+        )
+        await self.settle()
+
     async def change(self, node: Found | str, value: Any) -> None:
         await self.event(node, "change", value)
 
@@ -262,26 +276,38 @@ class Page:
         await self.session.navigate_to(path)
         await self.settle()
 
-    async def settle(self) -> None:
+    async def settle(self, timeout: float = 10.0) -> None:
         """Wait until the session has nothing left to do, or is waiting on the user.
 
         Running tasks and spawned work are awaited; a handler blocked on an
-        open ``ask`` is left there for ``answer``. The coalesced render runs
-        at once rather than after its timer.
+        open ``ask`` is left there for ``answer``. A quiet task is not waited
+        for: it waits for something outside the session, a change made
+        elsewhere, and would never let a test go on. The coalesced render
+        runs at once rather than after its timer. After ``timeout`` seconds
+        the wait gives up and names what is still running.
         """
         s = self.session
-        for _ in range(10_000):
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
             await asyncio.sleep(0)
             await asyncio.sleep(0)
             asking = any(not a.future.done() for a in s._asks.values())
             # Delayed tasks (``s.later``) are not waited for; a running task or
             # handler that is blocked on an open ask is left for ``answer``.
-            running = [t.future for t in s.tasks if t.status == "running"]
+            running = [t for t in s.tasks if t.status == "running" and not t.quiet]
+            spawned = [t for t in s._spawned if not t.done()]
+            if asyncio.get_running_loop().time() > deadline:
+                names = [f"task {t.label!r}" for t in running] + [
+                    f"spawned {t.get_name()!r}" for t in spawned
+                ]
+                raise RuntimeError(
+                    f"the session did not settle in {timeout:g} s; still running: "
+                    + (", ".join(names) or "nothing the harness can see")
+                )
             if running:
-                _, still = await asyncio.wait(running, timeout=_TICK)
+                _, still = await asyncio.wait([t.future for t in running], timeout=_TICK)
                 if not (still and asking):
                     continue
-            spawned = [t for t in s._spawned if not t.done()]
             if spawned:
                 _, still = await asyncio.wait(spawned, timeout=_TICK)
                 if not (still and asking):
@@ -294,7 +320,6 @@ class Page:
                 continue
             self._raise_failures()
             return
-        raise RuntimeError("the session did not settle")
 
 
 class TestApp:
