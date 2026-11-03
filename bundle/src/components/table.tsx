@@ -122,6 +122,21 @@ const badgeByTone: Record<string, "default" | "secondary" | "outline" | "destruc
   destructive: "destructive",
 };
 
+const badgeTone: Record<string, string> = {
+  success: "border-success text-success",
+  warning: "border-warning text-warning",
+};
+
+// A cell's tone colours its text, as a row's tone does; a badge wears it instead.
+const cellTone: Record<string, string> = {
+  muted: "text-muted-foreground",
+  primary: "text-primary font-medium",
+  accent: "text-accent-foreground",
+  success: "text-success font-medium",
+  warning: "text-warning font-medium",
+  destructive: "text-destructive font-medium",
+};
+
 
 function formatCell(value: unknown, format: string, tone?: string) {
   if (value === null || value === undefined) return <span className="text-muted-foreground">–</span>;
@@ -140,7 +155,11 @@ function formatCell(value: unknown, format: string, tone?: string) {
       return Icon ? <Icon className={cn("size-4", value ? "text-success" : "text-muted-foreground")} /> : String(value);
     }
     case "badge":
-      return <Badge variant={badgeByTone[tone ?? "default"]}>{String(value)}</Badge>;
+      return (
+        <Badge variant={badgeByTone[tone ?? "default"]} className={badgeTone[tone ?? ""]}>
+          {String(value)}
+        </Badge>
+      );
     case "link":
       return (
         <a href={safeUrl(value)} target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">
@@ -290,7 +309,11 @@ export const Table: Renderer = ({ props, emit }) => {
         sortable: c.sortable !== false && props.sortable !== false,
         filterable: c.filterable !== false,
         size: typeof c.width === "number" ? c.width : undefined,
-        cell: (row) => formatCell(row[c.key], c.format ?? "text", toneCells[String(row.__i)]?.[c.key]),
+        cell: (row) => {
+          const tone = toneCells[String(row.__i)]?.[c.key];
+          const content = formatCell(row[c.key], c.format ?? "text", tone);
+          return tone && c.format !== "badge" && cellTone[tone] ? <span className={cellTone[tone]}>{content}</span> : content;
+        },
         column: c,
       });
     }

@@ -55,7 +55,7 @@ function initials(name: string): string {
     .join("");
 }
 
-export function UserMenu() {
+export function UserMenu({ links = [] }: { links?: string[] }) {
   const [mode, setMode] = useMode();
   const user = bootUser();
   const Sun = icon("sun");
@@ -91,6 +91,18 @@ export function UserMenu() {
               <DropdownMenuLabel className="truncate">{user.name}</DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+          </>
+        ) : null}
+        {links.length ? (
+          <>
+            <DropdownMenuGroup className="md:hidden">
+              {links.map((id) => (
+                <div key={id} className="px-2 py-1.5 text-sm [&_a]:block">
+                  <Render id={id} />
+                </div>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator className="md:hidden" />
           </>
         ) : null}
         <DropdownMenuGroup>
@@ -134,7 +146,7 @@ export const Header: Renderer = ({ props, children }) => {
       ) : null}
       <div className="ml-auto flex items-center gap-2">
         {children}
-        {props.user_menu !== false ? <UserMenu /> : null}
+        {props.user_menu !== false ? <UserMenu links={links} /> : null}
       </div>
     </header>
   );

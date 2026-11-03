@@ -102,6 +102,8 @@ STRINGS: dict[str, str] = {
     "edit": "Edit",
     "save": "Save",
     "cancel": "Cancel",
+    "canceled": "Canceled",
+    "failed": "Failed",
     "actions": "Actions",
     "download": "Download",
     "add": "Add",
