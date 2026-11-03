@@ -10,10 +10,7 @@
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
 </p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/app-dark.png">
-  <img src=".github/readme/app-light.png" alt="A millwork page: three stat tiles with trends, a bar chart and a sortable table, in the default theme.">
-</picture>
+<img src=".github/readme/demo.gif" alt="A millwork page in use: a form submits with a validation message and then succeeds, an import runs with a progress bar and steps while rows appear in the table, and a chat answer streams in." width="100%">
 
 A page is a Python function of the session's state. A handler changes the
 state, the page renders again, and the browser receives a patch. The React bundle
@@ -103,6 +100,11 @@ pnpm -C bundle exec tsc -b             # the bundle's types
 CI=1 pnpm -C bundle exec vitest run    # the bundle's unit tests
 CI=1 pnpm -C bundle build              # rebuilds src/millwork/_bundle/dist
 ```
+
+The README's GIF comes from `.github/readme/demo.py`, an app of a hundred
+lines, and `.github/readme/record.py` drives it in a headless browser to
+record it. Run the recorder after a change to the look, so what the README
+shows is what the code does.
 
 Dependencies wait two weeks. `tool.uv` in `pyproject.toml` and the bundle's
 `pnpm-workspace.yaml` resolve only versions that have been on their index
