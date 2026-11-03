@@ -1,6 +1,6 @@
 [project]
 name = "millwork"
-version = "0.1.4"
+version = "0.1.5"
 description = "A Python framework for data tools and AI applications: one prebuilt React bundle, driven from Python."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,8 +31,16 @@ dev = [
     "ruff>=0.13",
     "mypy>=1.17",
     "watchfiles>=1.1",
-    "httpx2>=2.16.0",
+    "httpx2>=2.14",
 ]
+
+[tool.uv]
+# A dependency is installed from a wheel, never built from a source
+# distribution, so resolving runs no code of theirs. A version is a candidate
+# only once it has been on the index for two weeks, as the bundle's packages
+# are, so a hijacked release that is pulled within days never reaches a lock.
+no-build = true
+exclude-newer = "14 days"
 
 [build-system]
 requires = ["hatchling>=1.27"]

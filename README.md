@@ -174,9 +174,21 @@ Node.
 ```
 uv run pytest -q                       # the Python suite
 uv run mypy src && uv run ruff check src tests
-pnpm -C bundle exec tsc --noEmit       # the bundle's types
+pnpm -C bundle exec tsc -b             # the bundle's types
 CI=1 pnpm -C bundle exec vitest run    # the bundle's unit tests
 CI=1 pnpm -C bundle build              # rebuilds src/millwork/_bundle/dist
+```
+
+Dependencies wait two weeks. `tool.uv` in `pyproject.toml` and the bundle's
+`pnpm-workspace.yaml` resolve only versions that have been on their index
+for fourteen days, and Dependabot proposes a bump on the same schedule.
+Dependabot's alerts watch the lockfiles for known vulnerabilities; before
+a release, the same question is asked by hand:
+
+```
+uv export --format requirements-txt --no-emit-project -q -o requirements.txt
+uvx pip-audit -r requirements.txt --no-deps
+pnpm -C bundle audit
 ```
 
 A change to a component's fields is followed by `uv run python

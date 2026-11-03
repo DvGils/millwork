@@ -16,8 +16,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "cn";
 import { icon } from "../icons";
-import { mw, safeUrl, signOutUrl } from "../lib";
+import { isInternalPath, mw, safeUrl, signOutUrl } from "../lib";
 import { Render } from "../render";
+import { useNode } from "../store";
+import { navigate } from "../ws";
 import { t, theme, useMode, useScheme, type Mode } from "../theme";
 import type { Renderer } from "../render";
 
@@ -55,7 +57,29 @@ function initials(name: string): string {
     .join("");
 }
 
-export function UserMenu() {
+// A header link as a menu item, for the narrow screen where the nav is hidden:
+// the same destination and the same in-app navigation as the link itself.
+function MenuLink({ id }: { id: string }) {
+  const node = useNode(id);
+  if (!node) return null;
+  const p = node.props;
+  const href = safeUrl(p.href);
+  const Icon = icon(p.icon);
+  const internal = isInternalPath(p.href) && p.target !== "_blank";
+  const go = () => {
+    if (internal) navigate(p.href as string);
+    else if (p.target === "_blank") window.open(href, "_blank", "noreferrer");
+    else window.location.assign(href);
+  };
+  return (
+    <DropdownMenuItem onClick={go}>
+      {Icon ? <Icon className="size-3.5" /> : null}
+      {String(p.label ?? href)}
+    </DropdownMenuItem>
+  );
+}
+
+export function UserMenu({ links = [] }: { links?: string[] }) {
   const [mode, setMode] = useMode();
   const user = bootUser();
   const Sun = icon("sun");
@@ -91,6 +115,16 @@ export function UserMenu() {
               <DropdownMenuLabel className="truncate">{user.name}</DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+          </>
+        ) : null}
+        {links.length ? (
+          <>
+            <DropdownMenuGroup className="md:hidden">
+              {links.map((id) => (
+                <MenuLink key={id} id={id} />
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator className="md:hidden" />
           </>
         ) : null}
         <DropdownMenuGroup>
@@ -134,7 +168,7 @@ export const Header: Renderer = ({ props, children }) => {
       ) : null}
       <div className="ml-auto flex items-center gap-2">
         {children}
-        {props.user_menu !== false ? <UserMenu /> : null}
+        {props.user_menu !== false ? <UserMenu links={links} /> : null}
       </div>
     </header>
   );

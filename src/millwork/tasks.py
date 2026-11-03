@@ -260,11 +260,18 @@ class Task[T]:
                 # The toast is the report for a failure nobody awaits; mark the
                 # exception seen so the loop does not log it again at collection.
                 self._future.exception()
-        if status == "failed" and not self._observed and not self.quiet:
-            # An unobserved failure is never silent.
-            self._session.toast(
-                f"{self.label} failed: {self.error.message if self.error else ''}",
-                tone="destructive",
+        if status == "failed" and not self._observed:
+            # An unobserved failure is never silent: a toast unless the task is
+            # quiet, and a report to whoever listens for failures, the test
+            # harness most of all.
+            if not self.quiet:
+                self._session.toast(
+                    f"{self.label} failed: {self.error.message if self.error else ''}",
+                    tone="destructive",
+                )
+            self._session._failed(
+                f"the task {self.label!r}",
+                exc or RuntimeError(self.error.message if self.error else "failed"),
             )
         self._session._task_finished(self)
 

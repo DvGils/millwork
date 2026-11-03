@@ -1,12 +1,16 @@
 # Dependabot keeps the pinned action hashes, the Python lock and the bundle's
 # packages current; minor and patch updates arrive as one pull request per
-# ecosystem.
+# ecosystem. A version is proposed only once it has been out for two weeks,
+# the same wait uv and pnpm apply when they resolve, so a release that is
+# pulled within days never becomes a pull request.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
     groups:
       actions:
         patterns: ["*"]
@@ -15,6 +19,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
     groups:
       python-minor:
         update-types: [minor, patch]
@@ -23,6 +29,12 @@ updates:
     directory: /bundle
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
     groups:
       bundle-minor:
         update-types: [minor, patch]
+    ignore:
+      # The Node types follow the Node the bundle is built with, not the newest Node.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]

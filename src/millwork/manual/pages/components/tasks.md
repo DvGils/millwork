@@ -13,9 +13,11 @@ task releases the handler lock, so the page stays live meanwhile.
 
 `s.task(work, *args, label=)` runs a coroutine or a plain function, and a
 plain function runs in a thread. It returns a `mw.Task` whose `done`,
-`status`, `progress`, `steps` and `result` the page can read.
-`ui.Progress(task=)` and `ui.Steps(task=)` draw it, and `task.cancel()`
-stops it. A state model may hold one as `mw.Task | None`.
+`status`, `progress`, `steps` and `result` the page can read. The status
+is `pending`, `running`, `done`, `failed` or `cancelled`, spelled that
+way on the wire. `ui.Progress(task=)` and `ui.Steps(task=)` draw it, a
+canceled or failed task included, and `task.cancel()` stops it. A state
+model may hold one as `mw.Task | None`.
 
 ```python live
 import time

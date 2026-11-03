@@ -8,9 +8,10 @@ order: 5
 A chart takes rows, like the Table does. `x` names the category or time
 column and `y` the value column, or several of them. Each series takes the
 next of the theme's five chart colors, in the order given, and keeps it
-when a neighbor disappears. `colors={"Costs": 2}` fixes a series to a
-slot, by key or label, so two charts over the same categories paint each
-one alike. A named slot stays reserved while its series is filtered away,
+when a neighbor disappears. A pie colors its slices by row and a bar
+its series by column, so two charts over the same categories agree only
+when told. `colors={"Costs": 2}` fixes a series to a slot, by key or
+label, so two charts over the same categories paint each one alike. A named slot stays reserved while its series is filtered away,
 and the series not named take the free slots in order. Five series is the
 limit. A sixth has no
 color of its own, so a bar, line or area chart refuses it, and the app

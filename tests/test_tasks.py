@@ -372,7 +372,8 @@ async def test_parallel_steps_stay_siblings_and_a_timeout_stops_the_worker(tmp_p
     async def slow(s: mw.Session[State], _: Any) -> None:
         s.state.run = s.task(grind, label="Grind", timeout=0.05)
 
-    async with TestApp(app).open("/") as page:
+    # The timeout is a failure nobody awaits, which a strict harness would raise.
+    async with TestApp(app, strict=False).open("/") as page:
         await page.click("go")
         task = page.state.run
         assert task.ok

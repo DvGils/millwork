@@ -590,7 +590,7 @@ class Session[S]:
 
     def spawn(self, coro: Any, what: str = "work") -> asyncio.Task[Any]:
         """Run a coroutine for this session: tracked, cancelled on close, failures logged."""
-        task = self._loop.create_task(coro)
+        task = self._loop.create_task(coro, name=what)
         self._spawned.add(task)
 
         def done(t: asyncio.Task[Any]) -> None:
@@ -909,8 +909,9 @@ class Session[S]:
             if watch is not None and not ops and self._effects == watch[1]:
                 self.warn(
                     f"noop:{watch[0]}",
-                    f"{watch[0]} changed nothing: no state, no command, no task. "
-                    "A forgotten await, or a handler that should not be one?",
+                    f"{watch[0]} changed nothing the page shows: no patch, no command, "
+                    "no task. A forgotten await, state the page does not draw, or a "
+                    "handler that should not be one?",
                 )
 
     def _check_keyless(self, old: Tree, new: Tree) -> None:

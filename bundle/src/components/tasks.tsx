@@ -3,6 +3,7 @@
 import type { Renderer } from "../render";
 import { cn } from "cn";
 import { icon } from "../icons";
+import { t as text } from "../theme";
 import { Progress as UiProgress, ProgressIndicator, ProgressLabel, ProgressTrack, ProgressValue } from "@/components/ui/progress";
 import {
   Trace,
@@ -47,12 +48,29 @@ export const Progress: Renderer = ({ props }) => {
   const description = props.description ?? t?.message ?? (t?.status === "failed" ? t.error?.message : undefined);
   const indeterminate = value === null && (!t || t.status === "running" || t.status === "pending");
   const failed = t?.status === "failed";
+  const cancelled = t?.status === "cancelled";
+  // A task that ended without finishing says so where its percentage was.
+  const ended = failed ? text("failed") : cancelled ? text("canceled") : null;
   return (
-    <UiProgress value={indeterminate ? null : (value ?? (t?.status === "done" ? 100 : 0))} className={cn("flex flex-col gap-1.5", failed && "[&_[data-slot=progress-indicator]]:bg-destructive", props.cls as string)}>
-      {label || value !== null ? (
+    <UiProgress
+      value={indeterminate ? null : (value ?? (t?.status === "done" ? 100 : 0))}
+      className={cn(
+        "flex flex-col gap-1.5",
+        failed && "[&_[data-slot=progress-indicator]]:bg-destructive",
+        cancelled && "[&_[data-slot=progress-indicator]]:bg-muted-foreground/40",
+        props.cls as string,
+      )}
+    >
+      {label || value !== null || ended ? (
         <div className="flex items-center justify-between text-sm">
           {label ? <ProgressLabel>{String(label)}</ProgressLabel> : <span />}
-          {value !== null ? <ProgressValue /> : t ? <span className="text-xs text-muted-foreground">{t.status}</span> : null}
+          {ended ? (
+            <span className={cn("text-xs", failed ? "text-destructive" : "text-muted-foreground")}>{ended}</span>
+          ) : value !== null ? (
+            <ProgressValue />
+          ) : t ? (
+            <span className="text-xs text-muted-foreground">{t.status}</span>
+          ) : null}
         </div>
       ) : null}
       <ProgressTrack>

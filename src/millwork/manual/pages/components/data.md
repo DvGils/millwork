@@ -97,13 +97,30 @@ def example(s):
 ## Tones
 
 `tones` colors rows. It is a function of the row returning a tone, or a
-mapping from column key to a function of the row and the cell.
+mapping from column key to a function of the row and the cell. A row's
+tone tints the row, and a cell's tone colors the cell's text, or the
+badge when the column is one.
 
 ```python live
 ui.Table(
     rows=ROWS,
     columns=[ui.Column(key="name"), ui.Column(key="score", format="percent")],
     tones=lambda r: "success" if r["score"] > 0.85 else ("warning" if r["score"] < 0.8 else None),
+)
+```
+
+```python live
+ui.Table(
+    rows=ROWS,
+    columns=[
+        ui.Column(key="name"),
+        ui.Column(key="role", format="badge"),
+        ui.Column(key="score", format="percent"),
+    ],
+    tones={
+        "score": lambda r, v: "success" if v > 0.85 else ("destructive" if v < 0.8 else None),
+        "role": lambda r, v: "warning" if not r["active"] else None,
+    },
 )
 ```
 

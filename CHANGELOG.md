@@ -3,6 +3,36 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.1.5
+
+- Dependencies wait two weeks. uv and pnpm resolve only versions that have
+  been on their index for fourteen days, Dependabot proposes a bump on the
+  same schedule, and a Python dependency is installed from a wheel, never
+  built from a source distribution.
+- The bundle's type check in CI checked nothing, since it ran against the
+  solution-style tsconfig; it now runs the build's check.
+- The State chapter says a session is one tab, shows a task that follows
+  changes made elsewhere, and the reference describes the session's state
+  as kept across pages.
+- `TestApp`'s `settle()` no longer waits for a quiet task, the kind that
+  waits for a change made elsewhere, and gives up after ten seconds
+  naming what still runs instead of after a hundred. `page.toast_action
+  ("Undo")` presses a toast's button.
+- A table cell's tone colors the cell for every format, and a badge wears
+  `success` and `warning` in color. Before, a cell tone reached only
+  badges, as an outline.
+- `ui.Header` is in the reference, and its links reach a narrow screen
+  through the menu.
+- `ui.Progress(task=)` shows a canceled task as canceled instead of
+  freezing at its last value.
+- `--debug` no longer turns on uvicorn's frame-level log, which buried
+  millwork's own warnings, and reaches the server `--reload` starts, which
+  had no log of its own before.
+- A task that fails and that no handler awaits is reported like a handler
+  that raised, so a strict `TestApp` raises it in the test.
+- The "changed nothing" warning says what it checks: nothing the page
+  shows changed.
+
 ## 0.1.4
 
 - One state per session. The app declares the model, `s.state` is the
