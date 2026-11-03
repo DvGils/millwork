@@ -109,6 +109,21 @@ ui.Table(
 )
 ```
 
+```python live
+ui.Table(
+    rows=ROWS,
+    columns=[
+        ui.Column(key="name"),
+        ui.Column(key="role", format="badge"),
+        ui.Column(key="score", format="percent"),
+    ],
+    tones={
+        "score": lambda r, v: "success" if v > 0.85 else ("destructive" if v < 0.8 else None),
+        "role": lambda r, v: "warning" if not r["active"] else None,
+    },
+)
+```
+
 ## Empty
 
 `empty` is the text shown when there are no rows.
