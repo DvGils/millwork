@@ -109,7 +109,9 @@ ui.Row(
 
 ## Link
 
-`ui.Link` is a hyperlink. A path inside the app navigates over the
+`ui.Link` is a hyperlink. `active=True` marks the link to the page the
+session is on, as `aria-current="page"`, which a sidebar styles with
+`aria-[current=page]:` classes. A path inside the app navigates over the
 session without a reload, and `target="_blank"` opens a new tab.
 
 ```python live

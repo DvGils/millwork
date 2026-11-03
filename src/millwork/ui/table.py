@@ -54,7 +54,9 @@ class MenuItem(BaseModel):
     label: str
     icon: str | None = None
     disabled: bool = False
+    # The look of the item; whether the action asks first is ``confirm``.
     destructive: bool = False
+    # Asked before the handler runs; a cancelled question drops the choice.
     confirm: str | None = None
     separator_after: bool = False
 
@@ -74,6 +76,13 @@ def _row_dict(row: Any) -> dict[str, Any]:
 
 class Table(Component):
     type: ClassVar[str] = "Table"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_select": "the selected row keys",
+        "on_row_click": "the row's key",
+        "on_action": "[action_id, row_key]",
+        "on_sort": "[[column, 'asc' | 'desc'], ...]",
+        "on_filter": "{'columns': {column: value}, 'search': text}",
+    }
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"tones", "rows"})
 
     rows: Sequence[Any] = []
@@ -160,7 +169,7 @@ class Table(Component):
             hidden: bool = False,
             cls: str | None = None,
             rows: Sequence[Any] = ...,
-            columns: list[Column] | None = None,
+            columns: Sequence[Column | str | Mapping[str, Any]] | None = None,
             row_key: str = "id",
             height: int | str | None = None,
             sticky_header: bool = True,

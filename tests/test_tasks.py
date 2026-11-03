@@ -77,7 +77,9 @@ def make_app(tmp_path: Path) -> mw.App:
             ui.Table(
                 rows=[{"id": 1, "n": "a"}],
                 key="t",
-                row_actions=[ui.MenuItem(id="rm", label="Remove", destructive=True)],
+                row_actions=[
+                    ui.MenuItem(id="rm", label="Remove", destructive=True, confirm="Remove?")
+                ],
                 on_action=lambda s, p: s.state.__setattr__("result", f"rm {p[1]}"),
             ),
             ui.Button("ask", key="ask", on_click=do_ask),
@@ -326,7 +328,7 @@ def test_button_confirm_and_destructive_action_ask_first(tmp_path: Path) -> None
         ok, cancel = dialog_with("Wipe it?")
         send(ws, {"type": "event", "node": ok, "name": "click"})
         drain_until(ws, lambda m: next(iter(app.sessions.values())).state.result == "wiped")
-        # A destructive row action asks with its label, as a destructive dialog.
+        # A row action with a confirm asks it, as a destructive dialog for a destructive item.
         send(ws, {"type": "event", "node": "root/t", "name": "action", "payload": ["rm", 1]})
         ok, cancel = dialog_with("Remove?")
         send(ws, {"type": "event", "node": ok, "name": "click"})

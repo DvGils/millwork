@@ -123,7 +123,7 @@ async def test_table_events_reach_handlers_as_sent(tmp_path) -> None:
                 selection="rows",
                 row_actions=[
                     ui.MenuItem(id="open", label="Open"),
-                    ui.MenuItem(id="rm", label="Remove", destructive=True),
+                    ui.MenuItem(id="rm", label="Remove", destructive=True, confirm="Remove?"),
                 ],
                 on_select=lambda s, keys: seen.append(("select", keys)),
                 on_row_click=lambda s, key: seen.append(("row", key)),
@@ -140,7 +140,7 @@ async def test_table_events_reach_handlers_as_sent(tmp_path) -> None:
         await page.action(t, "open", "a")
         await page.event(t, "sort", [["id", "asc"]])
         await page.event(t, "filter", {"columns": {"id": "a"}, "search": ""})
-        # A destructive action asks first; cancelling keeps it from the handler.
+        # An action with a confirm asks first; cancelling keeps it from the handler.
         await page.action(t, "rm", "b")
         assert page.find(ui.Dialog).props["title"] == "Remove?"
         await page.answer(False)

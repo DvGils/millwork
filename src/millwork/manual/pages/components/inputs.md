@@ -331,10 +331,11 @@ ui.Row(
 
 `ui.DropdownMenu` opens a menu behind a `trigger` button. Items carry an
 `icon`, `disabled`, `destructive` and `separator_after`, and `on_select`
-receives the chosen id. A destructive item asks before its handler runs,
-with its label as the question, and `confirm="..."` on an item puts the
-question in the app's own words. The same holds for a table's
-`row_actions` and a file card's `actions`.
+receives the chosen id. `confirm="..."` on an item asks before its handler
+runs, in the dialog's destructive style when the item is destructive. The
+look alone asks nothing, since only the app knows whether an action can be
+undone. The same holds for a table's `row_actions` and a file card's
+`actions`.
 
 ```python live
 ui.DropdownMenu(

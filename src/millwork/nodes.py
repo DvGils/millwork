@@ -18,7 +18,7 @@ import enum
 import inspect
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import PurePath
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
@@ -70,6 +70,8 @@ class Component(BaseModel):
     # one payload: a chat's feedback handler gets the message, the value and
     # the comment.
     handler_args: ClassVar[dict[str, tuple[str, ...]]] = {}
+    # What the payload is, per handler prop, in the reference's words.
+    payloads: ClassVar[dict[str, str]] = {}
 
     def wire_extra(self) -> dict[str, Any]:
         """Extra props computed at render time. Override in components that need it."""
@@ -89,27 +91,32 @@ class Component(BaseModel):
         return self.type
 
 
+Tone = Literal["default", "muted", "primary", "accent", "success", "warning", "destructive"]
+TextVariant = Literal["body", "muted", "caption", "label", "title", "heading", "subheading", "mono"]
+TextAlign = Literal["left", "center", "right"]
+
+
 class Text(Component):
     type: ClassVar[str] = "Text"
     content: str = ""
-    variant: str = "body"
+    variant: TextVariant = "body"
     truncate: bool = False
-    align: str | None = None
-    tone: str | None = None
+    align: TextAlign | None = None
+    tone: Tone | None = None
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
         def __init__(
             self,
+            content: str = "",
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            content: str = "",
-            variant: str = "body",
+            variant: TextVariant = "body",
             truncate: bool = False,
-            align: str | None = None,
-            tone: str | None = None,
+            align: TextAlign | None = None,
+            tone: Tone | None = None,
         ) -> None: ...
     else:
 

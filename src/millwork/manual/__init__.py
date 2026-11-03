@@ -40,7 +40,8 @@ COMPONENTS = Path(__file__).parent / "components"
 HIT_LINK = "block px-2 pt-1.5 text-sm font-medium no-underline hover:underline"
 NAV_LINK = (
     "block rounded-md px-2 py-1.5 text-sm text-muted-foreground no-underline "
-    "hover:bg-sidebar-accent hover:text-foreground hover:no-underline"
+    "hover:bg-sidebar-accent hover:text-foreground hover:no-underline "
+    "aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-foreground"
 )
 _FENCE = re.compile(r"^```python live[^\n]*\n(.*?)^```[ \t]*$", re.M | re.S)
 _FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.S)
@@ -398,21 +399,7 @@ def make_app(theme: Any = None) -> mw.App:
                             cls="mt-5 mb-1 px-2 tracking-wider text-muted-foreground",
                         )
                     )
-            if p is current:
-                items.append(
-                    ui.Text(
-                        p.title,
-                        cls="rounded-md bg-sidebar-accent px-2 py-1.5 text-sm font-medium",
-                    )
-                )
-            else:
-                items.append(
-                    ui.Link(
-                        label=p.title,
-                        href=p.slug,
-                        cls=NAV_LINK,
-                    )
-                )
+            items.append(ui.Link(label=p.title, href=p.slug, active=p is current, cls=NAV_LINK))
         return ui.Sidebar(*items, title="Manual")
 
     async def first_hit(s: mw.Session[Any], query: str) -> None:

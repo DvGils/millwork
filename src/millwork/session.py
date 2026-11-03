@@ -358,10 +358,12 @@ class Session[S]:
         self.command("toast", **args)
 
     def navigate(self, path: str) -> None:
-        """Go to another page on this session: its connect runs, the tab's history updates."""
+        """Go to another page on this session: its connect runs, the tab's history
+        updates. This returns at once; ``navigate_to`` is the same, awaited."""
         self._loop.create_task(self.navigate_to(path))
 
     def clipboard(self, text: str) -> None:
+        """Put text on the tab's clipboard."""
         self.command("clipboard", text=text)
 
     def logout(self) -> None:
@@ -369,6 +371,8 @@ class Session[S]:
         self.command("logout")
 
     def reset(self, key: str) -> None:
+        """Put the component with this key back to its default: the draft an
+        input holds, a form's fields, a tab strip's choice."""
         self.command("reset", key=key)
 
     def download(self, filename: str, content: Any, mime: str | None = None) -> FileRef:
@@ -643,9 +647,11 @@ class Session[S]:
         return task
 
     def later(self, delay: float, work: Any, *args: Any, **kwargs: Any) -> Task[Any]:
+        """``task``, started after ``delay`` seconds."""
         return self.task(work, *args, delay=delay, **kwargs)
 
     def thread(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Task[Any]:
+        """``task`` for a sync function: it runs in a worker thread."""
         return self.task(fn, *args, **kwargs)
 
     def _task_finished(self, task: Task[Any]) -> None:
@@ -748,6 +754,7 @@ class Session[S]:
         cancel: str = "Cancel",
         destructive: bool = False,
     ) -> bool:
+        """Ask a yes-or-no question in a dialog and wait for the answer."""
         buttons = _ConfirmButtons(
             children=[
                 Button(cancel, key="cancel", variant="outline", on_click=_noop),
@@ -1362,9 +1369,10 @@ class Session[S]:
 def _confirmation(component: Component, event: Event) -> tuple[str, bool] | None:
     """The question to ask before this event's handler runs, if the component wants one.
 
-    ``Button.confirm`` and ``MenuItem.confirm`` carry their own text. A
-    destructive menu item without one asks with its label, wherever the menu
-    is, so an irreversible action is never one slip away.
+    ``Button.confirm`` and ``MenuItem.confirm`` carry the text, and a
+    destructive button or item asks it in the dialog's destructive style.
+    The style alone asks nothing: whether an action can be undone is the
+    app's knowledge, not the framework's.
     """
     if isinstance(component, Button) and event.name == "click" and component.confirm:
         return component.confirm, component.variant == "destructive"
@@ -1374,9 +1382,8 @@ def _confirmation(component: Component, event: Event) -> tuple[str, bool] | None
         if item.id != action:
             continue
         confirm = getattr(item, "confirm", None)
-        destructive = bool(getattr(item, "destructive", False))
-        if confirm or destructive:
-            return confirm or f"{item.label}?", destructive
+        if confirm:
+            return confirm, bool(getattr(item, "destructive", False))
     return None
 
 

@@ -23,6 +23,10 @@ class FileUpload(Component):
     """Uploads go over the session's socket; the handler receives ``FileRef``s."""
 
     type: ClassVar[str] = "FileUpload"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_upload": "the FileRefs",
+        "on_reject": "{'name': filename, 'reason': why}",
+    }
     accept: list[str] | None = None
     multiple: bool = False
     max_files: int = 10
@@ -57,6 +61,10 @@ class FileUpload(Component):
 
 class FileCard(Component):
     type: ClassVar[str] = "FileCard"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_action": "the chosen action's id",
+        "on_click": "None",
+    }
     file: FileRef | None = None
     name: str | None = None
     size: int | None = None
@@ -92,6 +100,9 @@ class FileCard(Component):
 
 class Image(Component):
     type: ClassVar[str] = "Image"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_click": "None",
+    }
     src: FileRef | str
     alt: str = ""
     _src = field_validator("src")(staticmethod(_safe_src))
@@ -158,11 +169,11 @@ class Download(Component):
 
         def __init__(
             self,
+            label: str = "Download",
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            label: str = "Download",
             filename: str,
             content: Any,
             mime: str | None = None,

@@ -341,6 +341,7 @@ export const Link: Renderer = ({ props }) => {
   return (
     <a
       href={href}
+      aria-current={props.active ? "page" : undefined}
       target={props.target === "_blank" ? "_blank" : undefined}
       rel={props.target === "_blank" ? "noreferrer" : undefined}
       onClick={internal ? (e) => {
@@ -348,7 +349,7 @@ export const Link: Renderer = ({ props }) => {
         e.preventDefault();
         navigate(props.href as string);
       } : undefined}
-      className={cn("inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline", props.cls as string)}
+      className={cn("inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline aria-[current=page]:font-medium", props.cls as string)}
     >
       {Icon ? <Icon className="size-3.5" /> : null}
       {String(props.label ?? "")}

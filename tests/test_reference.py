@@ -13,7 +13,18 @@ def test_the_reference_covers_every_component_and_the_tables(capsys) -> None:
             assert f"### ui.{name}\n" in text, name
     variants = "'primary' | 'secondary' | 'outline' | 'ghost' | 'link' | 'destructive'"
     assert f"- `variant: {variants}` = `'primary'`" in text
-    assert "- `on_feedback`: handler `(session, message, value, comment)`" in text
+    assert (
+        "- `on_feedback`: handler `(session, message, value, comment)`, arguments the message,"
+        " 'up', 'down' or None when withdrawn, and the comment" in text
+    )
+    assert "- `on_action`: handler `(session, payload)`, payload [action_id, row_key]" in text
+    assert "`ui.Form(model=None, *children, **props)`" in text
+    assert "`ui.BarChart(rows=(), *children, **props)`" in text
+    for section in ("## Tasks", "## Forms", "## Testing"):
+        assert f"\n{section}\n" in text
+    assert "- `p.step(label)`: ``with p.step(" in text and "- `task.ok`: Finished" in text
+    assert "- `page.answer(payload=None)`" in text and "`{id:int}`" in text
+    assert "also takes plain strings" in text
     assert "- `label: str` (required)" in text  # Stat
     assert "`ui.Button(label='', *children, **props)`" in text
     assert "### ui.Header\n" in text
