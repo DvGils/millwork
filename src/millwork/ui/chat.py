@@ -57,6 +57,12 @@ class Accept(BaseModel):
 
 class Chat(Component):
     type: ClassVar[str] = "Chat"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_message": "the ChatTurn: its text, files and reply()",
+        "on_stop": "None",
+        "on_feedback": "the message, 'up', 'down' or None when withdrawn, and the comment",
+        "on_action": "the message and the action's id",
+    }
     wire_exclude: ClassVar[frozenset[str]] = frozenset()
 
     welcome: str | None = None

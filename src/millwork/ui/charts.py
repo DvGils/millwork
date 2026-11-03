@@ -94,6 +94,10 @@ class _Chart(Component):
     """What every chart shares: rows, the x column, series, formats, a click."""
 
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"rows", "y", "by", "colors"})
+    payloads: ClassVar[dict[str, str]] = {
+        "on_click": "{'x': category, 'series': key, 'value': n, 'values': {series: n}}; series "
+        "and value are None for a click beside the marks of a line or area",
+    }
 
     rows: Sequence[Any]
     x: str
@@ -115,11 +119,11 @@ class _Chart(Component):
 
         def __init__(
             self,
+            rows: Sequence[Any] = (),
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            rows: Sequence[Any],
             x: str,
             y: Any,
             by: str | None = None,
@@ -251,11 +255,11 @@ class BarChart(_Chart):
 
         def __init__(
             self,
+            rows: Sequence[Any] = (),
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            rows: Sequence[Any],
             x: str,
             y: Any,
             by: str | None = None,
@@ -286,11 +290,11 @@ class LineChart(_Chart):
 
         def __init__(
             self,
+            rows: Sequence[Any] = (),
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            rows: Sequence[Any],
             x: str,
             y: Any,
             by: str | None = None,
@@ -317,11 +321,11 @@ class AreaChart(_Chart):
 
         def __init__(
             self,
+            rows: Sequence[Any] = (),
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            rows: Sequence[Any],
             x: str,
             y: Any,
             by: str | None = None,
@@ -347,6 +351,9 @@ class PieChart(Component):
     share beside it."""
 
     type: ClassVar[str] = "PieChart"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_click": "{'x': slice, 'value': number, 'share': fraction of the total, or None}",
+    }
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"rows", "y", "other", "colors"})
 
     rows: Sequence[Any]
@@ -368,11 +375,11 @@ class PieChart(Component):
 
         def __init__(
             self,
+            rows: Sequence[Any] = (),
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            rows: Sequence[Any],
             x: str,
             y: str,
             format: ValueFormat | None = None,

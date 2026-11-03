@@ -3,6 +3,32 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.1.6
+
+- The typed signatures a checker sees lost every positional parameter the
+  runtime takes, so `ui.Form(Model)` and `ui.BarChart(rows)` failed to
+  type-check, and `ui.Select(options=["a"])` was refused since the stub
+  named what the field holds, not what the call accepts. The generator now
+  finds the runtime's `__init__` where it lives and the one a chart
+  inherits, and says what a validator accepts.
+- `ui.Text` refuses a `variant`, `tone` or `align` it does not have, as
+  Badge and Button already did; before, an unknown one rendered as body
+  text.
+- A destructive menu item no longer asks before its handler runs. Whether
+  an action can be undone is the app's knowledge, so `confirm="..."` is
+  what asks, in the dialog's destructive style when the item is
+  destructive. The same holds for a table's row actions and a file card's
+  actions.
+- `ui.Link(active=True)` marks the link to the page the session is on, as
+  `aria-current="page"`, and the manual's sidebar uses it.
+- The reference says what each handler's payload is, and has sections on
+  tasks and `mw.progress()`, forms and `ui.FormIssues`, path parameters
+  and `mw.NotFound`, and `TestApp`. Session, task, app and harness methods
+  that had no docstring have one.
+- In a test, `page.click` on a `Download` starts the download, and
+  `page.text()` leaves out props that pick from a fixed set, a variant or
+  an alignment, so a check for a word on the page is not fooled by one.
+
 ## 0.1.5
 
 - Dependencies wait two weeks. uv and pnpm resolve only versions that have

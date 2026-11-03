@@ -102,20 +102,24 @@ class Task[T]:
 
     @property
     def done(self) -> bool:
+        """Finished, one way or another: done, failed or cancelled."""
         return self.status in ("done", "failed", "cancelled")
 
     @property
     def ok(self) -> bool:
+        """Finished with a result."""
         return self.status == "done"
 
     @property
     def result(self) -> T:
+        """What the work returned; raises unless ``ok``."""
         if not self.ok:
             raise RuntimeError(f"task {self.label!r} is {self.status}")
         return self._result  # type: ignore[return-value]
 
     @property
     def cancelled(self) -> bool:
+        """Whether ``cancel()`` was called; the work sees it through ``progress().check()``."""
         return self._cancel_flag.is_set()
 
     @property
@@ -336,6 +340,8 @@ class Reporter:
             await asyncio.sleep(0)
 
     def set(self, value: float | None = None, message: str | None = None) -> None:
+        """How far along, 0 to 1, and the line shown under the bar."""
+
         def apply() -> None:
             if value is not None:
                 self._task.progress = max(0.0, min(1.0, float(value)))
@@ -376,6 +382,8 @@ class Reporter:
 
     @contextlib.contextmanager
     def step(self, label: str) -> Iterator[StepHandle]:
+        """``with p.step("Fetch") as step:`` runs the step; it is done when the
+        block ends, failed when it raises, and ``step.note()`` adds a line."""
         # The open steps live in a context variable, not on the reporter: work run
         # in parallel under one step (asyncio.gather, a thread) each sees its own
         # branch, so sibling steps never nest into each other.
@@ -429,6 +437,7 @@ class StepHandle:
         self._step = step
 
     def note(self, text: str) -> None:
+        """A line under the step, replacing the last one."""
         step = self._step
 
         def apply() -> None:

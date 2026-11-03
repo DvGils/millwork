@@ -138,6 +138,7 @@ class PageDef:
         return fn
 
     def close(self, fn: Callable[..., Any]) -> Callable[..., Any]:
+        """Decorator: runs with the session when it leaves the page, or ends on it."""
         self.on_close = fn
         return fn
 
@@ -329,19 +330,24 @@ class App:
     def route(
         self, path: str, endpoint: Callable[..., Any], methods: list[str] | None = None
     ) -> None:
+        """A plain Starlette route next to the pages, for an API or a webhook."""
         self._routes.append(Route(path, endpoint, methods=methods or ["GET"]))
 
     def mount(self, path: str, asgi_app: Any) -> None:
+        """Serve another ASGI app under a path."""
         self._routes.append(Mount(path, app=asgi_app))
 
     def middleware(self, cls: Any, **options: Any) -> None:
+        """Add a Starlette middleware class around the whole app."""
         self._middleware.append(Middleware(cls, **options))
 
     def on_startup(self, fn: Callable[[], Any]) -> Callable[[], Any]:
+        """Decorator: runs once when the server starts, before the first session."""
         self._startup.append(fn)
         return fn
 
     def on_shutdown(self, fn: Callable[[], Any]) -> Callable[[], Any]:
+        """Decorator: runs once when the server stops."""
         self._shutdown.append(fn)
         return fn
 

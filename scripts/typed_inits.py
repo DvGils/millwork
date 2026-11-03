@@ -30,6 +30,16 @@ MODULES = [
     ROOT / "ui" / "chat.py",
 ]
 BASE = "Component"
+# A field with a before-validator takes more than the field holds; the stub
+# says what a call accepts. A key names the field, or ``Class.field``.
+ACCEPTS = {
+    "options": "Sequence[Option | str | tuple[str, str] | Mapping[str, Any]]",
+    "Table.columns": "Sequence[Column | str | Mapping[str, Any]] | None",
+    "DatePicker.value": "str | dt.date | list[str | dt.date | None] | None",
+    "DatePicker.default": "str | dt.date | list[str | dt.date | None] | None",
+    "DatePicker.min": "str | dt.date | None",
+    "DatePicker.max": "str | dt.date | None",
+}
 MARK = (
     "    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py"
 )
@@ -53,6 +63,12 @@ class Klass:
                 self.fields[name] = (annotation, _default(stmt.value))
             elif isinstance(stmt, ast.FunctionDef) and stmt.name == "__init__":
                 self.explicit_init = stmt
+            elif _is_type_checking(stmt):
+                # After a first run the runtime's own __init__ lives in the
+                # ``else`` of the block this script wrote.
+                for inner in stmt.orelse:
+                    if isinstance(inner, ast.FunctionDef) and inner.name == "__init__":
+                        self.explicit_init = inner
         if self.explicit_init is not None:
             args = self.explicit_init.args
             params = args.posonlyargs + args.args
@@ -61,6 +77,14 @@ class Klass:
                 + (f" = {ast.unparse(d)}" if d is not None else "")
                 for a, d in zip(params[1:], _defaults(params[1:], args.defaults), strict=True)
             ]
+
+
+def _is_type_checking(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.If)
+        and isinstance(stmt.test, ast.Name)
+        and stmt.test.id == "TYPE_CHECKING"
+    )
 
 
 def _default(value: ast.expr | None) -> str | None:
@@ -106,16 +130,31 @@ def all_fields(klass: Klass, classes: dict[str, Klass]) -> dict[str, tuple[str, 
     return fields
 
 
+def positional(klass: Klass, classes: dict[str, Klass]) -> list[str]:
+    """The nearest explicit init's positional parameters: the class's own, or
+    the ones it inherits from a base in the catalogue."""
+    if klass.explicit_init is not None:
+        return klass.positional
+    for base in klass.bases:
+        if base in classes and base != BASE:
+            found = positional(classes[base], classes)
+            if found:
+                return found
+    return []
+
+
 def signature(klass: Klass, classes: dict[str, Klass]) -> list[str]:
     fields = all_fields(klass, classes)
-    positional_names = {p.split(":")[0] for p in klass.positional}
+    params = positional(klass, classes)
+    positional_names = {p.split(":")[0] for p in params}
     lines = [MARK, "", "        def __init__(", "            self,"]
-    for p in klass.positional:
-        lines.append(f"            {p},")
+    for p in params:
+        lines.append(f"            {p}," + ("  # noqa: UP006" if "Type[" in p else ""))
     lines.append("            *children: Any,")
     for name, (annotation, default) in fields.items():
         if name in positional_names or name == "children":
             continue
+        annotation = ACCEPTS.get(f"{klass.name}.{name}", ACCEPTS.get(name, annotation))
         line = f"            {name}: {annotation}" + (f" = {default}," if default else ",")
         if annotation.startswith("Type["):
             # ``type`` in a class body is the component's wire name.
@@ -132,16 +171,7 @@ def rewrite(module: Path, classes: dict[str, Klass]) -> str:
     # Bottom up, so earlier line numbers stay valid.
     for klass in sorted(mine, key=lambda k: k.node.lineno, reverse=True):
         block = signature(klass, classes)
-        existing = next(
-            (
-                s
-                for s in klass.node.body
-                if isinstance(s, ast.If)
-                and isinstance(s.test, ast.Name)
-                and s.test.id == "TYPE_CHECKING"
-            ),
-            None,
-        )
+        existing = next((s for s in klass.node.body if _is_type_checking(s)), None)
         if existing is not None:
             # Only the checker's branch is rewritten; an ``else`` with the
             # runtime's own __init__ stays as written.

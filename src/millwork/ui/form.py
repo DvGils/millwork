@@ -13,6 +13,10 @@ from millwork.nodes import Component
 
 class Form(Component):
     type: ClassVar[str] = "Form"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_submit": "the validated model instance",
+        "on_cancel": "None",
+    }
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"model", "initial"})
 
     # ``Type`` rather than ``type``: the class body's ``type`` is the component's wire name.
@@ -37,11 +41,11 @@ class Form(Component):
 
         def __init__(
             self,
+            model: Type[BaseModel] | None = None,  # noqa: UP006
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            model: Type[BaseModel],  # noqa: UP006
             initial: Any = None,
             submit: str | None = "Save",
             cancel: str | None = None,
@@ -58,7 +62,7 @@ class Form(Component):
         ) -> None: ...
     else:
 
-        def __init__(self, model: Any = None, **props: Any) -> None:
+        def __init__(self, model: Type[BaseModel] | None = None, **props: Any) -> None:  # noqa: UP006
             if model is not None:
                 props["model"] = model
             super().__init__(**props)

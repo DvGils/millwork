@@ -210,3 +210,12 @@ def test_a_handler_must_take_session_and_payload() -> None:
         build(Box(on_click=one))
     with pytest.raises(TypeError, match="does not take 2 positional arguments"):
         build(Box(on_click=lambda: None))
+
+
+def test_text_refuses_a_variant_tone_or_alignment_it_does_not_have() -> None:
+    import pytest
+
+    Text("fine", variant="subheading", tone="success", align="right")
+    for props in ({"variant": "h2"}, {"tone": "quiet"}, {"align": "end"}):
+        with pytest.raises(ValueError):
+            Text("nope", **props)

@@ -13,7 +13,7 @@ import json
 import mimetypes
 from collections.abc import AsyncIterator, Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
 from millwork.auth import Forbidden
 from millwork.files import FileRef, _read_chunks
@@ -21,7 +21,7 @@ from millwork.nodes import Component
 from millwork.protocol import Command, Event, Patch, ServerError, Stream, server_message
 from millwork.session import Session
 from millwork.ui.chat import Chat
-from millwork.ui.files import FileUpload
+from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
 
 if TYPE_CHECKING:
@@ -106,6 +106,7 @@ class Page:
         return out
 
     def find(self, what: type[Component] | str) -> Found:
+        """The first node of a component type, or with a key; raises when there is none."""
         found = self.find_all(what)
         if not found:
             name = what if isinstance(what, str) else what.__name__
@@ -113,11 +114,17 @@ class Page:
         return found[0]
 
     def text(self) -> str:
-        """Every string prop of the tree, for a quick "is it there" check."""
+        """Every string prop of the tree, for a quick "is it there" check. A
+        prop that picks from a fixed set, a variant or an alignment, is not
+        text and is left out."""
         parts: list[str] = []
+        built = self.session.tree
+        components = built.components if built is not None else {}
         for node in self.tree.values():
-            for value in node.props.values():
-                if isinstance(value, str):
+            component = components.get(node.id)
+            fields = type(component).model_fields if component is not None else {}
+            for name, value in node.props.items():
+                if isinstance(value, str) and not _is_choice(fields.get(name)):
                     parts.append(value)
         return "\n".join(parts)
 
@@ -157,7 +164,11 @@ class Page:
         await self.settle()
 
     async def click(self, node: Found | str) -> None:
-        await self.event(node, "click")
+        """Click it. A ``Download``'s button starts the download, so that is
+        what clicking one does here."""
+        found = node if isinstance(node, Found) else self.find(node)
+        name = "download" if isinstance(found.component, Download) else "click"
+        await self.event(found, name)
 
     async def toast_action(self, label: str) -> None:
         """Press the button of the latest toast that has one with this label."""
@@ -176,6 +187,7 @@ class Page:
         await self.settle()
 
     async def change(self, node: Found | str, value: Any) -> None:
+        """An input's new value, as the tab would send it."""
         await self.event(node, "change", value)
 
     async def submit(self, form: Found | str, draft: Any) -> None:
@@ -185,6 +197,7 @@ class Page:
         await self.event(form, "submit", draft)
 
     async def select(self, table: Found | str, keys: list[Any]) -> None:
+        """Select rows of a table by key."""
         await self.event(table, "select", keys)
 
     async def action(self, node: Found | str, action: str, key: Any = None) -> None:
@@ -248,6 +261,7 @@ class Page:
         await self.event(found, "message", payload)
 
     async def stop(self, chat: Found | str) -> None:
+        """Press stop on a chat's running reply."""
         await self.event(chat, "stop")
 
     async def answer(self, payload: Any = None) -> None:
@@ -275,6 +289,7 @@ class Page:
         await self.submit(form.id, payload)
 
     async def navigate(self, path: str) -> None:
+        """Take the session to another page, and wait for it to connect and render."""
         await self.session.navigate_to(path)
         await self.settle()
 
@@ -324,6 +339,15 @@ class Page:
                 continue
             self._raise_failures()
             return
+
+
+def _is_choice(field: Any) -> bool:
+    """Whether a field's type is a Literal, or a union with one in it."""
+    if field is None:
+        return False
+    annotation = field.annotation
+    options = get_args(annotation) if get_origin(annotation) is not Literal else (annotation,)
+    return any(get_origin(a) is Literal for a in (*options, annotation))
 
 
 class TestApp:

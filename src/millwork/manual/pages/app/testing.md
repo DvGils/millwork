@@ -67,7 +67,8 @@ async def test_the_form_rejects_a_short_name(app):
 
 ## Questions and tasks
 
-A handler that calls `s.confirm` or `s.ask` stops and waits. The test sees
+A click on a `Download` is the download its button starts. A handler that
+calls `s.confirm` or `s.ask` stops and waits. The test sees
 the dialog on the page and answers it with `page.answer(value)`, `False`,
 or `None` for a dismissal. A task started by a handler has run by the time
 the action returns, and `page.session.tasks[-1]` has its `ok`, `result`

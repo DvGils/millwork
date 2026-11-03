@@ -252,11 +252,13 @@ async def test_menu_items_confirm_everywhere(tmp_path: Path) -> None:
         )
 
     async with TestApp(app).open("/") as page:
+        # A destructive look asks nothing by itself; a confirm does.
         await page.event("menu", "select", "rm")
-        dialog = page.find(ui.Dialog)
-        assert dialog.props["title"] == "Remove?"
+        assert not page.find_all(ui.Dialog) and page.state.asked == "rm"
+        await page.event("menu", "select", "archive")
+        assert page.find(ui.Dialog).props["title"] == "Archive the file?"
         await page.answer(False)
-        assert page.state.asked is None
+        assert page.state.asked == "rm"
         await page.event("menu", "select", "archive")
         assert page.find(ui.Dialog).props["title"] == "Archive the file?"
         await page.answer(True)
@@ -426,3 +428,24 @@ async def test_a_failed_task_is_reported_and_a_toast_button_presses_once(tmp_pat
         assert page.state.count == 1
         with pytest.raises(LookupError, match="already pressed"):
             await page.toast_action("Undo")
+
+
+async def test_a_click_on_a_download_downloads_and_text_skips_choices(tmp_path: Path) -> None:
+    app = mw.App("dl", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Download(label="Report", filename="report.csv", content="a,b\n", key="dl"),
+            ui.Text("Quarterly numbers", variant="heading", align="center", tone="muted"),
+            ui.Button("Go", variant="outline", size="sm", key="go", on_click=lambda s, _: None),
+        )
+
+    async with TestApp(app).open("/") as page:
+        await page.click("dl")
+        assert [c.name for c in page.commands] == ["download"]
+        assert page.commands[0].args["filename"] == "report.csv"
+        text = page.text()
+        assert "Quarterly numbers" in text and "Report" in text and "Go" in text
+        for choice in ("heading", "center", "muted", "outline", "sm"):
+            assert choice not in text.split("\n"), choice

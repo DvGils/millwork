@@ -8,6 +8,7 @@ Stateful components take ``value`` (server-owned) or ``default``
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -15,14 +16,13 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from millwork.files import FileRef
 from millwork.forms import FormIssues, Issue
 from millwork.icons import check_icon
-from millwork.nodes import Component, Text
+from millwork.nodes import Component, Text, Tone
 from millwork.ui.charts import AreaChart, BarChart, LineChart, PieChart
 from millwork.ui.chat import Accept, Action, Chat, Command
 from millwork.ui.files import Download, FileCard, FileUpload, Image, Pdf
 from millwork.ui.form import Form
 from millwork.ui.table import Column, MenuItem, Table
 
-Tone = Literal["default", "muted", "primary", "accent", "success", "warning", "destructive"]
 Variant = Literal["primary", "secondary", "outline", "ghost", "link", "destructive"]
 Size = Literal["sm", "md", "lg"]
 Align = Literal["start", "center", "end", "stretch", "baseline"]
@@ -30,7 +30,8 @@ Justify = Literal["start", "center", "end", "between", "around", "evenly"]
 
 
 class Option(BaseModel):
-    """One choice in a Select, RadioGroup, CheckboxGroup, ToggleGroup."""
+    """One choice in a Select, RadioGroup, CheckboxGroup, ToggleGroup. An
+    ``options`` list also takes plain strings, ``(value, label)`` pairs and dicts."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -232,6 +233,9 @@ class Grid(Component):
 
 class Card(Component):
     type: ClassVar[str] = "Card"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_click": "None",
+    }
     title: str | None = None
     description: str | None = None
     footer: Component | None = None
@@ -285,6 +289,9 @@ class Sidebar(_Owned):
     """A collapsible side panel. ``Page`` with a ``Sidebar`` child lays out around it."""
 
     type: ClassVar[str] = "Sidebar"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_toggle": "True when open",
+    }
     side: Literal["left", "right"] = "left"
     width: str | None = None
     collapsible: Literal["offcanvas", "icon", "none"] = "offcanvas"
@@ -313,6 +320,9 @@ class Sidebar(_Owned):
 
 class Tabs(_Owned):
     type: ClassVar[str] = "Tabs"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the chosen tab's value",
+    }
     value: str | None = None
     default: str | None = None
     variant: Literal["line", "pill"] = "line"
@@ -359,6 +369,9 @@ class Tab(Component):
 
 class Accordion(_Owned):
     type: ClassVar[str] = "Accordion"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the open items' values",
+    }
     multiple: bool = False
     value: list[str] | None = None
     default: list[str] | None = None
@@ -399,6 +412,9 @@ class AccordionItem(Component):
 
 class Collapsible(_Owned):
     type: ClassVar[str] = "Collapsible"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_toggle": "True when open",
+    }
     title: str
     open: bool | None = None
     default_open: bool | None = None
@@ -423,6 +439,9 @@ class Dialog(Component):
     """``open`` is always server-owned: a dialog is state the app reasons about."""
 
     type: ClassVar[str] = "Dialog"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_close": "None",
+    }
     open: bool = False
     title: str | None = None
     description: str | None = None
@@ -451,6 +470,9 @@ class Dialog(Component):
 
 class Sheet(Component):
     type: ClassVar[str] = "Sheet"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_close": "None",
+    }
     open: bool = False
     side: Literal["left", "right", "top", "bottom"] = "right"
     title: str | None = None
@@ -541,11 +563,11 @@ class Markdown(Component):
 
         def __init__(
             self,
+            content: str = "",
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            content: str = "",
             tight: bool = False,
         ) -> None: ...
     else:
@@ -567,11 +589,11 @@ class Code(Component):
 
         def __init__(
             self,
+            content: str = "",
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            content: str = "",
             language: str | None = None,
             title: str | None = None,
             copyable: bool = True,
@@ -594,11 +616,11 @@ class Badge(Component):
 
         def __init__(
             self,
+            label: str = "",
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            label: str = "",
             tone: Tone = "default",
             icon: str | None = None,
         ) -> None: ...
@@ -641,6 +663,8 @@ class Link(Component):
     href: str
     target: Literal["_self", "_blank"] = "_self"
     icon: str | None = None
+    # The link to the page the session is on: ``aria-current="page"`` in the tab.
+    active: bool = False
 
     _href = field_validator("href")(staticmethod(safe_href))
 
@@ -656,6 +680,7 @@ class Link(Component):
             href: str,
             target: Literal["_self", "_blank"] = "_self",
             icon: str | None = None,
+            active: bool = False,
         ) -> None: ...
 
 
@@ -699,6 +724,9 @@ class Stat(Component):
 
 class Alert(Component):
     type: ClassVar[str] = "Alert"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_dismiss": "None",
+    }
     title: str | None = None
     description: str | None = None
     tone: Tone = "default"
@@ -730,6 +758,9 @@ class Alert(Component):
 
 class Button(Component):
     type: ClassVar[str] = "Button"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_click": "None",
+    }
     label: str = ""
     variant: Variant = "primary"
     size: Size = "md"
@@ -738,6 +769,7 @@ class Button(Component):
     disabled: bool = False
     loading: bool = False
     tooltip: str | None = None
+    # Asked before the handler runs; a cancelled question drops the click.
     confirm: str | None = None
     # The key of a Form on the page: the button submits it, from anywhere.
     form: str | None = None
@@ -747,11 +779,11 @@ class Button(Component):
 
         def __init__(
             self,
+            label: str = "",
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            label: str = "",
             variant: Variant = "primary",
             size: Size = "md",
             icon: str | None = None,
@@ -789,6 +821,9 @@ class DropdownMenu(Component):
     """A menu behind a trigger button. ``on_select`` receives the item's id."""
 
     type: ClassVar[str] = "DropdownMenu"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_select": "the chosen item's id",
+    }
     trigger: Component
     items: list[MenuItem]
     align: Literal["start", "end"] = "start"
@@ -835,6 +870,9 @@ class Field(Component):
 
 class ToggleGroup(_Owned):
     type: ClassVar[str] = "ToggleGroup"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the chosen value, a list when multiple",
+    }
     options: list[Option]
     value: str | list[str] | None = None
     default: str | list[str] | None = None
@@ -852,7 +890,7 @@ class ToggleGroup(_Owned):
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            options: list[Option],
+            options: Sequence[Option | str | tuple[str, str] | Mapping[str, Any]],
             value: str | list[str] | None = None,
             default: str | list[str] | None = None,
             multiple: bool = False,
@@ -863,6 +901,10 @@ class ToggleGroup(_Owned):
 
 class Input(_Owned):
     type: ClassVar[str] = "Input"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the text",
+        "on_submit": "the text, on Enter",
+    }
     value: str | None = None
     default: str | None = None
     placeholder: str | None = None
@@ -901,6 +943,10 @@ class Input(_Owned):
 
 class Textarea(_Owned):
     type: ClassVar[str] = "Textarea"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the text",
+        "on_submit": "the text, on Ctrl+Enter",
+    }
     value: str | None = None
     default: str | None = None
     placeholder: str | None = None
@@ -937,6 +983,9 @@ class Textarea(_Owned):
 
 class NumberInput(_Owned):
     type: ClassVar[str] = "NumberInput"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the number, or None when cleared",
+    }
     value: float | None = None
     default: float | None = None
     min: float | None = None
@@ -973,6 +1022,10 @@ class Combobox(_Owned):
     ``allow_custom`` lets typed text that matches nothing be the value."""
 
     type: ClassVar[str] = "Combobox"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the chosen value, or None",
+        "on_search": "the text typed; the handler returns the options to show",
+    }
     options: list[Option] = []
     value: str | None = None
     default: str | None = None
@@ -993,7 +1046,7 @@ class Combobox(_Owned):
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            options: list[Option] = ...,
+            options: Sequence[Option | str | tuple[str, str] | Mapping[str, Any]] = ...,
             value: str | None = None,
             default: str | None = None,
             placeholder: str | None = None,
@@ -1009,6 +1062,9 @@ class MultiSelect(_Owned):
     """Several choices from a list, shown as chips; typing filters the list."""
 
     type: ClassVar[str] = "MultiSelect"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the chosen values, in order",
+    }
     options: list[Option]
     value: list[str] | None = None
     default: list[str] | None = None
@@ -1031,7 +1087,7 @@ class MultiSelect(_Owned):
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            options: list[Option],
+            options: Sequence[Option | str | tuple[str, str] | Mapping[str, Any]],
             value: list[str] | None = None,
             default: list[str] | None = None,
             placeholder: str | None = None,
@@ -1058,6 +1114,9 @@ class DatePicker(_Owned):
     objects are accepted and converted). ``min`` and ``max`` bound what can be picked."""
 
     type: ClassVar[str] = "DatePicker"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the ISO date, or [start, end] for a range, or None",
+    }
     value: str | list[str | None] | None = None
     default: str | list[str | None] | None = None
     min: str | None = None
@@ -1080,10 +1139,10 @@ class DatePicker(_Owned):
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            value: str | list[str | None] | None = None,
-            default: str | list[str | None] | None = None,
-            min: str | None = None,
-            max: str | None = None,
+            value: str | dt.date | list[str | dt.date | None] | None = None,
+            default: str | dt.date | list[str | dt.date | None] | None = None,
+            min: str | dt.date | None = None,
+            max: str | dt.date | None = None,
             range: bool = False,
             placeholder: str | None = None,
             clearable: bool = False,
@@ -1094,6 +1153,9 @@ class DatePicker(_Owned):
 
 class Select(_Owned):
     type: ClassVar[str] = "Select"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the chosen value, or None",
+    }
     options: list[Option]
     value: str | None = None
     default: str | None = None
@@ -1112,7 +1174,7 @@ class Select(_Owned):
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            options: list[Option],
+            options: Sequence[Option | str | tuple[str, str] | Mapping[str, Any]],
             value: str | None = None,
             default: str | None = None,
             placeholder: str | None = None,
@@ -1124,6 +1186,9 @@ class Select(_Owned):
 
 class Checkbox(_Owned):
     type: ClassVar[str] = "Checkbox"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "True when checked",
+    }
     label: str | None = None
     description: str | None = None
     checked: bool | None = None
@@ -1150,6 +1215,9 @@ class Checkbox(_Owned):
 
 class CheckboxGroup(_Owned):
     type: ClassVar[str] = "CheckboxGroup"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the checked values",
+    }
     options: list[Option]
     value: list[str] | None = None
     default: list[str] | None = None
@@ -1167,7 +1235,7 @@ class CheckboxGroup(_Owned):
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            options: list[Option],
+            options: Sequence[Option | str | tuple[str, str] | Mapping[str, Any]],
             value: list[str] | None = None,
             default: list[str] | None = None,
             label: str | None = None,
@@ -1178,6 +1246,9 @@ class CheckboxGroup(_Owned):
 
 class RadioGroup(_Owned):
     type: ClassVar[str] = "RadioGroup"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the chosen value",
+    }
     options: list[Option]
     value: str | None = None
     default: str | None = None
@@ -1196,7 +1267,7 @@ class RadioGroup(_Owned):
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            options: list[Option],
+            options: Sequence[Option | str | tuple[str, str] | Mapping[str, Any]],
             value: str | None = None,
             default: str | None = None,
             label: str | None = None,
@@ -1208,6 +1279,9 @@ class RadioGroup(_Owned):
 
 class Switch(_Owned):
     type: ClassVar[str] = "Switch"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "True when on",
+    }
     label: str | None = None
     description: str | None = None
     checked: bool | None = None
@@ -1234,6 +1308,9 @@ class Switch(_Owned):
 
 class Slider(_Owned):
     type: ClassVar[str] = "Slider"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the number",
+    }
     min: float = 0
     max: float = 100
     step: float = 1
@@ -1297,6 +1374,9 @@ class Custom(Component):
     """
 
     type: ClassVar[str] = "Custom"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_event": "(name, payload) as the component emitted it",
+    }
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"name", "props", "events"})
 
     name: str
@@ -1308,11 +1388,11 @@ class Custom(Component):
 
         def __init__(
             self,
+            name: str,
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            name: str,
             props: dict[str, Any] = ...,
             events: dict[str, Any] = ...,
             on_event: Any = None,
