@@ -1444,6 +1444,7 @@ __all__ = [
     "Form",
     "FormIssues",
     "Grid",
+    "Header",
     "Image",
     "Input",
     "Issue",

@@ -16,6 +16,7 @@ def test_the_reference_covers_every_component_and_the_tables(capsys) -> None:
     assert "- `on_feedback`: handler `(session, message, value, comment)`" in text
     assert "- `label: str` (required)" in text  # Stat
     assert "`ui.Button(label='', *children, **props)`" in text
+    assert "### ui.Header\n" in text
     assert "`ui.AreaChart(rows=(), *children, **props)`" in text
     assert "- `rows: Sequence[Any]` = `()`" in text
     assert "one owner" not in text  # an inherited docstring is not the component's

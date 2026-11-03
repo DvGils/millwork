@@ -14,6 +14,21 @@ versions; a release says so here when it does.
 - The State chapter says a session is one tab, shows a task that follows
   changes made elsewhere, and the reference describes the session's state
   as kept across pages.
+- `TestApp`'s `settle()` no longer waits for a quiet task, the kind that
+  waits for a change made elsewhere, and gives up after ten seconds
+  naming what still runs instead of after a hundred. `page.toast_action
+  ("Undo")` presses a toast's button.
+- A table cell's tone colors the cell for every format, and a badge wears
+  `success` and `warning` in color. Before, a cell tone reached only
+  badges, as an outline.
+- `ui.Header` is in the reference, and its links reach a narrow screen
+  through the menu.
+- `ui.Progress(task=)` shows a canceled task as canceled instead of
+  freezing at its last value.
+- `--debug` no longer turns on uvicorn's frame-level log, which buried
+  millwork's own warnings.
+- The "changed nothing" warning says what it checks: nothing the page
+  shows changed.
 
 ## 0.1.4
 

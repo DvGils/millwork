@@ -163,10 +163,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.user}:{line}" if args.user else line)
         return 0
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.debug else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    # Debug mode is for seeing what millwork notices; uvicorn's own debug log,
+    # a line per socket frame, would bury it.
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    if args.debug:
+        logging.getLogger("millwork").setLevel(logging.DEBUG)
     # A unix socket is only ever reached through a proxy.
     proxied = args.proxied or bool(args.uds)
     if args.reload:
@@ -227,7 +228,7 @@ def serve(
         proxy_headers=False,
         ws_max_size=WS_MAX_SIZE,
         root_path=root_path,
-        log_level="debug" if debug else "info",
+        log_level="info",
         reload=reload,
         reload_dirs=[os.getcwd()] if reload else None,
         factory=factory,
