@@ -37,12 +37,15 @@ def home(s: mw.Session[State]) -> ui.Component:
     )
 ```
 
+## Installation
+
+
 ```bash
 uv add millwork  # or `pip install millwork`
 uv run millwork run app.py
 ```
 
-## What is in the box
+## What is included
 
 - **A catalog of components** on shadcn/ui: layout, text, inputs,
   feedback, tables, charts, forms from Pydantic models, files, tasks with
@@ -65,8 +68,9 @@ uv run millwork run app.py
 
 ## The manual
 
-The manual is at [millwork-ui.com](https://millwork-ui.com). It is a
-millwork app: every example in it runs, with the Python code beside it.
+The manual is at [millwork-ui.com](https://millwork-ui.com).  
+
+The manual itself is a millwork app. Every example in it runs, with the Python code beside it.
 The chapters cover pages and routing, state and handlers, signing in,
 theming, testing and running, and every component has a live example. It
 also runs locally:
@@ -82,7 +86,7 @@ component, its props with their types and defaults, the session's and the
 app's calls, the icon names, the form widgets and the formats. The hosted
 manual serves the same text at
 [millwork-ui.com/llms.txt](https://millwork-ui.com/llms.txt), for a model
-that needs a lookup rather than a chapter.
+that needs easy lookup.
 
 ## Status
 
@@ -129,17 +133,6 @@ bundle's packages: apply it, rebuild, look at the manual, and commit the
 `src/millwork/manual/pages` are the gallery a bundle upgrade is judged
 against.
 
-## Releasing
-
-A release is a tag. Write the version's section in `CHANGELOG.md`, set the
-version with `uv version`, commit, tag it `v` plus the version and push the
-tag. The release workflow waits for approval, checks the tagged commit,
-builds the wheel, publishes it to PyPI and makes the GitHub release from
-the changelog section. The published release then deploys the hosted
-manual from that version on PyPI; `deploy/` holds its image and Fly
-configuration. To deploy one by hand, put the release's wheel next to the
-image with `gh release download v<version> --pattern "millwork-*.whl" --dir
-deploy`, then `flyctl deploy ./deploy`.
 
 ## License
 
