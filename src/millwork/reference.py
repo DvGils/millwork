@@ -85,6 +85,7 @@ PAGE_API = (
     "navigate",
     "event",
     "settle",
+    "stream",
 )
 
 

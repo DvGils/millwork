@@ -191,12 +191,24 @@ The `close` hook runs once per visit, when the session is done with the
 page, with the state still as the page left it. That is when the tab
 moves to another page, before that page's connect runs, which holds when
 the next page is this one with other parameters, and when the session
-ends, because the tab said goodbye or has been gone longer than the grace
-period. A page whose connect raises is reported with a toast, and the tab
+ends. A page whose connect raises is reported with a toast, and the tab
 keeps the page it came from, already closed, with whatever the failed
-connect wrote to the state. `App(session_grace=300)` sets the grace period
-in seconds. A tab that reconnects within it, after a sleep or a dropped
-network, gets its session back with everything in it.
+connect wrote to the state.
+
+A session does not end when its tab closes. The server cannot tell a
+closed tab from a reload or a dropped network, so the session waits for
+the tab to come back, and ends when it has been gone longer than the
+grace period. `App(session_grace=300)` sets that in seconds. A tab that
+reconnects within it, after a reload, a sleep or a dropped network, gets
+its session back with everything in it, and no hook runs. The `close`
+hook of a closed tab therefore runs minutes after the person left, which
+suits releasing what the page held and does not suit anything they are
+waiting to see. A session also ends when the app calls `s.end(message)`,
+when a sign-out ends it, and when the server stops. At a stop every page
+closes before the `on_shutdown` hooks run, so a close hook still has the
+database those hooks close. The session's tasks are canceled before the
+hook runs. A handler or a task that ends its own session goes on until
+the hook is done and stops at its next `await`.
 
 ## Navigation in the frame
 

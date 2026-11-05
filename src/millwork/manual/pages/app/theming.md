@@ -73,9 +73,12 @@ that stays apart for color-blind readers in both schemes.
 
 A font is a file under `public/`, served by the app, described by
 `family`, `src`, `weights` (one weight or a range) and `style`. It becomes
-an `@font-face` rule, and the `font-sans` token names it. A `url` to a
-font service is accepted instead of `src`. That is logged once at start,
-as a reminder that every page view then calls a third party.
+an `@font-face` rule, and a token puts it to use. `font-sans` is the font
+of the whole page. `font-heading` is the font of headings and of the
+titles of cards, dialogs, sheets and the header, and follows `font-sans`
+until it is set. `font-mono` is the font of code. A `url` to a font
+service is accepted instead of `src`. That is logged once at start, as a
+reminder that every page view then calls a third party.
 
 ## Logo, favicon and login image
 

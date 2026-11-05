@@ -150,7 +150,7 @@ async def test_grace_closes_the_session_once_and_a_reattach_cancels_it(tmp_path:
     assert not app.files.session_dir(session.id).exists()
 
     # Closing again is a no-op, and a detach after close starts no timer.
-    await session.close()
+    await session._close()
     session.detach()
     assert log["closed"] == 1 and session._grace is None
 
@@ -168,7 +168,7 @@ async def test_close_cancels_work_and_the_handler_waiting_on_an_ask(tmp_path: Pa
     assert session._asks and any(n.endswith("/ok") for n in session.tree.nodes)  # type: ignore[union-attr]
 
     log["close_raises"] = True
-    await session.close()
+    await session._close()
     await flush(session)
     # The hook's failure is logged, not raised, and the session is still closed.
     assert session.closed and log["closed"] == 1
@@ -221,7 +221,7 @@ async def test_replay_window_and_full_mount_outside_it(tmp_path: Path) -> None:
     again = Wire()
     await session.attach(again.sender, first - 2)  # one message older than kept: a mount
     assert again.types() == ["session", "mount"]
-    await session.close()
+    await session._close()
 
 
 async def test_a_failing_send_detaches_replays_later_and_runs_out_the_grace(
@@ -262,7 +262,7 @@ async def test_a_second_attach_closes_the_first_socket(tmp_path: Path) -> None:
     await click(session, "inc")
     # The superseded socket receives nothing more; the new one gets the patch.
     assert len(first.messages) == 2 and second.types() == ["session", "mount", "patch"]
-    await session.close()
+    await session._close()
 
 
 async def test_render_coalesces_and_failures_become_errors_not_crashes(tmp_path: Path) -> None:
@@ -310,7 +310,7 @@ async def test_render_coalesces_and_failures_become_errors_not_crashes(tmp_path:
     session.refresh()
     await flush(session)
     assert wire.messages[-1]["type"] == "error"
-    await session.close()
+    await session._close()
 
 
 async def test_a_failed_navigate_leaves_the_session_on_its_page(tmp_path: Path) -> None:
@@ -359,7 +359,7 @@ async def test_a_failed_navigate_leaves_the_session_on_its_page(tmp_path: Path) 
     assert "No such thing." in [
         n["props"].get("content") for n in wire.messages[-1]["nodes"].values()
     ]
-    await session.close()
+    await session._close()
 
 
 async def test_seqs_only_grow_and_direct_messages_do_not_count(tmp_path: Path) -> None:
@@ -378,7 +378,7 @@ async def test_seqs_only_grow_and_direct_messages_do_not_count(tmp_path: Path) -
     again = Wire()
     await session.attach(again.sender, session._seq)
     assert again.seqs == [session._seq]
-    await session.close()
+    await session._close()
 
 
 class SlowWire(Wire):
@@ -414,7 +414,7 @@ async def test_a_message_during_a_replay_is_delivered_once_and_in_order(tmp_path
     good = Wire()
     await session.attach(good.sender, behind)
     assert session.connected and good.types()[0] == "session"
-    await session.close()
+    await session._close()
 
 
 async def test_navigate_renders_nothing_before_the_new_page_is_connected(tmp_path: Path) -> None:
@@ -439,7 +439,7 @@ async def test_navigate_renders_nothing_before_the_new_page_is_connected(tmp_pat
     assert [m["type"] for m in new] == ["command", "mount"]
     assert new[0]["name"] == "navigate"
     assert new[1]["nodes"]["root/t"]["props"]["content"] == "ready"
-    await session.close()
+    await session._close()
 
 
 async def test_a_reply_reaches_a_socket_still_catching_up(tmp_path: Path) -> None:
@@ -511,6 +511,6 @@ async def test_a_page_closes_before_the_next_connects_and_only_once(tmp_path: Pa
         assert page.session.path == "/p/2" and page.failures[-1][0] == "the connect hook of /bad"
         assert calls == ["load 1", "release #1", "load 2", "release #2"]
         # A navigate after the end does nothing.
-        await page.session.close()
+        await page.session._close()
         await page.session.navigate_to("/p/3")
     assert calls == ["load 1", "release #1", "load 2", "release #2"]

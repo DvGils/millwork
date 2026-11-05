@@ -157,7 +157,7 @@ export const Header: Renderer = ({ props, children }) => {
     >
       <div className="flex min-w-0 items-center gap-3">
         {props.logo !== false ? <Logo /> : null}
-        {props.title ? <span className="truncate text-lg font-semibold tracking-tight">{String(props.title)}</span> : null}
+        {props.title ? <span data-slot="header-title" className="truncate text-lg font-semibold tracking-tight">{String(props.title)}</span> : null}
       </div>
       {links.length ? (
         <nav className="hidden items-center gap-4 text-sm md:flex">

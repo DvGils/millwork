@@ -378,10 +378,12 @@ class App:
                 self._theme_watch.cancel()
             if self._components_watch is not None:
                 self._components_watch.cancel()
+            # Sessions end first: a page's close hook still has what the shutdown
+            # hooks take away, a database pool or a client.
+            for session in list(self.sessions.values()):
+                await session._close()
             for fn in self._shutdown:
                 await _maybe_await(fn())
-            for session in list(self.sessions.values()):
-                await session.close()
 
     # ------------------------------------------------------------- asgi
 

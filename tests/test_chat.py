@@ -460,3 +460,36 @@ def test_chat_handlers_are_checked_for_their_own_shapes() -> None:
         TypeError, match=r"on_action takes a handler of \(session, message, action\)"
     ):
         build(ui.Chat(on_action=lambda s, payload: None))
+
+
+async def test_a_command_is_a_message_without_any_text(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("c8", public=None, bundle_dir=tmp_path)
+    turns: list[tuple[str, str | None]] = []
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        turns.append((turn.text, turn.command))
+        async with turn.reply() as r:
+            await r.text("ok")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Chat(
+                key="main",
+                on_message=answer,
+                commands=[ui.Command(id="risk", label="Risk")],
+            )
+        )
+
+    async with TestApp(app).open("/") as page:
+        await page.send("main", command="risk")
+        # Nothing at all is still nothing.
+        await page.send("main")
+        assert turns == [("", "risk")]
+        user, assistant = page.session.chat("main").messages
+        assert user.parts == [] and user.metadata["command"] == "risk"
+        assert assistant.text == "ok"
+        assert [c["type"] for c in page.stream][0] == "start"
+        assert "".join(c["delta"] for c in page.stream if c["type"] == "text-delta") == "ok"

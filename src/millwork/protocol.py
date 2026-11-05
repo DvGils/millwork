@@ -12,7 +12,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 
 
 class Wire(BaseModel):
@@ -50,6 +50,18 @@ class UnsetOp(Wire):
     keys: list[str]
 
 
+class SpliceOp(Wire):
+    """A long list prop that changed in places. Each edit is ``(start, delete,
+    items)`` in positions of the list as the tab has it, in ascending order
+    and without overlap, so the tab rebuilds the list in one pass and every
+    item the edits leave alone stays the object it was."""
+
+    op: Literal["splice"] = "splice"
+    id: str
+    prop: str
+    edits: list[tuple[int, int, list[Any]]]
+
+
 class ChildrenOp(Wire):
     op: Literal["children"] = "children"
     id: str
@@ -66,7 +78,9 @@ class RemoveOp(Wire):
     id: str
 
 
-PatchOp = Annotated[SetOp | UnsetOp | ChildrenOp | AddOp | RemoveOp, Field(discriminator="op")]
+PatchOp = Annotated[
+    SetOp | UnsetOp | SpliceOp | ChildrenOp | AddOp | RemoveOp, Field(discriminator="op")
+]
 
 
 class Patch(Wire):

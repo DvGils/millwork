@@ -29,7 +29,8 @@ async def test_a_click_counts(app):
 
 Tests are `async def`, run by pytest-asyncio in auto mode. `open(path)`
 runs the page's `connect` and the first render and yields a `Page`.
-Leaving the block closes the session, `close` hook included. `open(path,
+Leaving the block closes the session, `close` hook included, and a hook
+that raises fails the test there. `open(path,
 user=User(...))` signs a person in. Without one, a gated page raises
 `Forbidden`, and a `connect` that raises `NotFound` or `Forbidden` raises
 it from `open` too, which makes a test of its own. `open(path,
@@ -72,7 +73,11 @@ calls `s.confirm` or `s.ask` stops and waits. The test sees
 the dialog on the page and answers it with `page.answer(value)`, `False`,
 or `None` for a dismissal. A task started by a handler has run by the time
 the action returns, and `page.session.tasks[-1]` has its `ok`, `result`
-and `progress`. A chat turn's chunks are in `page.stream`, in order.
+and `progress`. A chat turn's chunks are in `page.stream`, in order, in
+the AI SDK's UI message stream format, where each
+`{"type": "text-delta", "delta": ...}` carries some of the reply's words.
+The finished reply is easier to check on the thread, as
+`page.session.chat(key).messages[-1].text`.
 
 ```python
 async def test_wiping_asks_first(app):

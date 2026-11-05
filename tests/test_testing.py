@@ -1,5 +1,6 @@
 """millwork.testing: a session driven without a socket, observed on its wire."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -449,3 +450,65 @@ async def test_a_click_on_a_download_downloads_and_text_skips_choices(tmp_path: 
         assert "Quarterly numbers" in text and "Report" in text and "Go" in text
         for choice in ("heading", "center", "muted", "outline", "sm"):
             assert choice not in text.split("\n"), choice
+
+
+async def test_a_handler_that_ends_its_session_lets_the_close_hook_finish(tmp_path: Path) -> None:
+    app = mw.App("end", state=State, public=None, bundle_dir=tmp_path)
+    seen: list[str] = []
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Button("leave", key="leave", on_click=leave))
+
+    @home.close
+    async def closed(s: mw.Session[State]) -> None:
+        seen.append("close started")
+        await asyncio.sleep(0)
+        seen.append("close finished")
+
+    async def leave(s: mw.Session[State], _: Any) -> None:
+        await s.end("Done here.")
+        seen.append("handler went on")
+
+    async def work(s: mw.Session[State]) -> None:
+        await asyncio.sleep(0)
+        await s.end("The work is done.")
+        seen.append("work went on")
+        await asyncio.sleep(0)
+        seen.append("work outlived its session")
+
+    async with TestApp(app).open("/") as page:
+        await page.click("leave")
+        assert seen == ["close started", "close finished", "handler went on"]
+        assert page.session.closed
+        assert page.messages[-1].message == "Done here." and page.messages[-1].fatal
+
+    # A task that ends its session gets to the end of the hook too, and is
+    # cancelled at its next await like the rest of the session's work.
+    seen.clear()
+    async with TestApp(app).open("/") as page:
+        task = page.session.task(work(page.session), label="Work")
+        await page.settle()
+        assert seen == ["close started", "close finished", "work went on"]
+        assert task.status == "cancelled"
+
+
+async def test_a_close_hook_that_raises_fails_a_strict_test(tmp_path: Path) -> None:
+    app = mw.App("hook", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("home"))
+
+    @home.close
+    def closed(s: mw.Session[State]) -> None:
+        raise RuntimeError("close hook broke")
+
+    with pytest.raises(RuntimeError, match="close hook broke") as caught:
+        async with TestApp(app).open("/"):
+            pass
+    assert any("the close hook of /" in note for note in caught.value.__notes__)
+
+    async with TestApp(app, strict=False).open("/") as page:
+        pass
+    assert [where for where, _ in page.failures] == ["the close hook of /"]

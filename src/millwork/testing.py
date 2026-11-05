@@ -147,6 +147,13 @@ class Page:
 
     @property
     def stream(self) -> list[dict[str, Any]]:
+        """Every chunk the chats on the page streamed, in order, in the AI SDK's
+        UI message stream format. A reply runs from ``{"type": "start"}`` to
+        ``{"type": "finish"}``, and its words are the ``delta`` of each
+        ``{"type": "text-delta"}`` chunk.
+
+        The finished reply is easier to read off the thread, as
+        ``page.session.chat(key).messages[-1].text``."""
         return [m.chunk for m in self.messages if isinstance(m, Stream)]
 
     @property
@@ -245,7 +252,7 @@ class Page:
     async def send(
         self,
         chat: Found | str,
-        text: str,
+        text: str = "",
         *,
         files: Iterable[Path | str] = (),
         command: str | None = None,
@@ -409,8 +416,17 @@ class TestApp:
             await page.settle()
             yield page
             await page.settle()
-        finally:
-            await session.close()
+        except BaseException:
+            await session._close()
+            raise
+        # The page's close hook runs as the session ends, and what it raises is
+        # the app's code failing like any other.
+        seen = len(page.failures)
+        await session._close()
+        if self.strict and len(page.failures) > seen:
+            where, exc = page.failures[seen]
+            exc.add_note(f"raised by {where}")
+            raise exc
 
 
 __all__ = ["Found", "Page", "TestApp"]

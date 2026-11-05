@@ -33,26 +33,37 @@ function empty(v: unknown): boolean {
   return v === null || v === undefined || v === "";
 }
 
+// One collator for every comparison: a sort of thousands of rows compares
+// text tens of thousands of times, and building the rules each time is most
+// of what that costs.
+const text = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
 // Numbers by value, everything else as text with numeric runs in order.
 export function compare(a: unknown, b: unknown): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
   if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+  return text.compare(String(a), String(b));
 }
 
-export function sortRows<R extends Record<string, unknown>>(rows: R[], sorting: Sort[]): R[] {
+// `cell` reads a column of a row, for rows that are not the plain record.
+export function sortRows<R>(
+  rows: R[],
+  sorting: Sort[],
+  cell: (row: R, id: string) => unknown = (row, id) => (row as Record<string, unknown>)[id],
+): R[] {
   if (!sorting.length) return rows;
   return rows
     .map((r, i) => [r, i] as const)
     .sort(([a, ia], [b, ib]) => {
       for (const s of sorting) {
         // An empty cell goes last whichever way the column is sorted.
-        const ea = empty(a[s.id]), eb = empty(b[s.id]);
+        const va = cell(a, s.id), vb = cell(b, s.id);
+        const ea = empty(va), eb = empty(vb);
         if (ea || eb) {
           if (ea === eb) continue;
           return ea ? 1 : -1;
         }
-        const c = compare(a[s.id], b[s.id]);
+        const c = compare(va, vb);
         if (c) return s.desc ? -c : c;
       }
       return ia - ib;

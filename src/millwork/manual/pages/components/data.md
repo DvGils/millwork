@@ -8,7 +8,9 @@ order: 4
 `ui.Table` shows rows, which can be dicts, Pydantic models or
 dataclasses. Columns come from the rows unless `columns` names them, each
 with a `header`, a `format`, a `width`, an `align`, and whether it is
-`sortable` or `filterable`.
+`sortable` or `filterable`. A column without a `header` is headed by its
+key exactly as written, which keeps the names of data the app did not
+make, an upload for one, as they are.
 
 ## A plain table
 
@@ -97,7 +99,9 @@ def example(s):
 ## Tones
 
 `tones` colors rows. It is a function of the row returning a tone, or a
-mapping from column key to a function of the row and the cell. A row's
+mapping from column key to a function of the row and the cell, called as
+`fn(row, value)`. The row is the one given in `rows`, so a model is still
+a model there, and returning `None` leaves the row or cell as it is. A row's
 tone tints the row, and a cell's tone colors the cell's text, or the
 badge when the column is one.
 
@@ -121,6 +125,32 @@ ui.Table(
         "score": lambda r, v: "success" if v > 0.85 else ("destructive" if v < 0.8 else None),
         "role": lambda r, v: "warning" if not r["active"] else None,
     },
+)
+```
+
+## Long tables
+
+Every row is in the browser, and a table of thousands stays quick.
+`height` gives the table a box of its own to scroll in, with the header
+staying at its top. A table longer than two hundred rows draws the rows
+in view and a margin around them, so the page holds a few hundred cells
+however long the table is. The browser's own find then sees the rows
+that are drawn, which is what `search=True` is for. A change to the rows
+sends the rows that changed and draws those again, so a task can add to
+a long table as it runs. `wrap=True` on a column lets its text wrap
+instead of widening the table.
+
+```python live
+LONG = [{"id": i, "customer": f"Customer {i}", "amount": 12.5 * i} for i in range(1, 2001)]
+
+ui.Table(
+    rows=LONG,
+    columns=[
+        ui.Column(key="id"),
+        ui.Column(key="customer"),
+        ui.Column(key="amount", format="currency", align="right"),
+    ],
+    height=320,
 )
 ```
 
