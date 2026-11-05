@@ -132,7 +132,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             await ws.send_text(
                 pack(0, ServerError(message=app.theme.text("page_failed"), fatal=True))
             )
-            await session.close()
+            await session._close()
             await ws.close(code=4500)
             return
 

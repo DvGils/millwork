@@ -312,7 +312,9 @@ export const Sheet: Renderer = ({ props, children, emit }) => {
           {props.description ? <SheetDescription>{String(props.description)}</SheetDescription> : null}
         </SheetHeader>
       ) : null}
-      <div className="flex flex-col gap-4 overflow-auto px-4 pb-4">{children}</div>
+      <div data-slot="sheet-body" className="min-h-0 min-w-0 overflow-auto px-4 pb-4 wrap-break-word">
+        <div className="flex flex-col gap-4">{children}</div>
+      </div>
     </SheetContent>
   </UiSheet>
   );

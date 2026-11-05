@@ -44,3 +44,12 @@ describe("filters", () => {
     expect(emptyFilter("x")).toBe(false);
   });
 });
+
+describe("sortRows with a reader", () => {
+  it("sorts rows that hold their record inside", () => {
+    const entries = [3, 1, 2].map((n, i) => ({ row: { n }, i }));
+    const sorted = sortRows(entries, [{ id: "n", desc: true }], (e, id) => (e.row as Record<string, unknown>)[id]);
+    expect(sorted.map((e) => e.row.n)).toEqual([3, 2, 1]);
+    expect(sorted.map((e) => e.i)).toEqual([0, 2, 1]);
+  });
+});

@@ -1,16 +1,17 @@
 // The Table: every row in the browser, sorted, filtered and paged here;
-// selection reported to the server, tones instead of styles.
+// selection reported to the server, tones instead of styles. A long table
+// draws the rows in view, and a row is drawn again only when it changed.
 
 import { dateFormat, dateTimeFormat, formatNumber } from "../format";
 import { t } from "../theme";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
 import { type Sort, emptyFilter, equalsFilter, includesFilter, rangeFilter, sortRows } from "../table-rows";
 import { cn } from "cn";
 import { icon } from "../icons";
+import { useRowWindow, useSteadyColumns } from "../hooks/use-row-window";
 import { safeUrl } from "../lib";
 import {
-  Table as UiTable,
   TableBody,
   TableCell,
   TableHead,
@@ -49,8 +50,6 @@ interface MenuItem {
   destructive?: boolean;
   separator_after?: boolean;
 }
-
-type RowData = Record<string, unknown> & { __i: number; __key: unknown };
 
 // The filter a column gets: a range for numbers, a choice for a column with few
 // distinct values, a contains-text box otherwise. Inferred from the format and
@@ -174,28 +173,91 @@ function formatCell(value: unknown, format: string, tone?: string) {
   }
 }
 
-type Col = {
-  id: string;
-  header: ReactNode;
-  cell: (row: RowData) => ReactNode;
-  sortable: boolean;
-  filterable: boolean;
-  size?: number;
-  column?: Column;
-};
+// A row as the table holds it: the record as it arrived, its place in the
+// rows, its key, and the key as text for sets and for React.
+type Entry = { row: Record<string, unknown>; i: number; key: unknown; id: string };
+
+type Act = (what: "select" | "click" | "action", key: unknown, id?: string) => void;
+
+const NONE: never[] = [];
+
+interface RowProps {
+  row: Record<string, unknown>;
+  rowKey: unknown;
+  tone: string | null | undefined;
+  cellTones: Record<string, string> | null | undefined;
+  selected: boolean;
+  columns: Column[];
+  checkbox: boolean;
+  actions: MenuItem[];
+  clickable: boolean;
+  act: Act;
+}
+
+// One row, drawn again only when something it shows changed: the record is the
+// same object from one patch to the next unless the patch touched it, and
+// everything else here is a plain value or stable for the table's life.
+const Row = memo(function Row({ row, rowKey, tone, cellTones, selected, columns, checkbox, actions, clickable, act }: RowProps) {
+  return (
+    <TableRow
+      data-state={selected ? "selected" : undefined}
+      className={cn(tone && rowTone[tone], clickable && "cursor-pointer")}
+      onClick={(e) => {
+        // Clicks inside a portal (the actions menu) bubble through React, not the DOM.
+        if (!e.currentTarget.contains(e.target as Node)) return;
+        if ((e.target as HTMLElement).closest("button, a, [role=checkbox], [data-slot=dropdown-menu-trigger]")) return;
+        act("click", rowKey);
+      }}
+    >
+      {checkbox ? (
+        <TableCell className="py-(--mw-cell-y) whitespace-nowrap">
+          <Checkbox checked={selected} onCheckedChange={() => act("select", rowKey)} aria-label={t("select_row")} />
+        </TableCell>
+      ) : null}
+      {columns.map((c) => {
+        const cellTone_ = cellTones?.[c.key];
+        const content = formatCell(row[c.key], c.format ?? "text", cellTone_);
+        return (
+          <TableCell
+            key={c.key}
+            className={cn(
+              "py-(--mw-cell-y)",
+              c.align === "right" && "text-right tabular-nums",
+              c.align === "center" && "text-center",
+              c.wrap ? "whitespace-normal" : "whitespace-nowrap",
+            )}
+          >
+            {cellTone_ && c.format !== "badge" && cellTone[cellTone_] ? <span className={cellTone[cellTone_]}>{content}</span> : content}
+          </TableCell>
+        );
+      })}
+      {actions.length ? (
+        <TableCell className="py-(--mw-cell-y) whitespace-nowrap">
+          <RowActions items={actions} onPick={(id) => act("action", rowKey, id)} />
+        </TableCell>
+      ) : null}
+    </TableRow>
+  );
+});
+
+type Head = { id: string; header: ReactNode; sortable: boolean; filterable: boolean; size?: number; column?: Column };
 
 export const Table: Renderer = ({ props, emit }) => {
-  const rows = (Array.isArray(props.rows) ? (props.rows as Record<string, unknown>[]) : []);
-  const keys = (Array.isArray(props.keys) ? (props.keys as unknown[]) : []);
-  const columns = (Array.isArray(props.columns) ? (props.columns as Column[]) : []);
-  const toneRows = (props.tone_rows ?? {}) as Record<string, string>;
-  const toneCells = (props.tone_cells ?? {}) as Record<string, Record<string, string>>;
+  const rows = (Array.isArray(props.rows) ? (props.rows as Record<string, unknown>[]) : NONE);
+  const keys = (Array.isArray(props.keys) ? (props.keys as unknown[]) : NONE);
+  const columns = (Array.isArray(props.columns) ? (props.columns as Column[]) : NONE);
+  const toneRows = (Array.isArray(props.tone_rows) ? (props.tone_rows as (string | null)[]) : NONE);
+  const toneCells = (Array.isArray(props.tone_cells) ? (props.tone_cells as (Record<string, string> | null)[]) : NONE);
   const selection = String(props.selection ?? "none");
-  const selected = (Array.isArray(props.selected) ? (props.selected as unknown[]) : []);
-  const actions = (Array.isArray(props.row_actions) ? (props.row_actions as MenuItem[]) : []);
+  const selected = (Array.isArray(props.selected) ? (props.selected as unknown[]) : NONE);
+  const actions = (Array.isArray(props.row_actions) ? (props.row_actions as MenuItem[]) : NONE);
   const pageSize = typeof props.page_size === "number" ? props.page_size : null;
 
-  const data = useMemo<RowData[]>(() => rows.map((r, i) => ({ ...r, __i: i, __key: keys[i] })), [rows, keys]);
+  const entries = useMemo<Entry[]>(() => rows.map((row, i) => ({ row, i, key: keys[i], id: JSON.stringify(keys[i]) })), [rows, keys]);
+  // A row is known to React by its key, so one that moves is moved and not
+  // drawn again; rows that share a key go by their place instead.
+  const distinct = useMemo(() => new Set(entries.map((e) => e.id)).size === entries.length, [entries]);
+  const visible = useMemo(() => columns.filter((c) => !c.hidden), [columns]);
 
   const [sorting, setSorting] = useState<Sort[]>(() =>
     (Array.isArray(props.default_sort) ? (props.default_sort as [string, string][]) : []).map(([id, dir]) => ({ id, desc: dir === "desc" })),
@@ -203,7 +265,13 @@ export const Table: Renderer = ({ props, emit }) => {
   const [filters, setFilters] = useState<Record<string, unknown>>({});
   const [globalFilter, setGlobalFilter] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
-  const kinds = useMemo(() => Object.fromEntries(columns.map((c) => [c.key, filterKind(c, rows)])) as Record<string, FilterKind>, [columns, rows]);
+  // What kind of filter each column gets is read off every row, so it is only
+  // worked out for a table that shows filters.
+  const filtered = Boolean(props.filters);
+  const kinds = useMemo(
+    () => (filtered ? (Object.fromEntries(columns.map((c) => [c.key, filterKind(c, rows)])) as Record<string, FilterKind>) : {}),
+    [filtered, columns, rows],
+  );
 
   // The initial sort and the empty filter are the server's own: only a change
   // made here is reported.
@@ -240,36 +308,52 @@ export const Table: Renderer = ({ props, emit }) => {
     });
 
   const selectedSet = useMemo(() => new Set(selected.map((k) => JSON.stringify(k))), [selected]);
-  const isSelected = (row: RowData) => selectedSet.has(JSON.stringify(row.__key));
 
-  const select = (row: RowData) => {
-    if (selection === "none" || !props.on_select) return;
-    const key = row.__key;
-    if (selection === "row") {
-      emit("select", isSelected(row) ? [] : [key]);
-      return;
+  // What a row does when it is used. The rows hold one function for the table's
+  // life, which reads the table as it is now, so a row is not drawn again
+  // because the selection or a handler changed elsewhere.
+  const now = useRef({ selection, selected, selectedSet, emit, onSelect: Boolean(props.on_select), onRowClick: Boolean(props.on_row_click) });
+  now.current = { selection, selected, selectedSet, emit, onSelect: Boolean(props.on_select), onRowClick: Boolean(props.on_row_click) };
+  const act = useCallback<Act>((what, key, id) => {
+    const { selection, selected, selectedSet, emit, onSelect, onRowClick } = now.current;
+    const select = () => {
+      if (selection === "none" || !onSelect) return;
+      const text = JSON.stringify(key);
+      const on = selectedSet.has(text);
+      if (selection === "row") {
+        emit("select", on ? [] : [key]);
+        return;
+      }
+      const next = selected.filter((k) => JSON.stringify(k) !== text);
+      if (!on) next.push(key);
+      emit("select", next);
+    };
+    if (what === "action") emit("action", [id, key]);
+    else if (what === "select") select();
+    else {
+      if (onRowClick) emit("row_click", key);
+      if (selection === "row") select();
     }
-    const next = selected.filter((k) => JSON.stringify(k) !== JSON.stringify(key));
-    if (!isSelected(row)) next.push(key);
-    emit("select", next);
-  };
+  }, []);
 
   const shown = useMemo(() => {
     const needle = globalFilter.trim().toLowerCase();
-    const dataColumns = columns.filter((c) => !c.hidden);
-    const kept = data.filter((r) => {
-      for (const [id, value] of Object.entries(filters)) {
-        // A filter on a column the server has since dropped filters nothing.
-        if (!kinds[id]) continue;
-        const kind = kinds[id].kind;
-        const ok = kind === "number" ? rangeFilter(r[id], value) : kind === "select" ? equalsFilter(r[id], value) : includesFilter(r[id], value);
-        if (!ok) return false;
-      }
-      if (!needle) return true;
-      return dataColumns.some((c) => includesFilter(r[c.key], needle));
-    });
-    return sortRows(kept, sorting);
-  }, [data, columns, filters, globalFilter, kinds, sorting]);
+    const active = Object.entries(filters).filter(([id]) => kinds[id]);
+    // A filter on a column the server has since dropped filters nothing.
+    const kept =
+      !needle && !active.length
+        ? entries
+        : entries.filter(({ row }) => {
+            for (const [id, value] of active) {
+              const kind = kinds[id].kind;
+              const ok = kind === "number" ? rangeFilter(row[id], value) : kind === "select" ? equalsFilter(row[id], value) : includesFilter(row[id], value);
+              if (!ok) return false;
+            }
+            if (!needle) return true;
+            return visible.some((c) => includesFilter(row[c.key], needle));
+          });
+    return sortRows(kept, sorting, (e, id) => e.row[id]);
+  }, [entries, visible, filters, globalFilter, kinds, sorting]);
 
   // A rows patch (a task updating a column) must not bounce the reader to page
   // 1; a page that no longer exists falls back to the last one.
@@ -277,62 +361,56 @@ export const Table: Renderer = ({ props, emit }) => {
   useEffect(() => {
     if (pageIndex >= pageCount) setPageIndex(pageCount - 1);
   }, [pageIndex, pageCount]);
-  const page = pageSize ? shown.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize) : shown;
+  const page = useMemo(
+    () => (pageSize ? shown.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize) : shown),
+    [shown, pageSize, pageIndex],
+  );
 
-  const cols = useMemo<Col[]>(() => {
-    const defs: Col[] = [];
-    if (selection === "rows") {
-      defs.push({
-        id: "__select",
-        sortable: false,
-        filterable: false,
-        size: 32,
-        header: (
-          <Checkbox
-            checked={page.length > 0 && page.every(isSelected)}
-            onCheckedChange={(checked) => {
-              const visible = page.map((r) => r.__key);
-              const visibleSet = new Set(visible.map((k) => JSON.stringify(k)));
-              const others = selected.filter((k) => !visibleSet.has(JSON.stringify(k)));
-              emit("select", checked ? [...others, ...visible] : others);
-            }}
-            aria-label={t("select_all")}
-          />
-        ),
-        cell: (row) => <Checkbox checked={isSelected(row)} onCheckedChange={() => select(row)} aria-label={t("select_row")} />,
-      });
-    }
-    for (const c of columns) {
-      if (c.hidden) continue;
-      defs.push({
-        id: c.key,
-        header: c.header ?? c.key,
-        sortable: c.sortable !== false && props.sortable !== false,
-        filterable: c.filterable !== false,
-        size: typeof c.width === "number" ? c.width : undefined,
-        cell: (row) => {
-          const tone = toneCells[String(row.__i)]?.[c.key];
-          const content = formatCell(row[c.key], c.format ?? "text", tone);
-          return tone && c.format !== "badge" && cellTone[tone] ? <span className={cellTone[tone]}>{content}</span> : content;
-        },
-        column: c,
-      });
-    }
-    if (actions.length) {
-      defs.push({
-        id: "__actions",
-        sortable: false,
-        filterable: false,
-        header: "",
-        size: 40,
-        cell: (row) => <RowActions items={actions} onPick={(id) => emit("action", [id, row.__key])} />,
-      });
-    }
-    return defs;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, selection, actions, selected, toneCells, page]);
+  const body = useRef<HTMLTableSectionElement>(null);
+  const headRow = useRef<HTMLTableRowElement>(null);
+  // Rows go by their key where keys tell them apart, by their place otherwise.
+  const names = useMemo(() => page.map((e) => (distinct ? e.id : `#${e.i}`)), [page, distinct]);
+  const view = useRowWindow(body, names);
+  const drawn = useMemo(
+    () => (view.windowed ? page.slice(view.first, view.last) : page),
+    [page, view.windowed, view.first, view.last],
+  );
+  useSteadyColumns(headRow, body, view.windowed, visible, drawn);
 
-  const total = data.length;
+  const heads: Head[] = [];
+  if (selection === "rows") {
+    heads.push({
+      id: "__select",
+      sortable: false,
+      filterable: false,
+      size: 32,
+      header: (
+        <Checkbox
+          checked={page.length > 0 && page.every((e) => selectedSet.has(e.id))}
+          onCheckedChange={(checked) => {
+            const here = new Set(page.map((e) => e.id));
+            const others = selected.filter((k) => !here.has(JSON.stringify(k)));
+            emit("select", checked ? [...others, ...page.map((e) => e.key)] : others);
+          }}
+          aria-label={t("select_all")}
+        />
+      ),
+    });
+  }
+  for (const c of visible) {
+    heads.push({
+      id: c.key,
+      header: c.header ?? c.key,
+      sortable: c.sortable !== false && props.sortable !== false,
+      filterable: c.filterable !== false,
+      size: typeof c.width === "number" ? c.width : undefined,
+      column: c,
+    });
+  }
+  if (actions.length) heads.push({ id: "__actions", sortable: false, filterable: false, header: "", size: 40 });
+
+  const clickable = selection === "row" || Boolean(props.on_row_click);
+  const total = entries.length;
   const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown.length === total ? `${total} rows` : `${shown.length} of ${total} rows`;
 
   return (
@@ -344,10 +422,14 @@ export const Table: Renderer = ({ props, emit }) => {
         className={cn("overflow-auto rounded-lg border", props.height && "min-h-0")}
         style={props.height ? { maxHeight: typeof props.height === "number" ? `${props.height}px` : String(props.height) } : undefined}
       >
-        <UiTable>
-          <TableHeader className={cn(props.sticky_header !== false && "sticky top-0 z-10 bg-background")}>
-            <TableRow>
-              {cols.map((c) => {
+        {/* The box above is the one scroller, both ways, so the header sticks to
+            it: a scroller of the table's own in between would hold the header
+            instead and never move. */}
+        <div data-slot="table-container" className="relative w-full">
+        <table data-slot="table" className="w-full caption-bottom text-sm">
+          <TableHeader className={cn(props.sticky_header !== false && "sticky top-0 z-10 bg-background shadow-[0_1px_0_var(--border)]")}>
+            <TableRow ref={headRow}>
+              {heads.map((c) => {
                 const sorted = sorting.find((s) => s.id === c.id);
                 const Arrow = sorted ? icon(sorted.desc ? "arrow-down" : "arrow-up") : icon("arrow-up-down");
                 return (
@@ -371,7 +453,7 @@ export const Table: Renderer = ({ props, emit }) => {
             </TableRow>
             {props.filters ? (
               <TableRow>
-                {cols.map((c) => (
+                {heads.map((c) => (
                   <TableHead key={c.id} className="py-1">
                     {c.filterable ? <FilterCell kind={kinds[c.id] ?? { kind: "text" }} value={filters[c.id]} onChange={(v) => setFilter(c.id, v)} /> : null}
                   </TableHead>
@@ -379,49 +461,43 @@ export const Table: Renderer = ({ props, emit }) => {
               </TableRow>
             ) : null}
           </TableHeader>
-          <TableBody>
+          <TableBody ref={body}>
+            {view.before > 0 ? (
+              <tr aria-hidden="true">
+                <td colSpan={heads.length} className="p-0" style={{ height: view.before }} />
+              </tr>
+            ) : null}
             {page.length ? (
-              page.map((row) => {
-                const tone = toneRows[String(row.__i)];
-                const clickable = selection === "row" || Boolean(props.on_row_click);
-                return (
-                  <TableRow
-                    key={row.__i}
-                    data-state={isSelected(row) ? "selected" : undefined}
-                    className={cn(tone && rowTone[tone], clickable && "cursor-pointer")}
-                    onClick={(e) => {
-                      // Clicks inside a portal (the actions menu) bubble through React, not the DOM.
-                      if (!e.currentTarget.contains(e.target as Node)) return;
-                      if ((e.target as HTMLElement).closest("button, a, [role=checkbox], [data-slot=dropdown-menu-trigger]")) return;
-                      if (props.on_row_click) emit("row_click", row.__key);
-                      if (selection === "row") select(row);
-                    }}
-                  >
-                    {cols.map((c) => (
-                      <TableCell
-                        key={c.id}
-                        className={cn(
-                          "py-(--mw-cell-y)",
-                          c.column?.align === "right" && "text-right tabular-nums",
-                          c.column?.align === "center" && "text-center",
-                          !c.column?.wrap && "whitespace-nowrap",
-                        )}
-                      >
-                        {c.cell(row)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                );
-              })
+              drawn.map((e, n) => (
+                <Row
+                  key={names[view.first + n]}
+                  row={e.row}
+                  rowKey={e.key}
+                  tone={toneRows[e.i]}
+                  cellTones={toneCells[e.i]}
+                  selected={selectedSet.has(e.id)}
+                  columns={visible}
+                  checkbox={selection === "rows"}
+                  actions={actions}
+                  clickable={clickable}
+                  act={act}
+                />
+              ))
             ) : (
               <TableRow>
-                <TableCell colSpan={cols.length} className="h-20 text-center text-muted-foreground">
+                <TableCell colSpan={heads.length} className="h-20 text-center text-muted-foreground">
                   {String(props.empty || "No rows")}
                 </TableCell>
               </TableRow>
             )}
+            {view.after > 0 ? (
+              <tr aria-hidden="true">
+                <td colSpan={heads.length} className="p-0" style={{ height: view.after }} />
+              </tr>
+            ) : null}
           </TableBody>
-        </UiTable>
+        </table>
+        </div>
       </div>
       {summary || pageSize ? (
         <div className="flex items-center justify-between text-xs text-muted-foreground">

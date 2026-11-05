@@ -24,7 +24,16 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
 
 from millwork.icons import check_icon
-from millwork.protocol import AddOp, ChildrenOp, Node, PatchOp, RemoveOp, SetOp, UnsetOp
+from millwork.protocol import (
+    AddOp,
+    ChildrenOp,
+    Node,
+    PatchOp,
+    RemoveOp,
+    SetOp,
+    SpliceOp,
+    UnsetOp,
+)
 
 Handler = Callable[..., Any]
 ROOT_ID = "root"
@@ -35,6 +44,17 @@ class Wireable(Protocol):
     """Anything that knows how to appear in props: tasks, file references."""
 
     def __millwork_wire__(self) -> Any: ...
+
+
+class Wired:
+    """A ``wire_extra`` value that is JSON-ready as it stands. The tree takes it
+    as it is instead of walking it again, which a table of thousands of rows
+    would pay for on every render."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: Any) -> None:
+        self.value = value
 
 
 class Component(BaseModel):
@@ -194,7 +214,9 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
             continue
         props[name] = wire_value(value)
     for name, value in component.wire_extra().items():
-        if isinstance(value, Component):
+        if isinstance(value, Wired):
+            props[name] = value.value
+        elif isinstance(value, Component):
             slot_id = f"{node_id}/@{name}"
             _walk(value, slot_id, tree)
             props[name] = {"$node": slot_id}
@@ -275,9 +297,21 @@ def _handler_problem(fn: Callable[..., Any], count: int) -> str | None:
     return None
 
 
+_PLAIN = frozenset({str, int, float, bool, type(None)})
+
+
 def wire_value(value: Any) -> Any:
     """Turn a prop value into JSON-ready data."""
-    if value is None or isinstance(value, bool | int | float | str):
+    # The plain types first, by exact type: most of what a page sends is these,
+    # and a list of rows is thousands of them.
+    kind = type(value)
+    if kind in _PLAIN:
+        return value
+    if kind is dict:
+        return {k if type(k) is str else str(k): wire_value(v) for k, v in value.items()}
+    if kind is list or kind is tuple:
+        return [wire_value(v) for v in value]
+    if isinstance(value, bool | int | float | str):
         return value
     if isinstance(value, Wireable):
         return value.__millwork_wire__()
@@ -319,6 +353,13 @@ def diff(old: Tree | None, new: Tree) -> list[PatchOp]:
             ops.append(AddOp(node=node))
             continue
         changed = {k: v for k, v in node.props.items() if before.props.get(k, _MISSING) != v}
+        for name in list(changed):
+            was, now = before.props.get(name), changed[name]
+            if type(was) is list and type(now) is list and len(now) >= SPLICE_MIN:
+                edits = _edits(was, now)
+                if edits is not None:
+                    del changed[name]
+                    ops.append(SpliceOp(id=node_id, prop=name, edits=edits))
         if changed:
             ops.append(SetOp(id=node_id, props=changed))
         gone = [k for k in before.props if k not in node.props]
@@ -332,6 +373,46 @@ def diff(old: Tree | None, new: Tree) -> list[PatchOp]:
     return ops
 
 
+# A list at least this long is patched by its changes when that is less to send
+# than the list: a table's rows, a chart's points.
+SPLICE_MIN = 16
+
+
+def _edits(old: list[Any], new: list[Any]) -> list[tuple[int, int, list[Any]]] | None:
+    """What turns ``old`` into ``new``, as ``(start, delete, items)`` in positions
+    of ``old``, ascending. ``None`` when that is more than half the list, since
+    then the list itself is as good. Lists of one length are compared place by
+    place, so cells changed here and there are each their own edit; a list that
+    grew or shrank is one edit between what its two ends still share, which is
+    an append, an insert or a removal."""
+    n_old, n_new = len(old), len(new)
+    edits: list[tuple[int, int, list[Any]]] = []
+    sent = 0
+    if n_old == n_new:
+        i = 0
+        while i < n_new:
+            if old[i] == new[i]:
+                i += 1
+                continue
+            j = i + 1
+            while j < n_new and old[j] != new[j]:
+                j += 1
+            edits.append((i, j - i, new[i:j]))
+            sent += j - i
+            i = j
+    else:
+        shared = min(n_old, n_new)
+        head = 0
+        while head < shared and old[head] == new[head]:
+            head += 1
+        tail = 0
+        while tail < shared - head and old[n_old - 1 - tail] == new[n_new - 1 - tail]:
+            tail += 1
+        edits.append((head, n_old - head - tail, new[head : n_new - tail]))
+        sent = n_new - head - tail
+    return None if sent * 2 > n_new else edits
+
+
 def apply(nodes: dict[str, Node], ops: list[PatchOp]) -> dict[str, Node]:
     """Apply patch ops to a node table, the way the bundle does. For tests."""
     out = {k: v.model_copy(deep=True) for k, v in nodes.items()}
@@ -342,6 +423,15 @@ def apply(nodes: dict[str, Node], ops: list[PatchOp]) -> dict[str, Node]:
             out.pop(op.id, None)
         elif isinstance(op, SetOp):
             out[op.id].props.update(op.props)
+        elif isinstance(op, SpliceOp):
+            old = out[op.id].props[op.prop]
+            new: list[Any] = []
+            at = 0
+            for start, delete, items in op.edits:
+                new += old[at:start]
+                new += items
+                at = start + delete
+            out[op.id].props[op.prop] = new + old[at:]
         elif isinstance(op, UnsetOp):
             for k in op.keys:
                 out[op.id].props.pop(k, None)

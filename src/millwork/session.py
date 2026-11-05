@@ -239,7 +239,7 @@ class Session[S]:
     def _grace_expired(self) -> None:
         self._grace = None
         if not self.connected and not self.closed:
-            self._loop.create_task(self.close())
+            self._loop.create_task(self._close())
 
     async def end(self, message: str) -> None:
         """Close the session and tell its tab why, so the tab stops instead of
@@ -252,9 +252,13 @@ class Session[S]:
             if close is not None:
                 with contextlib.suppress(Exception):
                     await close()
-        await self.close()
+        await self._close()
 
-    async def close(self) -> None:
+    async def _close(self) -> None:
+        """The session is over: its work is cancelled, the page it is on is
+        closed, its files go. This is the framework's side of it, for a tab
+        that is gone or a server that stops, and it tells the tab nothing.
+        An app ends a session with ``end``, which does."""
         if self.closed:
             return
         self.closed = True
@@ -265,15 +269,28 @@ class Session[S]:
             self._grace = None
         self.app.sessions.pop(self.id, None)
         self._abort_requests("the session closed")
+        # A handler or a task that ends its own session is the one running this,
+        # and cancelled now it would cut the close hook off at its first await.
+        # It is cancelled last, and stops at its next await after the hook.
+        me = asyncio.current_task()
+        mine: list[Any] = []
         for task in list(self.tasks):
-            task.cancel()
+            if task._asyncio_task is not None and task._asyncio_task is me:
+                mine.append(task)
+            else:
+                task.cancel()
         for spawned in list(self._spawned):
-            spawned.cancel()
+            if spawned is me:
+                mine.append(spawned)
+            else:
+                spawned.cancel()
         for ask in list(self._asks.values()):
             if not ask.future.done():
                 ask.future.cancel()
         await self._close_page(self.page)
         self.app.files.discard(self.id)
+        for own in mine:
+            own.cancel()
 
     async def _close_page(self, page: PageDef) -> None:
         """The page's close hook, once per visit: the session is done with it, by

@@ -35,8 +35,106 @@ def test_table_wire_shape() -> None:
         "hidden": False,
         "wrap": False,
     }
-    assert node.props["tone_rows"] == {"1": "destructive"}
+    assert node.props["tone_rows"] == [None, "destructive"]
     assert node.props["selected"] == [2] and node.props["on_select"] is True
+
+
+def test_a_model_row_is_what_the_model_dumps_and_other_rows_are_refused() -> None:
+    import dataclasses
+    import datetime as dt
+    import types
+
+    import pytest
+    from pydantic import ConfigDict, Field
+
+    class Sale(BaseModel):
+        id: int
+        when: dt.date
+        amount: float = Field(alias="total")
+
+    class ByAlias(Sale):
+        model_config = ConfigDict(serialize_by_alias=True)
+
+    @dataclasses.dataclass
+    class Point:
+        id: int
+        when: dt.date
+
+    sale = Sale(id=1, when=dt.date(2026, 1, 2), total=9.5)
+    rows = [
+        sale,
+        {"id": 2, 7: dt.date(2026, 1, 3)},
+        types.MappingProxyType({"id": 3, "when": dt.date(2026, 1, 4)}),
+        Point(id=4, when=dt.date(2026, 1, 5)),
+    ]
+    props = build(ui.Table(rows=rows)).nodes["root"].props
+    assert props["rows"] == [
+        sale.model_dump(mode="json"),
+        {"id": 2, "7": "2026-01-03"},
+        {"id": 3, "when": "2026-01-04"},
+        {"id": 4, "when": "2026-01-05"},
+    ]
+    assert props["keys"] == [1, 2, 3, 4]
+    assert props["tone_rows"] == [] and props["tone_cells"] == []
+    # A table of models alone is their dumps, under the names each model dumps by.
+    aliased = ByAlias(id=5, when=dt.date(2026, 1, 6), total=1.0)
+    props = build(ui.Table(rows=[sale, aliased])).nodes["root"].props
+    assert props["rows"] == [sale.model_dump(mode="json"), aliased.model_dump(mode="json")]
+    assert "amount" in props["rows"][0] and "total" in props["rows"][1]
+    for bad in ([1, 2], object()):
+        with pytest.raises(TypeError, match="a table row is a mapping, a model or a dataclass"):
+            build(ui.Table(rows=[bad]))
+
+
+async def test_a_changed_row_is_the_only_row_sent(tmp_path) -> None:
+    from millwork.protocol import Patch
+    from millwork.testing import TestApp
+
+    class Rows(BaseModel):
+        rows: list[dict] = [{"id": i, "n": i} for i in range(500)]
+
+    app = mw.App("t", state=Rows, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[Rows]) -> ui.Component:
+        return ui.Page(
+            ui.Table(
+                rows=s.state.rows,
+                tones={"n": lambda row, v: "warning" if v < 0 else None},
+                key="t",
+            ),
+            ui.Button("change", key="change", on_click=change),
+            ui.Button("add", key="add", on_click=add),
+        )
+
+    def change(s: mw.Session[Rows], _: object) -> None:
+        s.state.rows[7]["n"] = -1
+
+    def add(s: mw.Session[Rows], _: object) -> None:
+        s.state.rows.insert(0, {"id": 500, "n": 0})
+
+    async with TestApp(app).open("/") as page:
+
+        async def ops_of(button: str) -> dict[str, list]:
+            await page.click(button)
+            patch = page.messages[-1]
+            assert isinstance(patch, Patch)
+            return {op.prop: op.edits for op in patch.ops}  # type: ignore[union-attr]
+
+        # One row and its tone, where the whole table and every tone used to go.
+        assert await ops_of("change") == {
+            "rows": [(7, 1, [{"id": 7, "n": -1}])],
+            "tone_cells": [(7, 1, [{"n": "warning"}])],
+        }
+        # A row put in front moves the rest along: its key and its tone go with it.
+        # The tone list grows by one empty place, wherever among the empty ones.
+        assert await ops_of("add") == {
+            "rows": [(0, 0, [{"id": 500, "n": 0}])],
+            "keys": [(0, 0, [500])],
+            "tone_cells": [(7, 0, [None])],
+        }
+        props = page.find("t").props
+        assert props["rows"][8] == {"id": 7, "n": -1} and props["tone_cells"][8] == {"n": "warning"}
 
 
 def test_table_cell_tones_and_default_columns() -> None:
@@ -46,7 +144,7 @@ def test_table_cell_tones_and_default_columns() -> None:
     )
     props = build(t).nodes["root"].props
     assert [c["key"] for c in props["columns"]] == ["id", "n"]
-    assert props["tone_cells"] == {"1": {"n": "warning"}}
+    assert props["tone_cells"] == [None, {"n": "warning"}]
 
 
 def test_rows_of_any_shape_become_json() -> None:
@@ -103,7 +201,7 @@ def test_rows_of_any_shape_become_json() -> None:
         .nodes["root"]
         .props
     )
-    assert props["tone_cells"] == {"0": {"n": "muted"}} and props["tone_rows"] == {}
+    assert props["tone_cells"] == [{"n": "muted"}, None] and props["tone_rows"] == []
 
 
 async def test_table_events_reach_handlers_as_sent(tmp_path) -> None:

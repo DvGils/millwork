@@ -4,7 +4,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from millwork.nodes import Component, Text, apply, build, diff
-from millwork.protocol import AddOp, RemoveOp
+from millwork.protocol import AddOp, RemoveOp, SetOp, SpliceOp
 
 
 class Box(Component):
@@ -219,3 +219,61 @@ def test_text_refuses_a_variant_tone_or_alignment_it_does_not_have() -> None:
     for props in ({"variant": "h2"}, {"tone": "quiet"}, {"align": "end"}):
         with pytest.raises(ValueError):
             Text("nope", **props)
+
+
+class Listing(Component):
+    type: ClassVar[str] = "Listing"
+    items: list[Any] = []
+
+
+def list_patch(old: list[Any], new: list[Any]) -> list[Any]:
+    """The ops for one list prop going from ``old`` to ``new``, checked to give ``new``."""
+    before, after = build(Listing(items=old)), build(Listing(items=new))
+    ops = diff(before, after)
+    assert apply(before.nodes, ops) == after.nodes
+    return ops
+
+
+def test_a_long_list_is_patched_by_what_changed() -> None:
+    rows = [{"id": i, "n": i} for i in range(100)]
+    new = {"id": 100, "n": 0}
+
+    (op,) = list_patch(rows, [*rows, new])
+    assert isinstance(op, SpliceOp) and op.prop == "items" and op.edits == [(100, 0, [new])]
+    (op,) = list_patch(rows, [new, *rows])
+    assert isinstance(op, SpliceOp) and op.edits == [(0, 0, [new])]
+    (op,) = list_patch(rows, rows[:40] + rows[42:])
+    assert isinstance(op, SpliceOp) and op.edits == [(40, 2, [])]
+
+    # Cells changed here and there are an edit each, and nothing between them is sent.
+    changed = [dict(r) for r in rows]
+    changed[3]["n"] = changed[4]["n"] = changed[90]["n"] = -1
+    (op,) = list_patch(rows, changed)
+    assert isinstance(op, SpliceOp)
+    assert op.edits == [(3, 2, [changed[3], changed[4]]), (90, 1, [changed[90]])]
+
+    # A list that mostly changed, or a short one, goes whole.
+    (op,) = list_patch(rows, [{"id": i, "n": -i} for i in range(100)])
+    assert isinstance(op, SetOp)
+    (op,) = list_patch(rows[:8], [*rows[:8], new])
+    assert isinstance(op, SetOp)
+    assert list_patch(rows, [dict(r) for r in rows]) == []
+
+
+@settings(max_examples=300, deadline=None)
+@given(st.lists(st.integers(0, 3), max_size=60), st.lists(st.integers(0, 3), max_size=60))
+def test_a_list_patch_reproduces_the_new_list(old: list[int], new: list[int]) -> None:
+    list_patch(old, new)
+
+
+def test_plain_values_go_to_the_wire_as_they_are() -> None:
+    import datetime as dt
+
+    from millwork.nodes import wire_value
+
+    value = {1: (1, 2.5, None), "when": dt.date(2026, 1, 2), "deep": [{"ok": True, 3: "x"}]}
+    assert wire_value(value) == {
+        "1": [1, 2.5, None],
+        "when": "2026-01-02",
+        "deep": [{"ok": True, "3": "x"}],
+    }

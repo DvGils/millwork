@@ -63,7 +63,9 @@ ui.Row(
 `ui.Dialog` is open when state says so. It has a `title`, a
 `description`, a `footer` and a `size` from `sm` to `full`. `on_close`
 fires when the user dismisses it, and the handler sets state so it
-closes.
+closes. A dialog is never taller than the window. The title and the
+footer stay in place, and the body between them scrolls when what it
+holds is taller or wider than the dialog.
 
 ```python live
 from pydantic import BaseModel

@@ -382,7 +382,7 @@ def test_resume_of_a_closed_session_starts_a_fresh_one(tmp_path: Path) -> None:
             info = hello(ws)
             recv(ws)
         session = app.sessions[info["id"]]
-        client.portal.call(session.close)
+        client.portal.call(session._close)
         with client.websocket_connect("/_mw/ws") as ws:
             info2 = hello(ws, session=info["id"], resume=info["resume"], seq=1)
             assert info2["id"] != info["id"] and recv(ws)["type"] == "mount"
@@ -786,3 +786,16 @@ def test_state_stays_across_pages_and_a_page_closes_on_leaving(tmp_path: Path) -
         assert recv(ws)["nodes"]["root/t"]["props"]["content"] == "still 1"
         assert left == ["home at 1"]
     assert left == ["home at 1", "other"]
+
+
+def test_pages_close_before_the_shutdown_hooks_run(tmp_path: Path) -> None:
+    """A close hook releases what the page took, and may need what a shutdown
+    hook takes away, so the sessions end first."""
+    app = make_app(tmp_path)
+    order: list[str] = []
+    app.pages[0].close(lambda s: order.append("page closed"))
+    app.on_shutdown(lambda: order.append("shutdown hook"))
+    with TestClient(app.asgi) as client, client.websocket_connect("/_mw/ws") as ws:
+        hello(ws)
+        recv(ws)
+    assert order == ["page closed", "shutdown hook"]

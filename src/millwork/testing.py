@@ -409,8 +409,17 @@ class TestApp:
             await page.settle()
             yield page
             await page.settle()
-        finally:
-            await session.close()
+        except BaseException:
+            await session._close()
+            raise
+        # The page's close hook runs as the session ends, and what it raises is
+        # the app's code failing like any other.
+        seen = len(page.failures)
+        await session._close()
+        if self.strict and len(page.failures) > seen:
+            where, exc = page.failures[seen]
+            exc.add_note(f"raised by {where}")
+            raise exc
 
 
 __all__ = ["Found", "Page", "TestApp"]

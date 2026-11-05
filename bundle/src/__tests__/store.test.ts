@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { store, type Node, type PatchOp } from "../store";
+import { splice, store, type Node, type PatchOp } from "../store";
 
 const node = (id: string, type = "Box", props = {}, children: string[] = []): Node => ({ id, type, props, children });
 
@@ -55,5 +55,41 @@ describe("store reset", () => {
     expect(store.reset("nope")).toBe(0);
     expect(seen).toEqual([1]);
     expect(store.epoch("root")).toBe(0);
+  });
+});
+
+describe("store splice", () => {
+  it("rebuilds a list from its edits and keeps what they leave alone", () => {
+    const rows = [0, 1, 2, 3, 4, 5].map((i) => ({ id: i }));
+    const fresh = { id: 9 };
+    // Positions are the old list's: one row replaced, two removed, one added at the end.
+    const next = splice(rows, [
+      [1, 1, [fresh]],
+      [3, 2, []],
+      [6, 0, [{ id: 6 }]],
+    ]) as { id: number }[];
+    expect(next.map((r) => r.id)).toEqual([0, 9, 2, 5, 6]);
+    expect(next[0]).toBe(rows[0]);
+    expect(next[2]).toBe(rows[2]);
+    expect(next[1]).toBe(fresh);
+    expect(splice(rows, [[0, 0, [fresh]]])).toEqual([fresh, ...rows]);
+    expect(splice(undefined, [[0, 0, [fresh]]])).toEqual([fresh]);
+  });
+
+  it("patches one prop of a node and leaves its other props as they were", () => {
+    const keys = [1, 2, 3];
+    store.mount("root", { root: node("root", "Table", { rows: [{ id: 1 }, { id: 2 }, { id: 3 }], keys }) }, null);
+    const before = store.snapshot("root")!;
+    const kept = (before.props.rows as unknown[])[2];
+    let told = 0;
+    const unsub = store.subscribe("root", () => (told += 1));
+    store.patch([{ op: "splice", id: "root", prop: "rows", edits: [[0, 1, [{ id: 1, n: 5 }]]] }]);
+    const after = store.snapshot("root")!;
+    expect(told).toBe(1);
+    expect(after).not.toBe(before);
+    expect(after.props.rows).toEqual([{ id: 1, n: 5 }, { id: 2 }, { id: 3 }]);
+    expect((after.props.rows as unknown[])[2]).toBe(kept);
+    expect(after.props.keys).toBe(keys);
+    unsub();
   });
 });

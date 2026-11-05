@@ -3,6 +3,42 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.1.7
+
+- A theme's `font-sans` and `font-heading` tokens had no effect. The
+  stylesheet carried the default font as a fixed value where it should
+  have read the token, so only `font-mono` could be set. Both are read
+  now, and `font-heading` is the font of headings and of the titles of
+  cards, dialogs, sheets and the header.
+- A dialog is never taller than the window, and its body scrolls when
+  what it holds is taller or wider. Before, a wide table or a long line
+  ran out of the side of the dialog, and tall content ran off the screen
+  with no way to reach it. A sheet wraps a long word the same way.
+- Large tables are quick to change. A render used to convert every cell
+  of every table on the page one by one, 250 ms for ten thousand rows on
+  each click anywhere on the page, and that is now one pass of about
+  35 ms. A change sent the whole table again, and now sends the
+  rows that changed. The tab drew every row again, and now draws the ones
+  that changed. A table longer than two hundred rows draws the rows in
+  view, so ten thousand rows open in under a second where they took
+  eight.
+- A table's header stays at the top of the table's own box, the one
+  `height` gives it. `sticky_header` never took effect before.
+  `ui.Column(wrap=True)` wraps, which it did not, and a row may be a
+  dataclass, as the manual already said.
+- A page's `close` hook is no longer cut off at its first `await` when a
+  handler or a task ends its own session with `s.end()`. When the server
+  stops, pages close before the `on_shutdown` hooks run, so a close hook
+  still has the database those hooks close. In a strict test, a close
+  hook that raises fails the test.
+- `Session.close()` is gone from the public surface. Called from a
+  handler it ended the session without telling the tab, which then sat
+  there doing nothing. `s.end(message)` is the way to end a session, and
+  the manual now says plainly that a closed tab ends its session after
+  the grace period, not at once.
+- The wire protocol is version 4, for the op that carries the changed
+  items of a list. A tab left open across the upgrade reloads itself.
+
 ## 0.1.6
 
 - The typed signatures a checker sees lost every positional parameter the

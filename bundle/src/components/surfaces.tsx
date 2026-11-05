@@ -117,7 +117,9 @@ export const Dialog: Renderer = ({ props, children, emit }) => {
     }}
   >
     <DialogContent
-      className={cn(dialogSize[String(props.size ?? "md")], props.cls as string)}
+      // A column no taller than the window: the title and the footer stay, and
+      // the body between them scrolls when what it holds is taller or wider.
+      className={cn("flex max-h-[calc(100dvh-2rem)] flex-col", dialogSize[String(props.size ?? "md")], props.cls as string)}
       showCloseButton={props.dismissable !== false}
     >
       {props.title || props.description ? (
@@ -126,7 +128,13 @@ export const Dialog: Renderer = ({ props, children, emit }) => {
           {props.description ? <DialogDescription>{String(props.description)}</DialogDescription> : null}
         </DialogHeader>
       ) : null}
-      <div className="flex flex-col gap-4">{children}</div>
+      {/* The body reaches the dialog's edges, so a focus ring at its side is not
+          cut off. It is a plain box that scrolls, with the column inside it: a
+          column that scrolled itself would first squeeze every child that
+          clips its own overflow, a card for one, down to nothing. */}
+      <div data-slot="dialog-body" className="-mx-4 -my-1 min-h-0 min-w-0 overflow-auto px-4 py-1 wrap-break-word">
+        <div className="flex flex-col gap-4">{children}</div>
+      </div>
       {props.footer ? (
         <DialogFooter>
           <Slot value={props.footer} />

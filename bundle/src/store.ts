@@ -20,11 +20,28 @@ export interface Node {
 export type PatchOp =
   | { op: "set"; id: NodeId; props: Record<string, unknown> }
   | { op: "unset"; id: NodeId; keys: string[] }
+  | { op: "splice"; id: NodeId; prop: string; edits: [number, number, unknown[]][] }
   | { op: "children"; id: NodeId; children: NodeId[] }
   | { op: "add"; node: Node }
   | { op: "remove"; id: NodeId };
 
 type Listener = () => void;
+
+// A list rebuilt from its edits in one pass. Each edit is [start, delete, items]
+// in positions of the old list, ascending. What the edits leave alone stays the
+// same objects, so a row that did not change is not drawn again.
+export function splice(list: unknown, edits: [number, number, unknown[]][]): unknown[] {
+  const old = Array.isArray(list) ? list : [];
+  const out: unknown[] = [];
+  let at = 0;
+  for (const [start, del, items] of edits) {
+    for (let i = at; i < start && i < old.length; i++) out.push(old[i]);
+    for (const item of items) out.push(item);
+    at = start + del;
+  }
+  for (let i = at; i < old.length; i++) out.push(old[i]);
+  return out;
+}
 
 class Store {
   root: NodeId | null = null;
@@ -65,6 +82,14 @@ class Store {
           const n = this.nodes.get(op.id);
           if (n) {
             n.props = { ...n.props, ...op.props };
+            touched.add(op.id);
+          }
+          break;
+        }
+        case "splice": {
+          const n = this.nodes.get(op.id);
+          if (n) {
+            n.props = { ...n.props, [op.prop]: splice(n.props[op.prop], op.edits) };
             touched.add(op.id);
           }
           break;
