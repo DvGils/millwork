@@ -66,7 +66,9 @@ ui.Grid(
 
 Data often arrives with one row per series and category. `by` names the
 column that holds the series name, and `y` the one column with the
-values. Python pivots the rows before they leave.
+values. Python pivots the rows before they leave. Each distinct value of
+that column is a series, so the limit of five holds here too, and a
+column with more values is refused until the rows fold the rest into one.
 
 ```python live
 REGIONS = [

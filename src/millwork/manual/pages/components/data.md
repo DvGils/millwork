@@ -8,7 +8,8 @@ order: 4
 `ui.Table` shows rows, which can be dicts, Pydantic models or
 dataclasses. Columns come from the rows unless `columns` names them, each
 with a `header`, a `format`, a `width`, an `align`, and whether it is
-`sortable` or `filterable`.
+`sortable` or `filterable`. A column without a `header` is headed by its
+key in plain words, so `first_name` reads "First name".
 
 ## A plain table
 
@@ -97,7 +98,9 @@ def example(s):
 ## Tones
 
 `tones` colors rows. It is a function of the row returning a tone, or a
-mapping from column key to a function of the row and the cell. A row's
+mapping from column key to a function of the row and the cell, called as
+`fn(row, value)`. The row is the one given in `rows`, so a model is still
+a model there, and returning `None` leaves the row or cell as it is. A row's
 tone tints the row, and a cell's tone colors the cell's text, or the
 badge when the column is one.
 

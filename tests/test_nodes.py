@@ -277,3 +277,18 @@ def test_plain_values_go_to_the_wire_as_they_are() -> None:
         "when": "2026-01-02",
         "deep": [{"ok": True, "3": "x"}],
     }
+
+
+def test_a_grid_takes_the_widths_it_knows_and_counts_it_can_draw() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from millwork import ui
+
+    props = build(ui.Grid(cols={"sm": 1, "md": 2, "xl": 7})).nodes["root"].props
+    assert props["cols"] == {"sm": 1, "md": 2, "xl": 7}
+    assert build(ui.Grid(cols=12)).nodes["root"].props["cols"] == 12
+    for bad in ({"xxl": 2}, {"md": 0}, 13):
+        with pytest.raises(ValidationError):
+            ui.Grid(cols=bad)  # type: ignore[arg-type]
+    assert build(ui.Sheet(size="lg")).nodes["root"].props["size"] == "lg"

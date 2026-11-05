@@ -214,9 +214,21 @@ class Row(Component):
 
 
 class Grid(Component):
+    """Children in columns. ``cols`` is a count from 1 to 12, or counts by
+    width: ``sm`` is the count on the narrowest screens, and ``md``, ``lg`` and
+    ``xl`` take over from 768, 1024 and 1280 pixels up."""
+
     type: ClassVar[str] = "Grid"
-    cols: int | dict[str, int] = 2
+    cols: int | dict[Literal["sm", "md", "lg", "xl"], int] = 2
     gap: int = 4
+
+    @field_validator("cols")
+    @classmethod
+    def _counts(cls, cols: int | dict[str, int]) -> int | dict[str, int]:
+        for count in cols.values() if isinstance(cols, dict) else [cols]:
+            if not 1 <= count <= 12:
+                raise ValueError(f"a grid has 1 to 12 columns, not {count}")
+        return cols
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -226,7 +238,7 @@ class Grid(Component):
             key: str | None = None,
             hidden: bool = False,
             cls: str | None = None,
-            cols: int | dict[str, int] = 2,
+            cols: int | dict[Literal["sm", "md", "lg", "xl"], int] = 2,
             gap: int = 4,
         ) -> None: ...
 
@@ -475,6 +487,8 @@ class Sheet(Component):
     }
     open: bool = False
     side: Literal["left", "right", "top", "bottom"] = "right"
+    # How wide a sheet at the left or right may get, on the Dialog's scale.
+    size: Literal["sm", "md", "lg", "xl", "full"] = "sm"
     title: str | None = None
     description: str | None = None
     on_close: Any = None
@@ -489,6 +503,7 @@ class Sheet(Component):
             cls: str | None = None,
             open: bool = False,
             side: Literal["left", "right", "top", "bottom"] = "right",
+            size: Literal["sm", "md", "lg", "xl", "full"] = "sm",
             title: str | None = None,
             description: str | None = None,
             on_close: Any = None,

@@ -295,6 +295,17 @@ export const ToggleGroup: Renderer = ({ props, emit }) => {
   );
 };
 
+// A sheet at the left or right is as wide as its size lets it get. The
+// classes carry the side they are for, as the sheet's own width does, so
+// they take its place.
+const sheetSize: Record<string, string> = {
+  sm: "",
+  md: "data-[side=left]:sm:max-w-lg data-[side=right]:sm:max-w-lg",
+  lg: "data-[side=left]:sm:max-w-2xl data-[side=right]:sm:max-w-2xl",
+  xl: "data-[side=left]:sm:max-w-4xl data-[side=right]:sm:max-w-4xl",
+  full: "data-[side=left]:w-full data-[side=right]:w-full data-[side=left]:sm:max-w-none data-[side=right]:sm:max-w-none",
+};
+
 export const Sheet: Renderer = ({ props, children, emit }) => {
   const status = useStatus();
   return (
@@ -305,7 +316,7 @@ export const Sheet: Renderer = ({ props, children, emit }) => {
       if (!open && props.dismissable !== false && props.on_close) emit("close");
     }}
   >
-    <SheetContent side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} className={cn("flex flex-col gap-4", props.cls as string)}>
+    <SheetContent side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], props.cls as string)}>
       {props.title || props.description ? (
         <SheetHeader>
           {props.title ? <SheetTitle>{String(props.title)}</SheetTitle> : null}

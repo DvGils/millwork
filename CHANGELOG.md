@@ -38,6 +38,25 @@ versions; a release says so here when it does.
   the grace period, not at once.
 - The wire protocol is version 4, for the op that carries the changed
   items of a list. A tab left open across the upgrade reloads itself.
+- `ui.Grid(cols={...})` takes `xl` next to `sm`, `md` and `lg`, refuses a
+  width it does not know where it dropped one in silence, and draws any
+  count from 1 to 12, where a count without a class of its own fell back
+  to two columns. `sm` is the count on the narrowest screens, as before,
+  and the manual now says so.
+- `ui.Sheet` has a `size`, on the Dialog's scale. A width given through
+  `cls` lost to the sheet's own.
+- A chat command is a message without any text, so a command that takes
+  no words can be sent from its chip. The message shows the command it
+  was sent under. In a test, `page.send(chat, command="...")`.
+- A table column without a `header` is headed by its key in plain words,
+  `first_name` as "First name", the way a form labels its fields. It
+  showed the raw key.
+- The reference says what a table's `tones` functions are called with and
+  what `page.stream` holds, and the manual puts the five series limit next
+  to `by`.
+- Working on millwork needs uv 0.12.6 or newer. An older uv could not
+  install the project under its own `no-build` setting, and is now told to
+  update. Installing millwork from PyPI is not affected.
 
 ## 0.1.6
 

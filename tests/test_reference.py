@@ -25,6 +25,9 @@ def test_the_reference_covers_every_component_and_the_tables(capsys) -> None:
     assert "- `p.step(label)`: ``with p.step(" in text and "- `task.ok`: Finished" in text
     assert "- `page.answer(payload=None)`" in text and "`{id:int}`" in text
     assert "also takes plain strings" in text
+    assert "- `page.stream`: Every chunk the chats on the page streamed" in text
+    assert "``(row, value) -> tone`` for a cell's" in text
+    assert "- `cols: int | dict['sm' | 'md' | 'lg' | 'xl', int]` = `2`" in text
     assert "- `label: str` (required)" in text  # Stat
     assert "`ui.Button(label='', *children, **props)`" in text
     assert "### ui.Header\n" in text

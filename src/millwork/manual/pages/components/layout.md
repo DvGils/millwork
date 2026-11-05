@@ -43,8 +43,10 @@ ui.Stack(ui.Text("First"), ui.Text("Second"), ui.Text("Third"), divided=True, ga
 
 ## Grid
 
-`ui.Grid` places children in columns. `cols` is a number, or a mapping with
-`sm`, `md` and `lg` for the breakpoints at which the count changes.
+`ui.Grid` places children in columns. `cols` is a count from 1 to 12, or a
+mapping of counts by width. `sm` is the count on the narrowest screens, a
+phone included, and `md`, `lg` and `xl` take over from 768, 1024 and 1280
+pixels up. A width left out keeps the count of the one below it.
 
 ```python live
 ui.Grid(

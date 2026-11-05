@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
 
+from millwork.forms import humanize
 from millwork.icons import check_icon
 from millwork.nodes import Component, Wired
 
@@ -94,6 +95,15 @@ def _wire_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
 
 
 class Table(Component):
+    """Rows as data. A row is a dict, a model or a dataclass, and ``row_key``
+    names the field that tells rows apart. A column without a ``header`` is
+    headed by its key in plain words, ``first_name`` as "First name".
+    ``tones`` is one function ``(row) -> tone`` for a row's tone, or a mapping
+    from column key to ``(row, value) -> tone`` for a cell's. ``row`` is the
+    row as it is in ``rows``, a model still a model, and ``value`` is the
+    cell as the table shows it. A tone is one of ``muted``, ``primary``,
+    ``accent``, ``success``, ``warning`` and ``destructive``, or ``None``."""
+
     type: ClassVar[str] = "Table"
     payloads: ClassVar[dict[str, str]] = {
         "on_select": "the selected row keys",
@@ -175,7 +185,10 @@ class Table(Component):
         return {
             "rows": Wired(rows),
             "keys": Wired([row.get(row_key, i) for i, row in enumerate(rows)]),
-            "columns": [c.model_dump(mode="json") for c in columns],
+            "columns": [
+                {**c.model_dump(mode="json"), "header": c.header or humanize(c.key)}
+                for c in columns
+            ],
             "tone_rows": Wired(tone_rows),
             "tone_cells": Wired(tone_cells),
         }

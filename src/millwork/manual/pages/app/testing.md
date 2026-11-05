@@ -73,7 +73,11 @@ calls `s.confirm` or `s.ask` stops and waits. The test sees
 the dialog on the page and answers it with `page.answer(value)`, `False`,
 or `None` for a dismissal. A task started by a handler has run by the time
 the action returns, and `page.session.tasks[-1]` has its `ok`, `result`
-and `progress`. A chat turn's chunks are in `page.stream`, in order.
+and `progress`. A chat turn's chunks are in `page.stream`, in order, in
+the AI SDK's UI message stream format, where each
+`{"type": "text-delta", "delta": ...}` carries some of the reply's words.
+The finished reply is easier to check on the thread, as
+`page.session.chat(key).messages[-1].text`.
 
 ```python
 async def test_wiping_asks_first(app):

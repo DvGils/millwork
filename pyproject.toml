@@ -41,6 +41,9 @@ dev = [
 # are, so a hijacked release that is pulled within days never reaches a lock.
 no-build = true
 exclude-newer = "14 days"
+# Before 0.12.6, uv held the project itself to no-build and could not install
+# it, so an older uv is told to update where it would fail on that.
+required-version = ">=0.12.6"
 
 [build-system]
 requires = ["hatchling>=1.27"]

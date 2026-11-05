@@ -200,6 +200,31 @@ body.mw-dragging * {
     cursor: pointer;
   }
 }
+/* A Grid's columns. The count comes from the node as a variable per width,
+   and each width takes the count of the one below until it has its own. */
+@layer components {
+  .mw-grid {
+    grid-template-columns: repeat(var(--mw-cols, 2), minmax(0, 1fr));
+  }
+  @media (width >= 48rem) {
+    .mw-grid {
+      grid-template-columns: repeat(var(--mw-cols-md, var(--mw-cols, 2)), minmax(0, 1fr));
+    }
+  }
+  @media (width >= 64rem) {
+    .mw-grid {
+      grid-template-columns: repeat(var(--mw-cols-lg, var(--mw-cols-md, var(--mw-cols, 2))), minmax(0, 1fr));
+    }
+  }
+  @media (width >= 80rem) {
+    .mw-grid {
+      grid-template-columns: repeat(
+        var(--mw-cols-xl, var(--mw-cols-lg, var(--mw-cols-md, var(--mw-cols, 2)))),
+        minmax(0, 1fr)
+      );
+    }
+  }
+}
 /* Inside a sidebar the page tokens follow the sidebar's own, so an ordinary
    button, text or separator placed there sits on the sidebar's colours
    instead of painting the page background over a tinted panel. */

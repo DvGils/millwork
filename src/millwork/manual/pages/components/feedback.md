@@ -128,7 +128,8 @@ def example(s):
 ## Sheet
 
 `ui.Sheet` slides a panel in from a `side`. Like a dialog it is open when
-state says so and `on_close` lets the handler close it.
+state says so and `on_close` lets the handler close it. `size` is how wide
+a sheet at the left or right may get, from `sm` to `full` as on a dialog.
 
 ```python live
 from pydantic import BaseModel

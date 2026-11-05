@@ -90,8 +90,8 @@ millwork is still in beta.
 
 ## Developing millwork
 
-Python is managed with uv, the bundle with pnpm; only `bundle/` needs
-Node.
+Python is managed with uv, 0.12.6 or newer, and the bundle with pnpm; only
+`bundle/` needs Node.
 
 ```
 uv run pytest -q                       # the Python suite

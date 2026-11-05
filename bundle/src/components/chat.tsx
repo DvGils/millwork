@@ -66,6 +66,8 @@ interface Aids {
   durations: boolean;
   assistantName: string;
   userName: string;
+  // The label of each command the chat offers, by id.
+  commands: Record<string, string>;
 }
 
 // A clock time in the theme's locale, with the date once it is not today.
@@ -172,6 +174,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
     durations: Boolean(props.durations),
     assistantName: typeof props.assistant_name === "string" && props.assistant_name ? props.assistant_name : t("assistant"),
     userName: user?.name ? String(user.name) : t("you"),
+    commands: Object.fromEntries((Array.isArray(props.commands) ? (props.commands as Command[]) : []).map((c) => [c.id, c.label])),
   };
 
   return (
@@ -276,6 +279,9 @@ function ChatMessage({ message, inline, showSteps, streaming, tools, last, aids 
         ) : (
           body.map((p, i) => <PartView key={i} part={p} user={user} inline={inline} />)
         )}
+        {/* The command a message was sent under, which is all there is to see
+            of a message that was a command and nothing else. */}
+        {user && typeof meta.command === "string" ? <Badge variant="outline">{aids.commands[meta.command] ?? meta.command}</Badge> : null}
         {sources.length ? <Sources parts={sources} /> : null}
         {streaming || editing ? null : user ? (
           tools.edit ? (
@@ -605,7 +611,8 @@ function Composer({
 
   const submit = useCallback(() => {
     const t = text.trim();
-    if ((!t && files.length === 0) || busy || disabled || uploading) return;
+    // A chosen command is a message by itself: one that takes no words.
+    if ((!t && files.length === 0 && !command) || busy || disabled || uploading) return;
     onSend(t, files, command);
     setText("");
     setFiles([]);
@@ -705,7 +712,7 @@ function Composer({
             {t("stop")}
           </Button>
         ) : (
-          <Button type="button" size="sm" disabled={disabled || busy || uploading || (!text.trim() && files.length === 0)} onClick={submit} aria-label={t("send")}>
+          <Button type="button" size="sm" disabled={disabled || busy || uploading || (!text.trim() && files.length === 0 && !command)} onClick={submit} aria-label={t("send")}>
             {Send ? <Send /> : null}
             {t("send")}
           </Button>

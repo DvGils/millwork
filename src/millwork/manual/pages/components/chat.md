@@ -18,7 +18,9 @@ The section below and the Custom chapter show what goes there.
 
 ## A streamed reply
 
-`turn.text`, `turn.files` and `turn.command` are what the user sent.
+`turn.text`, `turn.files` and `turn.command` are what the user sent. A
+command chosen in the composer goes with the message, and is a message
+without any text too, for a command that takes none.
 Inside `async with turn.reply() as reply`, `reply.text(chunk)` streams
 words, `reply.reasoning()` opens a thinking block, `reply.step(label)`
 opens a tool step, `reply.status(text)` shows a transient marker, and

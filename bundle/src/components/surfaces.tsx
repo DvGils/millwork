@@ -1,6 +1,6 @@
 // Surfaces and feedback: tabs, dialogs, empties, alerts, progress, split panes.
 
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
@@ -289,20 +289,18 @@ function PaneAndHandle({ id, index, last, size, min, collapsible }: { id: string
   );
 }
 
-const gridCols: Record<number, string> = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-4", 5: "grid-cols-5", 6: "grid-cols-6", 12: "grid-cols-12" };
-const gridColsMd: Record<number, string> = { 1: "md:grid-cols-1", 2: "md:grid-cols-2", 3: "md:grid-cols-3", 4: "md:grid-cols-4", 5: "md:grid-cols-5", 6: "md:grid-cols-6" };
-const gridColsLg: Record<number, string> = { 1: "lg:grid-cols-1", 2: "lg:grid-cols-2", 3: "lg:grid-cols-3", 4: "lg:grid-cols-4", 5: "lg:grid-cols-5", 6: "lg:grid-cols-6" };
-
+// The column counts go to the stylesheet as variables, which has the widths at
+// which each takes over, so any count works and none needs a class of its own.
 export const Grid: Renderer = ({ props, children }) => {
   const cols = props.cols;
-  let classes = "grid-cols-2";
-  if (typeof cols === "number") classes = gridCols[cols] ?? "grid-cols-2";
-  else if (cols && typeof cols === "object") {
-    const c = cols as Record<string, number>;
-    classes = cn(gridCols[c.sm ?? 1], c.md ? gridColsMd[c.md] : undefined, c.lg ? gridColsLg[c.lg] : undefined);
-  }
+  const by = typeof cols === "number" ? { sm: cols } : cols && typeof cols === "object" ? (cols as Record<string, number>) : { sm: 2 };
+  const style = { "--mw-cols": by.sm ?? 1, "--mw-cols-md": by.md, "--mw-cols-lg": by.lg, "--mw-cols-xl": by.xl } as CSSProperties;
   const gap = typeof props.gap === "number" ? props.gap : 4;
-  return <div className={cn("grid", classes, `gap-${gap}`, props.cls as string)}>{children}</div>;
+  return (
+    <div className={cn("mw-grid grid", `gap-${gap}`, props.cls as string)} style={style}>
+      {children}
+    </div>
+  );
 };
 
 export const Stat: Renderer = ({ props }) => {

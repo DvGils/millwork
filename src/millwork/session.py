@@ -444,8 +444,12 @@ class Session[S]:
         ]
         if component.attachments is not None:
             files = files[: component.attachments.max_files]
+        # A command is a message on its own: one that takes no words is sent
+        # with none.
         command = payload.get("command")
-        if not text and not files:
+        if not isinstance(command, str) or not command:
+            command = None
+        if not text and not files and command is None:
             return
         parts: list[dict[str, Any]] = []
         if text:
@@ -461,7 +465,7 @@ class Session[S]:
                 }
             )
         metadata: dict[str, Any] = {"at": time.time()}
-        if isinstance(command, str):
+        if command is not None:
             metadata["command"] = command
         message = UIMessage(
             id=secrets.token_urlsafe(8), role="user", parts=parts, metadata=metadata
