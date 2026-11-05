@@ -92,47 +92,12 @@ that needs easy lookup.
 
 millwork is still in beta.
 
-## Developing millwork
+## Contributing
 
-Python is managed with uv, 0.12.6 or newer, and the bundle with pnpm; only
-`bundle/` needs Node.
-
-```
-uv run pytest -q                       # the Python suite
-uv run mypy src && uv run ruff check src tests
-pnpm -C bundle exec tsc -b             # the bundle's types
-CI=1 pnpm -C bundle exec vitest run    # the bundle's unit tests
-CI=1 pnpm -C bundle build              # rebuilds src/millwork/_bundle/dist
-```
-
-The README's GIF comes from `.github/readme/demo.py`, an app of a hundred
-lines, and `.github/readme/record.py` drives it in a headless browser to
-record it. Run the recorder after a change to the look, so what the README
-shows is what the code does.
-
-Dependencies wait two weeks. `tool.uv` in `pyproject.toml` and the bundle's
-`pnpm-workspace.yaml` resolve only versions that have been on their index
-for fourteen days, and Dependabot proposes a bump on the same schedule.
-Dependabot's alerts watch the lockfiles for known vulnerabilities; before
-a release, the same question is asked by hand:
-
-```
-uv export --format requirements-txt --no-emit-project -q -o requirements.txt
-uvx pip-audit -r requirements.txt --no-deps
-pnpm -C bundle audit
-```
-
-A change to a component's fields is followed by `uv run python
-scripts/typed_inits.py`, which rewrites the typed signature under each
-class that mypy and pyright read, and a test checks that it was run.
-
-A change to the bundle is committed together with the rebuilt `dist`, so
-every checkout runs without Node. That includes a Dependabot bump of the
-bundle's packages: apply it, rebuild, look at the manual, and commit the
-`dist` with it, or CI refuses the branch. The manual's pages under
-`src/millwork/manual/pages` are the gallery a bundle upgrade is judged
-against.
-
+Bug reports and fixes are welcome.
+[CONTRIBUTING.md](https://github.com/DvGils/millwork/blob/main/CONTRIBUTING.md)
+has the setup, the checks a change has to pass, and how to propose a
+larger one.
 
 ## License
 
