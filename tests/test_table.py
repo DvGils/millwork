@@ -144,9 +144,10 @@ def test_table_cell_tones_and_default_columns() -> None:
     )
     props = build(t).nodes["root"].props
     assert [c["key"] for c in props["columns"]] == ["id", "n"]
-    # A column is headed by its key in plain words until it is given a header.
+    # A column is headed by its key as written until it is given a header:
+    # the names in data the app does not own are not the app's to change.
     headed = build(ui.Table(rows=[], columns=["first_name", ui.Column(key="n", header="Count")]))
-    assert [c["header"] for c in headed.nodes["root"].props["columns"]] == ["First name", "Count"]
+    assert [c["header"] for c in headed.nodes["root"].props["columns"]] == [None, "Count"]
     assert props["tone_cells"] == [None, {"n": "warning"}]
 
 

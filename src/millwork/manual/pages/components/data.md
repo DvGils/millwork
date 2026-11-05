@@ -9,7 +9,8 @@ order: 4
 dataclasses. Columns come from the rows unless `columns` names them, each
 with a `header`, a `format`, a `width`, an `align`, and whether it is
 `sortable` or `filterable`. A column without a `header` is headed by its
-key in plain words, so `first_name` reads "First name".
+key exactly as written, which keeps the names of data the app did not
+make, an upload for one, as they are.
 
 ## A plain table
 

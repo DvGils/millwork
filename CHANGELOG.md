@@ -48,9 +48,6 @@ versions; a release says so here when it does.
 - A chat command is a message without any text, so a command that takes
   no words can be sent from its chip. The message shows the command it
   was sent under. In a test, `page.send(chat, command="...")`.
-- A table column without a `header` is headed by its key in plain words,
-  `first_name` as "First name", the way a form labels its fields. It
-  showed the raw key.
 - The reference says what a table's `tones` functions are called with and
   what `page.stream` holds, and the manual puts the five series limit next
   to `by`.
