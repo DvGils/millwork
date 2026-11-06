@@ -18,29 +18,40 @@ import lifecycle_fuzz as fuzz
 # same promise still fails this test.
 KNOWN = {
     # A tab that was not reading when its session ended is never told, and
-    # stays connected to nothing.
-    "stranded": r"never told$",
+    # stays connected to nothing. So does one whose page was loaded again
+    # just as its session ended.
+    "stranded": r", (never )?told$",
     # A connect hook that raises for a tab that has already gone leaves its
     # session behind for good.
     "leak": r"^sessions left with no tab",
     # Something reaches a tab after its session ended: the closing chunks of
     # a chat reply that was under way, a toast or a navigation asked for just
     # before, or what is replayed to a tab that was reconnecting.
-    "sent after the end": (
-        r" got (stream|toast|activity|logout|navigate|mount|theme|patch|form_issues) "
-    ),
+    "sent after the end": r" got \w+ for ",
     # The app telling every session something at once waits on a tab that is
     # not reading, and on it everyone after.
     "hung": r"^\('push',\) did not return",
     # A task started after a delay goes on once it has started, whatever
-    # becomes of its session.
-    "ran after the end": r"^tick on ",
+    # becomes of its session. A handler that waits on a task when its session
+    # ends is told the task was cancelled, and goes on.
+    "ran after the end": r"^(tick|its task) on ",
     # A handler waiting on a question when its session ends releases a lock
     # it no longer holds.
     "lost": r"Lock is not acquired",
     # A recheck or a sign-out being asked about when the app stops goes on
     # after it.
     "left running": r"^(Auth\._ask|Session\._recheck_user|App\._end_sign_in)$",
+    # A request cancelled in the moment it arrives is never forgotten.
+    "request kept": r"still holds a request that is done$",
+    # A chat message stopped in the moment it arrives leaves the chat busy.
+    "chat stuck": r"is busy with no reply under way$",
+    # A connect hook that waits on a task has its page drawn before it
+    # returns, and two navigations then connect side by side, one of whose
+    # pages is never closed.
+    "drawn early": r"was drawn before its connect returned$",
+    "never closed": r"page\(s\) that were opened$",
+    # A file that arrives for a session in the moment it ends stays on disk.
+    "files kept": r"with no session left$",
 }
 SCENARIOS = 250
 AGAIN = "uv run python tests/lifecycle_fuzz.py --steps 60 --shrink"

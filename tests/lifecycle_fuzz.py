@@ -228,6 +228,8 @@ class World:
 
     clock: Clock
     loop: Any = None
+    # Sessions whose page is in its connect hook right now.
+    connecting: set[str] = field(default_factory=set)
     people: dict[str, dict[str, Any]] = field(
         default_factory=lambda: {
             "ada": {"role": "admin", "active": True},
@@ -243,6 +245,7 @@ class World:
             "logout_to": None,
             "connect_delay": 0.0,
             "connect_fails": None,
+            "connect_does": None,
             "close_delay": 0.0,
             "close_does": None,
             "handler_delay": 0.1,
@@ -447,6 +450,30 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
         span = world.begin("handler", s, name="on_done", plain=True)
         world.end("handler", s, span)
 
+    async def quick(s: mw.Session[State]) -> None:
+        await asyncio.sleep(0.3)
+
+    @handler("await_task", plain=False)
+    async def await_task(s: mw.Session[State], _: Any) -> None:
+        # A handler that waits on its own task, and goes on whatever became
+        # of it. Whether it may go on is the session's to say.
+        try:
+            await s.task(work, s, label="awaited")
+        except mw.Cancelled:
+            pass
+        world.note("tick", after="its task", **world.about(s))
+        s.state.n += 1
+
+    @handler("flood")
+    async def flood(s: mw.Session[State], _: Any) -> None:
+        # More than a session keeps for a tab that is away.
+        for i in range(520):
+            s.toast(f"note {i}")
+
+    @handler("big_file")
+    async def big_file(s: mw.Session[State], _: Any) -> None:
+        s.download("big.bin", b"x" * (3 * 1024 * 1024))
+
     @handler("task")
     async def start_task(s: mw.Session[State], _: Any) -> None:
         s.task(work, s, label="work", on_done=finished)
@@ -559,8 +586,12 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
 
     def body(s: mw.Session[State], mark: str) -> ui.Component:
         rows = [{"id": i, "name": f"row {i}", "n": s.state.n + i} for i in range(s.state.rows)]
+        world.note("draw", sid=world.name(s.id), early=s.id in world.connecting)
         return ui.Page(
             ui.Text(f"{mark} n={s.state.n}", key="mark"),
+            ui.Button("await_task", key="await_task", on_click=await_task),
+            ui.Button("flood", key="flood", on_click=flood),
+            ui.Button("big_file", key="big_file", on_click=big_file),
             ui.Button("thread", key="thread", on_click=start_thread),
             ui.Button("later", key="later", on_click=later),
             ui.Button("task_boom", key="task_boom", on_click=task_boom),
@@ -611,15 +642,19 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
 
     async def connect(s: mw.Session[State], **params: Any) -> None:
         span = world.begin("connect", s)
+        world.connecting.add(s.id)
         ok = False
         try:
             await asyncio.sleep(knobs["connect_delay"])
+            if knobs["connect_does"] == "task":
+                await s.task(quick, s, label="for connect")
             if knobs["connect_fails"] == "forbidden":
                 raise mw.Forbidden("Not today.")
             if knobs["connect_fails"] == "boom":
                 raise RuntimeError("connect broke")
             ok = True
         finally:
+            world.connecting.discard(s.id)
             world.end("connect", s, span, ok=ok)
 
     async def close(s: mw.Session[State]) -> None:
@@ -672,12 +707,15 @@ class Tab:
         # Requests the tab has made and not had an answer to: what each was for.
         self.asked: dict[str, tuple[str, str]] = {}
         self.files: list[str] = []
+        # What the tab wants to say before it has a session. The bundle keeps
+        # it until the server has said which session this is.
+        self.unsent: list[dict[str, Any]] = []
 
     @property
     def label(self) -> str:
         return f"T{self.number}"
 
-    def open(self, resume_from: Tab | None = None) -> None:
+    def open(self, resume_from: Tab | None = None, seq: int | None = None) -> None:
         cookies = "; ".join(f"{c.name}={c.value}" for c in self.browser.http.cookies.jar)
         headers = [(b"host", b"app"), (b"origin", b"http://app")]
         if cookies:
@@ -699,11 +737,12 @@ class Tab:
         }
         hello: dict[str, Any] = {"type": "hello", "path": self.path, "protocol": 4}
         if resume_from is not None and resume_from.session is not None:
-            hello.update(
-                session=resume_from.session, resume=resume_from.resume, seq=resume_from.last_seq
-            )
+            seq = resume_from.last_seq if seq is None else seq
+            hello.update(session=resume_from.session, resume=resume_from.resume, seq=seq)
         self.inbox.put_nowait({"type": "websocket.connect"})
-        self.say(hello)
+        self.inbox.put_nowait(
+            {"type": "websocket.receive", "text": json.dumps({"seq": 0, "msg": hello})}
+        )
         self.task = asyncio.get_running_loop().create_task(
             self.sim.asgi(scope, self._receive, self._send), name=f"tab {self.number}"
         )
@@ -711,7 +750,13 @@ class Tab:
     def say(self, message: dict[str, Any]) -> None:
         text = json.dumps({"seq": self.sent, "msg": message})
         self.sent += 1
-        self.inbox.put_nowait({"type": "websocket.receive", "text": text})
+        self._put({"type": "websocket.receive", "text": text})
+
+    def _put(self, item: dict[str, Any]) -> None:
+        if self.session is None:
+            self.unsent.append(item)
+        else:
+            self.inbox.put_nowait(item)
 
     def ask(self, kind: str, node: str, **fields: Any) -> str:
         """Make a request, and remember what it was for."""
@@ -722,7 +767,7 @@ class Tab:
 
     def bytes(self, request: str, data: bytes) -> None:
         """A binary frame for an upload in flight."""
-        self.inbox.put_nowait({"type": "websocket.receive", "bytes": pack_frame(request, data)})
+        self._put({"type": "websocket.receive", "bytes": pack_frame(request, data)})
 
     def drop(self) -> None:
         if not self.gone:
@@ -772,6 +817,9 @@ class Tab:
         if kind == "session":
             self.session, self.resume = msg["id"], msg["resume"]
             fact["sid"] = self.sim.world.name(msg["id"])
+            unsent, self.unsent = self.unsent, []
+            for item in unsent:
+                self.inbox.put_nowait(item)
         elif kind == "mount":
             fact["marked"] = ADMIN_MARK in event["text"]
         elif kind == "patch":
@@ -917,12 +965,13 @@ class Sim:
         tab.open()
         return tab
 
-    def reconnect(self, old: Tab) -> Tab:
-        """The same tab on a new connection, asking for its session back."""
+    def reconnect(self, old: Tab, seq: int | None = None, how: str = "reconnect") -> Tab:
+        """The same tab on a new connection, asking for its session back. A
+        page that was loaded again asks with nothing seen (``seq=0``)."""
         tab = Tab(self, len(self.tabs) + 1, old.browser, old.path)
         self.tabs.append(tab)
-        self.world.note("act:reconnect", tab=tab.label, was=old.label)
-        tab.open(resume_from=old)
+        self.world.note(f"act:{how}", tab=tab.label, was=old.label)
+        tab.open(resume_from=old, seq=seq)
         return tab
 
     def live(self) -> list[Tab]:
@@ -952,7 +1001,7 @@ def _status(response: Any) -> Any:
 PATHS = ("/", "/admin", "/open", "/admin?x=1", "/nowhere", "/desk/ada", "/desk/cy")
 # How an upload goes: all of it, part of it and then nothing more, or part of
 # it and then the tab is gone.
-UPLOADS = ("whole", "whole", "part", "part then gone")
+UPLOADS = ("whole", "whole", "part", "part then gone", "cancel")
 # Small steps let things interleave, and the long ones cross a boundary each:
 # the notice a tab is given, the hooks' time limit, the recheck interval, the
 # grace period, the sign-in's lifetime.
@@ -965,6 +1014,7 @@ KNOBS: dict[str, tuple[Any, ...]] = {
     "logout_to": (None, "/open", "https://idp.example/bye"),
     "connect_delay": (0.0, 0.0, 0.3, 2.0),
     "connect_fails": (None, None, None, "forbidden", "boom"),
+    "connect_does": (None, None, None, "task"),
     "close_delay": (0.0, 0.0, 0.3, 3.0),
     "close_does": (None, None, None, "end", "boom"),
     "handler_delay": (0.1, 0.5, 3.0),
@@ -988,6 +1038,7 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
     if live:
         kinds += ["click"] * 14 + ["navigate"] * 2 + ["drop"] * 2 + ["deafen", "hear"]
         kinds += ["request", "stale", "answer", "chat", "chat", "upload", "upload", "fetch"]
+        kinds += ["request", "reload", "duplicate"]
     if sim.app.sessions:
         kinds += ["push"]
     if any(t.gone or t.server_closed for t in sim.tabs):
@@ -1021,7 +1072,11 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
     if kind == "navigate":
         return ("navigate", tab, rng.choice(PATHS))
     if kind == "chat":
-        return ("chat", tab, rng.choice(["message", "message", "stop", "regenerate"]))
+        return (
+            "chat",
+            tab,
+            rng.choice(["message", "message", "stop", "regenerate", "message+stop"]),
+        )
     if kind == "upload":
         return ("upload", tab, rng.choice(["small", "small", "big"]), rng.choice(UPLOADS))
     if kind == "fetch":
@@ -1033,7 +1088,9 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
     if kind == "hear":
         return ("hear", tab)
     if kind == "request":
-        return ("request", tab)
+        return ("request", tab, rng.choice(["wait", "wait", "cancel"]))
+    if kind in ("reload", "duplicate"):
+        return (kind, tab)
     if kind == "stale":
         return ("stale", tab, rng.choice(["root/bump", "root/end", "root/admin", "toast:none"]))
     if kind == "answer":
@@ -1108,8 +1165,13 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
         if node is None:
             return False
         world.note("act:chat", tab=tab.label, what=action[2])
-        payload = {"text": "hello"} if action[2] == "message" else None
-        tab.say({"type": "event", "node": node, "name": action[2], "payload": payload})
+        if action[2] == "message+stop":
+            # Both in one read: the stop arrives before the reply has begun.
+            tab.say({"type": "event", "node": node, "name": "message", "payload": {"text": "hi"}})
+            tab.say({"type": "event", "node": node, "name": "stop", "payload": None})
+        else:
+            payload = {"text": "hello"} if action[2] == "message" else None
+            tab.say({"type": "event", "node": node, "name": action[2], "payload": payload})
     elif kind == "upload":
         node = next((n for n, name in sim.handlers(tab) if name == "upload"), None)
         if node is None:
@@ -1118,9 +1180,16 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
         world.note("act:upload", tab=tab.label, size=size, how=action[3])
         details = {"name": "notes.txt", "mime": "text/plain"}
         request = tab.ask("upload", node, name="upload", payload=details, size=size)
-        send = size if action[3] == "whole" else size // 2
-        for start in range(0, send, 256 * 1024):
-            tab.bytes(request, b"a" * min(256 * 1024, send - start))
+        if action[3] == "cancel":
+            # Cancelled in the moment it is asked, with the bytes behind it
+            # on the wire all the same, in more frames than a stream holds.
+            tab.say({"type": "cancel", "request": request})
+            for start in range(0, size, 64 * 1024):
+                tab.bytes(request, b"a" * min(64 * 1024, size - start))
+        else:
+            send = size if action[3] == "whole" else size // 2
+            for start in range(0, send, 256 * 1024):
+                tab.bytes(request, b"a" * min(256 * 1024, send - start))
         if action[3] == "part then gone":
             tab.drop()
     elif kind == "fetch":
@@ -1133,7 +1202,22 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
         tab.say({"type": "navigate", "path": action[2]})
     elif kind == "request":
         world.note("act:request", tab=tab.label)
-        tab.ask("search", "root/combo", name="search", payload="a")
+        request = tab.ask("search", "root/combo", name="search", payload="a")
+        if len(action) > 2 and action[2] == "cancel":
+            tab.say({"type": "cancel", "request": request})
+    elif kind == "reload":
+        # The page is loaded again: its old socket goes, and the new one
+        # asks for the session with nothing seen.
+        if tab.session is None:
+            return False
+        tab.drop()
+        sim.reconnect(tab, seq=0, how="reload")
+    elif kind == "duplicate":
+        # The tab is duplicated: a second socket for the same session while
+        # the first is still there.
+        if tab.session is None:
+            return False
+        sim.reconnect(tab, how="duplicate")
     elif kind == "stale":
         world.note("act:stale", tab=tab.label, node=action[2])
         tab.say({"type": "event", "node": action[2], "name": "click"})
@@ -1393,10 +1477,30 @@ def unexpected(records: list[logging.LogRecord]) -> list[tuple[str, str]]:
     return out
 
 
+def kept_requests(session: Any) -> list[str]:
+    """Requests a session still holds though nothing is working on them."""
+    return [rid for rid, task in session._requests.items() if task.done()]
+
+
+def stuck_chats(session: Any) -> list[str]:
+    """Chats that say a reply is under way while none is."""
+    return [
+        key
+        for key, thread in session._threads.items()
+        if thread.busy and (thread.turn_task is None or thread.turn_task.done())
+    ]
+
+
 def settled(sim: Sim) -> None:
     """With everything at rest and every tab listening: no tab is left on a
     session that is over without having been told, and none is left connected
-    to nothing."""
+    to nothing. A session holds nothing for work that is no longer there."""
+    for session in sim.app.sessions.values():
+        sid = sim.world.name(session.id)
+        if kept_requests(session):
+            sim.problems.append(("request kept", f"{sid} still holds a request that is done"))
+        if stuck_chats(session):
+            sim.problems.append(("chat stuck", f"a chat of {sid} is busy with no reply under way"))
     for tab in sim.tabs:
         if tab.gone or tab.server_closed or tab.session is None:
             continue
@@ -1433,10 +1537,13 @@ def examine(world: World, sim: Sim, loop: asyncio.AbstractEventLoop) -> list[tup
 
     # Nothing of the app's runs on a session once it is over.
     for e in log:
-        starts = e["kind"] in ("handler:begin", "connect:begin", "request:begin", "tick")
+        starts = e["kind"] in ("handler:begin", "connect:begin", "request:begin", "tick", "draw")
         if starts and e["sid"] in over and e["i"] > over[e["sid"]]:
-            what = e.get("name") or e["kind"].split(":")[0]
+            what = e.get("name") or e.get("after") or e["kind"].split(":")[0]
             found.append(("ran after the end", f"{what} on {e['sid']} at {e['t']} s"))
+        if e["kind"] == "draw" and e["early"]:
+            # A page is drawn once its connect hook has returned, not before.
+            found.append(("drawn early", f"{e['sid']} was drawn before its connect returned"))
 
     # A session keeps the user it started with, and a guarded page is only
     # ever acted on for a user its rule admits.
@@ -1584,6 +1691,8 @@ ON_A_TAB = {
     "chat",
     "upload",
     "fetch",
+    "reload",
+    "duplicate",
 }
 
 
