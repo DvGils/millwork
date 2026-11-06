@@ -228,8 +228,10 @@ class World:
 
     clock: Clock
     loop: Any = None
-    # Sessions whose page is in its connect hook right now.
+    # Sessions whose page is in its connect hook right now, and sessions
+    # with a handler in the middle of a change it has not lent its turn for.
     connecting: set[str] = field(default_factory=set)
+    halfway: set[str] = field(default_factory=set)
     people: dict[str, dict[str, Any]] = field(
         default_factory=lambda: {
             "ada": {"role": "admin", "active": True},
@@ -421,7 +423,13 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
 
     @handler("slow")
     async def slow(s: mw.Session[State], _: Any) -> None:
-        await asyncio.sleep(knobs["handler_delay"])
+        # In the middle of a change for as long as it waits, with its turn
+        # held: the page must not be drawn from what it has half done.
+        world.halfway.add(s.id)
+        try:
+            await asyncio.sleep(knobs["handler_delay"])
+        finally:
+            world.halfway.discard(s.id)
         s.state.n += 1
 
     @handler("end", plain=False)
@@ -586,7 +594,12 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
 
     def body(s: mw.Session[State], mark: str) -> ui.Component:
         rows = [{"id": i, "name": f"row {i}", "n": s.state.n + i} for i in range(s.state.rows)]
-        world.note("draw", sid=world.name(s.id), early=s.id in world.connecting)
+        world.note(
+            "draw",
+            sid=world.name(s.id),
+            early=s.id in world.connecting,
+            halfway=s.id in world.halfway,
+        )
         return ui.Page(
             ui.Text(f"{mark} n={s.state.n}", key="mark"),
             ui.Button("await_task", key="await_task", on_click=await_task),
@@ -1134,7 +1147,7 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
         # The app says something to every session at once, as it does when a
         # theme file changes while it is being worked on.
         world.note("act:push")
-        await sim.app._push_theme()
+        sim.app._push_theme()
         return True
     tab = tabs.get(action[1])
     if tab is None:
@@ -1316,17 +1329,17 @@ def run(
     noisy.setLevel(logging.WARNING)
 
     Session = importlib.import_module("millwork.session").Session
-    original_init, original_shut = Session.__init__, Session._shut
+    original_init, original_end = Session.__init__, Session.dismiss
 
     def init(self: Any, *args: Any, **kwargs: Any) -> None:
         original_init(self, *args, **kwargs)
         world.sessions.append(self)
         world.note("session:new", sid=world.name(self.id))
 
-    def shut(self: Any) -> None:
-        if not self.closed:
+    def end(self: Any, *args: Any, **kwargs: Any) -> None:
+        if not self.over:
             world.note("session:over", sid=world.name(self.id))
-        original_shut(self)
+        original_end(self, *args, **kwargs)
 
     # How the app is set up and how the scenario ends are part of it, so a
     # replay has them as the original did.
@@ -1401,7 +1414,7 @@ def run(
         lost.append(f"{context.get('message')}: {type(error).__name__}: {error} at {where or '?'}")
 
     loop.set_exception_handler(dropped)
-    Session.__init__, Session._shut = init, shut  # type: ignore[method-assign]
+    Session.__init__, Session.dismiss = init, end  # type: ignore[method-assign]
     violations: list[tuple[str, str]] = []
     try:
         with virtual_time(clock), warnings.catch_warnings(record=True) as warned:
@@ -1420,7 +1433,7 @@ def run(
             ]
             violations += unexpected(logged.records)
     finally:
-        Session.__init__, Session._shut = original_init, original_shut  # type: ignore[method-assign]
+        Session.__init__, Session.dismiss = original_init, original_end  # type: ignore[method-assign]
         noisy.removeHandler(logged)
         noisy.propagate = propagate
         noisy.setLevel(level)
@@ -1479,7 +1492,7 @@ def unexpected(records: list[logging.LogRecord]) -> list[tuple[str, str]]:
 
 def kept_requests(session: Any) -> list[str]:
     """Requests a session still holds though nothing is working on them."""
-    return [rid for rid, task in session._requests.items() if task.done()]
+    return [rid for rid, (child, _) in session._requests.items() if child is None or child.done()]
 
 
 def stuck_chats(session: Any) -> list[str]:
@@ -1518,10 +1531,9 @@ def emptied(sim: Sim) -> None:
     if app.sessions:
         names = sorted(sim.world.name(i) or "?" for i in app.sessions)
         sim.problems.append(("leak", f"sessions left with no tab: {', '.join(names)}"))
-    if app.ending:
-        sim.problems.append(("leak", f"{len(app.ending)} session(s) never finished ending"))
-    if app._ending:
-        sim.problems.append(("leak", f"{len(app._ending)} sign-in(s) never finished ending"))
+    unfinished = [s for s in sim.world.sessions if s.over and not s.gone.done()]
+    if unfinished:
+        sim.problems.append(("leak", f"{len(unfinished)} session(s) never finished ending"))
     root = app.files.root
     kept = [p for p in root.rglob("*") if p.is_file()] if root.exists() else []
     if kept or app.files.used():
@@ -1544,6 +1556,8 @@ def examine(world: World, sim: Sim, loop: asyncio.AbstractEventLoop) -> list[tup
         if e["kind"] == "draw" and e["early"]:
             # A page is drawn once its connect hook has returned, not before.
             found.append(("drawn early", f"{e['sid']} was drawn before its connect returned"))
+        if e["kind"] == "draw" and e["halfway"]:
+            found.append(("half drawn", f"{e['sid']} was drawn in the middle of a handler's turn"))
 
     # A session keeps the user it started with, and a guarded page is only
     # ever acted on for a user its rule admits.
@@ -1665,9 +1679,14 @@ def examine(world: World, sim: Sim, loop: asyncio.AbstractEventLoop) -> list[tup
         for session in world.sessions:
             sid = world.name(session.id)
             # One that was refused before it began has nothing to close.
-            began = session._page_open or session.tree is not None or session.tasks
-            if not session.closed and began:
+            # One that was refused before it was admitted never began.
+            began = session.owed is not None or session.tree is not None or session.tasks
+            if began and not (session.over and session.gone.done()):
                 found.append(("left open", f"{sid} was never closed"))
+            if session.scope.children:
+                found.append(("left running", f"{len(session.scope.children)} children of {sid}"))
+            if session.over and not session.turn.free:
+                found.append(("left running", f"the turn of {sid} is still held"))
             for task in session.tasks:
                 if not task.done:
                     found.append(("left running", f"task {task.label} of {sid}"))

@@ -367,7 +367,7 @@ async def test_settle_skips_a_quiet_task_and_names_what_still_runs(tmp_path: Pat
         from millwork.protocol import Event
 
         session = page.session
-        session.spawn(session.dispatch(Event(node=page.find("loud").id, name="click")), "x")
+        session.event(Event(node=page.find("loud").id, name="click"))
         with pytest.raises(RuntimeError, match="did not settle in 0.2 s; still running: task "):
             await page.settle(timeout=0.2)
         page.session.tasks[-1].cancel()
@@ -474,22 +474,21 @@ async def test_a_handler_that_ends_its_session_lets_the_close_hook_finish(tmp_pa
         await asyncio.sleep(0)
         await s.end("The work is done.")
         seen.append("work went on")
-        await asyncio.sleep(0)
-        seen.append("work outlived its session")
 
+    # Nothing after the line that ends the session runs in the handler, and
+    # the page's close hook runs to its end all the same.
     async with TestApp(app).open("/") as page:
         await page.click("leave")
-        assert seen == ["close started", "close finished", "handler went on"]
-        assert page.session.closed
+        assert seen == ["close started", "close finished"]
+        assert page.session.closed and page.session.gone.done()
         assert page.messages[-1].message == "Done here." and page.messages[-1].fatal
 
-    # A task that ends its session gets to the end of the hook too, and is
-    # cancelled at its next await like the rest of the session's work.
+    # The same goes for a task that ends its session.
     seen.clear()
     async with TestApp(app).open("/") as page:
         task = page.session.task(work(page.session), label="Work")
         await page.settle()
-        assert seen == ["close started", "close finished", "work went on"]
+        assert seen == ["close started", "close finished"]
         assert task.status == "cancelled"
 
 

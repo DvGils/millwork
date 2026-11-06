@@ -59,8 +59,13 @@ class Turn:
         if self.holder is not who:
             return
         self.holder = None
-        if self.on_free is not None:
-            self.on_free()
+        try:
+            if self.on_free is not None:
+                self.on_free()
+        finally:
+            self._pass_on()
+
+    def _pass_on(self) -> None:
         while self._line and self.holder is None:
             next_one, future = self._line.popleft()
             if future.done():
@@ -73,8 +78,9 @@ class Turn:
     async def lent(self, who: Any, over: Callable[[], bool]) -> AsyncIterator[None]:
         """Give the turn back for the length of a wait and take it again
         after, unless ``over()`` says there is nothing left to take turns on.
-        Does nothing for someone who does not hold the turn."""
-        held = self.holder is who
+        Does nothing for someone who does not hold the turn, and for
+        nobody (``None``)."""
+        held = who is not None and self.holder is who
         if held:
             self.give_back(who)
         try:

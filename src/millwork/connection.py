@@ -154,6 +154,7 @@ class Connection:
         self._pipes: dict[str, Pipe] = {}
         self._poke: asyncio.Future[None] | None = None
         self._room: asyncio.Future[None] | None = None
+        self._slack: asyncio.Future[None] | None = None
         self._stopped: asyncio.Future[None] = asyncio.get_running_loop().create_future()
 
     # ------------------------------------------------------------- steps
@@ -195,6 +196,7 @@ class Connection:
             session.outbox.poke = None
         if self._room is not None and not self._room.done():
             self._room.set_result(None)
+        self._caught_up()
         self.scope.cancel()
         if not self._stopped.done():
             self._stopped.set_result(None)
@@ -202,6 +204,10 @@ class Connection:
     def _wake(self) -> None:
         if self._poke is not None and not self._poke.done():
             self._poke.set_result(None)
+
+    def _caught_up(self) -> None:
+        if self._slack is not None and not self._slack.done():
+            self._slack.set_result(None)
 
     def _part_done(self, task: asyncio.Task[Any] | None) -> None:
         # The tab went away or the socket failed. Either way it is over.
@@ -214,13 +220,30 @@ class Connection:
         holds back the request that sends them and nothing else. False once
         the connection is closed."""
         while not self.closed and sum(1 for i in self._lane if isinstance(i, bytes)) >= LANE_FRAMES:
-            self._room = asyncio.get_running_loop().create_future()
-            await self._room
+            # Every request that waits for room waits on the same wakeup.
+            if self._room is None or self._room.done():
+                self._room = asyncio.get_running_loop().create_future()
+            await asyncio.shield(self._room)
         if self.closed:
             return False
         self._lane.append(data)
         self._wake()
         return True
+
+    async def room(self, within: int, patience: float) -> None:
+        """Wait while the tab is more than ``within`` messages behind what
+        its session has said, for ``patience`` seconds at most. A stream
+        waits here, so that it is paced to the tab that reads it."""
+        session = self.session
+        assert session is not None
+        try:
+            async with asyncio.timeout(patience):
+                while not self.closed and session.outbox.seq - self.cursor > within:
+                    if self._slack is None or self._slack.done():
+                        self._slack = asyncio.get_running_loop().create_future()
+                    await asyncio.shield(self._slack)
+        except TimeoutError:
+            pass
 
     async def run(self) -> None:
         """The connection's life: a reader and a writer until either stops or
@@ -240,7 +263,9 @@ class Connection:
             return
         to = end.to
         if end.asking is not None:
-            to = (await end.asking) or end.to
+            # Shielded: the answer is for every tab of the sign-in, and one
+            # connection being stopped while it waits takes it from no other.
+            to = (await asyncio.shield(end.asking)) or end.to
         try:
             async with asyncio.timeout(END_NOTICE_SECONDS):
                 if to is not None:
@@ -320,18 +345,23 @@ class Connection:
             if items is GAP:
                 # The tab cannot be caught up from the outbox. It gets the
                 # page as it was last drawn, which is what the next patch
-                # builds on. No page function runs for it.
-                self.cursor = outbox.seq
+                # builds on. No page function runs for it. While there is
+                # no page to show, a page being opened, it waits for one.
                 mount = session.mounted()
                 if mount is not None:
+                    self.cursor = outbox.seq
                     await socket.send_text(mount)
-                continue
+                    self._caught_up()
+                    continue
+                self.cursor = -1
+                items = []
             if items:
                 for seq, text in items:
                     await socket.send_text(text)
                     self.cursor = seq
                     if self._lane:
                         break
+                self._caught_up()
                 continue
             self._poke = asyncio.get_running_loop().create_future()
             await self._poke

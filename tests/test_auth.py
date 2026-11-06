@@ -654,7 +654,6 @@ def test_a_session_ends_when_its_sign_in_runs_out(tmp_path: Path) -> None:
         # Asked once for Ada's two tabs, and her lasting sign-in goes on.
         assert sorted(asked) == ["ada", "bob", "cy"]
         assert settled(app, [kept])
-        assert app._ending == {}
 
 
 def test_on_logout_says_where_the_tab_goes(
@@ -738,8 +737,8 @@ def test_a_tab_that_comes_back_follows_the_newer_sign_in(tmp_path: Path) -> None
             assert json.loads(ws.receive_text())["msg"]["id"] == info["id"]
             assert session.sign_in not in (None, first)
             assert session.sign_in_expires - time.time() > 7000
-            assert old_timer.cancelled() and session._expiry is not old_timer
-            assert session._expiry.when() - session._loop.time() > 7000
+            assert not old_timer.pending and session._expiry is not old_timer
+            assert session._expiry._handle.when() - session._loop.time() > 7000
         # A visitor on a public page has no sign-in to run out.
         client.cookies.clear()
         with client.websocket_connect("/_mw/ws") as ws:

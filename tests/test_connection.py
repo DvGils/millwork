@@ -157,12 +157,18 @@ async def test_a_tab_that_cannot_be_caught_up_gets_the_page_as_it_stands(cursor:
     await finish(conn, running)
 
 
-async def test_with_no_page_drawn_yet_a_new_tab_just_follows() -> None:
+async def test_with_no_page_drawn_yet_a_new_tab_waits_for_one() -> None:
+    # Loaded anew while the page is still being opened: what was said
+    # meanwhile is not for it, and the page comes when there is one.
     session, socket, conn, running = await started(cursor=-1)
+    session.post("meanwhile")
     await settle()
+    assert socket.kinds() == ["command:hello"]
+    session.drawn = "the page"
     session.post("mount")
     await settle()
-    assert socket.kinds() == ["command:hello", "command:mount"]
+    assert socket.kinds() == ["command:hello", "command:mount of the page"]
+    assert conn.cursor == session.outbox.seq
     await finish(conn, running)
 
 

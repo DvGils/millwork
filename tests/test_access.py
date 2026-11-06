@@ -734,38 +734,37 @@ def test_a_refused_page_load_gives_away_nothing_of_the_page(tmp_path: Path) -> N
 async def test_a_tab_that_does_not_listen_holds_nothing_up(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The module, which the package's ``session()`` function hides by name.
-    monkeypatch.setattr(importlib.import_module("millwork.session"), "END_NOTICE_SECONDS", 0.05)
+    monkeypatch.setattr(importlib.import_module("millwork.connection"), "END_NOTICE_SECONDS", 0.05)
     world = World()
     app = make_app(tmp_path, world)
     ada = auth.User(id="ada", name="Ada", claims={"role": "admin"})
     harness = TestApp(app)
+
+    async def never(text: str) -> None:
+        await asyncio.Event().wait()
+
     async with harness.open("/admin", user=ada) as deaf, harness.open("/", user=ada) as fine:
-        heard: list[str] = []
-
-        async def never(text: str) -> None:
-            await asyncio.Event().wait()
-
-        async def hears(text: str) -> None:
-            heard.append(json.loads(text)["msg"].get("name") or json.loads(text)["msg"]["type"])
-
-        deaf.session._send, fine.session._send = never, hears
+        # One tab stops taking what it is sent.
+        deaf._conn.socket.send_text = never
         deaf.session.sign_in = fine.session.sign_in = "one-sign-in"
+        before = len(fine.messages)
         # The sign-in ends. Both sessions are over at once, before anything is
         # awaited, and the tab that listens is told while the other is not
         # listening.
         app.end_sign_in("one-sign-in", ada)
         assert deaf.session.closed and fine.session.closed and app.sessions == {}
-        assert app.ending == {deaf.session, fine.session}
         await asyncio.sleep(0.02)
-        assert heard == ["leave", "error"]
-        # The deaf one is given its moment and then finished all the same:
-        # its page is closed and nothing is left owing.
+        said = [getattr(m, "name", None) or m.type for m in fine.messages[before:]]
+        assert said == ["leave", "error"]
+        # Neither session waits for the deaf tab: both pages are closed and
+        # nothing is left owing. The tab is let go when its moment is up.
+        assert deaf.session.gone.done() and fine.session.gone.done()
+        assert world.closed == ["ada"]
         await asyncio.sleep(0.1)
-        assert world.closed == ["ada"] and app.ending == set() and app._ending == {}
+        assert deaf._tab is not None and deaf._tab.done()
         # Ending one on its own is the same: over first, and not kept waiting.
     async with harness.open("/", user=ada) as page:
-        page.session._send = never
+        page._conn.socket.send_text = never
         started = time.monotonic()
         await page.session.end("gone")
         assert page.session.closed and time.monotonic() - started < 1.0
@@ -862,7 +861,8 @@ def test_a_request_that_finds_the_user_changed_ends_the_session_properly(tmp_pat
             ws.send_text(json.dumps({"seq": 2, "msg": {**request, "payload": {"id": "none"}}}))
             assert until(ws, lambda m: m.get("name") == "leave")["args"] == {"to": "/admin"}
             assert until(ws, lambda m: m["type"] == "error")["fatal"] is True
-        assert app.sessions == {} and app.ending == set() and world.closed == ["ada"]
+        eventually(lambda: world.closed == ["ada"])
+        assert app.sessions == {}
 
 
 async def test_a_session_ended_from_two_sides_is_told_once_and_closed_once(tmp_path: Path) -> None:
@@ -887,14 +887,14 @@ async def test_a_session_ended_from_two_sides_is_told_once_and_closed_once(tmp_p
     async with TestApp(app).open("/") as page:
         clicking = asyncio.create_task(page.click("leave"))
         await asyncio.sleep(0.01)
-        # The handler is waiting for its own session's end, and someone else
-        # ends it too. The first word is the one the tab gets, the page is
-        # closed once, and the handler sees the end through.
+        # The handler has ended its own session, and someone else ends it
+        # too. The first word is the one the tab gets, the page is closed
+        # once, and nothing after the handler's own ending line runs.
         await page.session.end("someone else said so")
         await clicking
         fatal = [m.message for m in page.messages if getattr(m, "fatal", False)]
         assert fatal == ["the handler said so"]
-        assert closes == ["started", "finished"] and went_on == ["handler"]
+        assert closes == ["started", "finished"] and went_on == []
 
 
 async def test_a_session_that_joins_a_sign_in_as_it_ends_leaves_with_the_rest(
@@ -923,7 +923,15 @@ async def test_a_session_that_joins_a_sign_in_as_it_ends_leaves_with_the_rest(
         await asyncio.sleep(0.2)
         for page in (early, late):
             assert [c.args for c in page.commands if c.name == "leave"] == [{"to": "/welcome"}]
-        assert app.sessions == {} and app.ending == set() and app._ending == {}
+        assert app.sessions == {} and early.session.gone.done() and late.session.gone.done()
+
+
+def eventually(check: Any, patience: float = 2.0) -> None:
+    """Wait for something the app does on its own time, after a tab has gone."""
+    deadline = time.monotonic() + patience
+    while not check() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert check()
 
 
 def gone(ws: Any) -> list[Any]:
@@ -963,6 +971,7 @@ def test_tabs_hear_where_to_go_however_the_ending_finds_them(tmp_path: Path) -> 
             # A third tab is still in its connect hook when the person is
             # removed and the busy tab's click finds it out.
             arriving.send_text(json.dumps({"seq": 1, "msg": {"type": "hello", "path": "/slow"}}))
+            assert json.loads(arriving.receive_text())["msg"]["type"] == "session"
             del world.roles["ada"]
             stale(app)
             click(busy, "root/act")
@@ -976,15 +985,16 @@ def test_tabs_hear_where_to_go_however_the_ending_finds_them(tmp_path: Path) -> 
             assert gone(idle) == ["/welcome", sent]
             assert gone(arriving) == ["/welcome", sent]
         assert world.acted == [] and asked == ["ada"]
-        # The page that was still opening is closed, and what it started is not left running.
-        assert sorted(world.closed) == ["ada", "ada from the slow page"]
-        assert app.sessions == {} and app.ending == set()
+        # The page that was still opening had its connect stopped where it
+        # stood. A connect that did not return has nothing to close.
+        eventually(lambda: world.closed == ["ada"])
+        assert app.sessions == {}
 
 
-def test_a_tab_that_was_not_reading_is_told_when_it_speaks(
+def test_a_tab_that_was_not_reading_is_let_go_and_starts_afresh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(importlib.import_module("millwork.session"), "END_NOTICE_SECONDS", 0.05)
+    monkeypatch.setattr(importlib.import_module("millwork.connection"), "END_NOTICE_SECONDS", 0.05)
     world = World()
     app = make_app(tmp_path, world)
 
@@ -994,17 +1004,22 @@ def test_a_tab_that_was_not_reading_is_told_when_it_speaks(
     with TestClient(app.asgi) as client:
         sign_in(client, "ada")
         with client.websocket_connect("/_mw/ws") as ws:
-            session = app.sessions[opened(ws, "/admin")["id"]]
+            first = opened(ws, "/admin")
+            session = app.sessions[first["id"]]
             # The tab stops taking what it is sent, and its session is ended.
-            session._send = never
+            session.conn.socket.send_text = never
             client.portal.call(lambda: session.dismiss("It is over.", to="/welcome"))
-            time.sleep(0.15)
-            assert session.closed and app.ending == set() and world.closed == ["ada"]
-            # When it speaks again it is told then, and let go.
-            click(ws, "root/act")
-            assert gone(ws) == ["/welcome", "It is over."]
-            with pytest.raises(WebSocketDisconnect):
+            eventually(lambda: world.closed == ["ada"])
+            assert session.closed and app.sessions == {}
+            # It is not left connected to nothing: when its moment is up the
+            # socket is closed, in the way that tells a tab not to try again.
+            with pytest.raises(WebSocketDisconnect) as closing:
                 ws.receive_text()
+            assert closing.value.code == 4409
+        # A tab that comes back with the old session's name gets a new one.
+        resume = {"session": first["id"], "resume": first["resume"], "seq": 2}
+        with client.websocket_connect("/_mw/ws") as again:
+            assert opened(again, "/admin", resume)["id"] != first["id"]
         assert world.acted == []
 
 
@@ -1030,9 +1045,10 @@ def test_a_session_on_its_way_out_closes_its_page_before_the_app_shuts_down(tmp_
             deadline = time.monotonic() + 2
             while not session.closed and time.monotonic() < deadline:
                 time.sleep(0.01)
-            # Over, and still owed its end while the app is asked where its
-            # tab should go. The app stops in that moment.
-            assert session in app.ending and app.sessions == {} and world.closed == []
+            # Over, while the app is still being asked where its tab should
+            # go. The app stops in that moment, and does not wait for an
+            # answer that nobody needs any more.
+            assert session.closed and app.sessions == {}
     assert order == ["shutdown, closed so far: ['ada']"] and world.acted == []
 
 
@@ -1062,7 +1078,7 @@ async def test_the_end_of_a_session_is_not_at_the_mercy_of_the_apps_code(tmp_pat
         # and wait on work of its own that the end has just cancelled.
         await s.end("said by the close hook")
         late = s.task(work, label="late")
-        assert late.status == "cancelled" and s.spawn(asyncio.sleep(30)).cancelling()
+        assert late.status == "cancelled" and s.spawn(asyncio.sleep(30)) is None
         await asyncio.sleep(0.05)
         seen.append("close finished")
         await waiting[s.id]
@@ -1080,7 +1096,7 @@ async def test_the_end_of_a_session_is_not_at_the_mercy_of_the_apps_code(tmp_pat
         # The page was closed all the same, to the end of its hook, once. The
         # task the end cancelled did not come back as a handler.
         assert seen == ["close started", "close finished"]
-        assert app.ending == set() and session._finishing.done()
+        assert session.gone.done()
         fatal = [m.message for m in page.messages if getattr(m, "fatal", False)]
         assert fatal == ["gone"]
 
@@ -1089,13 +1105,16 @@ async def test_the_end_of_a_session_is_not_at_the_mercy_of_the_apps_code(tmp_pat
     seen.clear()
     async with harness.open("/") as page:
         start_work(page.session)
-        page.session.detach()
+        # Its tab goes away, as when a socket closes.
+        page.session.detached(page._conn)
+        page._conn.close()
         resolved = app.resolve("/")
         assert resolved is not None
         newcomer = Session(app, resolved[0], resolved[1], "/")
         started = time.monotonic()
-        assert await app.admit(newcomer) and time.monotonic() - started < 0.04
+        assert app.admit(newcomer) and time.monotonic() - started < 0.04
         assert page.session.closed and "close finished" not in seen
         await asyncio.sleep(0.15)
         assert seen == ["close started", "close finished"]
-        await newcomer._close()
+        newcomer.dismiss()
+        await newcomer.gone

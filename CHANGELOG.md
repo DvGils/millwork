@@ -34,20 +34,63 @@ versions; a release says so here when it does.
   alike. Before, a path the tab sent kept its query in the last parameter
   and its percent-encoding, where a page load had neither, so the two
   could disagree about a parameter.
-- Ending a session no longer waits on its tab. The session is over
-  first and the tab is told after, within two seconds. Before, a tab that
-  had stopped reading its socket could keep its session, and the ones
-  ended after it, open.
+- A session no longer waits on a socket for anything. What it has to say
+  is kept in order and carried to the tab by its connection, so a tab
+  that reads slowly holds up its own messages and nothing else. Before,
+  one tab that had stopped reading could keep its session open, hold up
+  the sessions ended after it, and stall a theme or a component pushed to
+  every tab. A tab that is not reading when its session ends holds
+  nothing of it after two seconds, and starts a new session when it comes
+  back.
 - A session that is over runs nothing more. Work started on it after the
   end is cancelled at once, a task the end cancelled does not come back
-  through its `on_done`, and a page whose `connect` finishes after the
-  end is closed straight away. A page's close hook runs to its end
-  whatever becomes of the handler or navigation that was leaving the
-  page, and may end the session it is closing.
+  through its `on_done`, and nothing after `await s.end(...)` runs in a
+  handler or a task of that session, which before went on to its next
+  `await`. A handler that waits on a task when its session ends is
+  cancelled with it. Before, it was handed `mw.Cancelled` and could go on.
+- A page is closed exactly once, by its session and by nothing else. Its
+  close hook runs to its end whatever becomes of the handler or
+  navigation that was leaving the page, may end the session it is
+  closing, and is stopped after thirty seconds, so one that never returns
+  cannot keep the server from stopping. A `connect` that is still running
+  when its session ends is stopped where it stands, and a `connect` that
+  did not return is not followed by a close.
+- A page is drawn when its `connect` has returned, also when the hook
+  waits on a task. Before, such a page was drawn while it was still
+  connecting, and two navigations in a row could connect side by side
+  and leave a page that was never closed.
+- A request or a chat message cancelled in the moment it arrives is
+  forgotten. Before, the request stayed on the session's books, an upload
+  behind it could block everything else its tab sent, and the chat stayed
+  busy for good.
+- Cancelling a task stops it. A task started with `s.later` that had
+  already begun was marked cancelled while its work ran on, and a task
+  cancelled in the moment it was started stayed running, with whatever
+  awaited it waiting for good.
+- A tab that reconnects or is loaded again in the middle of a long
+  handler gets the page as it was last drawn, at once. Before, the page
+  was built anew at that moment, from state the handler had half changed.
 - Making room for a new session, and signing out, no longer wait for the
-  close hook of the sessions they end.
-- A task cancelled in the moment it is started ends as cancelled. Before,
-  it stayed running, and whatever awaited it waited for good.
+  close hook of the sessions they end. `await session.end(...)` from
+  outside the session returns as soon as the session is over, and
+  `session.gone` is there to wait on for its page to be closed.
+  `s.spawn` returns `None` on a session that is over.
+- When the server stops, nothing of a session is left running. Before, a
+  `recheck` or an `on_logout` that was being asked went on after it.
+- Smaller changes in how a session behaves. What a session said just
+  before it ended, and its tab had not yet taken, is not sent, so a toast
+  right before `s.end` is not seen. A render whose timer fires while a
+  handler holds the turn is drawn as the turn comes free, ahead of the
+  handlers waiting in line, where it waited in line with them. A tab that
+  has fallen further behind than the session keeps for replay gets the
+  page mounted anew. An event that was waiting its turn behind a
+  navigation is dropped when it was meant for the page that was left.
+  `s.ask` and `s.confirm` answer `None` and `False` at once from a connect
+  or a close hook, or on a session that is over, where a question asked
+  in a first connect waited for good. `await s.navigate_to(...)` works
+  from a handler, which lends its turn, where it waited for its own turn
+  before, and returns at once from a connect or a close hook, which the
+  session follows once the hook has returned.
 - Something an app mounts sees the app's own sign-in. Before, the cookie
   was looked up under a name that included the mount's path, so
   `app.user_for` found nobody there.

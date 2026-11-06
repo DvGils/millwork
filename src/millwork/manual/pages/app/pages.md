@@ -203,6 +203,13 @@ ends. A page whose connect raises is reported with a toast, and the tab
 keeps the page it came from, already closed, with whatever the failed
 connect wrote to the state.
 
+Nothing of a page is drawn until its connect has returned, also when the
+hook waits on a task. A session can end while a connect is still running,
+when the person signs out or their sign-in runs out. The hook is stopped
+where it stands then. A connect that did not return is not followed by a
+close, so a hook that takes something it has to give back does that itself
+in a `finally`.
+
 A session does not end when its tab closes. The server cannot tell a
 closed tab from a reload or a dropped network, so the session waits for
 the tab to come back, and ends when it has been gone longer than the
@@ -215,10 +222,12 @@ waiting to see. A session also ends when the app calls `s.end(message)`,
 when a sign-out ends it, and when the server stops. At a stop every page
 closes before the `on_shutdown` hooks run, so a close hook still has the
 database those hooks close. The session's tasks are canceled before the
-hook runs. A handler or a task that ends its own session goes on until
-the hook is done and stops at its next `await`. A session that has ended
-runs nothing more, so a task started on it afterwards is canceled at
-once.
+hook runs. A session is over the moment `s.end` is called, and nothing
+after that line runs in a handler or a task of that session. A session
+that has ended runs nothing more, so a task started on it afterwards is
+canceled at once. A close hook has thirty seconds. After that it is
+stopped and the log says so, which keeps a hook that never returns from
+holding up a server that is stopping.
 
 ## Navigation in the frame
 

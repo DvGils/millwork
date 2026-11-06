@@ -347,10 +347,19 @@ class FileWriter:
         self._reserved = 0
         self._head = b""
         self._checked = not check
+        # Writes and the finish run in a thread, the abort on the loop: one
+        # at a time, so an abort cannot pull the file from under a write.
+        self._lock = threading.Lock()
+        self.ref: FileRef | None = None
+        """The file, once finished."""
         self._fh: Any = path.open("wb")
         self._done = False
 
     def write(self, chunk: bytes) -> None:
+        with self._lock:
+            self._write(chunk)
+
+    def _write(self, chunk: bytes) -> None:
         if self._done:
             raise Reject("the upload is over")
         if not chunk:
@@ -372,10 +381,14 @@ class FileWriter:
                 self._checked = True
             self._fh.write(chunk)
         except BaseException:
-            self.abort()
+            self._abort()
             raise
 
     def finish(self) -> FileRef:
+        with self._lock:
+            return self._finish()
+
+    def _finish(self) -> FileRef:
         if self._done:
             raise Reject("the upload is over")
         try:
@@ -383,7 +396,7 @@ class FileWriter:
                 check_content(self.name, self._head)
             self._fh.close()
         except BaseException:
-            self.abort()
+            self._abort()
             raise
         self._done = True
         guessed = mimetypes.guess_type(self.name)[0]
@@ -397,10 +410,15 @@ class FileWriter:
             node=self._node,
         )
         self._session.files.register(ref)
+        self.ref = ref
         return ref
 
     def abort(self) -> None:
         """Nothing half-written is left behind. Safe to call more than once."""
+        with self._lock:
+            self._abort()
+
+    def _abort(self) -> None:
         if self._done:
             return
         self._done = True

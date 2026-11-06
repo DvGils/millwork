@@ -37,6 +37,7 @@ from millwork import context
 from millwork.access import Forbidden
 from millwork.icons import check_icon
 from millwork.nodes import Component, Tree, build
+from millwork.scope import Scope
 from millwork.shell import root_of
 from millwork.theme import _check_path
 
@@ -566,7 +567,10 @@ class Auth:
         # interval however many requests they make, the question in flight for
         # each, and when the hook last failed for it.
         self._answers: dict[str, _Answer] = {}
-        self._asking: dict[str, asyncio.Task[User | None]] = {}
+        self._asking: dict[str, asyncio.Task[User | None | Unanswered]] = {}
+        # The questions out to ``recheck`` and ``on_logout``. The app stops
+        # them when it stops.
+        self.scope = Scope("auth")
         self._failed: dict[str, float] = {}
         self._retry_after = min(self.recheck_every, 5.0)
         # Who each person without a cookie was last identified as, and when.
@@ -819,10 +823,24 @@ class Auth:
             raise Unanswered("recheck gave no answer a moment ago")
         asking = self._asking.get(slot)
         if asking is None:
-            asking = asyncio.get_running_loop().create_task(self._ask(slot, user))
+            asking = self.scope.start(
+                self._ask_quietly(slot, user), "recheck", done=lambda _: self._asked(slot)
+            )
+            if asking is None:
+                raise Unanswered("the app is stopping")
             self._asking[slot] = asking
-            asking.add_done_callback(lambda done: self._asked(slot, done))
-        return await asyncio.shield(asking)
+        try:
+            answer = await asyncio.shield(asking)
+        except asyncio.CancelledError:
+            # The question was stopped, with the app. Whoever asked is told
+            # there is no answer, unless they are being stopped themselves.
+            me = asyncio.current_task()
+            if me is not None and me.cancelling():
+                raise
+            raise Unanswered("the app is stopping") from None
+        if isinstance(answer, Unanswered):
+            raise answer
+        return answer
 
     @staticmethod
     def _slot(key: str, user: User) -> str:
@@ -834,11 +852,16 @@ class Auth:
             return key
         return f"{key}|{hashlib.sha256(user.model_dump_json().encode()).hexdigest()[:16]}"
 
-    def _asked(self, slot: str, done: asyncio.Task[User | None]) -> None:
-        if self._asking.get(slot) is done:
-            del self._asking[slot]
-        if not done.cancelled():
-            done.exception()  # read, so one nobody waited for is not reported as lost
+    def _asked(self, slot: str) -> None:
+        self._asking.pop(slot, None)
+
+    async def _ask_quietly(self, slot: str, user: User) -> User | None | Unanswered:
+        """The answer, or that there was none, as a value: several may be
+        waiting on one question, and one nobody waits on is nobody's error."""
+        try:
+            return await self._ask(slot, user)
+        except Unanswered as none:
+            return none
 
     async def _ask(self, slot: str, user: User) -> User | None:
         assert self.recheck is not None

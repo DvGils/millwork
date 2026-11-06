@@ -16,9 +16,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
 from millwork.auth import Forbidden
+from millwork.connection import Connection
 from millwork.files import FileRef, _read_chunks
 from millwork.nodes import Component
 from millwork.protocol import Command, Event, Patch, ServerError, Stream, server_message
+from millwork.scope import Scope
 from millwork.session import Session
 from millwork.ui import Button, Link
 from millwork.ui.chat import Chat
@@ -62,7 +64,18 @@ class Page:
         self.failures: list[tuple[str, BaseException]] = []
         """What the app's code raised, in order: ``(where, exception)``."""
         self._strict = strict
+        self._tab: asyncio.Task[Any] | None = None
+        self._conn: Connection | None = None
         session.on_failure = self._failed
+
+    def _said_goodbye(self) -> bool:
+        return self._tab is None or self._tab.done()
+
+    def _heard_everything(self) -> bool:
+        conn = self._conn
+        if conn is None or conn.closed:
+            return True
+        return conn.cursor == self.session.outbox.seq and not conn._lane
 
     def _failed(self, where: str, exc: BaseException) -> None:
         self.failures.append((where, exc))
@@ -194,9 +207,7 @@ class Page:
     async def event(self, node: Found | str, name: str, payload: Any = None) -> None:
         """One event through the real dispatcher, then everything it set off."""
         node_id = node.id if isinstance(node, Found) else self.find(node).id
-        self.session.spawn(
-            self.session.dispatch(Event(node=node_id, name=name, payload=payload)), "test event"
-        )
+        self.session.event(Event(node=node_id, name=name, payload=payload))
         await self.settle()
 
     async def click(self, node: Found | str) -> None:
@@ -225,9 +236,7 @@ class Page:
             raise LookupError(f"no toast with a {label!r} button")
         if token not in self.session._toast_actions:
             raise LookupError(f"the {label!r} button was already pressed, or its toast is gone")
-        self.session.spawn(
-            self.session.dispatch(Event(node=f"toast:{token}", name="action")), "test toast action"
-        )
+        self.session.event(Event(node=f"toast:{token}", name="action"))
         await self.settle()
 
     async def change(self, node: Found | str, value: Any) -> None:
@@ -370,14 +379,24 @@ class Page:
             # Delayed tasks (``s.later``) are not waited for; a running task or
             # handler that is blocked on an open ask is left for ``answer``.
             running = [t for t in s.tasks if t.status == "running" and not t.quiet]
-            spawned = [t for t in s._spawned if not t.done()]
+            # What else the session has under way: handlers in or waiting for
+            # their turn, requests, a reply, a page being connected.
+            # A child counts until the scope has seen it out, which is a
+            # moment after it finished: only then is its turn given back.
+            bodies = {t._child for t in s.tasks}
+            working = [c for c in s.scope.children if c not in bodies]
+            # A page being left or opened, which the session's life does.
+            switching = not s.over and (not s.ready or bool(s._wanted))
             if asyncio.get_running_loop().time() > deadline:
                 names = [f"task {t.label!r}" for t in running] + [
-                    f"spawned {t.get_name()!r}" for t in spawned
+                    f"{c.get_name()!r}" for c in working
                 ]
                 raise RuntimeError(
                     f"the session did not settle in {timeout:g} s; still running: "
-                    + (", ".join(names) or "nothing the harness can see")
+                    + (
+                        ", ".join(names)
+                        or ("a page switch" if switching else "nothing the harness can see")
+                    )
                 )
             if running:
                 # The harness waiting is not the app observing the task, so a
@@ -385,18 +404,51 @@ class Page:
                 _, still = await asyncio.wait([t._future for t in running], timeout=_TICK)
                 if not (still and asking):
                     continue
-            if spawned:
-                _, still = await asyncio.wait(spawned, timeout=_TICK)
+            if working:
+                _, still = await asyncio.wait(working, timeout=_TICK)
                 if not (still and asking):
                     continue
-            if s._render_scheduled and s._render_handle is not None:
-                s._render_handle.cancel()
-                s._render_scheduled = False
-                s._render_handle = None
-                await s._render()
+            if switching:
+                await asyncio.sleep(_TICK)
+                continue
+            if s.over and not (s.gone.done() and self._said_goodbye()):
+                # Over: settled when its page is closed and its tab was told.
+                await asyncio.sleep(_TICK)
+                continue
+            if s._render_due:
+                # At once, where a running app waits out its timer.
+                s.flush()
+                if not s._render_due:
+                    continue
+            if not self._heard_everything():
+                # What the session said is on its way to the tab.
+                await asyncio.sleep(0)
                 continue
             self._raise_failures()
             return
+
+
+class _Tab:
+    """The harness's end of a connection: what the session says is kept on
+    the page, and nothing is ever said back over it."""
+
+    def __init__(self, page: Page) -> None:
+        self._page = page
+        self._closed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+
+    async def send_text(self, data: str) -> None:
+        self._page.messages.append(server_message.validate_python(json.loads(data)["msg"]))
+
+    async def send_bytes(self, data: bytes) -> None:
+        pass
+
+    async def receive(self) -> dict[str, Any]:
+        await self._closed
+        return {"type": "websocket.disconnect"}
+
+    async def close(self, code: int = 1000) -> None:
+        if not self._closed.done():
+            self._closed.set_result(None)
 
 
 _MISSING: Any = object()
@@ -437,6 +489,7 @@ class TestApp:
         if self._started:
             return
         self._started = True
+        self.app._begin()
         for fn in self.app._startup:
             result = fn()
             if asyncio.iscoroutine(result):
@@ -466,28 +519,45 @@ class TestApp:
             raise Forbidden(verdict.message or self.app.theme.text("forbidden_text"))
         session: Session[Any] = Session(self.app, page_def, params, path)
         session.user = user
-        self.app.sessions[session.id] = session
+        # What a page refuses with is raised in the test, where a running app
+        # would land on its page for that.
+        session.falls_back = False
         page = Page(session, strict=self.strict)
+        if state is not None:
+            session.state = state
+            session.runs_connect = False
+        scope = Scope("test harness")
+        conn = Connection(_Tab(page), "test")
 
-        async def send(text: str) -> None:
-            page.messages.append(server_message.validate_python(json.loads(text)["msg"]))
+        async def close() -> None:
+            # The page's close hook runs as the session ends.
+            session.dismiss()
+            await session.gone
+            conn.close()
+            await scope.wait(1.0)
 
+        if not self.app.admit(session):
+            raise RuntimeError("the app has no room for another session")
+        session.attached(conn, 0)
+        page._conn = conn
+        page._tab = scope.start(conn.run(), "tab")
         try:
-            if state is not None:
-                session.state = state
-            else:
-                await session.connect()
-            await session.attach(send, 0)
+            refused = await session.opened
+            if refused is not None:
+                raise refused
+            # From here the session behaves as in a running app: a page it
+            # navigates to runs its connect, and lands on the app's page for
+            # what a connect refuses.
+            session.falls_back = session.runs_connect = True
             await page.settle()
             yield page
             await page.settle()
         except BaseException:
-            await session._close()
+            await close()
             raise
-        # The page's close hook runs as the session ends, and what it raises is
-        # the app's code failing like any other.
+        # What the close hook raises is the app's code failing like any other.
         seen = len(page.failures)
-        await session._close()
+        await close()
         if self.strict and len(page.failures) > seen:
             where, exc = page.failures[seen]
             exc.add_note(f"raised by {where}")

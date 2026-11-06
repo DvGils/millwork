@@ -45,9 +45,10 @@ app = mw.App(
 - `max_sessions_per_client` and `max_sessions` count live sessions,
   those in grace included. Over the client's cap, that client's session
   longest without a tab makes room. Over the process cap, anyone's does. A
-  new session is refused only when every one still has a tab. A session
-  ended that way, or by a sign-out in another tab, tells its tab so. The
-  page stays readable, takes no more input, and offers a reload.
+  new session is refused only when every one still has a tab. A tab that
+  comes back to a session that made room starts a new one. A session
+  ended by a sign-out in another tab tells its tab so. The page stays
+  readable, takes no more input, and offers a reload.
 - `threads` sizes the pool that runs sync tasks. The default is Python's.
 - `keep_alive=True` makes every open tab fetch the health route every
   thirty seconds, for a host that stops an idle process. By default a tab

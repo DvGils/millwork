@@ -41,8 +41,10 @@ from millwork.files import Files
 from millwork.nodes import Component
 from millwork.protocol import Command
 from millwork.proxy import ASGIApp, Proxied
+from millwork.scope import Scope
 from millwork.shell import Shell, plain, root_of
 from millwork.theme import Theme, find_theme, under
+from millwork.work import live
 
 # The policy for every HTML page; ``{scripts}`` becomes the page's script sources
 # (the bundle and the nonce of its two inline lines). Styles stay inline because
@@ -112,6 +114,10 @@ if TYPE_CHECKING:
 log = logging.getLogger("millwork.app")
 
 PREFIX = "/_mw"
+# How long the app waits, when it stops, for its sessions to close their
+# pages: longer than a close hook is given, so that one is cut by its own
+# limit and not by this.
+STOP_PATIENCE_SECONDS = 40.0
 BUNDLE_DIR = Path(__file__).parent / "_bundle" / "dist"
 
 
@@ -224,7 +230,6 @@ class App:
         self.max_sessions_per_client = max_sessions_per_client
         self._warned_no_address = False
         self._warned_prefix = False
-        self._admit_lock = asyncio.Lock()
         # The secret signs file URLs (and cookies, with auth). Without auth, a random
         # per-process secret is used: fine for one replica, logged so it is not a
         # surprise. With auth, a cookie must outlive the process and resist guessing,
@@ -265,8 +270,6 @@ class App:
             self._theme_path = candidate if candidate and candidate.is_file() else None
             self.theme = find_theme(self.public_dir)
         self._theme_mtime = self._theme_path.stat().st_mtime if self._theme_path else 0.0
-        self._theme_watch: asyncio.Task[None] | None = None
-        self._components_watch: asyncio.Task[None] | None = None
         self._component_mtimes: dict[str, float] = {}
         # A content hash per custom component: in the source URL, so a tab caches
         # a version for good and fetches a changed one under a new URL.
@@ -284,14 +287,16 @@ class App:
             "forbidden": self._error_page_def("forbidden", _forbidden_view),
         }
         self.sessions: dict[str, Session[Any]] = {}
-        # Sessions that are over and have yet to tell their tab and close
-        # their page: no longer among the sessions, still owed their end.
-        self.ending: set[Session[Any]] = set()
-        # Sign-ins that ran out and are being ended: the task doing it, and
-        # the sessions it will send away, which one that connects late joins.
-        self._ending: dict[str, tuple[asyncio.Task[None], list[Session[Any]]]] = {}
-        # Where the tabs of a sign-in that has just ended were sent, and when.
-        self._ended: dict[str, tuple[str | None, float]] = {}
+        # What the app waits for when it stops: the life of every session,
+        # to the end of its page's close hook.
+        self.lives = Scope("lives")
+        # What runs for as long as the app does and is simply stopped with it.
+        self.background = Scope("background")
+        self.stopping = False
+        # Where the tabs of a sign-in that is ending are to go, as ``on_logout``
+        # says or is still being asked, and when it was asked: one answer for
+        # all of a sign-in's tabs, and for a straggler a moment later.
+        self._destinations: dict[str, tuple[asyncio.Future[str | None], float]] = {}
         self.shell = Shell(self.bundle_dir, prefix=PREFIX)
         self._routes: list[Any] = []
         self._extra: list[_Extra] = []
@@ -356,7 +361,11 @@ class App:
         pages equally exact go by that order."""
         best: tuple[PageDef, dict[str, str]] | None = None
         for page in self.pages:
-            params = page.match(path)
+            try:
+                params = page.match(path)
+            except ValueError:
+                # A parameter the path's convertor cannot read: not this page.
+                continue
             if params is not None and (best is None or page._rank < best[0]._rank):
                 best = page, params
         return best
@@ -512,6 +521,7 @@ class App:
             )
         # On a thread: a root with many stale directories would otherwise hold
         # the loop before the first request.
+        self._begin()
         removed = await asyncio.to_thread(self.files.sweep, max(self.session_grace * 4, 3600))
         if removed:
             log.info("swept %d stale file directories", removed)
@@ -519,36 +529,46 @@ class App:
             await _maybe_await(fn())
         self.component_versions = self._component_hashes()
         if self.debug and (self._theme_path is not None or self._stylesheet_file()):
-            self._theme_watch = asyncio.create_task(self._watch_theme())
+            self.background.start(self._watch_theme(), "theme watch")
         if self.debug and self.components_dir is not None and self.components_dir.is_dir():
-            self._components_watch = asyncio.create_task(self._watch_components())
+            self.background.start(self._watch_components(), "components watch")
         self.ready = True
         try:
             yield
         finally:
             self.ready = False
-            if self._theme_watch is not None:
-                self._theme_watch.cancel()
-            if self._components_watch is not None:
-                self._components_watch.cancel()
-            # Sessions end first: a page's close hook still has what the shutdown
-            # hooks take away, a database pool or a client.
-            # That goes for a session already on its way out as well, which
-            # is no longer among the sessions and may not have closed its page.
-            for session in [*self.sessions.values(), *self.ending]:
-                try:
-                    await session._close()
-                except asyncio.CancelledError:
-                    # One session's end going wrong does not leave the next
-                    # one open, nor the shutdown hooks unrun.
-                    task = asyncio.current_task()
-                    if task is not None and task.cancelling():
-                        raise
-                    log.error("session %s did not close cleanly at shutdown", session.id)
-                except Exception:
-                    log.exception("session %s did not close cleanly at shutdown", session.id)
+            await self._stop()
             for fn in self._shutdown:
                 await _maybe_await(fn())
+
+    def _begin(self) -> None:
+        """A fresh start: an app may be started again after it was stopped."""
+        self.stopping = False
+        if self.lives.cancelled:
+            self.lives = Scope("lives")
+        if self.background.cancelled:
+            self.background = Scope("background")
+        if self.auth is not None and self.auth.scope.cancelled:
+            self.auth.scope = Scope("auth")
+
+    async def _stop(self) -> None:
+        """End every session and see each one out, before the shutdown hooks
+        run: a page's close hook still has what those take away, a database
+        pool or a client. Nothing of a session is running when this returns."""
+        self.stopping = True
+        self.background.cancel()
+        for session in list(self.sessions.values()):
+            session.dismiss()
+        if self.auth is not None:
+            # What is still being asked of the app's hooks is for sessions
+            # that are over now. Nobody needs the answers.
+            self.auth.scope.cancel()
+        await self.lives.wait(STOP_PATIENCE_SECONDS)
+        self.lives.cancel()
+        await self.lives.wait(1.0)
+        if self.auth is not None:
+            await self.auth.scope.wait(1.0)
+        await self.background.wait(1.0)
 
     # ------------------------------------------------------------- asgi
 
@@ -624,7 +644,7 @@ class App:
             now = self._stylesheet_mtime()
             if now != styled:
                 styled = now
-                await self._push_theme()
+                self._push_theme()
 
     async def _watch_components(self) -> None:
         """Debug only: a changed custom component is re-fetched by every open tab."""
@@ -664,88 +684,84 @@ class App:
             log.info("custom component %s changed; reloading it in open tabs", name)
             args = {"name": name, "version": self.component_versions.get(name)}
             for session in list(self.sessions.values()):
-                if not session.closed:
-                    await session._send_now(Command(name="reload_component", args=args))
+                session.post(Command(name="reload_component", args=args))
         return changed
 
-    async def admit(self, session: Session[Any]) -> bool:
-        """Take the new session in, making room by ending the session longest without
-        a tab when a cap is reached; False, and the session left out, when none can
-        be ended. One at a time, so two arriving together cannot both take the last
-        place."""
+    def admit(self, session: Session[Any]) -> bool:
+        """Take the new session in and start its life, making room by ending
+        the session longest without a tab when a cap is reached. False, and
+        the session left out, when none can be ended, or when the app is
+        stopping. All of it is one step, so two arriving together cannot both
+        take the last place, and a session is among the app's sessions if and
+        only if its life has been started."""
+        if self.stopping:
+            return False
         client = session.client
 
-        async def make_room(client: str | None) -> bool:
+        def make_room(client: str | None) -> bool:
             idle = [
                 s
                 for s in self.sessions.values()
-                if not s.closed and not s.has_tab and (client is None or s.client == client)
+                if not s.has_tab and (client is None or s.client == client)
             ]
             if not idle:
                 return False
-            oldest = min(idle, key=lambda s: s.detached_at)
-            # Over now, which is what makes the room. Its close hook runs on
-            # without holding up whoever is waiting to get in.
-            oldest.dismiss(self.theme.text("made_room"))
+            # Over as this returns, which is what makes the room. Its close
+            # hook runs on without holding up whoever is waiting to get in.
+            min(idle, key=lambda s: s.detached_at).dismiss(self.theme.text("made_room"))
             return True
 
-        async with self._admit_lock:
-            mine = sum(1 for s in self.sessions.values() if s.client == client and not s.closed)
-            if mine >= self.max_sessions_per_client and not await make_room(client):
-                return False
-            if len(self.sessions) >= self.max_sessions and not await make_room(None):
-                return False
-            self.sessions[session.id] = session
-            return True
+        mine = sum(1 for s in self.sessions.values() if s.client == client)
+        if mine >= self.max_sessions_per_client and not make_room(client):
+            return False
+        if len(self.sessions) >= self.max_sessions and not make_room(None):
+            return False
+        self.sessions[session.id] = session
+        self.lives.start(
+            live(session), f"life of {session.id[:6]}", done=lambda _: self._gone(session)
+        )
+        return session.id in self.sessions
+
+    def _gone(self, session: Session[Any]) -> None:
+        """A session's life is done, or never began: nothing of it is left."""
+        session.dismiss()
+        self.sessions.pop(session.id, None)
+        self.files.discard(session.id)
+        if not session.gone.done():
+            session.gone.set_result(None)
 
     def end_sign_in(self, sign_in: str, user: Any) -> None:
-        """A sign-in ran out: its sessions leave together. Each of them calls
-        this in the same moment, and the first call takes it, so ``on_logout``
-        is asked once for all of its tabs."""
-        # Over at once, all of them, before anything is awaited: nothing more
-        # runs on a sign-in that has ended while ``on_logout`` is being asked
-        # where its tabs should go.
+        """A sign-in ran out: its sessions leave together. Each of them is
+        over as this returns, before anything is asked, so nothing more runs
+        on a sign-in that has ended while ``on_logout`` is being asked where
+        its tabs should go. The hook is asked once for all of them, and a
+        straggler of the same sign-in a moment later goes where they went."""
         theirs = [s for s in self.sessions.values() if s.sign_in == sign_in]
-        for session in theirs:
-            session._shut()
-        under_way = self._ending.get(sign_in)
-        if under_way is not None:
-            # A session that got onto the sign-in after the ending began, one
-            # whose connect was still running, leaves with the rest.
-            under_way[1].extend(theirs)
+        if not theirs:
             return
-        ended = self._ended.get(sign_in)
-        if ended is not None and time.monotonic() - ended[1] < 60.0:
-            # A straggler of a sign-in that has just ended goes where the
-            # others went: ``on_logout`` has answered for it already.
-            for session in theirs:
-                session.dismiss(self.theme.text("sign_in_hint"), to=session.leaving_for(ended[0]))
-            return
-        task = asyncio.get_running_loop().create_task(self._end_sign_in(sign_in, user, theirs))
-        self._ending[sign_in] = (task, theirs)
+        now = time.monotonic()
+        self._destinations = {k: v for k, v in self._destinations.items() if now - v[1] < 60.0}
+        kept = self._destinations.get(sign_in)
+        if kept is None:
+            asking: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
 
-    async def _end_sign_in(self, sign_in: str, user: Any, theirs: list[Session[Any]]) -> None:
-        to = None
-        try:
-            if self.auth is not None:
-                to = await self.auth.leave(user)
-        finally:
-            # Whatever is on the sign-in by now leaves too, and from here on
-            # one that turns up starts an ending of its own.
-            late = [s for s in self.sessions.values() if s.sign_in == sign_in]
-            for session in late:
-                session._shut()
-            theirs.extend(late)
-            self._ending.pop(sign_in, None)
-            now = time.monotonic()
-            self._ended = {k: v for k, v in self._ended.items() if now - v[1] < 60.0}
-            self._ended[sign_in] = (to, now)
-            # Each tab is told on its own, so one that does not listen holds
-            # up none of the others, and one that fails does not keep the rest.
-            done = await asyncio.gather(*(s.leave(to) for s in theirs), return_exceptions=True)
-            for session, outcome in zip(theirs, done, strict=True):
-                if isinstance(outcome, Exception):
-                    log.error("session %s did not end cleanly: %r", session.id, outcome)
+            def answered(child: asyncio.Task[Any] | None) -> None:
+                # Always an answer, never an exception: a hook that failed,
+                # or was never asked, sends its tabs to the login page.
+                found = child is not None and not child.cancelled() and child.exception() is None
+                if not asking.done():
+                    asking.set_result(child.result() if found and child is not None else None)
+
+            if self.auth is None:
+                asking.set_result(None)
+            else:
+                self.auth.scope.start(self.auth.leave(user), "on_logout", done=answered)
+            self._destinations[sign_in] = (asking, now)
+        else:
+            asking = kept[0]
+        said = self.theme.text("sign_in_hint")
+        for session in theirs:
+            session.dismiss(said, to=session.leaving_for(None), asking=asking)
 
     async def reload_theme(self) -> bool:
         """Re-read the theme file and push it to open sessions; False when it is invalid."""
@@ -757,15 +773,13 @@ class App:
             log.error("theme not reloaded: %s", exc)
             return False
         log.info("theme reloaded from %s", self._theme_path)
-        await self._push_theme()
+        self._push_theme()
         return True
 
-    async def _push_theme(self) -> None:
+    def _push_theme(self) -> None:
         """Send the theme to every open tab, which also fetches its stylesheet anew."""
         for session in list(self.sessions.values()):
-            if not session.closed:
-                args = {"css": self.theme.css(session.base), "boot": self.theme.boot()}
-                await session._send_now(Command(name="theme", args=args))
+            session.command("theme", css=self.theme.css(session.base), boot=self.theme.boot())
 
     async def _favicon(self, request: Request) -> Any:
         if self.theme.favicon:
