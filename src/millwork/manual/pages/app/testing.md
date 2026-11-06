@@ -42,6 +42,8 @@ state=State(...))` starts from a prepared state and skips `connect`.
 node with that key, and `find_all` every one of them. `within=` looks
 inside one node only, so `page.find("save", within="orders")` is the save
 button of the card with the key `orders` when every card has one.
+Any other keyword is a prop the node has to have, so
+`page.find(ui.Button, label="Delete")` is the button that says Delete.
 `page.find_all(ui.Custom)` finds the app's own components, and the `type`
 of each is the name it goes by. A found node has `id`, `type`, `props` as
 they would go to the tab, `children` and, on a table, `rows`. `page.text()` is every string on the page, for a quick "is

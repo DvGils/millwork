@@ -267,4 +267,12 @@ body.mw-dragging * {
   [data-slot="header"] {
     display: none;
   }
+  /* A heading belongs with what it heads: it never ends a sheet. */
+  h1,
+  h2,
+  h3,
+  [data-slot="card-header"] {
+    break-after: avoid;
+    break-inside: avoid;
+  }
 }

@@ -1,5 +1,6 @@
 from typing import Any, ClassVar
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -292,3 +293,29 @@ def test_a_grid_takes_the_widths_it_knows_and_counts_it_can_draw() -> None:
         with pytest.raises(ValidationError):
             ui.Grid(cols=bad)  # type: ignore[arg-type]
     assert build(ui.Sheet(size="lg")).nodes["root"].props["size"] == "lg"
+
+
+def test_a_button_with_an_href_is_a_link_and_takes_no_handler() -> None:
+    from millwork import ui
+
+    tree = build(
+        Box(
+            ui.Button("New", href="/orders/new", key="go"),
+            ui.Button("Docs", href="https://example.com/docs", target="_blank", key="out"),
+            ui.Button("Plain", key="plain"),
+        )
+    )
+    assert tree.nodes["root/go"].props["href"] == "/orders/new"
+    assert tree.nodes["root/go"].props["target"] == "_self"
+    assert tree.nodes["root/out"].props["target"] == "_blank"
+    assert "href" not in tree.nodes["root/plain"].props
+    assert not tree.handlers
+    for bad in ("", "javascript:alert(1)", "//evil.example", "/\\evil.example", "data:text/html,x"):
+        with pytest.raises(ValueError, match="unsafe href"):
+            ui.Button("x", href=bad)
+    for extra in ({"on_click": lambda s, _: None}, {"confirm": "Sure?"}, {"form": "f"}):
+        with pytest.raises(ValueError, match="a Button with href goes somewhere"):
+            ui.Button("x", href="/a", **extra)
+    # A menu's trigger opens the menu: it cannot also be a link.
+    with pytest.raises(ValueError, match="takes no href"):
+        ui.DropdownMenu(trigger=ui.Button("More", href="/a"), items=[])

@@ -1,13 +1,13 @@
 // Surfaces and feedback: tabs, dialogs, empties, alerts, progress, split panes.
 
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useContext, useEffect, useState } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
 import { t } from "../theme";
 import { store, useNode } from "../store";
-import { navigate } from "../ws";
-import { has, hasSession, isInternalPath, linkLook, safeUrl } from "../lib";
+import { has, linkLook } from "../lib";
+import { anchorProps, InSidebar } from "./anchor";
 import { ScrollArea as UiScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "cn";
 import { icon } from "../icons";
@@ -340,32 +340,29 @@ export const Stat: Renderer = ({ props }) => {
   );
 };
 
+// How a link in a sidebar looks: a row to press, the current page marked,
+// in the sidebar's own colors.
+const navLook =
+  "flex items-start gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-sidebar-accent-foreground";
+
 // A same-origin page link navigates on the session; anything else is a plain anchor.
 export const Link: Renderer = ({ props }) => {
   const Icon = icon(props.icon);
-  const href = safeUrl(props.href);
-  const internal = isInternalPath(props.href) && props.target !== "_blank" && hasSession();
+  const inSidebar = useContext(InSidebar);
   return (
     <a
-      href={href}
+      {...anchorProps(props.href, props.target)}
       aria-current={props.active ? "page" : undefined}
-      target={props.target === "_blank" ? "_blank" : undefined}
-      rel={props.target === "_blank" ? "noreferrer" : undefined}
-      onClick={internal ? (e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-        e.preventDefault();
-        navigate(props.href as string);
-      } : undefined}
-      // In a sidebar or the header a link is one of a row of places to go,
-      // and a row of underlined words is not how that reads.
+      // In the header a link is one of a row of places to go, and a row of
+      // underlined words is not how that reads.
       className={cn(
-        "inline-flex items-center gap-1 text-sm text-primary aria-[current=page]:font-medium",
-        linkLook,
-        "in-data-[slot=sidebar]:no-underline in-data-[slot=header]:no-underline",
+        inSidebar
+          ? navLook
+          : ["inline-flex items-center gap-1 text-sm text-primary aria-[current=page]:font-medium", linkLook, "in-data-[slot=header]:no-underline"],
         props.cls as string,
       )}
     >
-      {Icon ? <Icon className="size-3.5" /> : null}
+      {Icon ? <Icon className={inSidebar ? "mt-0.5 size-4 shrink-0" : "size-3.5"} /> : null}
       {String(props.label ?? "")}
     </a>
   );

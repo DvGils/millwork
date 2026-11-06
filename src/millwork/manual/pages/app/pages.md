@@ -49,6 +49,14 @@ the segment, and a path that does not convert simply does not match.
 `{name:path}` takes the rest of the path. The values arrive in `s.params`,
 and `s.path` holds the path as it was opened.
 
+Where a path fits more than one page, the one that is exact soonest
+wins, read from the left. `/orders/new` is its own page next to
+`/orders/{order_id}` in whichever order the two are written. A parameter
+with a converter comes before a bare one, so `/items/{id:int}` takes the
+numbers and `/items/{slug}` the rest, and `{name:path}` comes last at its
+place in the path. Two pages that are equally exact go by the order they
+were added in.
+
 ```python
 @app.page("/projects/{project_id:int}")
 def project(s: mw.Session) -> ui.Component:
@@ -213,8 +221,10 @@ the hook is done and stops at its next `await`.
 ## Navigation in the frame
 
 `ui.Header(links=[...])` puts links in the app bar, and `ui.Sidebar` holds
-a longer list. This manual's sidebar is a `Sidebar` of `Link`s with the
-current page drawn as text instead. The Layout chapter shows both.
+a longer list. A `ui.Link` in a sidebar is drawn as a row to press, with
+its `icon` in front and the one marked `active=True` set apart, so the
+list needs no classes of its own. This manual's sidebar is a `Sidebar` of
+such links. The Layout chapter shows both.
 
 ## Beyond pages
 

@@ -788,7 +788,25 @@ class Button(Component):
     confirm: str | None = None
     # The key of a Form on the page: the button submits it, from anywhere.
     form: str | None = None
+    # Where the button goes: a page of the app, opened on the session like a
+    # ``Link``, or any other address. A button with one is a link in the tab,
+    # so it opens in a new tab on a middle click and can be copied.
+    href: str | None = None
+    target: Literal["_self", "_blank"] = "_self"
     on_click: Any = None
+
+    _href = field_validator("href")(staticmethod(lambda v: v if v is None else safe_href(v)))
+
+    @model_validator(mode="after")
+    def _goes_or_acts(self) -> Button:
+        if self.href is not None:
+            for name in ("on_click", "confirm", "form"):
+                if getattr(self, name):
+                    raise ValueError(
+                        f"a Button with href goes somewhere, so it takes no {name}; "
+                        "navigate from the handler with s.navigate instead"
+                    )
+        return self
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -808,6 +826,8 @@ class Button(Component):
             tooltip: str | None = None,
             confirm: str | None = None,
             form: str | None = None,
+            href: str | None = None,
+            target: Literal["_self", "_blank"] = "_self",
             on_click: Any = None,
         ) -> None: ...
     else:
@@ -843,6 +863,13 @@ class DropdownMenu(Component):
     items: list[MenuItem]
     align: Literal["start", "end"] = "start"
     on_select: Any = None
+
+    @field_validator("trigger")
+    @classmethod
+    def _opens_the_menu(cls, trigger: Component) -> Component:
+        if getattr(trigger, "href", None) is not None:
+            raise ValueError("a DropdownMenu's trigger opens the menu, so it takes no href")
+        return trigger
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 

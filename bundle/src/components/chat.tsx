@@ -219,7 +219,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
         node={node.id}
         busy={busy}
         disabled={Boolean(props.disabled) || !props.on_message}
-        placeholder={props.placeholder ? String(props.placeholder) : "Type a message"}
+        placeholder={props.placeholder ? String(props.placeholder) : t("type_message")}
         maxChars={typeof props.max_chars === "number" ? props.max_chars : undefined}
         attachments={(props.attachments as Accept | null) ?? null}
         commands={Array.isArray(props.commands) ? (props.commands as Command[]) : []}

@@ -9,11 +9,12 @@ way. ``json_schema_extra`` carries widget hints: ``widget``, ``choices``,
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from decimal import Decimal
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, ValidationError
-from pydantic_core import to_jsonable_python
+from pydantic_core import PydanticKnownError, to_jsonable_python
 
 Widget = str  # input, textarea, password, number, slider, switch, checkbox, select, radio,
 # toggle, checkboxes, multiselect, date, datetime, fieldset, list, union, file, hidden
@@ -100,8 +101,99 @@ def union_tags(model: type[BaseModel]) -> frozenset[str]:
     return frozenset(tags)
 
 
-def validate(model: type[BaseModel], draft: Any) -> tuple[BaseModel | None, list[Issue]]:
-    """Validate a draft. Returns the instance, or the issues by pointer."""
+# What went wrong with a field, by the kind of error pydantic names: the theme
+# string that says it, and the limit from the error's context it mentions.
+_ISSUE_WORDS: dict[str, tuple[str, str | None]] = {
+    "missing": ("issue_required", None),
+    "string_too_short": ("issue_too_short", "min_length"),
+    "string_too_long": ("issue_too_long", "max_length"),
+    "too_short": ("issue_too_few", "min_length"),
+    "too_long": ("issue_too_many", "max_length"),
+    "greater_than": ("issue_above", "gt"),
+    "greater_than_equal": ("issue_min", "ge"),
+    "less_than": ("issue_below", "lt"),
+    "less_than_equal": ("issue_max", "le"),
+    "int_parsing": ("issue_whole_number", None),
+    "int_from_float": ("issue_whole_number", None),
+    "int_type": ("issue_whole_number", None),
+    "float_parsing": ("issue_number", None),
+    "float_type": ("issue_number", None),
+    "decimal_parsing": ("issue_number", None),
+    "decimal_type": ("issue_number", None),
+    "enum": ("issue_choice", None),
+    "literal_error": ("issue_choice", None),
+    "string_pattern_mismatch": ("issue_format", None),
+    "date_parsing": ("issue_date", None),
+    "date_type": ("issue_date", None),
+    "date_from_datetime_parsing": ("issue_date", None),
+    "date_from_datetime_inexact": ("issue_date", None),
+    "datetime_parsing": ("issue_datetime", None),
+    "datetime_type": ("issue_datetime", None),
+    "datetime_from_date_parsing": ("issue_datetime", None),
+    "time_parsing": ("issue_time", None),
+    "time_type": ("issue_time", None),
+    "url_parsing": ("issue_url", None),
+    "url_type": ("issue_url", None),
+    "url_scheme": ("issue_url", None),
+}
+
+
+def _issue_message(err: Mapping[str, Any], words: Callable[..., str] | None) -> str:
+    """What to tell the person about one validation error.
+
+    A validator of the app's own speaks for itself, without the label pydantic
+    puts in front. An error pydantic raised on its own account, in its own
+    words, is said in the theme's. Anything else keeps the sentence it came
+    with: an error this table does not know, and one whose words are the
+    app's even though its kind is one of pydantic's."""
+    kind, ctx = str(err.get("type") or ""), err.get("ctx") or {}
+    message = str(err["msg"])
+    if kind in ("value_error", "assertion_error") and isinstance(ctx.get("error"), Exception):
+        return str(ctx["error"]) or message
+    if words is None or not _is_pydantics_own(kind, ctx, message):
+        return message
+    # Nothing was filled in: that is what to say, whatever pydantic made of
+    # the nothing it was handed.
+    empty = err.get("input") is None or err.get("input") == ""
+    if empty and kind.endswith(("_type", "_parsing")):
+        return words("issue_required")
+    known = _ISSUE_WORDS.get(kind)
+    if known is None:
+        return message
+    key, limit = known
+    if limit is None:
+        return words(key)
+    n = ctx.get(limit)
+    if isinstance(n, bool) or not isinstance(n, int | float | Decimal):
+        return message
+    if key == "issue_too_short" and (n == 1 or empty):
+        return words("issue_required")
+    if key == "issue_too_long" and n == 1:
+        return words("issue_too_long_one")
+    return words(key, n=_plain_number(n))
+
+
+def _is_pydantics_own(kind: str, ctx: Mapping[str, Any], message: str) -> bool:
+    """Whether a message is the one pydantic writes for this kind of error.
+    An app can raise an error of a kind pydantic has with words of its own,
+    and those are not for the theme to replace."""
+    try:
+        return PydanticKnownError(kind, dict(ctx) or None).message() == message  # type: ignore[arg-type]
+    except Exception:
+        return False
+
+
+def _plain_number(n: int | float | Decimal) -> str:
+    """A limit as a person writes it: no exponent, no trailing zeros."""
+    text = format(Decimal(repr(n)) if isinstance(n, float) else Decimal(n), "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def validate(
+    model: type[BaseModel], draft: Any, words: Callable[..., str] | None = None
+) -> tuple[BaseModel | None, list[Issue]]:
+    """Validate a draft. Returns the instance, or the issues by pointer, each
+    said in the theme's words when ``words`` looks one up."""
     try:
         return model.model_validate(draft), []
     except ValidationError as exc:
@@ -113,7 +205,9 @@ def validate(model: type[BaseModel], draft: Any) -> tuple[BaseModel | None, list
             if pointer in seen:
                 continue
             seen.add(pointer)
-            issues.append(Issue(pointer=pointer, message=err["msg"], code=err.get("type")))
+            issues.append(
+                Issue(pointer=pointer, message=_issue_message(err, words), code=err.get("type"))
+            )
         return None, issues
 
 

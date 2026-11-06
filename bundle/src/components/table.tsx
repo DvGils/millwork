@@ -411,7 +411,7 @@ export const Table: Renderer = ({ props, emit }) => {
 
   const clickable = selection === "row" || Boolean(props.on_row_click);
   const total = entries.length;
-  const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown.length === total ? `${total} rows` : `${shown.length} of ${total} rows`;
+  const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown.length !== total ? t("rows_of", { shown: shown.length, n: total }) : total === 1 ? t("one_row") : t("rows", { n: total });
 
   return (
     <div className={cn("flex flex-col gap-2", props.cls as string)}>

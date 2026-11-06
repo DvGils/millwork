@@ -5,6 +5,40 @@ versions; a release says so here when it does.
 
 ## 0.1.8
 
+- More of the framework's own words come from the theme's strings. A
+  table's row count, which read "1 rows", the upload box, the chat's
+  placeholder and a union field's "Type" were English whatever the theme
+  said. So were the default labels of a form's submit button, a
+  `ui.Download` and a pie chart's folded slice, which now follow `save`,
+  `download` and `other` until the app sets its own.
+- What is wrong with a form field is said in the theme's words, the new
+  strings that start with `issue_`, where it was pydantic's English
+  sentence. A validator of the model's own is shown with the words it
+  raised, without "Value error," in front. An empty field reads as
+  required whatever limit it has.
+- Why an upload was refused is said in the theme's words, the new strings
+  that start with `file_`. A file of a type that is not accepted is told
+  "this type of file is not accepted", where the sentence used to start
+  with the file's extension.
+- `ui.Button(href=)` makes a button that goes somewhere. A page of the
+  app opens on the session, and since the button is a real link it opens
+  in a new tab on a middle click.
+- A `ui.Link` in a `ui.Sidebar` is drawn as a row to press, with its icon
+  and the active page set apart. Before, it looked like a link in running
+  text and every app styled it with classes of its own. Classes an app
+  passes still win.
+- `s.print()` opens the browser's print dialog once the page has been
+  drawn again, and in print a heading stays with what follows it. There
+  is a `printer` icon.
+- Where a path fits several pages, the one that is exact soonest wins.
+  A literal segment comes before a parameter, so `/orders/new` is found
+  next to `/orders/{id}` in either order, a parameter with a converter
+  comes before a bare one, and `{rest:path}` comes last. Before, the page
+  added first won, so an app that relied on that order for two pages of
+  different exactness now gets the more exact one.
+- Testing: `page.find` and `page.find_all` take props as keywords,
+  `page.find(ui.Button, label="Delete")`, and `page.click` on a link or
+  a button with an `href` takes the session to that page.
 - A page prints in full. The shell is a viewport-high column whose body
   scrolls, so printing gave one sheet and cut the rest. In print the
   column and its scrolling boxes now run as long as their content, the

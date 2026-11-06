@@ -799,3 +799,58 @@ def test_pages_close_before_the_shutdown_hooks_run(tmp_path: Path) -> None:
         hello(ws)
         recv(ws)
     assert order == ["page closed", "shutdown hook"]
+
+
+async def test_a_literal_path_wins_over_a_parameter_in_either_order(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    # Parameters first and the exact pages after them, the order a file is
+    # often written in and the one where the first match is the wrong page.
+    paths = {
+        "/orders/{order_id}": "one order",
+        "/orders/new": "a new order",
+        "/orders/{order_id}/lines/{line}": "a line",
+        "/orders/{order_id}/lines/all": "all lines",
+        "/files/{rest:path}": "any file",
+        "/files/{name}": "one file",
+        "/files/{name}/versions": "its versions",
+        "/files/{rest:path}/edit": "edit any file",
+        "/items/{slug}": "an item by name",
+        "/items/{item_id:int}": "an item by number",
+        "/v{n}/about": "about a version",
+        "/{tenant}/about": "about a tenant",
+    }
+    expected = (
+        ("/orders/new", "a new order", {}),
+        ("/orders/7", "one order", {"order_id": "7"}),
+        ("/orders/7/lines/all", "all lines", {"order_id": "7"}),
+        ("/orders/7/lines/3", "a line", {"order_id": "7", "line": "3"}),
+        ("/files/a", "one file", {"name": "a"}),
+        ("/files/a/versions", "its versions", {"name": "a"}),
+        ("/files/a/b/c", "any file", {"rest": "a/b/c"}),
+        # A page that goes on after the rest of the path is more exact than
+        # the one that stops there.
+        ("/files/a/b/edit", "edit any file", {"rest": "a/b"}),
+        # A converter narrows a parameter, and so does text around it.
+        ("/items/12", "an item by number", {"item_id": 12}),
+        ("/items/twelve", "an item by name", {"slug": "twelve"}),
+        ("/v2/about", "about a version", {"n": "2"}),
+        ("/acme/about", "about a tenant", {"tenant": "acme"}),
+    )
+    for order in (list(paths), list(reversed(paths))):
+        app = mw.App("r", public=None, bundle_dir=tmp_path)
+        for path in order:
+            name = paths[path]
+            app.page(path)(lambda s, name=name: ui.Page(ui.Text(name, key="t")))
+        for path, page_name, params in expected:
+            async with TestApp(app).open(path) as page:
+                assert page.find("t").props["content"] == page_name, (path, order[0])
+                assert page.session.params == params, path
+        assert app.resolve("/nothing/here/at/all") is None
+
+    # Equally exact: the first one added stays the page.
+    app = mw.App("t", public=None, bundle_dir=tmp_path)
+    app.page("/tie/{a}")(lambda s: ui.Page(ui.Text("first", key="t")))
+    app.page("/tie/{b}")(lambda s: ui.Page(ui.Text("second", key="t")))
+    async with TestApp(app).open("/tie/x") as page:
+        assert page.find("t").props["content"] == "first"

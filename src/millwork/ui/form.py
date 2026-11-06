@@ -19,6 +19,7 @@ class Form(Component):
         "on_cancel": "None",
     }
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"model", "initial"})
+    theme_words: ClassVar[dict[str, str]] = {"submit": "save"}
 
     # ``Type`` rather than ``type``: the class body's ``type`` is the component's wire name.
     model: Type[BaseModel]  # noqa: UP006

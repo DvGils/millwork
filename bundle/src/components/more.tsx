@@ -8,6 +8,7 @@ import { useNode } from "../store";
 import { cn } from "cn";
 import { has } from "../lib";
 import { PageBody, pageBodyClass } from "./page-body";
+import { InSidebar } from "./anchor";
 import { icon } from "../icons";
 import {
   Sidebar as UiSidebar,
@@ -106,9 +107,11 @@ export function PageWithSidebar({
           </SidebarHeader>
         ) : null}
         <SidebarContent className="gap-4 p-3">
-          {sidebar.children.map((cid) => (
-            <Render key={cid} id={cid} />
-          ))}
+          <InSidebar.Provider value={true}>
+            {sidebar.children.map((cid) => (
+              <Render key={cid} id={cid} />
+            ))}
+          </InSidebar.Provider>
         </SidebarContent>
       </UiSidebar>
       <SidebarInset className="min-h-0 min-w-0">
@@ -130,7 +133,9 @@ export function PageWithSidebar({
 
 // Sidebar on its own (outside a Page) is just its children in a column.
 export const Sidebar: Renderer = ({ props, children }) => (
-  <div className={cn("flex flex-col gap-4", props.cls as string)}>{children}</div>
+  <div className={cn("flex flex-col gap-4", props.cls as string)}>
+    <InSidebar.Provider value={true}>{children}</InSidebar.Provider>
+  </div>
 );
 
 export const Accordion: Renderer = ({ node, props, emit }) => {

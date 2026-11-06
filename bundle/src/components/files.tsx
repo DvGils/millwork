@@ -171,7 +171,7 @@ export const FileUpload: Renderer = ({ node, props, emit }) => {
           )}
         >
           {Up ? <Up className="size-5 text-muted-foreground" /> : null}
-          <span className="font-medium">{String(props.label ?? (multiple ? "Drop files or click to choose" : "Drop a file or click to choose"))}</span>
+          <span className="font-medium">{String(props.label ?? t(multiple ? "drop_files" : "drop_file"))}</span>
           {props.description || accept ? (
             <span className="text-xs text-muted-foreground">{String(props.description ?? accept?.join(", "))}</span>
           ) : null}

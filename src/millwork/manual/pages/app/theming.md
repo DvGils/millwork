@@ -128,6 +128,14 @@ They are English. An app in another language sets them in the theme's
 `strings` section, key by key, and a key the framework does not know is
 refused. Every key is in the table below, with its English.
 
+A label the framework fills in follows the same table. A form's submit
+button says `save`, a `ui.Download` says `download` and a pie chart's
+folded slice says `other`, until the app gives the component a label of
+its own. The keys that start with `issue_` say what is wrong with a form
+field when pydantic found it, and the ones that start with `file_` say
+why an upload was refused. Words the app wrote itself, in a validator or
+a refusal of its own, are shown as written.
+
 ```json
 {"locale": "nl", "strings": {"send": "Verstuur", "stop": "Stop", "search": "Zoeken"}}
 ```

@@ -18,7 +18,7 @@ import shutil
 import tempfile
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -63,9 +63,22 @@ class FileRef(BaseModel):
 
 
 class Reject(Exception):
-    def __init__(self, reason: str, status: int = 400) -> None:
+    """An upload refused, with the reason. ``key`` names the theme string that
+    says it to the person, filled with ``vars``; without one, as for a
+    refusal of the app's own, the reason itself is what they read."""
+
+    def __init__(
+        self,
+        reason: str,
+        status: int = 400,
+        *,
+        key: str | None = None,
+        vars: Mapping[str, Any] | None = None,
+    ) -> None:
         self.reason = reason
         self.status = status
+        self.key = key
+        self.vars = dict(vars or {})
         super().__init__(reason)
 
 
@@ -113,18 +126,20 @@ def safe_name(name: str) -> str:
 def check_content(name: str, head: bytes) -> None:
     ext = Path(name).suffix.lower().lstrip(".")
     if not head:
-        raise Reject("the file is empty")
+        raise Reject("the file is empty", key="file_empty")
     if ext in _MAGIC:
         if not any(head.startswith(m) for m in _MAGIC[ext]):
-            raise Reject(f"the file is not a valid .{ext}")
+            raise Reject(f"the file is not a valid .{ext}", key="file_not_valid", vars={"ext": ext})
         if ext == "webp" and b"WEBP" not in head[:16]:
-            raise Reject("the file is not a valid .webp")
+            raise Reject(
+                "the file is not a valid .webp", key="file_not_valid", vars={"ext": "webp"}
+            )
     elif ext in _TEXT:
         # The head may end inside a multibyte character: only invalid bytes count.
         try:
             codecs.getincrementaldecoder("utf-8")().decode(head, final=False)
         except UnicodeDecodeError as exc:
-            raise Reject("the file is not UTF-8 text") from exc
+            raise Reject("the file is not UTF-8 text", key="file_not_text") from exc
 
 
 def _owner() -> str:
@@ -176,9 +191,9 @@ class Files:
                 raise Reject("the session closed", 410)
             held = self._usage.get(session.id, 0)
             if held + size > self.max_session_bytes:
-                raise Reject("the session's file quota is used up", 413)
+                raise Reject("the session's file quota is used up", 413, key="file_quota")
             if sum(self._usage.values()) + size > self.max_total_bytes:
-                raise Reject("the server's file space is used up", 507)
+                raise Reject("the server's file space is used up", 507, key="file_space")
             self._usage[session.id] = held + size
 
     def _release(self, session_id: str, size: int) -> None:
@@ -276,8 +291,11 @@ class Files:
         if accept:
             allowed = {a.lower() if a.startswith(".") else "." + a.lower() for a in accept}
             if ext not in allowed:
+                expected = ", ".join(sorted(allowed))
                 raise Reject(
-                    f"{ext or 'this type'} is not accepted; expected {', '.join(sorted(allowed))}"
+                    f"{ext or 'this type'} is not accepted; expected {expected}",
+                    key="file_not_accepted",
+                    vars={"expected": expected},
                 )
         file_id = secrets.token_urlsafe(12)
         self._ensure_root()
@@ -341,7 +359,10 @@ class FileWriter:
             if len(self._head) < 64:
                 self._head += chunk[: 64 - len(self._head)]
             if self._size + len(chunk) > self._limit:
-                raise Reject(f"the file is larger than {self._limit // (1024 * 1024)} MB", 413)
+                mb = self._limit // (1024 * 1024)
+                raise Reject(
+                    f"the file is larger than {mb} MB", 413, key="file_too_large", vars={"mb": mb}
+                )
             self._files._take(self._session, len(chunk))
             self._reserved += len(chunk)
             self._size += len(chunk)

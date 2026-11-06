@@ -95,6 +95,7 @@ class Session[S]:
         self.sign_in: str | None = None
         self.sign_in_expires: float | None = None
         self._expiry: asyncio.TimerHandle | None = None
+        self._print_asked = False
         self.state: S = app.make_state()
         self.tree: Tree | None = None
         self.closed = False
@@ -420,6 +421,13 @@ class Session[S]:
     def clipboard(self, text: str) -> None:
         """Put text on the tab's clipboard."""
         self.command("clipboard", text=text)
+
+    def print(self) -> None:
+        """Open the browser's print dialog on the page, which is also how a
+        person saves it as a PDF. It opens after the page has been drawn
+        again, so what the handler changed first is what gets printed."""
+        self._print_asked = True
+        self.refresh()
 
     def logout(self) -> None:
         """Sign out: clear the cookie and send the tab to the login page, or
@@ -854,7 +862,7 @@ class Session[S]:
                 return True
             if event.name == "submit" and isinstance(component, Form):
                 draft = resolve_files(event.payload, self._form_file(event.node))
-                instance, issues = validate(component.model, draft)
+                instance, issues = validate(component.model, draft, self.text)
                 if issues:
                     self.command(
                         "form_issues", node=event.node, issues=[i.model_dump() for i in issues]
@@ -973,6 +981,10 @@ class Session[S]:
             self.tree = tree
             if ops:
                 await self._send_now(Patch(ops=ops))
+            if self._print_asked:
+                # After the patch, which is the page the handler meant to print.
+                self._print_asked = False
+                await self._send_now(Command(name="print", args={}))
             title = self._title(tree)
             if title != self._title_shown:
                 self._title_shown = title
@@ -1147,7 +1159,7 @@ class Session[S]:
 
         if event.name == "submit" and isinstance(component, Form):
             draft = resolve_files(payload, self._form_file(event.node))
-            instance, issues = validate(component.model, draft)
+            instance, issues = validate(component.model, draft, self.text)
             if issues:
                 self.command(
                     "form_issues", node=event.node, issues=[i.model_dump() for i in issues]
@@ -1371,7 +1383,10 @@ class Session[S]:
                 msg.node, field if isinstance(field, str) else None
             )
             if msg.size > max_bytes:
-                raise Reject(f"the file is larger than {max_bytes // (1024 * 1024)} MB")
+                mb = max_bytes // (1024 * 1024)
+                raise Reject(
+                    f"the file is larger than {mb} MB", key="file_too_large", vars={"mb": mb}
+                )
             name = payload.get("name")
             mime = payload.get("mime")
             writer = self.app.files.begin(
@@ -1391,7 +1406,9 @@ class Session[S]:
         except Reject as exc:
             if writer is not None:
                 writer.abort()
-            await self._reply(msg.request, error=exc.reason)
+            # In the theme's words where the refusal is one of the framework's.
+            said = self.text(exc.key, **(exc.vars or {})) if exc.key else exc.reason
+            await self._reply(msg.request, error=said)
             return
         except asyncio.CancelledError:
             if writer is not None:
@@ -1402,7 +1419,7 @@ class Session[S]:
             self._failed(f"the upload handler on {msg.node}", exc)
             if writer is not None:
                 writer.abort()
-            await self._reply(msg.request, error="The upload failed.")
+            await self._reply(msg.request, error=self.text("file_failed"))
             return
         await self._reply(msg.request, payload=ref.__millwork_wire__())
 
@@ -1545,10 +1562,10 @@ class _Inbound:
     async def get(self) -> bytes | None:
         """The next chunk, or None at the end. Raises ``Reject`` once failed."""
         if self.failed is not None:
-            raise Reject(f"the upload was interrupted: {self.failed}")
+            raise Reject(f"the upload was interrupted: {self.failed}", key="file_interrupted")
         item = await self._queue.get()
         if self.failed is not None:
-            raise Reject(f"the upload was interrupted: {self.failed}")
+            raise Reject(f"the upload was interrupted: {self.failed}", key="file_interrupted")
         return item
 
     def fail(self, why: str) -> None:

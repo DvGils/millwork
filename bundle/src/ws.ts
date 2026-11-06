@@ -422,6 +422,10 @@ function command(name: string, args: Record<string, unknown>) {
       void navigator.clipboard?.writeText(String(args.text ?? ""));
       toast.add({ title: t("copied"), type: "success", timeout: 1500 });
       break;
+    case "print":
+      // After two frames: the patch that came just before has been drawn by then.
+      requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+      break;
     case "reload":
       closedForGood = true;
       window.location.reload();
@@ -514,7 +518,7 @@ export function connect() {
 
   socket.onclose = (ev) => {
     socket = null;
-    rejectPending("disconnected");
+    rejectPending(t("disconnected"));
     if (closedForGood || ev.code === 4426) return;
     if (ev.code === 4409) {
       // Another tab took this session over.

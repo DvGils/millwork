@@ -16,7 +16,9 @@ over the session's own socket, so a file has no URL and needs no signing.
 `ui.FileUpload` is a drop zone, or a button with `dropzone=False`.
 `accept` lists extensions, `multiple` and `max_files` allow more than one,
 and `max_size_mb` caps each. `on_upload` receives the `FileRef`s, and
-`on_reject` receives `{name, reason}` for a file that was refused.
+`on_reject` receives `{name, reason}` for a file that was refused. A
+reason the framework gives is one of the theme's strings that start with
+`file_`, or `disconnected` when the connection dropped mid-upload.
 
 ```python live
 from pydantic import BaseModel

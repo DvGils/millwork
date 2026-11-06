@@ -608,3 +608,56 @@ async def test_confirm_buttons_speak_the_themes_language(tmp_path: Path) -> None
         labels = [b.props["label"] for b in page.find_all(ui.Button, within=page.find(ui.Dialog))]
         assert labels == ["No", "Yes"]
         await page.answer(True)
+
+
+async def test_finding_by_a_prop_and_asking_for_the_print_dialog(tmp_path: Path) -> None:
+    app = mw.App("p", state=State, public=None, bundle_dir=tmp_path)
+
+    def print_expanded(s: mw.Session[State], _: Any) -> None:
+        s.state.count = 1
+        s.print()
+
+    @app.page("/other")
+    def other(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("the other page", key="t"))
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Card(ui.Button("Delete", key="a", on_click=lambda s, _: None), title="First"),
+            ui.Button("Go", href="/other", key="go"),
+            ui.Button("Out", href="https://example.com", key="out"),
+            ui.Link(label="Elsewhere", href="/other", key="link"),
+            ui.Card(
+                ui.Button("Delete", key="b", variant="destructive", on_click=lambda s, _: None),
+                ui.Button("Print", on_click=print_expanded),
+                ui.Text("expanded", key="x") if s.state.count else None,
+                title="Second",
+            ),
+            ui.Select(options=["1", "2"], placeholder="Score", key="score"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        assert page.find(ui.Button, label="Print").props["label"] == "Print"
+        assert len(page.find_all(ui.Button, label="Delete")) == 2
+        assert page.find(ui.Button, label="Delete", variant="destructive").id.endswith("/b")
+        assert page.find(ui.Select, placeholder="Score").id.endswith("/score")
+        second = page.find(ui.Card, title="Second")
+        assert page.find(ui.Button, label="Delete", within=second).id.endswith("/b")
+        with pytest.raises(LookupError, match="no Button with label='Nope' on the page"):
+            page.find(ui.Button, label="Nope")
+        assert page.find_all(ui.Button, label="Delete", size="lg") == []
+        # The dialog is asked for after the page was drawn again, so what
+        # the handler changed first is on the page that prints.
+        await page.click(page.find(ui.Button, label="Print"))
+        assert [m.type for m in page.messages[-2:]] == ["patch", "command"]
+        assert page.commands[-1].name == "print" and page.find_all("x")
+        # A button that leaves the app does nothing to the session, and one
+        # that goes to a page of the app takes the session there, like a link.
+        await page.click("out")
+        assert page.session.path == "/" and not page.failures
+        await page.click("go")
+        assert page.session.path == "/other"
+        await page.navigate("/")
+        await page.click("link")
+        assert page.find("t").props["content"] == "the other page"

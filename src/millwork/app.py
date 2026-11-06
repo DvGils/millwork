@@ -122,9 +122,16 @@ class PageDef:
     on_close: Callable[..., Any] | None = None
     _regex: Any = field(init=False, repr=False)
     _param_convertors: Any = field(init=False, repr=False)
+    _rank: tuple[int, ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._regex, _, self._param_convertors = compile_path(self.path)
+        # How exact each segment is, from a literal down to a parameter that
+        # takes the rest of the path. Of the pages a path matches, the one
+        # that is exact soonest is the page meant. The end counts as the
+        # least exact of all, so a page that goes on after ``{rest:path}``
+        # comes before the one that stops there.
+        self._rank = (*(_exactness(seg) for seg in self.path.split("/")), 4)
 
     def match(self, path: str) -> dict[str, str] | None:
         m = self._regex.match(path)
@@ -141,6 +148,18 @@ class PageDef:
         """Decorator: runs with the session when it leaves the page, or ends on it."""
         self.on_close = fn
         return fn
+
+
+def _exactness(segment: str) -> int:
+    """How much one segment of a page's path pins down: 0 for a literal, 1 for
+    a parameter held in by a converter or by text around it (``{id:int}``,
+    ``v{n}``), 2 for a bare ``{name}``, 3 for ``{rest:path}``."""
+    if "{" not in segment:
+        return 0
+    if ":path}" in segment:
+        return 3
+    bare = segment.startswith("{") and segment.endswith("}") and segment.count("{") == 1
+    return 2 if bare and ":" not in segment else 1
 
 
 class App:
@@ -266,11 +285,17 @@ class App:
         return None if self.state_model is None else self.state_model()
 
     def resolve(self, path: str) -> tuple[PageDef, dict[str, str]] | None:
+        """The page at a path and its parameters. Where several pages match,
+        the one whose path is exact soonest wins, read from the left: a
+        literal segment over a parameter, so ``/orders/new`` is its own page
+        next to ``/orders/{id}`` in whichever order they were added. Two
+        pages equally exact go by that order."""
+        best: tuple[PageDef, dict[str, str]] | None = None
         for page in self.pages:
             params = page.match(path)
-            if params is not None:
-                return page, params
-        return None
+            if params is not None and (best is None or page._rank < best[0]._rank):
+                best = page, params
+        return best
 
     def fallback(
         self, kind: str, path: str, message: str | None = None

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, runtime_chec
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
 
+from millwork import context
 from millwork.icons import check_icon
 from millwork.protocol import (
     AddOp,
@@ -86,6 +87,9 @@ class Component(BaseModel):
     # Fields that never reach the wire as they are (a callable evaluated at
     # render, say); ``wire_extra`` supplies what goes instead.
     wire_exclude: ClassVar[frozenset[str]] = frozenset()
+    # Fields whose default is a word of the framework's, by the theme string
+    # that holds it: left alone, the field goes out in the theme's words.
+    theme_words: ClassVar[dict[str, str]] = {}
     # What a handler receives after the session, for the props where it is not
     # one payload: a chat's feedback handler gets the message, the value and
     # the comment.
@@ -109,6 +113,20 @@ class Component(BaseModel):
         if cls.__module__.partition(".")[0] != "millwork":
             return name
         return check_icon(name)
+
+    def in_theme_words(self, name: str) -> Any:
+        """One of the ``theme_words`` fields as it is shown: the theme's word
+        while the field holds the framework's own, otherwise its value. A
+        value the app passed, or a subclass set as its default, is the app's
+        even where it reads the same."""
+        from millwork.theme import STRINGS
+
+        value = getattr(self, name)
+        key = self.theme_words[name]
+        session = context._session.get()
+        if session is None or name in self.model_fields_set or value != STRINGS[key]:
+            return value
+        return session.app.theme.text(key)
 
     def wire_type(self) -> str:
         """The node type on the wire; a custom component names its own."""
@@ -192,6 +210,8 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
     for name, value in component:
         if name in ("children", "key") or name in component.wire_exclude:
             continue
+        if name in component.theme_words:
+            value = component.in_theme_words(name)
         if callable(value) and not isinstance(value, type):
             if name.startswith("on_"):
                 check_handler(name, value, component.handler_args.get(name, ("payload",)))

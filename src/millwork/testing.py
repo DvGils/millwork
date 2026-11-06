@@ -20,6 +20,7 @@ from millwork.files import FileRef, _read_chunks
 from millwork.nodes import Component
 from millwork.protocol import Command, Event, Patch, ServerError, Stream, server_message
 from millwork.session import Session
+from millwork.ui import Button, Link
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -86,14 +87,19 @@ class Page:
         return self.session.state
 
     def find_all(
-        self, what: type[Component] | str, *, within: Found | str | None = None
+        self,
+        what: type[Component] | str,
+        *,
+        within: Found | str | None = None,
+        **props: Any,
     ) -> list[Found]:
         """Every node of a component type, or with a key (or a full id).
 
         A type finds its subclasses too, so ``ui.Custom`` finds every custom
         component, and ``found.type`` says which one each is. ``within``
         narrows the search to what is inside one node, for a key that several
-        cards or rows each have."""
+        cards or rows each have. Any other keyword is a prop the node has to
+        have with that value: ``find_all(ui.Button, label="Delete")``."""
         tree = self.session.tree
         if tree is None:
             return []
@@ -114,18 +120,26 @@ class Page:
                 )
             else:
                 hit = isinstance(component, what) or node.type == what.type
-            if hit:
+            if hit and all(_has(node, component, k, v) for k, v in props.items()):
                 out.append(Found(node, component))
         return out
 
-    def find(self, what: type[Component] | str, *, within: Found | str | None = None) -> Found:
+    def find(
+        self,
+        what: type[Component] | str,
+        *,
+        within: Found | str | None = None,
+        **props: Any,
+    ) -> Found:
         """The first node of a component type, or with a key; raises when
-        there is none. ``within`` looks inside one node only."""
-        found = self.find_all(what, within=within)
+        there is none. ``within`` looks inside one node only, and any other
+        keyword is a prop it has to have: ``find(ui.Button, label="Delete")``."""
+        found = self.find_all(what, within=within, **props)
         if not found:
             name = what if isinstance(what, str) else what.__name__
+            having = "".join(f" with {k}={v!r}" for k, v in props.items())
             where = "on the page" if within is None else f"in {within!r}"
-            raise LookupError(f"no {name} {where}")
+            raise LookupError(f"no {name}{having} {where}")
         return found[0]
 
     def text(self) -> str:
@@ -187,8 +201,16 @@ class Page:
 
     async def click(self, node: Found | str) -> None:
         """Click it. A ``Download``'s button starts the download, so that is
-        what clicking one does here."""
+        what clicking one does here, and a ``Link`` or a button with an
+        ``href`` to a page of the app takes the session there. One that
+        leaves the app does nothing here, as the session sees nothing of it."""
         found = node if isinstance(node, Found) else self.find(node)
+        href = getattr(found.component, "href", None)
+        if isinstance(found.component, Button | Link) and href is not None:
+            inside = href.startswith("/") and not href.startswith(("/_mw/", "/public/"))
+            if inside and found.component.target == "_self":
+                await self.navigate(href)
+            return
         name = "download" if isinstance(found.component, Download) else "click"
         await self.event(found, name)
 
@@ -375,6 +397,17 @@ class Page:
                 continue
             self._raise_failures()
             return
+
+
+_MISSING: Any = object()
+
+
+def _has(node: Node, component: Component | None, name: str, value: Any) -> bool:
+    """Whether a node has a prop with this value: as it goes to the tab, or as
+    the component holds it, which differ where the wire form is another shape."""
+    if node.props.get(name, _MISSING) == value:
+        return True
+    return component is not None and getattr(component, name, _MISSING) == value
 
 
 def _is_choice(field: Any) -> bool:
