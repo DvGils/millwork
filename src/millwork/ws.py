@@ -136,6 +136,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             await ws.close(code=4500)
             return
 
+    # A new session and a resumed one alike: the tab may come back on a newer
+    # sign-in than the one the session was opened on.
+    session.watch_sign_in(ws.scope.get("millwork.sign_in"))
     send = ws.send_text
 
     async def close_this_socket() -> None:

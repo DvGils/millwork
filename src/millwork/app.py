@@ -238,6 +238,8 @@ class App:
             "forbidden": self._error_page_def("forbidden", _forbidden_view),
         }
         self.sessions: dict[str, Session[Any]] = {}
+        # Sign-ins that ran out and are being ended, each with the task doing it.
+        self._ending: dict[str, asyncio.Task[None]] = {}
         self.shell = Shell(self.bundle_dir, prefix=PREFIX)
         self._routes: list[Any] = []
         self._middleware: list[Middleware] = []
@@ -509,6 +511,32 @@ class App:
                 return False
             self.sessions[session.id] = session
             return True
+
+    def end_sign_in(self, sign_in: str, user: Any) -> None:
+        """A sign-in ran out: its sessions leave together. Each of them calls
+        this in the same moment, and the first call takes it, so ``on_logout``
+        is asked once for all of its tabs."""
+        if sign_in not in self._ending:
+            self._ending[sign_in] = asyncio.get_running_loop().create_task(
+                self._end_sign_in(sign_in, user)
+            )
+
+    async def _end_sign_in(self, sign_in: str, user: Any) -> None:
+        to = None
+        try:
+            if self.auth is not None:
+                to = await self.auth.leave(user)
+        finally:
+            # The sessions on it now: a tab that came back on a newer sign-in
+            # while the hook was asked is no longer one of them. They end
+            # whatever became of the hook, and one that fails does not keep
+            # the rest.
+            self._ending.pop(sign_in, None)
+            for session in [s for s in self.sessions.values() if s.sign_in == sign_in]:
+                try:
+                    await session.leave(to)
+                except Exception:
+                    log.exception("session %s did not end with its sign-in", session.id)
 
     async def reload_theme(self) -> bool:
         """Re-read the theme file and push it to open sessions; False when it is invalid."""

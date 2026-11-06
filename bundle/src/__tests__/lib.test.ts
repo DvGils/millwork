@@ -63,4 +63,16 @@ describe("signOutUrl", () => {
     expect(signOutUrl()).toBe("/_mw/login");
     vi.unstubAllGlobals();
   });
+
+  it("is where the app's on_logout said, under the prefix, unless a proxy signs out", () => {
+    const boot = (mw: { base?: string; user?: { sign_out?: string | null } | null }) => vi.stubGlobal("window", { __mw: mw });
+    boot({ base: "/sales", user: { sign_out: null } });
+    expect(signOutUrl("/welcome")).toBe("/sales/welcome");
+    expect(signOutUrl("https://example.com/bye")).toBe("https://example.com/bye");
+    expect(signOutUrl(null)).toBe("/sales/_mw/login");
+    expect(signOutUrl("javascript:alert(1)")).toBe("about:blank");
+    boot({ base: "/sales", user: { sign_out: "/oauth2/sign_out" } });
+    expect(signOutUrl("/welcome")).toBe("/oauth2/sign_out");
+    vi.unstubAllGlobals();
+  });
 });

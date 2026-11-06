@@ -449,6 +449,17 @@ def _sign_out_ok(url: str) -> bool:
     return url.startswith(("https://", "http://")) and len(url) > 8
 
 
+def _destination_ok(to: str) -> bool:
+    """What ``on_logout`` may answer: an http(s) URL, or a path the tab will
+    follow, which leaves out one with a dot segment in any spelling."""
+    if not _sign_out_ok(to):
+        return False
+    if not to.startswith("/"):
+        return True
+    path = to.split("?", 1)[0].split("#", 1)[0]
+    return not any(unquote(seg) in (".", "..") for seg in path.split("/"))
+
+
 def _header_text(value: str | None, limit: int) -> str | None:
     """A header value as text: UTF-8 when the proxy sent it that way, trimmed,
     refused when empty, over the limit or not printable."""
@@ -511,6 +522,11 @@ def check_password(password: str, stored: str) -> bool:
 
 
 OnLogin = Callable[[Identity], User | None | Awaitable[User | None]]
+OnLogout = Callable[[User], str | None | Awaitable[str | None]]
+
+# How long ``on_logout`` may take. A sign-in that has run out ends its sessions
+# whatever the hook does, so the hook cannot hold them open.
+LOGOUT_HOOK_TIMEOUT = 10.0
 
 
 class Auth:
@@ -519,6 +535,7 @@ class Auth:
         providers: list[Provider],
         *,
         on_login: OnLogin | None = None,
+        on_logout: OnLogout | None = None,
         session: dt.timedelta = dt.timedelta(days=7),
         log_identity: Literal["plain", "hashed"] = "plain",
         intents: dict[str, str] | None = None,
@@ -526,6 +543,7 @@ class Auth:
     ) -> None:
         self.providers = {p.id: p for p in providers}
         self.on_login = on_login
+        self.on_logout = on_logout
         self.session = session
         self.log_identity = log_identity
         self.intents = intents or {}
@@ -570,12 +588,18 @@ class Auth:
         return sign(self.secret, f"auth:{self.app}", payload)
 
     def read(self, token: str | None) -> User | None:
+        signed_in = self._read(token)
+        return signed_in[0] if signed_in is not None else None
+
+    def _read(self, token: str | None) -> tuple[User, str, float] | None:
+        """The user a token holds, the id of that one sign-in, and when it
+        expires in seconds since the epoch."""
         data = verify(self.secret, f"auth:{self.app}", token)
         if data is None:
             return None
-        data = {k: v for k, v in data.items() if k in User.model_fields}
+        fields = {k: v for k, v in data.items() if k in User.model_fields}
         try:
-            return User(**data)
+            return User(**fields), str(data["jti"]), float(data["exp"])
         except Exception:
             return None
 
@@ -705,6 +729,42 @@ class Auth:
         )
         return user
 
+    async def leave(self, user: User) -> str | None:
+        """Where a person goes when a sign-in of theirs ends, as ``on_logout``
+        says: a path on the app or an http(s) URL, or None for the login page.
+        A hook that fails, takes too long, or answers with anything else is
+        logged and counts as None, since the person leaves either way."""
+        if self.on_logout is None:
+            return None
+        who = self._log_id(user.id)
+        try:
+            async with asyncio.timeout(LOGOUT_HOOK_TIMEOUT):
+                if inspect.iscoroutinefunction(self.on_logout):
+                    to = await self.on_logout(user)
+                else:
+                    result = await asyncio.to_thread(self.on_logout, user)
+                    to = await result if inspect.isawaitable(result) else result
+        except TimeoutError:
+            log.error("on_logout took over %g seconds for %s", LOGOUT_HOOK_TIMEOUT, who)
+            return None
+        except asyncio.CancelledError:
+            # The hook's own cancellation, say of a task it awaited, is one more
+            # way for it to fail. Only a cancellation of this call passes on.
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise
+            log.error("on_logout was cancelled for %s", who)
+            return None
+        except Exception:
+            log.exception("on_logout failed for %s", who)
+            return None
+        if to is None:
+            return None
+        if not isinstance(to, str) or not _destination_ok(to):
+            log.error("on_logout returns a path on the app, an http(s) URL or None, not %r", to)
+            return None
+        return to
+
     def _log_id(self, value: str) -> str:
         if self.log_identity == "hashed":
             return hashlib.sha256(value.encode()).hexdigest()[:12]
@@ -759,10 +819,16 @@ class Auth:
 
     async def route_logout(self, request: Request) -> Response:
         """Clear the cookie, and end the user's live sessions on this process. The
-        cookie itself stays valid until it expires: it is signed, not stored."""
-        response = JSONResponse({"ok": True})
-        self.clear_cookie(request, response)
+        cookie itself stays valid until it expires: it is signed, not stored.
+        The answer carries where ``on_logout`` sends the tab, None for the
+        login page. Only the app's own pages can ask, since this runs the
+        app's hook and ends its sessions."""
+        if not _same_origin(request, self.origins):
+            return JSONResponse({"reason": "bad request"}, status_code=400)
         user = await self.identify(request)
+        to = await self.leave(user) if user is not None else None
+        response = JSONResponse({"ok": True, "next": to})
+        self.clear_cookie(request, response)
         app = getattr(request.app.state, "millwork", None)
         if user is not None and app is not None:
             for session in list(app.sessions.values()):
@@ -854,10 +920,13 @@ class Auth:
         """
         headers = request_or_scope.headers
         scope = request_or_scope.scope
-        user = self.read(request_or_scope.cookies.get(cookie_name(scope, AUTH_COOKIE)))
-        if user is not None:
+        signed_in = self._read(request_or_scope.cookies.get(cookie_name(scope, AUTH_COOKIE)))
+        if signed_in is not None:
+            # A session opened on this sign-in ends with it, so which one it
+            # is and when it expires travel with the request.
             scope["millwork.identified_by"] = "cookie"
-            return user
+            scope["millwork.sign_in"] = signed_in[1:]
+            return signed_in[0]
         for provider in self.providers.values():
             if isinstance(provider, Dev):
                 scope["millwork.identified_by"] = "dev"

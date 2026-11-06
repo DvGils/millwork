@@ -287,7 +287,10 @@ def test_sign_out_goes_through_the_proxy(tmp_path: Path) -> None:
         with client.websocket_connect("/_mw/ws", headers=headers) as ws:
             ws.send_text(json.dumps({"seq": 1, "msg": {"type": "hello", "path": "/"}}))
             info = json.loads(ws.receive_text())["msg"]
-            assert client.post("/_mw/auth/logout", headers=headers).json() == {"ok": True}
+            assert client.post("/_mw/auth/logout", headers=headers).json() == {
+                "ok": True,
+                "next": None,
+            }
             ws.receive_text()  # the mount
             ended = json.loads(ws.receive_text())["msg"]
             assert ended["type"] == "error" and ended["message"] == "Signed out."

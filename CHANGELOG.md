@@ -5,6 +5,18 @@ versions; a release says so here when it does.
 
 ## 0.1.8
 
+- A session ends when the sign-in it runs on expires. Its tab leaves for
+  the login page and comes back to its page after a new sign-in, and a
+  tab on a public page reloads for a visitor. Before, the lifetime set by
+  `Auth(session=)` was checked only when a page loaded or a socket
+  connected, so a tab left open kept working past it until its
+  connection dropped.
+- `Auth(on_logout=)` decides where a person goes when they sign out or
+  their sign-in expires under an open tab. The hook gets the `User` and
+  returns a path on the app or a URL, and `None` keeps the login page.
+  Before, sign-out always landed on the login page.
+- The sign-out route answers the app's own pages only. Before, it
+  answered a request from any site.
 - The login page can be laid out by the app. `Auth(login=)` takes
   components, with a `ui.SignIn(provider_id)` where each way in goes, so
   a heading, a note or a line with "or" sits wherever it is wanted, and

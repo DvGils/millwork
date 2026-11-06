@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "cn";
 import { icon } from "../icons";
-import { isInternalPath, mw, safeUrl, signOutUrl } from "../lib";
+import { isInternalPath, safeUrl, signOut } from "../lib";
 import { Render } from "../render";
 import { useNode } from "../store";
 import { navigate } from "../ws";
@@ -86,9 +86,6 @@ export function UserMenu({ links = [] }: { links?: string[] }) {
   const Moon = icon("moon");
   const scheme = useScheme();
   const ModeIcon = scheme === "dark" ? Moon : Sun;
-  const signOut = () => {
-    void fetch(mw("/auth/logout"), { method: "POST" }).finally(() => window.location.assign(signOutUrl()));
-  };
   const canSignOut = user !== null && user.sign_out !== null;
   return (
     <DropdownMenu>
@@ -138,7 +135,7 @@ export function UserMenu({ links = [] }: { links?: string[] }) {
         {user ? (
           <>
             <DropdownMenuSeparator />
-            {canSignOut ? <DropdownMenuItem onClick={signOut}>{t("sign_out")}</DropdownMenuItem> : null}
+            {canSignOut ? <DropdownMenuItem onClick={() => void signOut()}>{t("sign_out")}</DropdownMenuItem> : null}
           </>
         ) : null}
       </DropdownMenuContent>

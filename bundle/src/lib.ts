@@ -54,12 +54,26 @@ export function toApp(pathname: string, prefix: string = base()): string {
   return pathname;
 }
 
-// Where sign-out lands: the proxy's own sign-out page when one signed the
-// person in (the server puts its URL on the boot user), otherwise millwork's
-// login page.
-export function signOutUrl(): string {
+// Where sign-out lands. The proxy's own sign-out page comes first when one
+// signed the person in (the server puts its URL on the boot user), since only
+// going there signs them out. Otherwise it is where the app's on_logout said,
+// which the server's answer to the sign-out carries, or millwork's login page.
+export function signOutUrl(next?: unknown): string {
   const user = (window as unknown as { __mw?: { user?: { sign_out?: string | null } | null } }).__mw?.user;
-  return user?.sign_out || mw("/login");
+  if (user?.sign_out) return user.sign_out;
+  return typeof next === "string" && next ? safeUrl(next) : mw("/login");
+}
+
+// Sign out, then leave the page whether or not the server answered.
+export async function signOut(): Promise<void> {
+  let next: unknown = null;
+  try {
+    const response = await fetch(mw("/auth/logout"), { method: "POST" });
+    next = ((await response.json()) as { next?: unknown }).next;
+  } catch {
+    next = null;
+  }
+  window.location.assign(signOutUrl(next));
 }
 
 // One of the framework's own routes, under the prefix: mw("/auth/logout").

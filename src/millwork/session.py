@@ -20,6 +20,7 @@ from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
+from urllib.parse import urlencode
 
 from millwork import context
 from millwork.auth import Forbidden, NotFound
@@ -89,6 +90,11 @@ class Session[S]:
         self.detached_at = self.created
         self.connecting = False
         self.end_reason: str | None = None
+        # The sign-in it runs on, and when that runs out in seconds since the
+        # epoch. None without one: a public visitor, a proxy's or Dev's user.
+        self.sign_in: str | None = None
+        self.sign_in_expires: float | None = None
+        self._expiry: asyncio.TimerHandle | None = None
         self.state: S = app.make_state()
         self.tree: Tree | None = None
         self.closed = False
@@ -241,6 +247,35 @@ class Session[S]:
         if not self.connected and not self.closed:
             self._loop.create_task(self._close())
 
+    def watch_sign_in(self, sign_in: tuple[str, float] | None) -> None:
+        """End the session when the sign-in it runs on expires: the sign-in's
+        id and its expiry in seconds since the epoch, or None without one.
+        Called again when the tab comes back, since the person may have signed
+        in anew."""
+        if self._expiry is not None:
+            self._expiry.cancel()
+            self._expiry = None
+        self.sign_in, self.sign_in_expires = sign_in or (None, None)
+        if sign_in is not None and not self.closed:
+            delay = max(0.0, sign_in[1] - time.time())
+            self._expiry = self._loop.call_later(delay, self._sign_in_expired)
+
+    def _sign_in_expired(self) -> None:
+        self._expiry = None
+        if not self.closed and self.sign_in is not None:
+            self.app.end_sign_in(self.sign_in, self.user)
+
+    async def leave(self, to: str | None = None) -> None:
+        """End the session and send its tab away: to ``to``, or to the login
+        page for a page that needs a sign-in, or back onto a public page as a
+        visitor."""
+        if to is None:
+            path = self.path.split("?", 1)[0].split("#", 1)[0]
+            to = path if self.page.public else f"/_mw/login?{urlencode({'next': path})}"
+        with contextlib.suppress(Exception):
+            await self._send_now(Command(name="leave", args={"to": to}))
+        await self.end(self.app.theme.text("sign_in_hint"))
+
     async def end(self, message: str) -> None:
         """Close the session and tell its tab why, so the tab stops instead of
         reconnecting: signed out elsewhere, or made room for a newer session."""
@@ -267,6 +302,9 @@ class Session[S]:
         if self._grace is not None:
             self._grace.cancel()
             self._grace = None
+        if self._expiry is not None:
+            self._expiry.cancel()
+            self._expiry = None
         self.app.sessions.pop(self.id, None)
         self._abort_requests("the session closed")
         # A handler or a task that ends its own session is the one running this,
@@ -384,7 +422,8 @@ class Session[S]:
         self.command("clipboard", text=text)
 
     def logout(self) -> None:
-        """Clear the sign-in cookie and send the tab to the login page."""
+        """Sign out: clear the cookie and send the tab to the login page, or
+        where the app's ``on_logout`` says."""
         self.command("logout")
 
     def reset(self, key: str) -> None:
