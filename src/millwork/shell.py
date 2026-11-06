@@ -32,8 +32,11 @@ def check_prefix(value: str) -> str:
 def root_of(scope: Mapping[str, Any]) -> str:
     """The path prefix the app runs under, from the ASGI scope and nothing else:
     the server is told it (``--root-path``) or a mount sets it. Never a request
-    header, which a client could write. Empty at the root, else ``/prefix``."""
-    return check_prefix(str(scope.get("root_path") or ""))
+    header, which a client could write. Empty at the root, else ``/prefix``.
+    Inside something the app mounts it is still the app's own root, as noted
+    when the request came in."""
+    root = scope.get("millwork.root")
+    return check_prefix(str(scope.get("root_path") or "") if root is None else str(root))
 
 
 TEMPLATE = """<!doctype html>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { isInternalPath, isSameOriginPath, safeUrl, slugify, toApp, toBrowser, signOutUrl } from "../lib";
+import { isInternalPath, isSameOriginPath, safeUrl, samePath, slugify, toApp, toBrowser, signOutUrl } from "../lib";
 
 describe("slugify", () => {
   it("matches the server's anchor for a heading", () => {
@@ -74,5 +74,16 @@ describe("signOutUrl", () => {
     boot({ base: "/sales", user: { sign_out: "/oauth2/sign_out" } });
     expect(signOutUrl("/welcome")).toBe("/oauth2/sign_out");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("samePath", () => {
+  it("reads a path the same whether it is spelled as an address or as the app wrote it", () => {
+    expect(samePath("/c/Jos%C3%A9%20P%C3%A9rez", "/c/José Pérez")).toBe(true);
+    expect(samePath("/orders/7", "/orders/7")).toBe(true);
+    expect(samePath("/orders/7", "/orders/8")).toBe(false);
+    // An encoded slash is not a slash, and a spelling that does not decode is itself.
+    expect(samePath("/files/a%2Fb", "/files/a/b")).toBe(false);
+    expect(samePath("/x/%E0%A4%A", "/x/%E0%A4%A")).toBe(true);
   });
 });

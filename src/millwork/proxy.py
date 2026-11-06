@@ -40,6 +40,10 @@ class Proxied:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] in ("http", "websocket"):
+            # The app's own root, noted before any routing: something the app
+            # mounts sees a root with the mount's path added, and the cookie's
+            # name and the app's URLs go by this one.
+            scope["millwork.root"] = scope.get("root_path") or ""
             if not self._root_ok(scope):
                 await _refuse(scope, send)
                 return

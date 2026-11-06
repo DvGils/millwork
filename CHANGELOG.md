@@ -3,8 +3,44 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
-## 0.1.8
+## 0.2.0
 
+- A page, a route or a mount takes `allow=`, a rule about the signed-in
+  user that says who may open it. A rule is a plain function of the user
+  and of the path parameters it names. millwork asks it on a page load,
+  when a tab connects or comes back, on navigation and for a route, so a
+  page cannot be reached around it, and a refused page never runs its
+  `connect` hook. `s.can(path)` asks the same rule for a link, and
+  `millwork routes app.py` lists who may reach what. Before, the only way
+  to keep a page to some users was to raise `mw.Forbidden` in `connect`,
+  and a page that forgot to was open to everyone signed in.
+- Breaking: in an app with auth, `app.route` and `app.mount` now need a
+  sign-in, and a request that changes something must come from the app's
+  own origin. Before, they were open to anyone, signed out included. A
+  webhook or a health check has to be marked `public=True`. The endpoint
+  finds the user in `request.state.user`.
+- `Auth(recheck=)` keeps a signed-in user current. The hook returns who
+  the person is now, or `None` to end the sign-in, and is asked at most
+  once per `recheck_every`, five minutes by default, for page loads,
+  routes and open sessions alike. A session whose user changed ends, and
+  its tab loads the page again as the person they are now. Before, a
+  person kept what their cookie said until it expired.
+- A session is resumed after a dropped connection only by the same user,
+  unchanged. Before, the same id was enough, so behind a proxy a session
+  could come back with the user it started with after `on_login` had
+  made them someone else.
+- A page is found by its path as the browser spelled it, without what
+  follows a `?` or a `#` and decoded once, on a page load and in the tab
+  alike. Before, a path the tab sent kept its query in the last parameter
+  and its percent-encoding, where a page load had neither, so the two
+  could disagree about a parameter.
+- Ending a session no longer waits on its tab. The session is over
+  first and the tab is told after, within two seconds. Before, a tab that
+  had stopped reading its socket could keep its session, and the ones
+  ended after it, open.
+- Something an app mounts sees the app's own sign-in. Before, the cookie
+  was looked up under a name that included the mount's path, so
+  `app.user_for` found nobody there.
 - More of the framework's own words come from the theme's strings. A
   table's row count, which read "1 rows", the upload box, the chat's
   placeholder and a union field's "Type" were English whatever the theme

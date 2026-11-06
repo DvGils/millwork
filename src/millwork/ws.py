@@ -7,6 +7,8 @@ socket that currently owns the session detaches it.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from typing import Any
 from urllib.parse import urlsplit
@@ -28,7 +30,7 @@ from millwork.protocol import (
     unpack_client,
     unpack_frame,
 )
-from millwork.session import MAX_INFLIGHT, Session
+from millwork.session import END_NOTICE_SECONDS, MAX_INFLIGHT, Session
 from millwork.shell import root_of
 
 log = logging.getLogger("millwork.ws")
@@ -87,16 +89,23 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     if first.session and first.resume:
         candidate = app.sessions.get(first.session)
         if candidate is not None and candidate.owns_resume(first.resume) and not candidate.closed:
-            same_user = (candidate.user is None and user is None) or (
+            same_person = (candidate.user is None and user is None) or (
                 candidate.user is not None and user is not None and candidate.user.id == user.id
             )
-            if same_user:
-                session = candidate
-            else:
+            if not same_person:
                 log.warning("resume refused: another user")
+            elif candidate.user != user or not app.may(user, candidate.page, candidate.params).ok:
+                # The same person, changed since the session began, in role or
+                # in anything. What the session holds was gathered for who they
+                # were, so it ends with it, and the tab gets a new one.
+                # A tab still on it, a duplicate of this one, is sent to load
+                # its page again rather than left with clicks that go nowhere.
+                await candidate.leave(candidate.path.split("#", 1)[0])
+            else:
+                session = candidate
 
     if session is None:
-        page, params = app.resolve(first.path) or app.fallback("not_found", first.path)
+        page, params = app.locate(first.path) or app.fallback("not_found", first.path)
         if app.auth is not None and not page.public and user is None:
             await refuse("sign_in_hint", 4401)
             return
@@ -139,6 +148,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     # A new session and a resumed one alike: the tab may come back on a newer
     # sign-in than the one the session was opened on.
     session.watch_sign_in(ws.scope.get("millwork.sign_in"))
+    session.watch_user(ws.scope.get("millwork.identified"))
     send = ws.send_text
 
     async def close_this_socket() -> None:
@@ -187,6 +197,18 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             except ValidationError:
                 log.warning("bad message from session %s", session.id)
                 continue
+            if session.closed:
+                # The session ended and its tab may not have heard: it was not
+                # reading then. It is told now that it speaks, and let go.
+                with contextlib.suppress(Exception):
+                    async with asyncio.timeout(END_NOTICE_SECONDS):
+                        if session.end_to is not None:
+                            gone = Command(name="leave", args={"to": session.end_to})
+                            await ws.send_text(pack(0, gone))
+                        why = session.end_reason or app.theme.text("session_ended")
+                        await ws.send_text(pack(0, ServerError(message=why, fatal=True)))
+                        await ws.close(code=4409)
+                break
             # Each message is its own task: the receive loop never waits on a handler,
             # so an answer to an open ask (or a click during a long handler) still arrives.
             # The session's lock keeps handlers one at a time, in order.

@@ -21,8 +21,10 @@ import logging
 import math
 import os
 import secrets
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import unquote, urlencode, urlsplit
 
@@ -32,6 +34,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from millwork import context
+from millwork.access import Forbidden
 from millwork.icons import check_icon
 from millwork.nodes import Component, Tree, build
 from millwork.shell import root_of
@@ -130,18 +133,6 @@ class Identity(BaseModel):
     picture_url: str | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
     intent: str | None = None
-
-
-class Forbidden(Exception):
-    """Raised from ``connect`` when the user may not open this page.
-
-    The session lands on the app's forbidden page, which shows ``message``
-    when one is given and the theme's standard text otherwise.
-    """
-
-    def __init__(self, message: str | None = None) -> None:
-        self.message = message
-        super().__init__(message or "")
 
 
 class NotFound(Exception):
@@ -523,10 +514,27 @@ def check_password(password: str, stored: str) -> bool:
 
 OnLogin = Callable[[Identity], User | None | Awaitable[User | None]]
 OnLogout = Callable[[User], str | None | Awaitable[str | None]]
+Recheck = Callable[[User], User | None | Awaitable[User | None]]
 
 # How long ``on_logout`` may take. A sign-in that has run out ends its sessions
 # whatever the hook does, so the hook cannot hold them open.
 LOGOUT_HOOK_TIMEOUT = 10.0
+# How long ``recheck`` may take before the question counts as unanswered.
+RECHECK_HOOK_TIMEOUT = 10.0
+
+
+class Unanswered(Exception):
+    """``Auth(recheck=)`` could not say who a user is now. Nothing is known,
+    which is neither a yes nor a no."""
+
+
+@dataclass
+class _Answer:
+    """What ``recheck`` said about an identified user: who they are now, and
+    when it said so."""
+
+    user: User | None
+    at: float
 
 
 class Auth:
@@ -536,6 +544,8 @@ class Auth:
         *,
         on_login: OnLogin | None = None,
         on_logout: OnLogout | None = None,
+        recheck: Recheck | None = None,
+        recheck_every: dt.timedelta = dt.timedelta(minutes=5),
         session: dt.timedelta = dt.timedelta(days=7),
         log_identity: Literal["plain", "hashed"] = "plain",
         intents: dict[str, str] | None = None,
@@ -544,6 +554,27 @@ class Auth:
         self.providers = {p.id: p for p in providers}
         self.on_login = on_login
         self.on_logout = on_logout
+        # Who the signed-in person is now: asked with the user the cookie
+        # holds, it returns the user as they are today, or None when they are
+        # no longer welcome. Without it a sign-in is what it was when it was
+        # made, until it expires.
+        self.recheck = recheck
+        if recheck_every.total_seconds() <= 0:
+            raise ValueError("recheck_every is a length of time above zero")
+        self.recheck_every = recheck_every.total_seconds()
+        # The last answer per sign-in, so a person is asked about once per
+        # interval however many requests they make, the question in flight for
+        # each, and when the hook last failed for it.
+        self._answers: dict[str, _Answer] = {}
+        self._asking: dict[str, asyncio.Task[User | None]] = {}
+        self._failed: dict[str, float] = {}
+        self._retry_after = min(self.recheck_every, 5.0)
+        # Who each person without a cookie was last identified as, and when.
+        self._seen: dict[str, tuple[User, float]] = {}
+        self._tidied = 0.0
+        # How many times running a hook changed its answer about a person.
+        self._changes: dict[str, int] = {}
+        self._warned_restless = False
         self.session = session
         self.log_identity = log_identity
         self.intents = intents or {}
@@ -765,6 +796,139 @@ class Auth:
             return None
         return to
 
+    async def current(self, key: str, user: User) -> User | None:
+        """The user as they are now, or None when they are no longer welcome.
+
+        ``key`` names the sign-in, and ``user`` is the user as identified,
+        before any recheck. The answer is kept for ``recheck_every`` on this
+        process alone, so each replica asks for itself and none needs a store
+        to share. Everyone asking about one identified user at once waits for
+        the same answer, so nothing goes ahead on an old one while a new one
+        is on its way. A hook that fails or takes too long raises
+        ``Unanswered``: nothing is known then, which is not a refusal, and the
+        hook is left alone for a moment before it is asked again."""
+        if self.recheck is None:
+            return user
+        slot = self._slot(key, user)
+        now = time.monotonic()
+        kept = self._answers.get(slot)
+        if kept is not None and now - kept.at < self.recheck_every:
+            return kept.user
+        failed = self._failed.get(slot)
+        if failed is not None and now - failed < self._retry_after:
+            raise Unanswered("recheck gave no answer a moment ago")
+        asking = self._asking.get(slot)
+        if asking is None:
+            asking = asyncio.get_running_loop().create_task(self._ask(slot, user))
+            self._asking[slot] = asking
+            asking.add_done_callback(lambda done: self._asked(slot, done))
+        return await asyncio.shield(asking)
+
+    @staticmethod
+    def _slot(key: str, user: User) -> str:
+        """Where the answer about one identified user is kept. A cookie names
+        one user for good. A proxy or Dev names a person, who may be
+        identified differently from one request to the next, and an answer
+        about one of those users is no answer about another."""
+        if not key.startswith("user:"):
+            return key
+        return f"{key}|{hashlib.sha256(user.model_dump_json().encode()).hexdigest()[:16]}"
+
+    def _asked(self, slot: str, done: asyncio.Task[User | None]) -> None:
+        if self._asking.get(slot) is done:
+            del self._asking[slot]
+        if not done.cancelled():
+            done.exception()  # read, so one nobody waited for is not reported as lost
+
+    async def _ask(self, slot: str, user: User) -> User | None:
+        assert self.recheck is not None
+        who = self._log_id(user.id)
+        try:
+            async with asyncio.timeout(RECHECK_HOOK_TIMEOUT):
+                if inspect.iscoroutinefunction(self.recheck):
+                    fresh = await self.recheck(user)
+                else:
+                    result = await asyncio.to_thread(self.recheck, user)
+                    fresh = await result if inspect.isawaitable(result) else result
+            if fresh is not None and not isinstance(fresh, User):
+                raise TypeError(f"recheck returns a User or None, not {type(fresh).__name__}")
+            if fresh is not None and fresh.id != user.id:
+                raise ValueError("recheck returned another person: the user's id may not change")
+        except Exception as exc:
+            self._failed[slot] = time.monotonic()
+            self._tidy()
+            log.exception("recheck gave no answer for %s", who)
+            raise Unanswered(f"recheck failed: {exc}") from exc
+        if fresh is None:
+            log.warning("sign-in ended by recheck: %s", who)
+        self._failed.pop(slot, None)
+        before = self._answers.get(slot)
+        if before is not None and before.user is not None and fresh is not None:
+            self._restless(slot, before.user != fresh, "recheck")
+        answer: User | None = fresh
+        self._answers[slot] = _Answer(user=answer, at=time.monotonic())
+        self._tidy()
+        return answer
+
+    def _restless(self, key: str, changed: bool, hook: str) -> None:
+        """Say so, once, when a hook gives a different user for the same
+        person time after time. A session ends when its user changes, so a
+        field that is new on every call, a time say, reloads their tabs for
+        as long as it goes on."""
+        if not changed:
+            self._changes.pop(key, None)
+            return
+        times = self._changes.get(key, 0) + 1
+        self._changes[key] = times
+        if times == 3 and not self._warned_restless:
+            self._warned_restless = True
+            log.warning(
+                "%s returned a different user three times running for the same person. "
+                "A session ends when its user changes, so their tabs keep reloading. "
+                "Return the same user while nothing about them has changed",
+                hook,
+            )
+
+    def _tidy(self) -> None:
+        """Drop what is of no use to anyone any more, once there is a lot of
+        it and at most once per interval: answers past twice their interval,
+        failures past their retry, and who a person was last identified as
+        once nothing has asked about them for that long."""
+        now = time.monotonic()
+        many = len(self._answers) + len(self._failed) + len(self._seen) > 4096
+        if not many or now - self._tidied < self.recheck_every:
+            return
+        self._tidied = now
+        limit = 2 * self.recheck_every
+        self._answers = {k: v for k, v in self._answers.items() if now - v.at < limit}
+        self._failed = {k: at for k, at in self._failed.items() if now - at < self._retry_after}
+        self._changes = {}
+        self._seen = {k: v for k, v in self._seen.items() if now - v[1] < max(limit, 3600.0)}
+
+    def identified_as(self, key: str, user: User) -> User:
+        """The user a person was last identified as. For a cookie that is the
+        one it holds. A proxy's word about a person can change, and a session
+        opened on the old word has to find out."""
+        seen = self._seen.get(key)
+        return user if seen is None else seen[0]
+
+    def answer_age(self, key: str, user: User) -> float | None:
+        """How old the last answer about an identified user is, in seconds,
+        or None when there is none."""
+        kept = self._answers.get(self._slot(key, user))
+        return None if kept is None else time.monotonic() - kept.at
+
+    def ask_again_in(self, key: str, user: User) -> float:
+        """How long until an identified user is next worth asking about: when
+        the answer runs out, or when a hook that failed may be tried again."""
+        slot = self._slot(key, user)
+        now = time.monotonic()
+        failed = self._failed.get(slot)
+        if failed is not None and now - failed < self._retry_after:
+            return self._retry_after - (now - failed)
+        kept = self._answers.get(slot)
+        return 0.0 if kept is None else max(0.0, self.recheck_every - (now - kept.at))
+
     def _log_id(self, value: str) -> str:
         if self.log_identity == "hashed":
             return hashlib.sha256(value.encode()).hexdigest()[:12]
@@ -825,15 +989,23 @@ class Auth:
         app's hook and ends its sessions."""
         if not _same_origin(request, self.origins):
             return JSONResponse({"reason": "bad request"}, status_code=400)
-        user = await self.identify(request)
+        # Who is leaving, as identified: signing out works when ``recheck``
+        # cannot answer, and for someone it would turn away.
+        user = await self.identify(request, recheck=False)
         to = await self.leave(user) if user is not None else None
         response = JSONResponse({"ok": True, "next": to})
         self.clear_cookie(request, response)
         app = getattr(request.app.state, "millwork", None)
         if user is not None and app is not None:
-            for session in list(app.sessions.values()):
-                if session.user is not None and session.user.id == user.id:
-                    await session.end(app.theme.text("signed_out"))
+            theirs = [
+                s for s in app.sessions.values() if s.user is not None and s.user.id == user.id
+            ]
+            # All of them are over at once, and each tab is then told on its
+            # own, so one that is slow to listen keeps none of the others.
+            for session in theirs:
+                session._shut()
+            said = app.theme.text("signed_out")
+            await asyncio.gather(*(s.end(said) for s in theirs), return_exceptions=True)
         return response
 
     async def route_oauth_start(self, request: Request) -> Response:
@@ -911,26 +1083,48 @@ class Auth:
 
     # ------------------------------------------------------------- request-time identity
 
-    async def identify(self, request_or_scope: Any) -> User | None:
+    async def identify(self, request_or_scope: Any, recheck: bool = True) -> User | None:
         """The user behind a request or websocket: the cookie, the proxy's headers, or Dev.
 
         The proxy's headers go through ``on_login`` like any other provider, on
         every request: the hook still decides access and shapes the user. They
-        are read when the app is behind a proxy.
+        are read when the app is behind a proxy. Whoever is identified is then
+        put to the app's ``recheck``, which has the last word on who they are
+        now. ``recheck=False`` leaves that out, for knowing who is signing out.
         """
         headers = request_or_scope.headers
         scope = request_or_scope.scope
+
+        async def now(key: str, user: User, by: str) -> User | None:
+            """What ``recheck`` makes of the user identified. The key and the
+            user as identified travel with the request, for a session that
+            goes on asking."""
+            if key.startswith("user:"):
+                seen = self._seen.get(key)
+                if seen is not None and by == "header":
+                    self._restless(f"seen:{key}", seen[0] != user, "on_login")
+                self._seen[key] = (user, time.monotonic())
+                self._tidy()
+            fresh = await self.current(key, user) if recheck else user
+            if fresh is None:
+                # Identified, and no longer welcome.
+                scope["millwork.revoked"] = True
+                return None
+            scope["millwork.identified_by"] = by
+            scope["millwork.identified"] = (key, user)
+            return fresh
+
         signed_in = self._read(request_or_scope.cookies.get(cookie_name(scope, AUTH_COOKIE)))
         if signed_in is not None:
-            # A session opened on this sign-in ends with it, so which one it
-            # is and when it expires travel with the request.
-            scope["millwork.identified_by"] = "cookie"
-            scope["millwork.sign_in"] = signed_in[1:]
-            return signed_in[0]
+            user = await now(signed_in[1], signed_in[0], "cookie")
+            if user is not None:
+                # A session opened on this sign-in ends with it, so which one
+                # it is and when it expires travel with the request.
+                scope["millwork.sign_in"] = signed_in[1:]
+            return user
         for provider in self.providers.values():
             if isinstance(provider, Dev):
-                scope["millwork.identified_by"] = "dev"
-                return provider.user
+                return await now(f"user:{provider.user.id}", provider.user, "dev")
             if isinstance(provider, Headers):
                 if not scope.get("millwork.proxied"):
                     if provider.present(headers) and not self._warned_unproxied:
@@ -943,9 +1137,7 @@ class Auth:
                 identity = provider.identity(headers)
                 if identity is not None:
                     user = await self.login(identity)
-                    if user is not None:
-                        scope["millwork.identified_by"] = "header"
-                    return user
+                    return None if user is None else await now(f"user:{user.id}", user, "header")
         return None
 
     def proxy_identity(self, request: Request) -> bool:

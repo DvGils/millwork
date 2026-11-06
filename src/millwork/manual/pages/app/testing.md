@@ -32,8 +32,9 @@ runs the page's `connect` and the first render and yields a `Page`.
 Leaving the block closes the session, `close` hook included, and a hook
 that raises fails the test there. `open(path,
 user=User(...))` signs a person in. Without one, a gated page raises
-`Forbidden`, and a `connect` that raises `NotFound` or `Forbidden` raises
-it from `open` too, which makes a test of its own. `open(path,
+`Forbidden`. So does a page whose `allow=` rule refuses that user, and a
+`connect` that raises `NotFound` or `Forbidden` raises it from `open`
+too, which makes a test of its own. `open(path,
 state=State(...))` starts from a prepared state and skips `connect`.
 
 ## Finding things

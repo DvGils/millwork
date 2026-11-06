@@ -455,12 +455,15 @@ class TestApp:
     ) -> AsyncIterator[Page]:
         """Open a page as a new session: connect (unless ``state`` is given), mount, yield."""
         await self.startup()
-        resolved = self.app.resolve(path)
+        resolved = self.app.locate(path)
         if resolved is None:
             raise LookupError(f"no page at {path}")
         page_def, params = resolved
         if self.app.auth is not None and not page_def.public and user is None:
             raise Forbidden("Sign in to continue.")
+        verdict = self.app.may(user, page_def, params)
+        if not verdict.ok:
+            raise Forbidden(verdict.message or self.app.theme.text("forbidden_text"))
         session: Session[Any] = Session(self.app, page_def, params, path)
         session.user = user
         self.app.sessions[session.id] = session

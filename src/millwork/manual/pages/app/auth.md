@@ -199,12 +199,133 @@ login page for each intent. The one pressed arrives as `identity.intent`,
 and the hook decides what it means. A login page of your own places it
 with `ui.SignIn(provider_id, intent="demo")`.
 
+## Who may open what
+
+Three questions decide what a person can reach, and each has one place.
+
+| Question | Where it is answered |
+|---|---|
+| Who gets in at all | `on_login` |
+| Who may open this page or route | `allow=` |
+| Is that still true | `recheck` |
+
+Being signed in gets a person into every page that is not public. A page
+for fewer people says so with `allow=`, a rule about the user.
+
+```python
+def is_reviewer(user: auth.User) -> bool:
+    return user.claims.get("role") == "reviewer"
+
+
+def on_the_project(user: auth.User, project_id: int) -> bool:
+    return project_id in user.claims.get("projects", [])
+
+
+@app.page("/review", allow=is_reviewer)
+def review(s: mw.Session) -> ui.Component: ...
+
+
+@app.page("/projects/{project_id:int}", allow=on_the_project)
+def project(s: mw.Session) -> ui.Component: ...
+```
+
+A rule is a plain function. It gets the user, and the parameters of the
+page's path that it names, and returns `True` or `False`. It reads
+nothing else, which is what lets millwork ask it everywhere a page can be
+reached. That is on a page load, when the tab connects, when a session
+comes back after a dropped connection, on navigation, and again whenever
+the user changes. A person the rule refuses gets the app's forbidden
+page, and the page's `connect` hook does not run. Only `True` lets
+someone in. A rule that raises, or returns something else, refuses and
+says so in the log. Raising `mw.Forbidden("Reviewers only.")` gives the
+forbidden page its words.
+
+A rule that is async, or asks for something its path does not have, is
+refused when the app starts. What takes a lookup belongs in `connect`,
+which can still raise `mw.Forbidden`.
+
+`s.can(path)` asks the rule of the page at that path, for a link that
+should only be there for the people who can follow it.
+
+```python
+ui.Link(label="Review", href="/review") if s.can("/review") else None
+```
+
+What a page draws is what its user can do. A handler exists only on the
+page of the session that drew it, so a button left out for someone is a
+handler they cannot reach.
+
+`app.route` and `app.mount` are behind the sign-in too. A route takes
+`allow=` like a page, and its endpoint finds the user in
+`request.state.user`. Signed out, it answers 401, or sends a browser that
+followed a link to the login page and back. A request that changes
+something has to come from the app's own pages. A webhook or a health
+check that anyone may call is marked `public=True`.
+
+```python
+app.route("/api/export.csv", export, allow=is_reviewer)
+app.route("/hooks/mail", mail_hook, methods=["POST"], public=True)
+```
+
+`millwork routes app.py` lists every page, route and mount with who may
+reach it, so an app's access can be read in one place. The files under
+`public/` and the source of the app's custom components are on the list
+as open to anyone, which they are.
+
+## Keeping the user current
+
+A cookie holds the `User` as `on_login` made it, and holds it until it
+expires. A person whose role changed, or who should no longer get in,
+keeps what the cookie says. `Auth(recheck=)` closes that gap. The hook
+gets the user the cookie holds and returns who that person is now, or
+`None` when they are no longer welcome.
+
+```python
+async def current(user: auth.User) -> auth.User | None:
+    record = await db.person(user.id)
+    if record is None or not record.active:
+        return None
+    return user.model_copy(update={"claims": {"role": record.role}})
+
+
+auth.Auth(providers, on_login=admit, recheck=current)
+```
+
+It is asked wherever a visitor is identified, and by every open session,
+at most once per `recheck_every` for each sign-in. That is five minutes
+unless you set it, so a change in your data reaches a person within that
+time whether they are clicking or not.
+
+A session belongs to the user it started with. Its page was drawn for
+them, and what it holds was gathered for them. So when the hook returns a
+user who differs in any way, the session ends and the tab loads its page
+again, as the person they are now. A page whose rule no longer admits
+them shows the forbidden page, and a page that still does is drawn
+without what only their old role was given. Return the same user for the
+same facts, since a field that changes on every call, such as a time,
+would reload every tab each interval, and the log says so when it sees
+that happen. `None` ends the sign-in, and the login page says access was
+denied.
+
+When the hook raises or takes longer than ten seconds, nothing is known.
+A request that needed the answer fails. A session that is already open
+goes on for up to twice the interval since the last answer and then ends
+with a note to try again, so a database that is away for a moment costs
+nobody their page and one that stays away does not leave the door open.
+Signing out works throughout. The answer is kept on each process for
+itself, which means several replicas need nothing shared.
+
+Behind an authenticating proxy the person goes through `on_login` and
+then through `recheck` on every request. A session that is open hears
+nothing from the proxy, so it goes by what `on_login` made of them when
+the tab connected, put to `recheck` each interval. When a later request
+of the same person shows the proxy now says something else, their open
+sessions end at their next step and load again.
+
 ## In a page
 
 `s.user` is the `User`, or `None` on a public page when nobody is signed
-in. Authorization is the app's job. Read `s.user.claims` in `connect` and
-raise `mw.Forbidden(message)` when this page or this project is not for
-this person. The Pages chapter shows the hook.
+in.
 
 ```python live
 def example(s):

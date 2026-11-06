@@ -80,6 +80,9 @@ def example(s):
 
 ## Development
 
+`millwork routes app.py` prints every page, route and mount of an app
+with who may reach it.
+
 `millwork run app.py --reload --debug` is the loop. `--reload` restarts
 the process when a Python file changes. The tab shows "Reconnecting" and
 remounts when the server is back. `--debug` shows page errors in the tab,

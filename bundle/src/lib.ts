@@ -76,6 +76,21 @@ export async function signOut(): Promise<void> {
   window.location.assign(signOutUrl(next));
 }
 
+// Whether two paths name the same page. One may be spelled as the address bar
+// has it, percent signs and all, and the other as the app wrote it, so both
+// are decoded before they are compared. A path that does not decode is its
+// own spelling.
+export function samePath(a: string, b: string): boolean {
+  const plain = (p: string) => {
+    try {
+      return decodeURI(p);
+    } catch {
+      return p;
+    }
+  };
+  return plain(a) === plain(b);
+}
+
 // One of the framework's own routes, under the prefix: mw("/auth/logout").
 export function mw(path: string): string {
   return `${base()}/_mw${path}`;

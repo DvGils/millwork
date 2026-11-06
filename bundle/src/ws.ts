@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { applyTheme, t, type ThemeBoot } from "./theme";
 import { store, type Node, type PatchOp } from "./store";
-import { safeUrl, signOut, toApp, toBrowser } from "./lib";
+import { samePath, safeUrl, signOut, toApp, toBrowser } from "./lib";
 import { toast } from "@/components/ui/toast";
 import { invalidate, syncVersions } from "./custom";
 
@@ -409,7 +409,7 @@ function command(name: string, args: Record<string, unknown>) {
       const target = pendingHash ? `${browserPath}#${pendingHash}` : browserPath;
       // Compared as app paths: the prefix with and without its slash is one page,
       // so a popped history entry is never pushed over.
-      if (toApp(window.location.pathname) !== path || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
+      if (!samePath(toApp(window.location.pathname), path) || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
         window.history.pushState({ mw: true }, "", target);
       }
       if (args.title) document.title = String(args.title);
@@ -469,7 +469,7 @@ function command(name: string, args: Record<string, unknown>) {
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     const path = toApp(window.location.pathname);
-    if (path !== boot.path) navigate(path);
+    if (!samePath(path, boot.path)) navigate(path);
   });
 }
 
@@ -490,7 +490,7 @@ export function connect() {
     } catch {
       stored = null;
     }
-    const resumable = stored && stored.path === boot.path ? stored : null;
+    const resumable = stored && samePath(stored.path, boot.path) ? stored : null;
     sendNow({
       type: "hello",
       path: boot.path,

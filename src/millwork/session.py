@@ -59,6 +59,8 @@ SendBytes = Callable[[bytes], Awaitable[None]]
 Close = Callable[[], Awaitable[None]]
 
 RENDER_COALESCE_SECONDS = 0.05
+# How long a tab is given to take the word that its session ended.
+END_NOTICE_SECONDS = 2.0
 # The replay window: what a tab that drops and comes back is caught up with.
 # Bounded in messages and in bytes, since one message can carry a whole chat;
 # a tab that fell behind the window is mounted afresh instead.
@@ -96,6 +98,17 @@ class Session[S]:
         self.sign_in_expires: float | None = None
         self._expiry: asyncio.TimerHandle | None = None
         self._print_asked = False
+        # The sign-in's key and the user as identified, for asking the app's
+        # ``recheck`` about them again, and the timer that asks for a tab that
+        # only sits open.
+        self._identified: tuple[str, Any] | None = None
+        self._recheck: asyncio.TimerHandle | None = None
+        # Ending: where the tab is sent, the task that tells it and closes
+        # the page, and the tasks that ended the session from inside, which
+        # are cancelled last.
+        self.end_to: str | None = None
+        self._finishing: asyncio.Task[None] | None = None
+        self._own: list[Any] = []
         self.state: S = app.make_state()
         self.tree: Tree | None = None
         self.closed = False
@@ -261,6 +274,88 @@ class Session[S]:
             delay = max(0.0, sign_in[1] - time.time())
             self._expiry = self._loop.call_later(delay, self._sign_in_expired)
 
+    def watch_user(self, identified: tuple[str, Any] | None) -> None:
+        """Keep asking the app's ``recheck`` about this session's user for as
+        long as the session lives: ``identified`` is the sign-in's key and
+        the user as identified, as the request that opened or resumed the
+        session carried them. Asked when the last answer runs out, so a tab
+        that only sits open is as current as one that is being used."""
+        self._identified = identified
+        if self._recheck is not None:
+            self._recheck.cancel()
+            self._recheck = None
+        auth = self.app.auth
+        if auth is None or auth.recheck is None or identified is None or self.closed:
+            return
+
+        def tick() -> None:
+            self._recheck = None
+            if not self.closed:
+                self._loop.create_task(self._recheck_user())
+
+        # A little past the moment the answer runs out, so the ask finds it stale.
+        self._recheck = self._loop.call_later(auth.ask_again_in(*identified) + 0.01, tick)
+
+    async def _recheck_user(self) -> None:
+        if await self.stay_current():
+            self.watch_user(self._identified)
+
+    async def stay_current(self) -> bool:
+        """Confirm that this session's user is still who the session began
+        with. False when the session is over because of the answer.
+
+        A session belongs to the user it started with: its page was drawn
+        for them, and its state, its tasks and its files were gathered for
+        them. So when ``recheck`` says the user is someone else now, in role
+        or in anything, the session ends and the tab loads the page anew,
+        into a session of the user as they are. When it says they are no
+        longer welcome, their sign-in ends. When it cannot say, the session
+        goes on for as long as the last answer is no older than twice the
+        interval, and then ends: an outage of a moment costs nobody their
+        page, and a long one does not leave the door open."""
+        auth = self.app.auth
+        if self.closed:
+            return False
+        if auth is None or self._identified is None:
+            return True
+        key, given = self._identified
+        if auth.identified_as(key, given) != given:
+            # The same person has since been identified as someone else, by a
+            # proxy whose word changed: this session is of who they were.
+            await self.leave(self.path.split("#", 1)[0])
+            return False
+        try:
+            fresh = await auth.current(key, given)
+        except Exception:
+            age = auth.answer_age(key, given)
+            if age is not None and age < 2 * auth.recheck_every:
+                return not self.closed
+            log.error("session %s ended: recheck has not answered for its user", self.id)
+            await self.end(self.text("try_again"))
+            return False
+        if self.closed:
+            return False
+        if fresh is None:
+            if self.sign_in is not None:
+                self.app.end_sign_in(self.sign_in, self.user)
+            else:
+                await self.leave()
+            return False
+        if fresh != self.user:
+            await self.leave(self.path.split("#", 1)[0])
+            return False
+        return True
+
+    def can(self, path: str) -> bool:
+        """Whether this session's user may open the page at ``path``, for a
+        link or a button that should only be there for who can follow it. It
+        asks the page's own rule, so the answer is the one the page gives."""
+        resolved = self.app.locate(path)
+        if resolved is None:
+            raise LookupError(f"no page at {path}")
+        page, params = resolved
+        return self.app.may(self.user, page, params).ok
+
     def _sign_in_expired(self) -> None:
         self._expiry = None
         if not self.closed and self.sign_in is not None:
@@ -273,28 +368,43 @@ class Session[S]:
         if to is None:
             path = self.path.split("?", 1)[0].split("#", 1)[0]
             to = path if self.page.public else f"/_mw/login?{urlencode({'next': path})}"
-        with contextlib.suppress(Exception):
-            await self._send_now(Command(name="leave", args={"to": to}))
-        await self.end(self.app.theme.text("sign_in_hint"))
+        await self.end(self.text("sign_in_hint"), to=to)
 
-    async def end(self, message: str) -> None:
+    async def end(self, message: str, *, to: str | None = None) -> None:
         """Close the session and tell its tab why, so the tab stops instead of
-        reconnecting: signed out elsewhere, or made room for a newer session."""
-        if not self.closed:
-            self.end_reason = message
-            with contextlib.suppress(Exception):
-                await self._send_now(ServerError(message=message, fatal=True))
-            close = self._close_socket
-            if close is not None:
-                with contextlib.suppress(Exception):
-                    await close()
-        await self._close()
+        reconnecting: signed out elsewhere, or made room for a newer session.
+        With ``to`` the tab is sent there.
+
+        The session is over before its tab is told, and the telling is given
+        a moment and no more. A tab that does not read what it is sent can
+        then hold up neither its own session's end nor anyone else's."""
+        self._shut()
+        await asyncio.shield(self._finish(message, to))
+        self._stop_self()
 
     async def _close(self) -> None:
         """The session is over: its work is cancelled, the page it is on is
         closed, its files go. This is the framework's side of it, for a tab
         that is gone or a server that stops, and it tells the tab nothing.
         An app ends a session with ``end``, which does."""
+        self._shut()
+        await asyncio.shield(self._finish(None, None))
+        self._stop_self()
+
+    def _stop_self(self) -> None:
+        """The handler, task or request that ended its own session has seen
+        the end through. It is cancelled now, which stops it at its next
+        await: it gets to finish the line it is on, and no further."""
+        me = asyncio.current_task()
+        for own in self._own:
+            if own is me or getattr(own, "_asyncio_task", None) is me:
+                own.cancel()
+
+    def _shut(self) -> None:
+        """The part of ending that takes no time: from here on the session
+        runs nothing and answers nothing. Timers stop, its work is cancelled,
+        and it is no longer among the app's sessions. What it still owes,
+        telling its tab and closing its page, is ``_finish``."""
         if self.closed:
             return
         self.closed = True
@@ -306,30 +416,66 @@ class Session[S]:
         if self._expiry is not None:
             self._expiry.cancel()
             self._expiry = None
+        if self._recheck is not None:
+            self._recheck.cancel()
+            self._recheck = None
         self.app.sessions.pop(self.id, None)
-        self._abort_requests("the session closed")
-        # A handler or a task that ends its own session is the one running this,
-        # and cancelled now it would cut the close hook off at its first await.
-        # It is cancelled last, and stops at its next await after the hook.
+        self.app.ending.add(self)
+        # A handler, a task or a request that ends its own session is the one
+        # running this, and cancelled now it would not live to see the end
+        # through. It is cancelled once the end is done, by ``_stop_self``.
         me = asyncio.current_task()
-        mine: list[Any] = []
+        self._abort_requests("the session closed", but=me)
         for task in list(self.tasks):
             if task._asyncio_task is not None and task._asyncio_task is me:
-                mine.append(task)
+                self._own.append(task)
             else:
                 task.cancel()
         for spawned in list(self._spawned):
             if spawned is me:
-                mine.append(spawned)
+                self._own.append(spawned)
             else:
                 spawned.cancel()
         for ask in list(self._asks.values()):
             if not ask.future.done():
                 ask.future.cancel()
-        await self._close_page(self.page)
-        self.app.files.discard(self.id)
-        for own in mine:
-            own.cancel()
+
+    def _finish(self, message: str | None, to: str | None) -> asyncio.Task[None]:
+        """What a shut session still owes, done once, in a task of the
+        framework's own: whoever asked for the end may be cancelled, or be
+        one of several, and the tab is told and the page closed all the same.
+        The first to ask decides what the tab is told."""
+        if self._finishing is None:
+            self.end_reason, self.end_to = message, to
+            self._finishing = self._loop.create_task(self._finish_up())
+        return self._finishing
+
+    async def _finish_up(self) -> None:
+        try:
+            if self.end_reason is not None:
+                await self._tell_tab()
+            await self._close_page(self.page)
+            self.app.files.discard(self.id)
+        finally:
+            self.app.ending.discard(self)
+
+    async def _tell_tab(self) -> None:
+        """Say that the session ended, and where to go, and close the socket,
+        within a moment. A tab that has not taken it by then is left to the
+        socket's own loop, which says it again to anything the tab sends."""
+        assert self.end_reason is not None
+        close = self._close_socket
+        try:
+            async with asyncio.timeout(END_NOTICE_SECONDS):
+                if self.end_to is not None:
+                    await self._send_now(Command(name="leave", args={"to": self.end_to}))
+                await self._send_now(ServerError(message=self.end_reason, fatal=True))
+                if close is not None:
+                    await close()
+        except TimeoutError:
+            log.debug("the tab of session %s did not take the word that it ended", self.id)
+        except Exception:
+            log.debug("telling the tab of session %s failed", self.id)
 
     async def _close_page(self, page: PageDef) -> None:
         """The page's close hook, once per visit: the session is done with it, by
@@ -887,11 +1033,11 @@ class Session[S]:
     async def navigate_to(self, path: str) -> None:
         """Switch this session to another page. The state stays; the page left is
         closed before the next one connects."""
-        if self.closed:
+        if self.closed or not await self.stay_current():
             return
         # A fragment names a heading: the tab scrolls to it after the mount.
         path, _, fragment = path.partition("#")
-        resolved = self.app.resolve(path) or self.app.fallback("not_found", path)
+        resolved = self.app.locate(path) or self.app.fallback("not_found", path)
         page, params = resolved
         if self.app.auth is not None and not page.public and self.user is None:
             await self._send_now(ServerError(message=self.text("sign_in_hint"), fatal=True))
@@ -1093,6 +1239,8 @@ class Session[S]:
         """
         if self.tree is None or self.closed:
             return
+        if not await self.stay_current() or self.tree is None:
+            return
         if event.node.startswith("toast:") and event.name == "action":
             await self._toast_action(event.node[6:])
             return
@@ -1239,14 +1387,16 @@ class Session[S]:
         if task is not None:
             task.cancel()
 
-    def _abort_requests(self, why: str) -> None:
+    def _abort_requests(self, why: str, but: asyncio.Task[Any] | None = None) -> None:
         """Every request belongs to one socket connection: when it goes, so do they.
         Their "cancelled" replies may still reach a socket attached later; the tab
-        ignores replies to requests it never made."""
+        ignores replies to requests it never made. ``but`` is a request that
+        is itself the one ending the session, which is left to finish."""
         for stream in self._inbound.values():
             stream.fail(why)
         for task in list(self._requests.values()):
-            task.cancel()
+            if task is not but:
+                task.cancel()
 
     async def _request(self, msg: Request) -> None:
         """Answer a ``request`` with a ``reply``, over the socket, without a render.
@@ -1258,6 +1408,9 @@ class Session[S]:
         name cancels the one in flight.
         """
         try:
+            if not await self.stay_current():
+                await self._reply(msg.request, error=self.text("sign_in_hint"))
+                return
             if msg.name == "file":
                 await self._serve_file(msg)
             elif msg.name == "upload":
@@ -1440,7 +1593,14 @@ class Session[S]:
 
     async def connect_or_fall_back(self) -> None:
         """Connect, and when the hook refuses with NotFound or Forbidden, land on the
-        app's page for that instead, under the path that was asked for."""
+        app's page for that instead, under the path that was asked for. The
+        page's rule is asked first, and a page that refuses never runs its
+        connect hook."""
+        verdict = self.app.may(self.user, self.page, self.params)
+        if not verdict.ok:
+            self.page, self.params = self.app.fallback("forbidden", self.path, verdict.message)
+            await self.connect()
+            return
         try:
             await self.connect()
         except (Forbidden, NotFound) as exc:

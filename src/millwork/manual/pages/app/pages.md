@@ -232,7 +232,9 @@ such links. The Layout chapter shows both.
 `app.route(path, endpoint, methods=[...])` adds an API endpoint,
 `app.mount(path, asgi_app)` mounts anything ASGI, FastAPI included, and
 `app.middleware(cls)` adds pure ASGI middleware. `app.on_startup` and
-`app.on_shutdown` register hooks around the process. The `public/` folder
+`app.on_shutdown` register hooks around the process. In an app with auth
+a route and a mount need a sign-in like a page does, unless they are
+marked `public=True`, as the Signing in chapter describes. The `public/` folder
 next to the app is served at `/public/`. Everything millwork owns lives
 under `/_mw/`, which leaves every other path to the app. `/_mw/health`
 answers 200 once the startup hooks are done.

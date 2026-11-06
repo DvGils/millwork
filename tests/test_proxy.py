@@ -112,7 +112,7 @@ def auth_app(tmp_path: Path, provider: auth.Headers, **kw: Any) -> mw.App:
         user = await app.user_for(request)
         return JSONResponse(user.model_dump() if user else None)
 
-    app.route("/me", me)
+    app.route("/me", me, public=True)
     return app
 
 

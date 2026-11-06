@@ -12,16 +12,17 @@ import hashlib
 import logging
 import re
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote, unquote, urlencode
 
 from starlette.applications import Starlette
 from starlette.datastructures import MutableHeaders
 from starlette.middleware import Middleware
-from starlette.requests import Request
+from starlette.requests import HTTPConnection, Request
 from starlette.responses import (
     FileResponse,
     HTMLResponse,
@@ -33,7 +34,8 @@ from starlette.routing import Mount, Route, WebSocketRoute, compile_path
 from starlette.staticfiles import StaticFiles
 
 from millwork import __version__
-from millwork.auth import Auth
+from millwork.access import ALLOWED, REFUSED, Rule, Verdict, ask, rule_for
+from millwork.auth import Auth, _same_origin
 from millwork.files import Files
 from millwork.nodes import Component
 from millwork.protocol import Command
@@ -118,6 +120,9 @@ class PageDef:
     render: Callable[[Any], Component]
     title: str | None = None
     public: bool = False
+    # Who may open it, among the signed in: a function of the user. None lets
+    # every signed-in user in.
+    allow: Rule | None = None
     on_connect: Callable[..., Any] | None = None
     on_close: Callable[..., Any] | None = None
     _regex: Any = field(init=False, repr=False)
@@ -132,6 +137,11 @@ class PageDef:
         # least exact of all, so a page that goes on after ``{rest:path}``
         # comes before the one that stops there.
         self._rank = (*(_exactness(seg) for seg in self.path.split("/")), 4)
+
+    @property
+    def params(self) -> tuple[str, ...]:
+        """The names of the parameters in the page's path."""
+        return tuple(self._param_convertors)
 
     def match(self, path: str) -> dict[str, str] | None:
         m = self._regex.match(path)
@@ -148,6 +158,22 @@ class PageDef:
         """Decorator: runs with the session when it leaves the page, or ends on it."""
         self.on_close = fn
         return fn
+
+
+def _address(scope: Any, decoded: str) -> str:
+    """The app's path of a request as the client spelled it, percent signs
+    and all, which is also what the tab reads from its address bar. A server
+    hands the spelling over next to what it decoded it to. One that does not
+    gets the decoded path encoded again."""
+    raw = scope.get("raw_path")
+    if isinstance(raw, bytes | bytearray):
+        text = bytes(raw).decode("latin-1").split("?", 1)[0]
+        root = str(scope.get("root_path") or "")
+        if root and (text == root or text.startswith(root + "/")):
+            text = text[len(root) :] or "/"
+        if text.startswith("/"):
+            return text
+    return quote(decoded)
 
 
 def _exactness(segment: str) -> int:
@@ -257,10 +283,15 @@ class App:
             "forbidden": self._error_page_def("forbidden", _forbidden_view),
         }
         self.sessions: dict[str, Session[Any]] = {}
-        # Sign-ins that ran out and are being ended, each with the task doing it.
-        self._ending: dict[str, asyncio.Task[None]] = {}
+        # Sessions that are over and have yet to tell their tab and close
+        # their page: no longer among the sessions, still owed their end.
+        self.ending: set[Session[Any]] = set()
+        # Sign-ins that ran out and are being ended: the task doing it, and
+        # the sessions it will send away, which one that connects late joins.
+        self._ending: dict[str, tuple[asyncio.Task[None], list[Session[Any]]]] = {}
         self.shell = Shell(self.bundle_dir, prefix=PREFIX)
         self._routes: list[Any] = []
+        self._extra: list[_Extra] = []
         self._middleware: list[Middleware] = []
         self._asgi: ASGIApp | None = None
 
@@ -272,13 +303,43 @@ class App:
         *,
         title: str | None = None,
         public: bool = False,
+        allow: Callable[..., bool] | None = None,
     ) -> Callable[[Callable[[Any], Component]], PageDef]:
+        """Decorator: a page at ``path``. With auth it asks for a sign-in unless
+        ``public=True``. ``allow`` narrows it further: a function of the user,
+        and of the path's parameters it names, that returns True for who may
+        open the page."""
+        self._check_access(f"the page {path}", public, allow)
+
         def register(fn: Callable[[Any], Component]) -> PageDef:
             page = PageDef(path=path, render=fn, title=title or self.name, public=public)
+            if allow is not None:
+                page.allow = rule_for(allow, page.params, f"the page {path}")
             self.pages.append(page)
             return page
 
         return register
+
+    def _check_access(self, what: str, public: bool, allow: Any) -> None:
+        if allow is None:
+            return
+        if public:
+            raise ValueError(
+                f"{what} is public and has a rule. A rule is about the signed-in user, "
+                "and a public page has none to ask about"
+            )
+        if self.auth is None:
+            raise ValueError(f"{what} has a rule, and the app has no auth to tell who is asking")
+
+    def may(self, user: Any, page: PageDef, params: Mapping[str, Any]) -> Verdict:
+        """Whether this user may open this page: the one place that question
+        is answered, for a page load, a socket, a navigation and a link. It
+        only answers. Acting on a refusal is the caller's."""
+        if self.auth is None or page.public:
+            return ALLOWED
+        if user is None:
+            return REFUSED
+        return ask(page.allow, user, params, f"the page {page.path}")
 
     def make_state(self) -> Any:
         """A session's state: one instance of the app's model, kept for the session."""
@@ -297,12 +358,23 @@ class App:
                 best = page, params
         return best
 
+    def locate(self, url: str) -> tuple[PageDef, dict[str, str]] | None:
+        """The page a path names when it is spelled as an address: what a tab
+        sends, a link's ``href``, what a handler navigates to. What follows a
+        ``?`` or a ``#`` is not part of the path, and the rest is decoded
+        once, which is what the server has already done to the path of a page
+        load. A page and its rule then see the same parameters whichever way
+        the path came."""
+        return self.resolve(unquote(url.split("?", 1)[0].split("#", 1)[0]))
+
     def fallback(
         self, kind: str, path: str, message: str | None = None
     ) -> tuple[PageDef, dict[str, str]]:
         """The error page for ``kind`` (``not_found`` or ``forbidden``) and its params:
         the path that was asked for and the message connect raised with, if any."""
-        return self.error_pages[kind], {"path": path, "message": message or ""}
+        # Shown to a person, so as they would read it and not as an address
+        # spells it.
+        return self.error_pages[kind], {"path": unquote(path), "message": message or ""}
 
     def _error_page_def(
         self,
@@ -355,14 +427,65 @@ class App:
     # ------------------------------------------------------------- extension
 
     def route(
-        self, path: str, endpoint: Callable[..., Any], methods: list[str] | None = None
+        self,
+        path: str,
+        endpoint: Callable[..., Any],
+        methods: list[str] | None = None,
+        *,
+        public: bool = False,
+        allow: Callable[..., bool] | None = None,
     ) -> None:
-        """A plain Starlette route next to the pages, for an API or a webhook."""
-        self._routes.append(Route(path, endpoint, methods=methods or ["GET"]))
+        """A plain Starlette route next to the pages, for an API or a download.
 
-    def mount(self, path: str, asgi_app: Any) -> None:
-        """Serve another ASGI app under a path."""
+        With auth it needs a sign-in like a page does, and ``allow`` narrows it
+        like a page's. The endpoint finds the user in ``request.state.user``.
+        ``public=True`` opens it to anyone, which is what a webhook or a
+        health check needs."""
+        self._check_access(f"the route {path}", public, allow)
+        route = Route(path, endpoint, methods=methods or ["GET"])
+        rule = rule_for(allow, route.param_convertors, f"the route {path}") if allow else None
+        self._extra.append(_Extra("route", path, public, rule))
+        if self.auth is not None and not public:
+            route.app = _Guarded(self, route.app, rule, f"the route {path}")
+        self._routes.append(route)
+
+    def mount(
+        self,
+        path: str,
+        asgi_app: Any,
+        *,
+        public: bool = False,
+        allow: Callable[..., bool] | None = None,
+    ) -> None:
+        """Serve another ASGI app under a path. With auth, everything under it
+        needs a sign-in unless ``public=True``, and ``allow`` narrows it by the
+        user alone."""
+        self._check_access(f"the mount {path}", public, allow)
+        rule = rule_for(allow, (), f"the mount {path}") if allow else None
+        self._extra.append(_Extra("mount", path, public, rule))
+        if self.auth is not None and not public:
+            asgi_app = _Guarded(self, asgi_app, rule, f"the mount {path}")
         self._routes.append(Mount(path, app=asgi_app))
+
+    def access(self) -> list[tuple[str, str, str]]:
+        """Every page, route and mount with who may reach it, for reading the
+        app's access in one place: ``(kind, path, access)``."""
+
+        def said(public: bool, rule: Rule | None) -> str:
+            if self.auth is None:
+                return "anyone (the app has no auth)"
+            if public:
+                return "anyone"
+            return f"signed in and {rule.name}" if rule is not None else "signed in"
+
+        rows = [("page", p.path, said(p.public, p.allow)) for p in self.pages]
+        rows += [(e.kind, e.path, said(e.public, e.rule)) for e in self._extra]
+        # What the app serves without asking anyone, so the list is whole.
+        if self.public_dir is not None and self.public_dir.is_dir():
+            rows.append(("files", "/public", said(True, None)))
+        if self.components_dir is not None and self.components_dir.is_dir():
+            rows.append(("files", f"{PREFIX}/components", said(True, None)))
+        return rows
 
     def middleware(self, cls: Any, **options: Any) -> None:
         """Add a Starlette middleware class around the whole app."""
@@ -407,7 +530,9 @@ class App:
                 self._components_watch.cancel()
             # Sessions end first: a page's close hook still has what the shutdown
             # hooks take away, a database pool or a client.
-            for session in list(self.sessions.values()):
+            # That goes for a session already on its way out as well, which
+            # is no longer among the sessions and may not have closed its page.
+            for session in [*self.sessions.values(), *self.ending]:
                 await session._close()
             for fn in self._shutdown:
                 await _maybe_await(fn())
@@ -562,27 +687,40 @@ class App:
         """A sign-in ran out: its sessions leave together. Each of them calls
         this in the same moment, and the first call takes it, so ``on_logout``
         is asked once for all of its tabs."""
-        if sign_in not in self._ending:
-            self._ending[sign_in] = asyncio.get_running_loop().create_task(
-                self._end_sign_in(sign_in, user)
-            )
+        # Over at once, all of them, before anything is awaited: nothing more
+        # runs on a sign-in that has ended while ``on_logout`` is being asked
+        # where its tabs should go.
+        theirs = [s for s in self.sessions.values() if s.sign_in == sign_in]
+        for session in theirs:
+            session._shut()
+        under_way = self._ending.get(sign_in)
+        if under_way is not None:
+            # A session that got onto the sign-in after the ending began, one
+            # whose connect was still running, leaves with the rest.
+            under_way[1].extend(theirs)
+            return
+        task = asyncio.get_running_loop().create_task(self._end_sign_in(sign_in, user, theirs))
+        self._ending[sign_in] = (task, theirs)
 
-    async def _end_sign_in(self, sign_in: str, user: Any) -> None:
+    async def _end_sign_in(self, sign_in: str, user: Any, theirs: list[Session[Any]]) -> None:
         to = None
         try:
             if self.auth is not None:
                 to = await self.auth.leave(user)
         finally:
-            # The sessions on it now: a tab that came back on a newer sign-in
-            # while the hook was asked is no longer one of them. They end
-            # whatever became of the hook, and one that fails does not keep
-            # the rest.
+            # Whatever is on the sign-in by now leaves too, and from here on
+            # one that turns up starts an ending of its own.
+            late = [s for s in self.sessions.values() if s.sign_in == sign_in]
+            for session in late:
+                session._shut()
+            theirs.extend(late)
             self._ending.pop(sign_in, None)
-            for session in [s for s in self.sessions.values() if s.sign_in == sign_in]:
-                try:
-                    await session.leave(to)
-                except Exception:
-                    log.exception("session %s did not end with its sign-in", session.id)
+            # Each tab is told on its own, so one that does not listen holds
+            # up none of the others, and one that fails does not keep the rest.
+            done = await asyncio.gather(*(s.leave(to) for s in theirs), return_exceptions=True)
+            for session, outcome in zip(theirs, done, strict=True):
+                if isinstance(outcome, Exception):
+                    log.error("session %s did not end cleanly: %r", session.id, outcome)
 
     async def reload_theme(self) -> bool:
         """Re-read the theme file and push it to open sessions; False when it is invalid."""
@@ -690,6 +828,11 @@ class App:
             # Already signed in, by a cookie or by the proxy: nothing to show.
             return RedirectResponse(f"{base}{next_path}", status_code=302)
         error = request.query_params.get("error")
+        revoked = bool(request.scope.get("millwork.revoked"))
+        if error is None and revoked:
+            # Signed in until the app's recheck said otherwise: the page says
+            # so, where a first visit gets no reason at all.
+            error = "Access denied."
         if error is None and self.auth.proxy_identity(request):
             error = self.theme.text("proxy_denied")
         boot = {
@@ -698,7 +841,7 @@ class App:
             "image": self.theme.login_image,
         }
         nonce = secrets.token_urlsafe(16)
-        return self._html(
+        response = self._html(
             self.shell.render(
                 title=self.name,
                 path=f"{PREFIX}/login",
@@ -709,29 +852,49 @@ class App:
             ),
             nonce,
         )
+        if revoked:
+            self.auth.clear_cookie(request, response)
+        return response
 
     async def _serve_page(self, request: Request) -> Any:
         path = "/" + request.path_params.get("path", "")
         self._check_stripped(request.scope, path)
-        resolved = self.resolve(path)
+        # The path as the browser spelled it. The tab says hello with it, and
+        # the page is found by it here, so the load and the session that
+        # follows read one spelling the same way.
+        address = _address(request.scope, path)
+        resolved = self.locate(address)
         status = 200
         if resolved is None:
             # The not-found page, served as a 404 so monitors and crawlers see one.
             resolved = self.fallback("not_found", path)
             status = 404
-        page, _ = resolved
+        page, params = resolved
         base = root_of(request.scope)
         user = await self.user_for(request)
         if self.auth is not None and not page.public and user is None:
-            from urllib.parse import urlencode
-
-            login = f"{base}{PREFIX}/login?{urlencode({'next': path})}"
+            if request.scope.get("millwork.revoked"):
+                # Signed in, and no longer welcome: the cookie goes, and the
+                # login page says why instead of looking like a first visit.
+                response = self.auth._login_redirect(request, address, "Access denied.")
+                self.auth.clear_cookie(request, response)
+                return response
+            login = f"{base}{PREFIX}/login?{urlencode({'next': address})}"
             return RedirectResponse(login, status_code=302)
+        if status == 200 and not self.may(user, page, params).ok:
+            # The page the session lands on says so. The status is for whatever
+            # reads statuses, and the shell is the forbidden page's, so not
+            # even the title of the page that refused is in it.
+            status = 403
+            page = self.error_pages["forbidden"]
         if not self.shell.available:
             if status == 404:
                 text = self.theme.text
                 title, body = text("not_found_title"), text("not_found_text", path=path)
                 return self._plain(request, 404, title, body)
+            if status == 403:
+                text = self.theme.text
+                return self._plain(request, 403, text("forbidden_title"), text("forbidden_text"))
             hint = "The bundle is not built. Run `pnpm build` in bundle/."
             return self._plain(request, 503, "millwork", hint)
         user_boot = (
@@ -744,7 +907,7 @@ class App:
         return self._html(
             self.shell.render(
                 title=page.title or self.name,
-                path=path,
+                path=address,
                 theme=self.theme,
                 user=user_boot,
                 nonce=nonce,
@@ -758,6 +921,71 @@ class App:
 
     def file_response(self, path: Path) -> FileResponse:
         return FileResponse(path)
+
+
+@dataclass
+class _Extra:
+    """A route or a mount of the app's own, as the access listing shows it."""
+
+    kind: str
+    path: str
+    public: bool
+    rule: Rule | None
+
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+class _Guarded:
+    """An app's own route or mount behind the sign-in, like a page.
+
+    The visitor is identified the way a page load identifies them, a request
+    that changes something has to come from the app's own origin since the
+    cookie alone would also ride along on another site's form, and the rule
+    is asked. What passes finds the user in ``request.state.user``."""
+
+    def __init__(self, app: App, inner: Any, rule: Rule | None, where: str) -> None:
+        self.app, self.inner, self.rule, self.where = app, inner, rule, where
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] not in ("http", "websocket"):
+            await self.inner(scope, receive, send)
+            return
+        conn = HTTPConnection(scope)
+        user = await self.app.user_for(conn)
+        text = self.app.theme.text
+        refused: tuple[int, str] | None = None
+        if user is None:
+            refused = (401, text("sign_in_hint"))
+        elif (
+            scope["type"] == "websocket" or scope["method"] not in _SAFE_METHODS
+        ) and not _same_origin(conn, self.app.origins):  # type: ignore[arg-type]
+            # A socket, or a request that changes something, from another
+            # site's page: the cookie would ride along, so the origin decides.
+            refused = (403, text("forbidden_text"))
+        else:
+            verdict = ask(self.rule, user, scope.get("path_params") or {}, self.where)
+            if not verdict.ok:
+                refused = (403, verdict.message or text("forbidden_text"))
+        if refused is None:
+            scope.setdefault("state", {})["user"] = user
+            await self.inner(scope, receive, send)
+            return
+        status, reason = refused
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 4401 if status == 401 else 4403})
+            return
+        response: Any = JSONResponse({"reason": reason}, status_code=status)
+        wants_page = scope["method"] == "GET" and "text/html" in conn.headers.get("accept", "")
+        if status == 401 and wants_page:
+            # A link someone followed in a browser: sign in, then come back.
+            base = root_of(scope)
+            path = scope["path"]
+            if base and (path == base or path.startswith(base + "/")):
+                path = path[len(base) :] or "/"
+            login = f"{base}{PREFIX}/login?{urlencode({'next': path})}"
+            response = RedirectResponse(login, status_code=302)
+        await response(scope, receive, send)
 
 
 def _error_view(s: Any, kind: str) -> Component:
