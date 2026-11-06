@@ -1,4 +1,5 @@
-"""The session's life without a socket: grace, close, replay, delivery, render failures."""
+"""The session's life over a socket that is not one: grace, the end, replay,
+delivery, render failures."""
 
 import asyncio
 import json
@@ -9,8 +10,10 @@ from pydantic import BaseModel
 
 import millwork as mw
 from millwork import ui
-from millwork.protocol import Event
-from millwork.session import OUTBOX_KEEP, Session
+from millwork.connection import REPLACED, Connection
+from millwork.outbox import OUTBOX_KEEP
+from millwork.protocol import Event, Reply
+from millwork.session import Session
 
 
 class State(BaseModel):
@@ -70,58 +73,99 @@ def make_app(tmp_path: Path, grace: float = 0.05) -> tuple[mw.App, dict[str, Any
 
 
 class Wire:
-    """A fake socket: what the session sent, decoded, and a switch to make sends fail."""
+    """A fake socket: what the session sent, decoded, a switch to make sends
+    fail, and a way for the tab to go away."""
 
     def __init__(self) -> None:
         self.messages: list[dict[str, Any]] = []
         self.seqs: list[int] = []
         self.broken = False
-        self.closed = 0
-        # One callable per socket, as the endpoint captures ``ws.send_text`` once:
-        # the session tells sockets apart by identity.
-        self.sender = self.send
+        self.closed_with: int | None = None
+        self.conn: Connection | None = None
+        self._gone: asyncio.Future[None] = asyncio.get_running_loop().create_future()
 
-    async def send(self, text: str) -> None:
+    async def send_text(self, text: str) -> None:
         if self.broken:
             raise ConnectionError("gone")
         env = json.loads(text)
         self.seqs.append(env["seq"])
         self.messages.append(env["msg"])
 
-    async def close(self) -> None:
-        self.closed += 1
+    async def send_bytes(self, data: bytes) -> None:
+        pass
+
+    async def receive(self) -> dict[str, Any]:
+        await self._gone
+        return {"type": "websocket.disconnect"}
+
+    async def close(self, code: int = 1000) -> None:
+        self.closed_with = code
+
+    def drop(self) -> None:
+        """The tab goes away."""
+        if not self._gone.done():
+            self._gone.set_result(None)
 
     def types(self) -> list[str]:
         return [m["type"] for m in self.messages]
 
 
+class SlowWire(Wire):
+    """A socket whose writes yield, as a real one does."""
+
+    async def send_text(self, text: str) -> None:
+        await asyncio.sleep(0)
+        await super().send_text(text)
+
+
+async def serve(session: Session[Any], wire: Wire, seq: int) -> None:
+    """One connection's life, as the websocket endpoint lives it."""
+    conn = wire.conn = Connection(wire, "test")
+    try:
+        session.attached(conn, seq)
+        await conn.run()
+    finally:
+        session.detached(conn)
+        conn.close()
+        await wire.close(conn.code)
+
+
+async def attach(session: Session[Any], wire: Wire, seq: int = 0) -> None:
+    asyncio.ensure_future(serve(session, wire, seq))
+    await flush(session)
+
+
 async def open_session(app: mw.App, wire: Wire) -> Session[Any]:
+    app._begin()
     resolved = app.resolve("/")
     assert resolved is not None
     page, params = resolved
     session: Session[Any] = Session(app, page, params, "/")
-    app.sessions[session.id] = session
-    await session.connect()
-    await session.attach(wire.sender, 0, close=wire.close)
+    assert app.admit(session)
+    asyncio.ensure_future(serve(session, wire, 0))
+    assert await session.opened is None
+    await flush(session)
     return session
 
 
 async def flush(session: Session[Any]) -> None:
-    """Run what the session queued, then its coalesced render now instead of after the timer."""
+    """Run what the session has under way, then its coalesced render now instead
+    of after the timer, and let the tab hear it."""
     for _ in range(20):
         await asyncio.sleep(0)
-    if session._render_scheduled and session._render_handle is not None:
-        session._render_handle.cancel()
-        session._render_scheduled = False
-        session._render_handle = None
-        await session._render()
-    for _ in range(5):
+    session.flush()
+    for _ in range(10):
         await asyncio.sleep(0)
 
 
 async def click(session: Session[Any], key: str) -> None:
-    await session.dispatch(Event(node=f"root/{key}", name="click"))
+    session.event(Event(node=f"root/{key}", name="click"))
     await flush(session)
+
+
+async def over(session: Session[Any]) -> None:
+    session.dismiss()
+    await session.gone
 
 
 async def test_grace_closes_the_session_once_and_a_reattach_cancels_it(tmp_path: Path) -> None:
@@ -131,31 +175,36 @@ async def test_grace_closes_the_session_once_and_a_reattach_cancels_it(tmp_path:
     session.files.add(b"x", name="x.bin")
     assert app.files.session_dir(session.id).is_dir()
 
-    # Detaching starts the grace timer; reattaching in time cancels it.
-    session.detach(wire.sender)
+    # A tab that goes away starts the grace timer; one that comes back in time cancels it.
+    wire.drop()
+    await flush(session)
     assert not session.connected and session._grace is not None
-    await session.attach(wire.sender, 0, close=wire.close)
+    back = Wire()
+    await attach(session, back)
     assert session._grace is None and session.connected
     await asyncio.sleep(0.1)  # the grace timer is the thing under test
     assert not session.closed and log["closed"] == 0
 
-    # A stale socket's detach is ignored; the live one's detach starts the clock.
-    other = Wire()
-    session.detach(other.sender)
+    # A connection the session does not have is ignored when it goes; the
+    # live one going starts the clock.
+    session.detached(Connection(Wire(), "stale"))
     assert session.connected
-    session.detach(wire.sender)
+    back.drop()
+    await flush(session)
     await asyncio.sleep(0.1)
+    await session.gone
     assert session.closed and log["closed"] == 1
     assert session.id not in app.sessions
     assert not app.files.session_dir(session.id).exists()
 
-    # Closing again is a no-op, and a detach after close starts no timer.
-    await session._close()
-    session.detach()
+    # Ending again is a no-op, and a connection going after the end starts no timer.
+    session.dismiss()
+    assert back.conn is not None
+    session.detached(back.conn)
     assert log["closed"] == 1 and session._grace is None
 
 
-async def test_close_cancels_work_and_the_handler_waiting_on_an_ask(tmp_path: Path) -> None:
+async def test_the_end_cancels_work_and_the_handler_waiting_on_an_ask(tmp_path: Path) -> None:
     app, log = make_app(tmp_path)
     wire = Wire()
     session = await open_session(app, wire)
@@ -163,25 +212,23 @@ async def test_close_cancels_work_and_the_handler_waiting_on_an_ask(tmp_path: Pa
     await click(session, "run")
     task = log["task"]
     assert task.status == "running"
-    asking = session.spawn(session.dispatch(Event(node="root/ask", name="click")), "ask")
-    await flush(session)
+    await click(session, "ask")
     assert session._asks and any(n.endswith("/ok") for n in session.tree.nodes)  # type: ignore[union-attr]
 
     log["close_raises"] = True
-    await session._close()
-    await flush(session)
-    # The hook's failure is logged, not raised, and the session is still closed.
+    await over(session)
+    # The hook's failure is logged, not raised, and the session is still over.
     assert session.closed and log["closed"] == 1
     assert task.status == "cancelled"
-    # The handler was cancelled at the ask: it never ran on past a closed session.
-    assert asking.cancelled() and "answer" not in log and "after" not in log
-    assert not session._lock.locked()
-    # Nothing renders or dispatches after close.
+    # The handler was cancelled at the ask: it never ran on past the end.
+    assert "answer" not in log and "after" not in log
+    assert session.turn.free and not session.scope.children
+    # Nothing renders or runs after the end.
     session.refresh()
-    assert not session._render_scheduled
+    assert not session._render_due
     before = len(wire.messages)
-    await session.dispatch(Event(node="root/inc", name="click"))
-    assert len(wire.messages) == before
+    await click(session, "inc")
+    assert len(wire.messages) == before and session.state.count == 0
 
 
 async def test_replay_window_and_full_mount_outside_it(tmp_path: Path) -> None:
@@ -196,35 +243,36 @@ async def test_replay_window_and_full_mount_outside_it(tmp_path: Path) -> None:
 
     # Exactly caught up: nothing to replay, and no mount either.
     again = Wire()
-    await session.attach(again.sender, last)
+    await attach(session, again, last)
     assert again.types() == ["session"]
     # Behind by two patches: those two come back, in order, with their original seqs.
     again = Wire()
-    await session.attach(again.sender, last - 2)
+    await attach(session, again, last - 2)
     assert again.types() == ["session", "patch", "patch"] and again.seqs[1:] == [last - 1, last]
-    # A tab that claims more than was ever sent, or one that sent nothing, gets a mount.
+    # A tab that claims more than was ever sent, or one that has seen nothing,
+    # gets the page as it stands, under the number of the last thing said.
     for claimed in (last + 5, 0):
         again = Wire()
-        await session.attach(again.sender, claimed)
-        assert again.types() == ["session", "mount"]
+        await attach(session, again, claimed)
+        assert again.types() == ["session", "mount"] and again.seqs[1] == last
         assert again.messages[1]["nodes"]["root/count"]["props"]["content"] == "3"
 
     # Once the outbox has forgotten the tab's position, the mount is the only option.
     for _ in range(OUTBOX_KEEP + 2):
         session.toast("x")
     await flush(session)
-    first = session._outbox[0][0]
+    first = session.outbox._items[0][0]
     assert first > last
     again = Wire()
-    await session.attach(again.sender, first - 1)  # the oldest kept message is the next one
+    await attach(session, again, first - 1)  # the oldest kept message is the next one
     assert again.types() == ["session"] + ["command"] * OUTBOX_KEEP and again.seqs[1] == first
     again = Wire()
-    await session.attach(again.sender, first - 2)  # one message older than kept: a mount
+    await attach(session, again, first - 2)  # one message older than kept: a mount
     assert again.types() == ["session", "mount"]
-    await session._close()
+    await over(session)
 
 
-async def test_a_failing_send_detaches_replays_later_and_runs_out_the_grace(
+async def test_a_failing_send_ends_the_connection_and_what_was_said_is_replayed_later(
     tmp_path: Path,
 ) -> None:
     app, log = make_app(tmp_path, grace=0.05)
@@ -233,36 +281,35 @@ async def test_a_failing_send_detaches_replays_later_and_runs_out_the_grace(
     last = wire.seqs[-1]
     wire.broken = True
     await click(session, "inc")
-    # The socket is treated as gone: detached, grace running, the message kept for replay.
+    # The socket is treated as gone: no connection, grace running, the message kept for replay.
     assert not session.connected and session._grace is not None
-    assert len(wire.messages) == 2 and session._seq == last + 1
-    # The endpoint's own detach for that socket, arriving later, changes nothing.
-    session.detach(wire.sender)
-    assert session._grace is not None and not session.closed
+    assert len(wire.messages) == 2 and session.outbox.seq == last + 1
+    assert not session.closed
     fresh = Wire()
-    await session.attach(fresh.sender, last)
+    await attach(session, fresh, last)
     assert session._grace is None
     assert fresh.types() == ["session", "patch"]
     assert fresh.messages[1]["ops"] == [
         {"op": "set", "id": "root/count", "props": {"content": "1"}}
     ]
-    # With no tab coming back, the grace closes the session.
+    # With no tab coming back, the grace ends the session.
     fresh.broken = True
     await click(session, "inc")
     await asyncio.sleep(0.1)  # the grace timer is the thing under test
+    await session.gone
     assert session.closed and log["closed"] == 1 and session.id not in app.sessions
 
 
-async def test_a_second_attach_closes_the_first_socket(tmp_path: Path) -> None:
+async def test_a_second_connection_closes_the_first_socket(tmp_path: Path) -> None:
     app, _ = make_app(tmp_path)
     first, second = Wire(), Wire()
     session = await open_session(app, first)
-    await session.attach(second.sender, 0, close=second.close)
-    assert first.closed == 1 and second.closed == 0
+    await attach(session, second)
+    assert first.closed_with == REPLACED and second.closed_with is None
     await click(session, "inc")
     # The superseded socket receives nothing more; the new one gets the patch.
     assert len(first.messages) == 2 and second.types() == ["session", "mount", "patch"]
-    await session._close()
+    await over(session)
 
 
 async def test_render_coalesces_and_failures_become_errors_not_crashes(tmp_path: Path) -> None:
@@ -274,7 +321,7 @@ async def test_render_coalesces_and_failures_become_errors_not_crashes(tmp_path:
     session.state.count = 5
     for _ in range(10):
         session.refresh()
-    assert session._render_scheduled
+    assert session._render_due
     await flush(session)
     assert wire.types().count("patch") == 1
     session.refresh()
@@ -300,7 +347,7 @@ async def test_render_coalesces_and_failures_become_errors_not_crashes(tmp_path:
         "fatal": False,
     }
     assert session.tree is kept
-    # Events still dispatch against that tree, and the page recovers once it renders again.
+    # Events still reach that tree, and the page recovers once it renders again.
     session.state.boom = False
     await click(session, "inc")
     assert wire.messages[-1]["type"] == "patch"
@@ -310,7 +357,7 @@ async def test_render_coalesces_and_failures_become_errors_not_crashes(tmp_path:
     session.refresh()
     await flush(session)
     assert wire.messages[-1]["type"] == "error"
-    await session._close()
+    await over(session)
 
 
 async def test_a_failed_navigate_leaves_the_session_on_its_page(tmp_path: Path) -> None:
@@ -339,6 +386,7 @@ async def test_a_failed_navigate_leaves_the_session_on_its_page(tmp_path: Path) 
     await click(session, "inc")
     tree = session.tree
     await session.navigate_to("/bad")
+    await flush(session)
     assert wire.messages[-1] == {
         "type": "error",
         "message": "The page failed to start.",
@@ -353,16 +401,17 @@ async def test_a_failed_navigate_leaves_the_session_on_its_page(tmp_path: Path) 
     # NotFound from connect is not a failure: the session moves to the not-found
     # page under the path it asked for, with the message.
     await session.navigate_to("/gone")
+    await flush(session)
     assert session.path == "/gone" and session.page is app.error_pages["not_found"]
     assert session.params == {"path": "/gone", "message": "No such thing."}
     assert wire.messages[-2]["args"] == {"path": "/gone", "title": "Page not found"}
     assert "No such thing." in [
         n["props"].get("content") for n in wire.messages[-1]["nodes"].values()
     ]
-    await session._close()
+    await over(session)
 
 
-async def test_seqs_only_grow_and_direct_messages_do_not_count(tmp_path: Path) -> None:
+async def test_seqs_only_grow_and_what_is_for_one_tab_does_not_count(tmp_path: Path) -> None:
     app, _ = make_app(tmp_path)
     wire = Wire()
     session = await open_session(app, wire)
@@ -373,20 +422,16 @@ async def test_seqs_only_grow_and_direct_messages_do_not_count(tmp_path: Path) -
     await flush(session)
     numbered = [s for s, m in zip(wire.seqs, wire.messages, strict=True) if m["type"] != "session"]
     assert numbered == sorted(numbered) and len(set(numbered)) == len(numbered)
-    assert numbered[-1] == session._seq
-    # The session info on attach repeats the current seq rather than consuming one.
+    assert numbered[-1] == session.outbox.seq
+    # The session info on a new connection repeats the current seq rather
+    # than consuming one, and a reply for one tab has no number at all.
     again = Wire()
-    await session.attach(again.sender, session._seq)
-    assert again.seqs == [session._seq]
-    await session._close()
-
-
-class SlowWire(Wire):
-    """A socket whose writes yield, as a real one does."""
-
-    async def send(self, text: str) -> None:
-        await asyncio.sleep(0)
-        await super().send(text)
+    await attach(session, again, session.outbox.seq)
+    assert again.seqs == [session.outbox.seq]
+    assert again.conn is not None and again.conn.say(Reply(request="r", payload=1))
+    await flush(session)
+    assert again.seqs == [session.outbox.seq, 0]
+    await over(session)
 
 
 async def test_a_message_during_a_replay_is_delivered_once_and_in_order(tmp_path: Path) -> None:
@@ -397,24 +442,25 @@ async def test_a_message_during_a_replay_is_delivered_once_and_in_order(tmp_path
         await click(session, "inc")
     behind = wire.seqs[-3]  # the tab missed the last two patches
     again = SlowWire()
-    attaching = asyncio.ensure_future(session.attach(again.sender, behind))
+    asyncio.ensure_future(serve(session, again, behind))
+    await asyncio.sleep(0)
     await asyncio.sleep(0)  # the session info is being written
     session.toast("mid")  # lands while the replay is in flight
-    await attaching
     await flush(session)
     numbered = again.seqs[1:]
     assert numbered == sorted(numbered) and len(set(numbered)) == len(numbered)
     assert again.types() == ["session", "patch", "patch", "command"]
     assert session.connected
-    # A socket that dies during the replay never becomes the session's socket.
+    # A socket that dies during the replay leaves the session with no
+    # connection, as any socket that dies does.
     dead = SlowWire()
     dead.broken = True
-    await session.attach(dead.sender, behind)
+    await attach(session, dead, behind)
     assert not session.connected and session._grace is not None
     good = Wire()
-    await session.attach(good.sender, behind)
+    await attach(session, good, behind)
     assert session.connected and good.types()[0] == "session"
-    await session._close()
+    await over(session)
 
 
 async def test_navigate_renders_nothing_before_the_new_page_is_connected(tmp_path: Path) -> None:
@@ -439,36 +485,75 @@ async def test_navigate_renders_nothing_before_the_new_page_is_connected(tmp_pat
     assert [m["type"] for m in new] == ["command", "mount"]
     assert new[0]["name"] == "navigate"
     assert new[1]["nodes"]["root/t"]["props"]["content"] == "ready"
-    await session._close()
+    await over(session)
 
 
-async def test_a_reply_reaches_a_socket_still_catching_up(tmp_path: Path) -> None:
-    """A request answered while the new socket replays the backlog is not lost."""
-    from millwork.protocol import Reply
+async def test_a_page_is_not_drawn_while_its_connect_waits_on_a_task(tmp_path: Path) -> None:
+    app, _ = make_app(tmp_path)
+    drawn: list[bool] = []
+
+    @app.page("/loads")
+    def loads(s: mw.Session[State]) -> ui.Component:
+        drawn.append(bool(s.state.count))
+        return ui.Page(ui.Text("loaded", key="t"))
+
+    async def fetch() -> int:
+        await asyncio.sleep(0.1)  # longer than the render coalesce window
+        return 7
+
+    @loads.connect
+    async def load(s: mw.Session[State]) -> None:
+        # Waiting on a task lends a handler's turn. A connect hook has none
+        # to lend, so nothing is drawn until it has returned.
+        s.state.count = await s.task(fetch, label="fetch")
+
+    wire = Wire()
+    session = await open_session(app, wire)
+    await session.navigate_to("/loads")
+    await flush(session)
+    assert drawn == [True] and session.state.count == 7
+    await over(session)
+
+
+async def test_a_reply_does_not_wait_behind_a_backlog(tmp_path: Path) -> None:
+    """A request answered while a new socket is still being caught up is not
+    held back by what is being replayed, and is not lost."""
+    app, _ = make_app(tmp_path)
+    wire = Wire()
+    session = await open_session(app, wire)
+    for _ in range(3):
+        await click(session, "inc")
+    last = session.outbox.seq
+    again = SlowWire()
+    asyncio.ensure_future(serve(session, again, last - 2))
+    await asyncio.sleep(0)
+    assert again.conn is not None and again.conn.say(Reply(request="r", payload=1))
+    await flush(session)
+    assert again.types() == ["session", "reply", "patch", "patch"]
+    assert again.seqs == [last, 0, last - 1, last]
+    await over(session)
+
+
+async def test_a_request_cancelled_as_it_arrives_is_forgotten(tmp_path: Path) -> None:
+    from millwork.protocol import Request
 
     app, _ = make_app(tmp_path)
     wire = Wire()
     session = await open_session(app, wire)
-    await session.attach(wire.sender, 0, close=wire.close)
+    assert wire.conn is not None
+    # Both in one read: the request is cancelled before it has run a line,
+    # so nothing in it could have taken it off the session's books.
+    session.request(wire.conn, Request(node="root/inc", name="search", request="r1"), None)
+    session.cancel("r1")
     await flush(session)
-    for _ in range(3):
-        session.refresh()
-        await flush(session)
-    last = session._seq
-    again = Wire()
-    replied: list[str] = []
-
-    async def slow_send(text: str) -> None:
-        await again.send(text)
-        if len(again.messages) == 1:  # right after the session info, mid-replay
-            await session._send_unnumbered(Reply(request="r", payload=1))
-            replied.append("sent")
-
-    again.sender = slow_send
-    await session.attach(again.sender, last - 2)
-    assert replied == ["sent"]
-    assert any(m.get("type") == "reply" and m.get("request") == "r" for m in again.messages)
-    assert 0 in again.seqs
+    assert session._requests == {} and session._queries == {}
+    assert wire.messages[-1] == {
+        "type": "reply",
+        "request": "r1",
+        "payload": None,
+        "error": "cancelled",
+    }
+    await over(session)
 
 
 async def test_a_page_closes_before_the_next_connects_and_only_once(tmp_path: Path) -> None:
@@ -511,6 +596,7 @@ async def test_a_page_closes_before_the_next_connects_and_only_once(tmp_path: Pa
         assert page.session.path == "/p/2" and page.failures[-1][0] == "the connect hook of /bad"
         assert calls == ["load 1", "release #1", "load 2", "release #2"]
         # A navigate after the end does nothing.
-        await page.session._close()
+        page.session.dismiss()
+        await page.session.gone
         await page.session.navigate_to("/p/3")
     assert calls == ["load 1", "release #1", "load 2", "release #2"]

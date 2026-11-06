@@ -19,6 +19,15 @@ of stats, a chart and a table stand apart without a `Stack` around them.
 Give it a `title` for the browser tab and a `header` for the app bar.
 `padding=False` lets a child such as `ui.Chat` fill it edge to edge.
 
+A page prints in full, on as many sheets as its content needs. The
+sidebar and the header stay off the paper, a box that scrolls on screen,
+such as a table with a `height`, prints its whole content, and a page in
+the dark scheme prints in the light one. A heading or a card's title
+stays on the sheet of what follows it. A table of more than 200 rows
+draws only the rows in view, and those are the ones that print.
+`s.print()` opens the browser's print dialog from a handler, which is
+also how a person saves the page as a PDF.
+
 This manual is a `Page` with a `Sidebar`, so it is not shown inline.
 
 ## Stack and Row

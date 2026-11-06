@@ -367,7 +367,7 @@ async def test_settle_skips_a_quiet_task_and_names_what_still_runs(tmp_path: Pat
         from millwork.protocol import Event
 
         session = page.session
-        session.spawn(session.dispatch(Event(node=page.find("loud").id, name="click")), "x")
+        session.event(Event(node=page.find("loud").id, name="click"))
         with pytest.raises(RuntimeError, match="did not settle in 0.2 s; still running: task "):
             await page.settle(timeout=0.2)
         page.session.tasks[-1].cancel()
@@ -474,22 +474,21 @@ async def test_a_handler_that_ends_its_session_lets_the_close_hook_finish(tmp_pa
         await asyncio.sleep(0)
         await s.end("The work is done.")
         seen.append("work went on")
-        await asyncio.sleep(0)
-        seen.append("work outlived its session")
 
+    # Nothing after the line that ends the session runs in the handler, and
+    # the page's close hook runs to its end all the same.
     async with TestApp(app).open("/") as page:
         await page.click("leave")
-        assert seen == ["close started", "close finished", "handler went on"]
-        assert page.session.closed
+        assert seen == ["close started", "close finished"]
+        assert page.session.closed and page.session.gone.done()
         assert page.messages[-1].message == "Done here." and page.messages[-1].fatal
 
-    # A task that ends its session gets to the end of the hook too, and is
-    # cancelled at its next await like the rest of the session's work.
+    # The same goes for a task that ends its session.
     seen.clear()
     async with TestApp(app).open("/") as page:
         task = page.session.task(work(page.session), label="Work")
         await page.settle()
-        assert seen == ["close started", "close finished", "work went on"]
+        assert seen == ["close started", "close finished"]
         assert task.status == "cancelled"
 
 
@@ -512,3 +511,152 @@ async def test_a_close_hook_that_raises_fails_a_strict_test(tmp_path: Path) -> N
     async with TestApp(app, strict=False).open("/") as page:
         pass
     assert [where for where, _ in page.failures] == ["the close hook of /"]
+
+
+async def test_finding_inside_a_node_custom_components_and_menu_choices(tmp_path: Path) -> None:
+    app = mw.App("f", state=State, public=None, bundle_dir=tmp_path, components=None)
+
+    def card(name: str) -> ui.Component:
+        return ui.Card(
+            ui.Text(name, key="title"),
+            key=name,
+            footer=ui.Button(
+                "Save", key="save", on_click=lambda s, _: setattr(s.state, "asked", name)
+            ),
+        )
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            card("first"),
+            card("second"),
+            ui.Custom("Gauge", key="gauge", props={"value": 3}),
+            ui.Custom("Dial", ui.Text("inside", key="title")),
+            ui.DropdownMenu(
+                key="menu",
+                trigger=ui.Button("More"),
+                items=[
+                    ui.MenuItem(id="open", label="Open"),
+                    ui.MenuItem(id="archive", label="Archive it", confirm="Archive?"),
+                    ui.MenuItem(id="locked", label="Locked", disabled=True),
+                ],
+                on_select=lambda s, item: setattr(s.state, "asked", item),
+            ),
+        )
+
+    async with TestApp(app).open("/") as page:
+        # Both cards have a "save" and a "title": the card to look in tells them apart.
+        assert len(page.find_all("save")) == 2
+        await page.click(page.find("save", within="second"))
+        assert page.state.asked == "second"
+        first = page.find("first")
+        assert page.find("title", within=first).props["content"] == "first"
+        assert [b.id for b in page.find_all(ui.Button, within=first)] == [
+            page.find("save", within="first").id
+        ]
+        with pytest.raises(LookupError, match="no nope in 'first'"):
+            page.find("nope", within="first")
+        # A custom component is found by the class it is written with, and
+        # its type is the name it goes by.
+        assert [c.type for c in page.find_all(ui.Custom)] == ["Gauge", "Dial"]
+        assert page.find(ui.Custom).props["value"] == 3
+        dial = page.find_all(ui.Custom)[1]
+        assert page.find("title", within=dial).props["content"] == "inside"
+        # A menu choice, by id or by label, with the question an item asks first.
+        await page.choose("menu", "open")
+        assert page.state.asked == "open"
+        await page.choose("menu", "Archive it")
+        assert page.find(ui.Dialog).props["title"] == "Archive?"
+        await page.answer(True)
+        assert page.state.asked == "archive"
+        with pytest.raises(LookupError, match="has no item 'nope'"):
+            await page.choose("menu", "nope")
+        with pytest.raises(LookupError, match="is disabled"):
+            await page.choose("menu", "locked")
+        assert page.state.asked == "archive"
+
+
+async def test_confirm_buttons_speak_the_themes_language(tmp_path: Path) -> None:
+    from millwork.theme import Theme
+
+    app = mw.App(
+        "c",
+        state=State,
+        public=None,
+        bundle_dir=tmp_path,
+        theme=Theme(strings={"ok": "Doe het", "cancel": "Laat maar"}),
+    )
+
+    async def own_words(s: mw.Session[State], _: Any) -> None:
+        await s.confirm("Sure?", ok="Yes", cancel="No")
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Button("Wipe", key="wipe", confirm="Wipe it?", on_click=lambda s, _: None),
+            ui.Button("Ask", key="ask", on_click=own_words),
+        )
+
+    async with TestApp(app).open("/") as page:
+        await page.click("wipe")
+        labels = [b.props["label"] for b in page.find_all(ui.Button, within=page.find(ui.Dialog))]
+        assert labels == ["Laat maar", "Doe het"]
+        await page.answer(False)
+        # Words given to the call win over the theme's.
+        await page.click("ask")
+        labels = [b.props["label"] for b in page.find_all(ui.Button, within=page.find(ui.Dialog))]
+        assert labels == ["No", "Yes"]
+        await page.answer(True)
+
+
+async def test_finding_by_a_prop_and_asking_for_the_print_dialog(tmp_path: Path) -> None:
+    app = mw.App("p", state=State, public=None, bundle_dir=tmp_path)
+
+    def print_expanded(s: mw.Session[State], _: Any) -> None:
+        s.state.count = 1
+        s.print()
+
+    @app.page("/other")
+    def other(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("the other page", key="t"))
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Card(ui.Button("Delete", key="a", on_click=lambda s, _: None), title="First"),
+            ui.Button("Go", href="/other", key="go"),
+            ui.Button("Out", href="https://example.com", key="out"),
+            ui.Link(label="Elsewhere", href="/other", key="link"),
+            ui.Card(
+                ui.Button("Delete", key="b", variant="destructive", on_click=lambda s, _: None),
+                ui.Button("Print", on_click=print_expanded),
+                ui.Text("expanded", key="x") if s.state.count else None,
+                title="Second",
+            ),
+            ui.Select(options=["1", "2"], placeholder="Score", key="score"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        assert page.find(ui.Button, label="Print").props["label"] == "Print"
+        assert len(page.find_all(ui.Button, label="Delete")) == 2
+        assert page.find(ui.Button, label="Delete", variant="destructive").id.endswith("/b")
+        assert page.find(ui.Select, placeholder="Score").id.endswith("/score")
+        second = page.find(ui.Card, title="Second")
+        assert page.find(ui.Button, label="Delete", within=second).id.endswith("/b")
+        with pytest.raises(LookupError, match="no Button with label='Nope' on the page"):
+            page.find(ui.Button, label="Nope")
+        assert page.find_all(ui.Button, label="Delete", size="lg") == []
+        # The dialog is asked for after the page was drawn again, so what
+        # the handler changed first is on the page that prints.
+        await page.click(page.find(ui.Button, label="Print"))
+        assert [m.type for m in page.messages[-2:]] == ["patch", "command"]
+        assert page.commands[-1].name == "print" and page.find_all("x")
+        # A button that leaves the app does nothing to the session, and one
+        # that goes to a page of the app takes the session there, like a link.
+        await page.click("out")
+        assert page.session.path == "/" and not page.failures
+        await page.click("go")
+        assert page.session.path == "/other"
+        await page.navigate("/")
+        await page.click("link")
+        assert page.find("t").props["content"] == "the other page"

@@ -1,5 +1,6 @@
 """Tasks: sync and async work, progress into patches, cancellation, failure, ask."""
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -416,3 +417,34 @@ async def test_a_task_may_live_in_a_state_model(tmp_path: Path) -> None:
         assert dumped["job"]["label"] == "One" and dumped["job"]["status"] == "done"
     with pytest.raises(ValueError):
         Holder(job="not a task")  # type: ignore[arg-type]
+
+
+async def test_a_task_cancelled_as_it_starts_still_ends(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("c", public=None, bundle_dir=tmp_path)
+    ran: list[str] = []
+    told: list[str] = []
+
+    async def work() -> None:
+        ran.append("work")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("home", key="t"))
+
+    async with TestApp(app).open("/") as page:
+        s = page.session
+        # Started and cancelled in one breath, before it ran a line: it is
+        # cancelled all the same, and whoever waits on it hears so at once
+        # instead of waiting for good.
+        task = s.task(work, label="work", on_done=lambda s, t: told.append(t.status))
+        given = s.task(work(), label="given")
+        task.cancel()
+        given.cancel()
+        await asyncio.sleep(0.01)
+        assert (task.status, given.status) == ("cancelled", "cancelled") and task.done
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(task.future), 1)
+        await page.settle()
+        assert ran == [] and told == ["cancelled"]

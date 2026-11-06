@@ -1,20 +1,21 @@
-// The login page: the app's name and image, one button per OAuth provider,
-// a password form when configured, and the denial message. No app code.
+// The login page: the app's name and image, the reason a sign-in was refused,
+// and under them the layout the server sent, which is the app's own or every
+// provider's button and the password form. No app code runs here.
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { icon } from "./icons";
-import { safeUrl, mw } from "./lib";
+import { ATTEMPT } from "./components/sign-in";
+import { safeUrl } from "./lib";
 import { t, theme } from "./theme";
 import { Logo } from "./components/header";
+import { Render } from "./render";
+import { store, type Node } from "./store";
 
 export interface LoginBoot {
   name: string;
-  providers: { id: string; label: string; kind: "oauth" | "password"; icon?: string | null }[];
-  intents: { id: string; label: string }[];
+  // The layout under the heading, as a page's nodes are.
+  root: string;
+  nodes: Record<string, Node>;
   // True when a proxy in front of the app does the signing in.
   proxied?: boolean;
   next: string;
@@ -22,37 +23,27 @@ export interface LoginBoot {
   image?: string | null;
 }
 
-export function Login({ boot }: { boot: LoginBoot }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(boot.error ?? null);
-  const [busy, setBusy] = useState(false);
-  const oauth = boot.providers.filter((p) => p.kind === "oauth");
-  const passwordProvider = boot.providers.find((p) => p.kind === "password");
-  const next = encodeURIComponent(boot.next || "/");
-  const image = boot.image ?? theme().login_image ?? null;
+let mounted = false;
 
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await fetch(mw("/auth/login"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      if (r.ok) {
-        window.location.assign(safeUrl(boot.next || "/"));
-        return;
-      }
-      const body = (await r.json().catch(() => ({}))) as { reason?: string };
-      setError(body.reason ?? `${t("sign_in_failed")} (${r.status})`);
-    } catch {
-      setError(t("sign_in_failed"));
-    } finally {
-      setBusy(false);
-    }
-  };
+export function Login({ boot }: { boot: LoginBoot }) {
+  // The nodes go into the store once, before the first draw, and stay as they
+  // are: no socket is open here to change them.
+  if (!mounted) {
+    mounted = true;
+    store.mount(boot.root, boot.nodes ?? {}, null);
+  }
+  const image = boot.image ?? theme().login_image ?? null;
+  const ways = Object.values(boot.nodes ?? {}).some((n) => n.type === "SignIn");
+  // A layout with nothing in it, the page of an app that signs in elsewhere,
+  // is not drawn, so it takes no room.
+  const empty = !(boot.nodes?.[boot.root]?.children.length);
+  // Why the last sign-in was refused, until another is tried.
+  const [refused, setRefused] = useState(boot.error ?? null);
+  useEffect(() => {
+    const clear = () => setRefused(null);
+    window.addEventListener(ATTEMPT, clear);
+    return () => window.removeEventListener(ATTEMPT, clear);
+  }, []);
 
   return (
     <div className="flex min-h-dvh">
@@ -66,47 +57,13 @@ export function Login({ boot }: { boot: LoginBoot }) {
             <h1 className="text-2xl font-semibold tracking-tight">{boot.name}</h1>
             <p className="text-sm text-muted-foreground">{t("sign_in_hint")}</p>
           </div>
-          {oauth.length ? (
-            <div className="flex flex-col gap-2">
-              {oauth.map((p) => {
-                const Icon = icon(p.icon);
-                return (
-                  <Button key={p.id} variant="outline" className="w-full" onClick={() => window.location.assign(`${mw("/auth/oauth/")}${encodeURIComponent(p.id)}?next=${next}`)}>
-                    {Icon ? <Icon /> : null}
-                    {t("continue_with", { provider: p.label })}
-                  </Button>
-                );
-              })}
-              {boot.intents.map((it) => (
-                <Button key={it.id} variant="ghost" className="w-full" onClick={() => window.location.assign(`${mw("/auth/oauth/")}${encodeURIComponent(oauth[0].id)}?next=${next}&intent=${encodeURIComponent(it.id)}`)}>
-                  {it.label}
-                </Button>
-              ))}
-            </div>
+          {refused ? (
+            <p role="alert" className="text-sm text-destructive">
+              {refused}
+            </p>
           ) : null}
-          {passwordProvider ? (
-            <form
-              className="flex flex-col gap-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void submit();
-              }}
-            >
-              <Field>
-                <FieldLabel htmlFor="mw-user">{t("username")}</FieldLabel>
-                <Input id="mw-user" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="mw-pass">{t("password")}</FieldLabel>
-                <Input id="mw-pass" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              </Field>
-              <Button type="submit" disabled={busy || !username || !password}>
-                {t("sign_in")}
-              </Button>
-            </form>
-          ) : null}
-          {!oauth.length && !passwordProvider ? <Label>{t(boot.proxied ? "proxy_sign_in" : "no_sign_in")}</Label> : null}
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {empty ? null : <Render id={boot.root} />}
+          {!ways ? <Label>{t(boot.proxied ? "proxy_sign_in" : "no_sign_in")}</Label> : null}
         </div>
       </div>
     </div>

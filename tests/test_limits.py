@@ -110,20 +110,21 @@ def test_a_session_being_connected_keeps_its_place(tmp_path: Path) -> None:
         ):
             assert hello(first)["type"] == "session"
             second.send_text(json.dumps({"seq": 1, "msg": {"type": "hello", "path": "/slow"}}))
-            wait_until(lambda: any(s.connecting for s in app.sessions.values()))
-            # The second session has no socket yet but it has its tab: the third
-            # hello is refused rather than evicting it.
+            wait_until(lambda: any(not s.ready for s in app.sessions.values()))
+            # The second session's page is still connecting but it has its tab:
+            # the third hello is refused rather than evicting it.
             assert hello(third)["type"] == "error"
             assert json.loads(second.receive_text())["msg"]["type"] == "session"
             assert json.loads(second.receive_text())["msg"]["type"] == "mount"
-        # Signed out (or evicted) while connecting: the tab is told once the
-        # connect finishes, since nothing could reach it before.
+        # Signed out (or evicted) while connecting: the tab is told there and
+        # then, and its connect hook is stopped where it stands.
         wait_until(lambda: all(not s.has_tab for s in app.sessions.values()))
         with client.websocket_connect("/_mw/ws") as late:
             late.send_text(json.dumps({"seq": 1, "msg": {"type": "hello", "path": "/slow"}}))
-            wait_until(lambda: any(s.connecting for s in app.sessions.values()))
-            connecting = next(s for s in app.sessions.values() if s.connecting)
+            wait_until(lambda: any(not s.ready for s in app.sessions.values()))
+            connecting = next(s for s in app.sessions.values() if not s.ready)
             asyncio.run_coroutine_threadsafe(connecting.end("Signed out."), loop[0]).result(2)
+            assert json.loads(late.receive_text())["msg"]["type"] == "session"
             msg = json.loads(late.receive_text())["msg"]
             assert msg == {"type": "error", "message": "Signed out.", "fatal": True}
             with pytest.raises(WebSocketDisconnect) as info:

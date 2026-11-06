@@ -74,6 +74,7 @@ PASCAL: tuple[str, ...] = (
     "Pencil",
     "Play",
     "Plus",
+    "Printer",
     "RefreshCw",
     "Save",
     "Search",

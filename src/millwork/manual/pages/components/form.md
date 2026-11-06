@@ -16,7 +16,11 @@ concern.
 
 `Field(title=, description=, examples=)` give a field its label, its help
 text and its placeholder. Constraints such as `min_length`, `ge` and `le`
-become the control's limits and the validation.
+become the control's limits and the validation. What a person reads
+when a field is wrong comes from the theme's strings, the ones that start
+with `issue_`, so it is in the app's language. A validator of the model's
+own is shown with the words it raised, whether that is a `ValueError` or
+a `PydanticCustomError`.
 
 ```python live
 import datetime as dt

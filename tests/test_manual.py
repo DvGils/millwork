@@ -41,7 +41,8 @@ def test_every_catalogue_component_has_a_live_example() -> None:
 
     from millwork.nodes import Component
 
-    exempt = {"Page", "Sidebar", "Header", "Component"}  # the manual's own frame
+    # The manual's own frame, and SignIn, which needs an app with auth to draw.
+    exempt = {"Page", "Sidebar", "Header", "Component", "SignIn"}
     live = "\n".join(
         seg.source for page in load() for seg in page.segments if not isinstance(seg, str)
     )

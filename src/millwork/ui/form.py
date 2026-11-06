@@ -13,11 +13,13 @@ from millwork.nodes import Component
 
 class Form(Component):
     type: ClassVar[str] = "Form"
+    needs_session: ClassVar[bool] = True
     payloads: ClassVar[dict[str, str]] = {
         "on_submit": "the validated model instance",
         "on_cancel": "None",
     }
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"model", "initial"})
+    theme_words: ClassVar[dict[str, str]] = {"submit": "save"}
 
     # ``Type`` rather than ``type``: the class body's ``type`` is the component's wire name.
     model: Type[BaseModel]  # noqa: UP006

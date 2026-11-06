@@ -346,6 +346,8 @@ def test_connect_failures_land_on_the_error_page_or_end_the_socket(tmp_path: Pat
     with TestClient(app.asgi) as client:
         with client.websocket_connect("/_mw/ws") as ws:
             send(ws, {"type": "hello", "path": "/item/broken"})
+            # The tab hears which session it has, and then that its page failed.
+            assert recv(ws)["type"] == "session"
             assert recv(ws)["message"] == "The page failed to start."
             assert closed_with(ws) == 4500
         # A crashed connect left no session behind.
@@ -382,7 +384,7 @@ def test_resume_of_a_closed_session_starts_a_fresh_one(tmp_path: Path) -> None:
             info = hello(ws)
             recv(ws)
         session = app.sessions[info["id"]]
-        client.portal.call(session._close)
+        client.portal.call(session.dismiss)
         with client.websocket_connect("/_mw/ws") as ws:
             info2 = hello(ws, session=info["id"], resume=info["resume"], seq=1)
             assert info2["id"] != info["id"] and recv(ws)["type"] == "mount"
@@ -415,10 +417,10 @@ async def test_a_toast_action_runs_its_handler_once(tmp_path: Path) -> None:
         cmd = page.commands[-1]
         assert cmd.name == "toast" and cmd.args["action"]["label"] == "Undo"
         token = cmd.args["action"]["id"]
-        await page.session.dispatch(Event(node=f"toast:{token}", name="action"))
+        page.session.event(Event(node=f"toast:{token}", name="action"))
         await page.settle()
         assert page.state.undone == 1
-        await page.session.dispatch(Event(node=f"toast:{token}", name="action"))
+        page.session.event(Event(node=f"toast:{token}", name="action"))
         await page.settle()
         assert page.state.undone == 1
 
@@ -491,16 +493,17 @@ async def test_a_request_reaches_on_search_and_replies_without_a_render(tmp_path
     async with TestApp(app).open("/") as page:
         node = page.find("who").id
         before = len(page.messages)
-        page.session.start_request(Request(node=node, name="search", request="r1", payload="ad"))
+        s, conn = page.session, page.session.conn
+        s.request(conn, Request(node=node, name="search", request="r1", payload="ad"), None)
         await page.settle()
         reply = page.messages[-1]
         assert isinstance(reply, Reply) and reply.request == "r1"
         assert reply.payload == [{"value": "a1", "label": "Ada"}]
         assert len(page.messages) == before + 1  # no patch: a query does not render
-        page.session.start_request(Request(node="root/nope", name="search", request="r2"))
+        s.request(conn, Request(node="root/nope", name="search", request="r2"), None)
         await page.settle()
         assert page.messages[-1] == Reply(request="r2", error="unknown request")
-        page.session.start_request(Request(node=page.find("off").id, name="search", request="r3"))
+        s.request(conn, Request(node=page.find("off").id, name="search", request="r3"), None)
         await page.settle()
         assert page.messages[-1] == Reply(request="r3", error="unknown request")
         await page.change("who", "a1")
@@ -581,11 +584,11 @@ async def test_more_files_than_allowed_are_dropped_and_work_signals_activity(
         # Starting a task tells the tab the session is busy; its end says so too.
         # The task is held open on a gate, so the first render is forced while it
         # runs rather than raced against the coalesced render timer.
-        s.spawn(s.dispatch(Event(node=page.find("go").id, name="click")), "click")
+        s.event(Event(node=page.find("go").id, name="click"))
         for _ in range(5):
             await asyncio.sleep(0)
         assert page.state.run.status == "running"
-        await s._render()
+        s.flush()
         for _ in range(5):
             await asyncio.sleep(0)
         activity = [c.args["busy"] for c in page.commands if c.name == "activity"]
@@ -701,6 +704,7 @@ async def test_a_changed_custom_component_is_pushed_to_open_tabs(tmp_path: Path)
 
         os.utime(comps / "Hello.jsx", (1, 1))  # a distinct mtime whatever the clock does
         assert await app.check_components() == ["Hello"]
+        await page.settle()
         reloads = [c for c in page.commands if c.name == "reload_component"]
         assert reloads and reloads[-1].args["name"] == "Hello"
         # The new source has a new version, so the tab fetches it under a new URL.
@@ -709,7 +713,7 @@ async def test_a_changed_custom_component_is_pushed_to_open_tabs(tmp_path: Path)
 
 
 async def test_the_replay_window_is_bounded_in_bytes(tmp_path: Path) -> None:
-    from millwork.session import OUTBOX_KEEP_BYTES
+    from millwork.outbox import GAP, OUTBOX_KEEP_BYTES
     from millwork.testing import TestApp
 
     app = mw.App("outbox", public=None, bundle_dir=tmp_path)
@@ -729,13 +733,13 @@ async def test_the_replay_window_is_bounded_in_bytes(tmp_path: Path) -> None:
     async with TestApp(app).open("/", state=S()) as page:
         for _ in range(30):
             await page.click("more")
-        session = page.session
-        held = sum(len(t) for _, t in session._outbox)
-        assert held <= OUTBOX_KEEP_BYTES and len(session._outbox) < 30
-        assert session._outbox_bytes == held
+        outbox = page.session.outbox
+        held = sum(len(t) for _, t in outbox._items)
+        assert held <= OUTBOX_KEEP_BYTES and len(outbox._items) < 30
+        assert outbox._bytes == held
         # The newest message is always kept, so a tab one step behind still replays.
-        assert session._can_replay(session._seq - 1)
-        assert not session._can_replay(1)
+        assert outbox.after(outbox.seq - 1) is not GAP
+        assert outbox.after(1) is GAP
 
 
 def test_the_tree_page_title_names_the_tab(tmp_path: Path) -> None:
@@ -799,3 +803,58 @@ def test_pages_close_before_the_shutdown_hooks_run(tmp_path: Path) -> None:
         hello(ws)
         recv(ws)
     assert order == ["page closed", "shutdown hook"]
+
+
+async def test_a_literal_path_wins_over_a_parameter_in_either_order(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    # Parameters first and the exact pages after them, the order a file is
+    # often written in and the one where the first match is the wrong page.
+    paths = {
+        "/orders/{order_id}": "one order",
+        "/orders/new": "a new order",
+        "/orders/{order_id}/lines/{line}": "a line",
+        "/orders/{order_id}/lines/all": "all lines",
+        "/files/{rest:path}": "any file",
+        "/files/{name}": "one file",
+        "/files/{name}/versions": "its versions",
+        "/files/{rest:path}/edit": "edit any file",
+        "/items/{slug}": "an item by name",
+        "/items/{item_id:int}": "an item by number",
+        "/v{n}/about": "about a version",
+        "/{tenant}/about": "about a tenant",
+    }
+    expected = (
+        ("/orders/new", "a new order", {}),
+        ("/orders/7", "one order", {"order_id": "7"}),
+        ("/orders/7/lines/all", "all lines", {"order_id": "7"}),
+        ("/orders/7/lines/3", "a line", {"order_id": "7", "line": "3"}),
+        ("/files/a", "one file", {"name": "a"}),
+        ("/files/a/versions", "its versions", {"name": "a"}),
+        ("/files/a/b/c", "any file", {"rest": "a/b/c"}),
+        # A page that goes on after the rest of the path is more exact than
+        # the one that stops there.
+        ("/files/a/b/edit", "edit any file", {"rest": "a/b"}),
+        # A converter narrows a parameter, and so does text around it.
+        ("/items/12", "an item by number", {"item_id": 12}),
+        ("/items/twelve", "an item by name", {"slug": "twelve"}),
+        ("/v2/about", "about a version", {"n": "2"}),
+        ("/acme/about", "about a tenant", {"tenant": "acme"}),
+    )
+    for order in (list(paths), list(reversed(paths))):
+        app = mw.App("r", public=None, bundle_dir=tmp_path)
+        for path in order:
+            name = paths[path]
+            app.page(path)(lambda s, name=name: ui.Page(ui.Text(name, key="t")))
+        for path, page_name, params in expected:
+            async with TestApp(app).open(path) as page:
+                assert page.find("t").props["content"] == page_name, (path, order[0])
+                assert page.session.params == params, path
+        assert app.resolve("/nothing/here/at/all") is None
+
+    # Equally exact: the first one added stays the page.
+    app = mw.App("t", public=None, bundle_dir=tmp_path)
+    app.page("/tie/{a}")(lambda s: ui.Page(ui.Text("first", key="t")))
+    app.page("/tie/{b}")(lambda s: ui.Page(ui.Text("second", key="t")))
+    async with TestApp(app).open("/tie/x") as page:
+        assert page.find("t").props["content"] == "first"

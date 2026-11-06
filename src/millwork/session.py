@@ -1,49 +1,53 @@
-"""A session: one browser tab's state, tree, and connection.
+"""A session: one browser tab's state and tree, and the steps that change them.
 
-The session owns the state object, renders the page from it, diffs against
-the last tree it sent, and talks to the tab through whatever ``send``
-callable the websocket attached. It outlives the socket for a grace
-period so a reload or a dropped connection keeps its state.
+Nothing in this file waits. Every method of a session is a step: it runs
+from its first line to its last with nothing else in between, so a session
+is never caught halfway through a change. Whatever waits on a session's
+behalf (a handler, a hook, a request, the session's own life) is in
+``millwork.work`` and reaches the state through these steps.
+
+A session never holds a socket. What it has to say goes into its outbox,
+and a connection carries it to the tab. It outlives its connection for a
+grace period, so a reload or a dropped connection keeps its state.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hmac
-import inspect
 import logging
 import re
 import secrets
 import time
 from collections import deque
-from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
+from urllib.parse import urlencode
 
-from millwork import context
-from millwork.auth import Forbidden, NotFound
+from millwork import context, work
 from millwork.chat import ChatTurn, Thread, UIMessage
+from millwork.connection import REPLACED, Connection, End, Pipe
 from millwork.files import FileRef, Reject, SessionFiles, content_to_file
-from millwork.forms import FormIssues, resolve_files, validate
+from millwork.forms import resolve_files, validate
 from millwork.nodes import Component, Tree, build, diff
+from millwork.outbox import Outbox
 from millwork.protocol import (
     Answer,
     Command,
     Event,
-    Head,
     Mount,
     Patch,
     Reply,
     Request,
     ServerError,
     SessionInfo,
-    Stream,
     pack,
-    pack_frame,
 )
-from millwork.tasks import Cancelled, Task
-from millwork.ui import Button, Dialog, DropdownMenu, Text, as_options
+from millwork.scope import Scope, Timer
+from millwork.tasks import Task
+from millwork.turn import Turn
+from millwork.ui import Button, Dialog, DropdownMenu, Text
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -53,23 +57,44 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("millwork.session")
 
-Send = Callable[[str], Awaitable[None]]
-SendBytes = Callable[[bytes], Awaitable[None]]
-Close = Callable[[], Awaitable[None]]
-
 RENDER_COALESCE_SECONDS = 0.05
-# The replay window: what a tab that drops and comes back is caught up with.
-# Bounded in messages and in bytes, since one message can carry a whole chat;
-# a tab that fell behind the window is mounted afresh instead.
-OUTBOX_KEEP = 500
-OUTBOX_KEEP_BYTES = 4 * 1024 * 1024
 # Messages from the tab still being handled; further ones are dropped until
-# the backlog clears, so a flood cannot grow the task set without bound.
+# the backlog clears, so a flood cannot grow the set of children without bound.
 MAX_INFLIGHT = 64
+# What a session's page is doing: being opened or left, or there to be used.
+SWITCHING, READY = "switching", "ready"
+
+
+@dataclass
+class Want:
+    """A page the session is to go to: its first, or a navigation."""
+
+    path: str
+    first: bool = False
+    done: asyncio.Future[None] | None = None
+
+
+@dataclass
+class Plan:
+    """A handler that is to run in a turn, as an event was sorted into."""
+
+    handler: Callable[..., Any]
+    args: tuple[Any, ...]
+    where: str
+    said: str
+    """How a failure is logged."""
+    event: Event | None = None
+    question: tuple[str, bool] | None = None
+    form: str | None = None
+    visit: int | None = None
+    """The visit of a page the handler belongs to. A handler that is not of
+    a page (a task's ``on_done``, a toast's button) has none."""
+    more: dict[str, Any] = field(default_factory=dict)
 
 
 class Session[S]:
     def __init__(self, app: App, page: PageDef, params: dict[str, str], path: str) -> None:
+        self._loop = asyncio.get_running_loop()
         self.id = secrets.token_urlsafe(16)
         self.resume_token = secrets.token_urlsafe(24)
         self.app = app
@@ -84,45 +109,75 @@ class Session[S]:
         self.client: str | None = None
         self.created = time.monotonic()
         # When its tab last went away, for the caps: the session longest without
-        # a tab makes room first. A session being connected or caught up still
-        # has its tab, even though nothing can be sent to it yet.
+        # a tab makes room first.
         self.detached_at = self.created
-        self.connecting = False
+
+        # Its life. A session is open or over, its page is being switched or
+        # is ready, and a page whose connect returned is owed a close.
+        self.over = False
+        self.stage = SWITCHING
+        self.owed: PageDef | None = None
+        self.visit = 0
+        """Counts the pages the session has been on, so that what was meant
+        for one page is not done to the next."""
         self.end_reason: str | None = None
+        self.end_to: str | None = None
+        self._end_asking: asyncio.Future[str | None] | None = None
+        self._end_code = REPLACED
+        self.scope = Scope(f"session {self.id[:6]}")
+        self.turn = Turn()
+        self.turn.on_free = self._turn_free
+        self.outbox = Outbox()
+        self.conn: Connection | None = None
+        self._wanted: deque[Want] = deque([Want(path, first=True)])
+        self._previous: tuple[PageDef, dict[str, str], str, Tree | None] | None = None
+        self._wake: asyncio.Future[None] = self._loop.create_future()
+        self.ended: asyncio.Future[None] = self._loop.create_future()
+        """Done when the session is over."""
+        self.opened: asyncio.Future[BaseException | None] = self._loop.create_future()
+        """Done when the first page has connected, or could not: with what
+        its connect raised, or None."""
+        self.gone: asyncio.Future[None] = self._loop.create_future()
+        """Done when nothing of the session is left: its page is closed."""
+        self.falls_back = True
+        """Whether a page that refuses with NotFound or Forbidden lands on
+        the app's page for that. The test harness raises it instead."""
+        self.runs_connect = True
+
+        # The sign-in it runs on, and when that runs out in seconds since the
+        # epoch. None without one: a public visitor, a proxy's or Dev's user.
+        self.sign_in: str | None = None
+        self.sign_in_expires: float | None = None
+        self._expiry: Timer | None = None
+        # The sign-in's key and the user as identified, for asking the app's
+        # ``recheck`` about them again, and the timer that asks for a tab that
+        # only sits open.
+        self._identified: tuple[str, Any] | None = None
+        self._recheck: Timer | None = None
+        self._grace: Timer | None = None
+
         self.state: S = app.make_state()
         self.tree: Tree | None = None
-        self.closed = False
         self.files = SessionFiles(self)
-
-        self._send: Send | None = None
-        self._close_socket: Close | None = None
-        self._seq = 0
-        self._outbox: deque[tuple[int, str]] = deque()
-        self._outbox_bytes = 0
-        self._render_scheduled = False
-        self._render_handle: asyncio.TimerHandle | None = None
-        self._lock = asyncio.Lock()
-        self._lock_holder: asyncio.Task[Any] | None = None
-        self._grace: asyncio.TimerHandle | None = None
-        self._loop = asyncio.get_running_loop()
         self.tasks: list[Task[Any]] = []
+        self._tasks_started = 0
+        self._render_due = False
+        # Due, and its timer fired while a handler held the turn: it is drawn
+        # as the turn comes free.
+        self._render_late = False
+        self._render_timer: Timer | None = None
+        self._print_asked = False
         self._asks: dict[str, _Ask] = {}
         self._toast_actions: dict[str, Callable[..., Any]] = {}
-        # Requests in flight by id, and the byte streams uploads feed into.
-        self._requests: dict[str, asyncio.Task[Any]] = {}
-        self._inbound: dict[str, _Inbound] = {}
+        # Requests in flight by id, each with the connection it came in on.
+        self._requests: dict[str, tuple[asyncio.Task[Any] | None, Connection]] = {}
         # The handler request in flight per node and name: a newer one cancels it.
         self._queries: dict[tuple[str, str], asyncio.Task[Any]] = {}
-        self._send_bytes: SendBytes | None = None
-        # The socket being attached, before it has caught up: unnumbered messages
-        # (a request's head or reply) may go to it straight away, since they take
-        # no part in the replay order.
-        self._catching_up: Send | None = None
         self._file_slots = asyncio.Semaphore(FILE_SLOTS)
+        self._inflight = 0
+        self._overflowed = False
         self._busy = False
         self._title_shown: str | None = None
-        # The page's connect ran and its close has not: what close() still owes it.
-        self._page_open = False
         self.on_failure: Callable[[str, BaseException], None] | None = None
         """Told of every exception the session caught from the app's code, after the
         log line: a page function, a handler, a hook. The test harness raises them."""
@@ -130,231 +185,368 @@ class Session[S]:
         # handler that changed nothing, and a thread that changed state, apart.
         self._warned: set[str] = set()
         self._slow_builds = 0
-        self._effects = 0
         self._handler_runs = 0
         self._noop_watch: tuple[str, int] | None = None
-        self._spawned: set[asyncio.Task[Any]] = set()
         self._threads: dict[str, Thread] = {}
 
-    # ------------------------------------------------------------- connection
+    # What waits: the session's life and the awaited half of its API. They
+    # are written in ``millwork.work`` and change nothing but through steps.
+    ask = work.ask
+    confirm = work.confirm
+    end = work.end
+    leave = work.leave
+    stream = work.stream
+    navigate_to = work.navigate_to
+    stay_current = work.stay_current
+    wait_for_task = work.wait_for_task
+
+    # ------------------------------------------------------------- reading
+
+    @property
+    def closed(self) -> bool:
+        """Whether the session is over."""
+        return self.over
+
+    @property
+    def ready(self) -> bool:
+        """Whether the session has a page that is there to be used: its
+        connect has returned and it is mounted."""
+        return not self.over and self.stage == READY
 
     @property
     def connected(self) -> bool:
-        return self._send is not None
+        return self.conn is not None
+
+    @property
+    def has_tab(self) -> bool:
+        return self.conn is not None
+
+    @property
+    def inflight(self) -> int:
+        """Messages from the tab whose handling has not finished."""
+        return self._inflight
+
+    @property
+    def _effects(self) -> int:
+        """What the session has said and started so far, for telling a handler
+        that changed nothing."""
+        return self.outbox.posted + self._tasks_started
 
     def text(self, key: str, **vars: Any) -> str:
         """A framework message in the theme's words, for toasts and errors."""
         return self.app.theme.text(key, **vars)
 
-    @property
-    def has_tab(self) -> bool:
-        return self.connected or self.connecting or self._catching_up is not None
-
-    @property
-    def inflight(self) -> int:
-        """Messages from the tab whose handling has not finished."""
-        return sum(1 for t in self._spawned if not t.done())
-
     def owns_resume(self, token: str | None) -> bool:
         return token is not None and hmac.compare_digest(self.resume_token, token)
 
-    async def attach(
+    def can(self, path: str) -> bool:
+        """Whether this session's user may open the page at ``path``, for a
+        link or a button that should only be there for who can follow it. It
+        asks the page's own rule, so the answer is the one the page gives."""
+        resolved = self.app.locate(path)
+        if resolved is None:
+            raise LookupError(f"no page at {path}")
+        page, params = resolved
+        return self.app.may(self.user, page, params).ok
+
+    def leaving_for(self, to: str | None) -> str:
+        """Where this session's tab goes when it is sent away: ``to``, or the
+        login page for a page that needs a sign-in, or its own public page."""
+        if to is not None:
+            return to
+        path = self.path.split("?", 1)[0].split("#", 1)[0]
+        return path if self.page.public else f"/_mw/login?{urlencode({'next': path})}"
+
+    # ------------------------------------------------------------- ending
+
+    def dismiss(
         self,
-        send: Send,
-        last_seq: int,
-        close: Close | None = None,
-        send_bytes: SendBytes | None = None,
+        message: str | None = None,
+        *,
+        to: str | None = None,
+        asking: asyncio.Future[str | None] | None = None,
+        code: int = REPLACED,
     ) -> None:
-        """A tab connected (or reconnected). Replay what it missed, or mount.
+        """End the session. It is over as this returns: nothing more runs on
+        it, nothing more is sent for it but the word that it ended, and its
+        place among the app's sessions is free.
 
-        A second attachment replaces the first: the earlier socket is closed
-        so a duplicated tab cannot keep dispatching into the session.
+        With a ``message`` its tab is told why, and stops instead of
+        connecting again. ``to`` sends the tab somewhere. While that is still
+        being asked, ``asking`` is the future that will say, and ``to`` is
+        where the tab goes if it does not. Without a message the tab is told
+        nothing, and one that is still there connects again as new.
+
+        The first to end a session decides what its tab is told. What is
+        still owed after this, seeing its work out and closing its page, is
+        done by the session's life.
         """
-        if self.closed:
+        if self.over:
             return
-        if self._grace is not None:
-            self._grace.cancel()
-            self._grace = None
-        previous = self._close_socket
-        # Nothing goes to either socket while the switch is made. The new one is
-        # published only once it has caught up, so a message sent meanwhile lands
-        # in the outbox and is replayed in order instead of racing the replay.
-        self._send = None
-        self._close_socket = None
-        self._send_bytes = send_bytes
-        self._catching_up = send
-        self._abort_requests("the socket changed")
-        if previous is not None:
-            try:
-                await previous()
-            except Exception:
-                log.debug("closing the previous socket of %s failed", self.id)
-        try:
-            info = SessionInfo(
-                id=self.id, resume=self.resume_token, components=self.app.component_versions
-            )
-            await send(pack(self._seq, info))
-            if self.tree is not None and self._can_replay(last_seq):
-                caught_up = last_seq
-                while True:
-                    pending = [(seq, text) for seq, text in self._outbox if seq > caught_up]
-                    if not pending:
-                        break
-                    for seq, text in pending:
-                        await send(text)
-                        caught_up = seq
-                self._send, self._close_socket = send, close
-                self._catching_up = None
-                return
-        except Exception:
-            log.debug("the socket of %s failed before it caught up; detached", self.id)
-            self._catching_up = None
-            self.detach()
-            return
-        self._send, self._close_socket = send, close
-        self._catching_up = None
-        await self._mount()
-
-    def _can_replay(self, last_seq: int) -> bool:
-        if last_seq <= 0 or not self._outbox:
-            return False
-        first_seq = self._outbox[0][0]
-        return first_seq <= last_seq + 1 <= self._seq + 1
-
-    def detach(self, send: Send | None = None) -> None:
-        """A socket went away. Only the current one detaches the session."""
-        if send is not None and self._send is not send:
-            return
-        self._send = None
-        self._close_socket = None
-        self._send_bytes = None
-        self._catching_up = None
-        self.connecting = False
-        self.detached_at = time.monotonic()
-        self._abort_requests("the socket went away")
-        if self.closed:
-            return
-        self._grace = self._loop.call_later(self.app.session_grace, self._grace_expired)
-
-    def _grace_expired(self) -> None:
-        self._grace = None
-        if not self.connected and not self.closed:
-            self._loop.create_task(self._close())
-
-    async def end(self, message: str) -> None:
-        """Close the session and tell its tab why, so the tab stops instead of
-        reconnecting: signed out elsewhere, or made room for a newer session."""
-        if not self.closed:
-            self.end_reason = message
-            with contextlib.suppress(Exception):
-                await self._send_now(ServerError(message=message, fatal=True))
-            close = self._close_socket
-            if close is not None:
-                with contextlib.suppress(Exception):
-                    await close()
-        await self._close()
-
-    async def _close(self) -> None:
-        """The session is over: its work is cancelled, the page it is on is
-        closed, its files go. This is the framework's side of it, for a tab
-        that is gone or a server that stops, and it tells the tab nothing.
-        An app ends a session with ``end``, which does."""
-        if self.closed:
-            return
-        self.closed = True
-        if self._render_handle is not None:
-            self._render_handle.cancel()
-        if self._grace is not None:
-            self._grace.cancel()
-            self._grace = None
+        self.over = True
+        self.end_reason, self.end_to = message, to
+        self._end_asking, self._end_code = asking, code
         self.app.sessions.pop(self.id, None)
-        self._abort_requests("the session closed")
-        # A handler or a task that ends its own session is the one running this,
-        # and cancelled now it would cut the close hook off at its first await.
-        # It is cancelled last, and stops at its next await after the hook.
-        me = asyncio.current_task()
-        mine: list[Any] = []
+        self.outbox.seal()
+        conn, self.conn = self.conn, None
+        if conn is not None:
+            conn.close(self._notice())
         for task in list(self.tasks):
-            if task._asyncio_task is not None and task._asyncio_task is me:
-                mine.append(task)
-            else:
-                task.cancel()
-        for spawned in list(self._spawned):
-            if spawned is me:
-                mine.append(spawned)
-            else:
-                spawned.cancel()
-        for ask in list(self._asks.values()):
+            # Told to stop as well as stopped: work in a thread cannot be
+            # cancelled, and stops where it next looks at whether it was.
+            task.cancel()
+        self.scope.cancel()
+        for ask in self._asks.values():
             if not ask.future.done():
-                ask.future.cancel()
-        await self._close_page(self.page)
-        self.app.files.discard(self.id)
-        for own in mine:
-            own.cancel()
+                ask.future.set_result(None)
+        while self._wanted:
+            # Nobody gets to the pages that were still wanted.
+            want = self._wanted.popleft()
+            if want.done is not None and not want.done.done():
+                want.done.set_result(None)
+        self.ended.set_result(None)
+        if not self._wake.done():
+            self._wake.set_result(None)
 
-    async def _close_page(self, page: PageDef) -> None:
-        """The page's close hook, once per visit: the session is done with it, by
-        moving to another page or by ending. The state is still as the page
-        left it. A page whose connect never finished has nothing to close."""
-        if not self._page_open:
+    def _notice(self) -> End | None:
+        """What a tab of a session that is over is told, if anything."""
+        if self.end_reason is None:
+            return None
+        return End(self.end_reason, self.end_to, self._end_asking, self._end_code)
+
+    # -------------------------------------------------------- connections
+
+    def attached(self, conn: Connection, last_seq: int) -> None:
+        """A tab connected, or came back. It takes the place of the
+        connection the session had, which is told so and closes its socket:
+        a duplicated tab cannot go on acting on the session."""
+        if self.over:
+            # The tab of a session that ended is told what its session was.
+            conn.close(self._notice())
             return
-        self._page_open = False
-        if page.on_close is None:
+        old, self.conn = self.conn, conn
+        if old is not None:
+            old.close(code=REPLACED)
+            self._drop_requests(old)
+        if self._grace is not None:
+            self._grace.cancel()
+            self._grace = None
+        # A tab with nothing seen gets the page as it stands, unless nothing
+        # has been said yet: then it follows from the start, so what the
+        # first connect hook says before the page is drawn reaches it.
+        if last_seq <= 0:
+            last_seq = 0 if self.outbox.seq == 0 else -1
+        conn.bind(self, last_seq)
+
+    def detached(self, conn: Connection) -> None:
+        """A connection is gone. Only the session's current one counts."""
+        if self.conn is not conn:
             return
-        try:
-            await _call(page.on_close, self)
-        except Exception as exc:
-            log.exception("close hook of %s failed for session %s", page.path, self.id)
-            self._failed(f"the close hook of {page.path}", exc)
+        self.conn = None
+        self.detached_at = time.monotonic()
+        self._drop_requests(conn)
+        if not self.over:
+            self._grace = self.scope.later(self.app.session_grace, self._grace_over)
+
+    def _grace_over(self) -> None:
+        self._grace = None
+        if self.conn is None:
+            self.dismiss()
+
+    def hello(self) -> str:
+        """What a connection says first: which session this is."""
+        info = SessionInfo(
+            id=self.id, resume=self.resume_token, components=self.app.component_versions
+        )
+        return pack(self.outbox.seq, info)
+
+    def mounted(self) -> str | None:
+        """The page as it was last drawn, for a tab that cannot be caught up
+        from the outbox. No page function runs for it."""
+        tree = self.tree
+        if tree is None or self.stage != READY:
+            return None
+        return pack(
+            self.outbox.seq, Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown)
+        )
+
+    # ----------------------------------------------------------- sign-in
+
+    def watch_sign_in(self, sign_in: tuple[str, float] | None) -> None:
+        """End the session when the sign-in it runs on expires: the sign-in's
+        id and its expiry in seconds since the epoch, or None without one.
+        Called again when the tab comes back, since the person may have signed
+        in anew."""
+        if self._expiry is not None:
+            self._expiry.cancel()
+            self._expiry = None
+        self.sign_in, self.sign_in_expires = sign_in or (None, None)
+        if sign_in is not None and not self.over:
+            delay = sign_in[1] - time.time()
+            if delay <= 0:
+                # It ran out while the session was being connected. That is
+                # acted on here and now, before anything of the page is sent,
+                # and not a moment later when a timer gets round to it.
+                self._sign_in_expired()
+            else:
+                self._expiry = self.scope.later(delay, self._sign_in_expired)
+
+    def _sign_in_expired(self) -> None:
+        self._expiry = None
+        if not self.over and self.sign_in is not None:
+            self.app.end_sign_in(self.sign_in, self.user)
+
+    def watch_user(self, identified: tuple[str, Any] | None) -> None:
+        """Keep asking the app's ``recheck`` about this session's user for as
+        long as the session lives: ``identified`` is the sign-in's key and
+        the user as identified, as the request that opened or resumed the
+        session carried them. Asked when the last answer runs out, so a tab
+        that only sits open is as current as one that is being used."""
+        self._identified = identified
+        if self._recheck is not None:
+            self._recheck.cancel()
+            self._recheck = None
+        auth = self.app.auth
+        if auth is None or auth.recheck is None or identified is None or self.over:
+            return
+        # A little past the moment the answer runs out, so the ask finds it stale.
+        self._recheck = self.scope.later(auth.ask_again_in(*identified) + 0.01, self._recheck_due)
+
+    def _recheck_due(self) -> None:
+        self._recheck = None
+        self.scope.start(work.recheck(self), "recheck")
+
+    # ------------------------------------------------------------- pages
+
+    def navigate(self, path: str) -> None:
+        """Go to another page on this session: its connect runs, the tab's history
+        updates. This returns at once; ``navigate_to`` is the same, awaited."""
+        self.want(path)
+
+    def want(self, path: str) -> asyncio.Future[None]:
+        """Ask for another page. The future is done when the session is on
+        it, or has given up on getting there."""
+        done: asyncio.Future[None] = self._loop.create_future()
+        if self.over:
+            done.set_result(None)
+            return done
+        if len(self._wanted) >= MAX_INFLIGHT:
+            if not self._overflowed:
+                self._overflowed = True
+                log.warning("session %s: %d messages pending, dropping", self.id, MAX_INFLIGHT)
+                self.post(ServerError(message=self.text("too_many_actions"), fatal=False))
+            done.set_result(None)
+            return done
+        self._wanted.append(Want(path, done=done))
+        if not self._wake.done():
+            self._wake.set_result(None)
+        return done
+
+    def idle(self) -> asyncio.Future[None]:
+        """For the session's life: done when a page is wanted or the session
+        is over."""
+        if self._wanted or self.over:
+            ready: asyncio.Future[None] = self._loop.create_future()
+            ready.set_result(None)
+            return ready
+        if self._wake.done():
+            self._wake = self._loop.create_future()
+        return self._wake
+
+    def take_wanted(self) -> Want:
+        """The next page to go to. From here until it is settled the page is
+        being switched: nothing is drawn and no event of the page left is
+        acted on."""
+        self.stage = SWITCHING
+        return self._wanted.popleft()
+
+    def aim(self, want: Want) -> tuple[PageDef, dict[str, str], str, str] | None:
+        """Where a navigation leads: the page, its parameters, the path and
+        the fragment. None, with the tab told, when the session's user may
+        not go there at all."""
+        path, _, fragment = want.path.partition("#")
+        page, params = self.app.locate(path) or self.app.fallback("not_found", path)
+        if self.app.auth is not None and not page.public and self.user is None:
+            self.post(ServerError(message=self.text("sign_in_hint"), fatal=True))
+            self.stage = READY
+            return None
+        return page, params, path, fragment
+
+    def enter(self, page: PageDef, params: dict[str, str], path: str) -> None:
+        """Step onto the page a navigation leads to, for its connect to run.
+        What the session was on is kept, to go back to if that fails."""
+        self._previous = (self.page, self.params, self.path, self.tree)
+        self.page, self.params, self.path = page, params, path
+        self.tree = None
+        self._slow_builds = 0
+
+    def fall_back(self, kind: str, message: str | None) -> None:
+        """Land on the app's page for a page that refused, under the path
+        that was asked for."""
+        self.page, self.params = self.app.fallback(kind, self.path, message)
+
+    def take_owed(self) -> PageDef | None:
+        """The page that is owed a close, which it is not after this."""
+        page, self.owed = self.owed, None
+        return page
+
+    def settle_page(self, want: Want, outcome: str, error: BaseException | None = None) -> None:
+        """A page's connect has had its outcome: ``ok``, ``unhooked`` (its
+        hook was skipped, so no close is owed), ``failed`` or ``cancelled``.
+        The page is ready and mounted, or the session is back on the page
+        it came from, or, for a first page that failed, over."""
+        if self.over:
+            if outcome == "ok":
+                # Its connect returned all the same, so it is owed a close.
+                self.owed = self.page
+            if not self.opened.done():
+                self.opened.set_result(error)
+            return
+        if outcome in ("ok", "unhooked"):
+            self.owed = self.page if outcome == "ok" else None
+            self.stage = READY
+            self.visit += 1
+            for ask in list(self._asks.values()):
+                if not ask.future.done():
+                    ask.future.set_result(None)
+            self._asks.clear()
+            if not want.first:
+                _, _, fragment = want.path.partition("#")
+                args: dict[str, Any] = {"path": self.path, "title": self.page.title}
+                if fragment:
+                    # A fragment names a heading: the tab scrolls to it after the mount.
+                    args["hash"] = fragment
+                self.command("navigate", **args)
+            self._mount()
+            if not self.opened.done():
+                self.opened.set_result(None)
+        elif want.first:
+            if not self.opened.done():
+                self.opened.set_result(error)
+            self.dismiss(self.text("page_failed"), code=4500)
+        else:
+            # The tab keeps the page it came from, already closed. What the
+            # failed connect wrote to the state stays.
+            assert self._previous is not None
+            self.page, self.params, self.path, self.tree = self._previous
+            self.stage = READY
+            self.post(ServerError(message=self.text("page_failed"), fatal=False))
+        self._previous = None
 
     # ------------------------------------------------------------- sending
 
-    async def _send_now(self, msg: Any) -> None:
-        """Number, remember for replay, and send if a tab is attached."""
-        self._effects += 1
-        self._seq += 1
-        text = pack(self._seq, msg)
-        self._outbox.append((self._seq, text))
-        self._outbox_bytes += len(text)
-        while len(self._outbox) > OUTBOX_KEEP or (
-            self._outbox_bytes > OUTBOX_KEEP_BYTES and len(self._outbox) > 1
-        ):
-            self._outbox_bytes -= len(self._outbox.popleft()[1])
-        await self._deliver(text)
-
-    async def _send_direct(self, msg: Any) -> None:
-        """Send without entering the replay window (the session info on attach)."""
-        await self._deliver(pack(self._seq, msg))
-
-    async def _send_unnumbered(self, msg: Any) -> None:
-        """A message outside the sequence: never replayed, never deduplicated, and
-        sent even to a socket that is still catching up on the replay."""
-        send = self._send or self._catching_up
-        if send is None:
-            return
-        try:
-            await send(pack(0, msg))
-        except Exception:
-            log.debug("unnumbered send failed for session %s", self.id)
-
-    async def _deliver(self, text: str) -> None:
-        if self._send is None:
-            return
-        try:
-            await self._send(text)
-        except Exception:
-            # The socket is dead whatever the endpoint later learns: detach now
-            # so the grace timer runs and the session cannot leak.
-            log.debug("send failed for session %s; detached", self.id)
-            self.detach(self._send)
+    def post(self, msg: Any) -> bool:
+        """Say something to the tab: numbered, kept for replay, and sent by
+        whatever connection the session has. Dropped once the session is over."""
+        return self.outbox.post(msg)
 
     def _failed(self, where: str, exc: BaseException) -> None:
         if self.on_failure is not None:
             self.on_failure(where, exc)
 
     def command(self, name: str, **args: Any) -> None:
-        """Fire-and-forget instruction to the tab: toast, navigate, clipboard."""
-        self._loop.create_task(self._send_now(Command(name=name, args=args)))
+        """An instruction to the tab: toast, navigate, clipboard."""
+        self.post(Command(name=name, args=args))
 
     def toast(
         self,
@@ -374,17 +566,20 @@ class Session[S]:
             args["action"] = {"id": token, "label": label}
         self.command("toast", **args)
 
-    def navigate(self, path: str) -> None:
-        """Go to another page on this session: its connect runs, the tab's history
-        updates. This returns at once; ``navigate_to`` is the same, awaited."""
-        self._loop.create_task(self.navigate_to(path))
-
     def clipboard(self, text: str) -> None:
         """Put text on the tab's clipboard."""
         self.command("clipboard", text=text)
 
+    def print(self) -> None:
+        """Open the browser's print dialog on the page, which is also how a
+        person saves it as a PDF. It opens after the page has been drawn
+        again, so what the handler changed first is what gets printed."""
+        self._print_asked = True
+        self.refresh()
+
     def logout(self) -> None:
-        """Clear the sign-in cookie and send the tab to the login page."""
+        """Sign out: clear the cookie and send the tab to the login page, or
+        where the app's ``on_logout`` says."""
         self.command("logout")
 
     def reset(self, key: str) -> None:
@@ -415,11 +610,7 @@ class Session[S]:
         if thread is not None and not thread.busy:
             del self._threads[key]
 
-    async def stream(self, node: str, chunk: dict[str, Any]) -> None:
-        """One chunk of the AI SDK UI message stream to a Chat node. Never touches the tree."""
-        await self._send_now(Stream(node=node, chunk=chunk))
-
-    async def _chat_message(self, event: Event, component: Chat) -> None:
+    def _chat_message(self, event: Event, component: Chat) -> None:
         """A user turn: record the message, run the handler as this thread's turn."""
         if component.key is None:
             log.warning("a Chat needs a key to keep its messages")
@@ -488,40 +679,31 @@ class Session[S]:
             self, node_id, thread, message, files, command if isinstance(command, str) else None
         )
         handler = self.tree.handler(node_id, "message") if self.tree else None
-        if handler is None:
-            self.refresh()
-            return
-
-        async def run() -> None:
-            # The lock is not held while a reply streams: tool steps, tasks and
-            # inline components render meanwhile; the composer is disabled by `busy`.
-            token = context.bind(self)
-            try:
-                await _call(handler, self, turn)
-            except asyncio.CancelledError:
-                pass
-            except Exception as exc:
-                log.exception("chat handler failed")
-                self._failed("the chat handler", exc)
-                self.toast(self.text("reply_failed"), tone="destructive")
-            finally:
-                context.unbind(token)
-                thread.turn_task = None
-                if thread.inflight is not None:
-                    thread.append(thread.inflight)
-                    thread.inflight = None
-                self.refresh()
-
         self.refresh()
-        thread.turn_task = self.spawn(run(), "chat turn")
+        if handler is None:
+            return
+        # The turn is not held while a reply streams: tool steps, tasks and
+        # inline components render meanwhile; the composer is disabled by `busy`.
+        thread.turn_task = self.scope.start(
+            work.chat_turn(self, handler, turn), "chat turn", done=lambda _: self._chat_done(thread)
+        )
+        if thread.turn_task is None:
+            self._chat_done(thread)
 
-    async def _chat_stop(self, event: Event, component: Chat) -> None:
+    def _chat_done(self, thread: Thread) -> None:
+        """A reply is over, however it ended: the chat is free again."""
+        thread.turn_task = None
+        if thread.inflight is not None:
+            thread.append(thread.inflight)
+            thread.inflight = None
+        self.refresh()
+
+    def _chat_stop(self, event: Event, component: Chat) -> Plan | None:
         thread = self.chat(component.key) if component.key else None
         if thread is not None and thread.turn_task is not None:
             thread.turn_task.cancel()
         handler = self.tree.handler(event.node, "stop") if self.tree else None
-        if handler is not None:
-            await self._run_handler(handler, self, None)
+        return self._plain(handler, None) if handler is not None else None
 
     def _chat_target(
         self, event: Event, component: Chat, role: str
@@ -538,16 +720,16 @@ class Session[S]:
             return None
         return thread, index, payload
 
-    async def _chat_feedback(self, event: Event, component: Chat) -> None:
+    def _chat_feedback(self, event: Event, component: Chat) -> Plan | None:
         """Thumbs up or down on an assistant message, with a comment; kept in the
         message's metadata so it shows after a reload, and given to ``on_feedback``."""
         target = self._chat_target(event, component, "assistant")
         if target is None:
-            return
+            return None
         thread, index, payload = target
         value = payload.get("value")
         if value not in ("up", "down", None):
-            return
+            return None
         comment = str(payload.get("comment") or "").strip()[:2000] or None
         message = thread.messages[index]
         metadata = dict(message.metadata or {})
@@ -558,23 +740,24 @@ class Session[S]:
         message.metadata = metadata or None
         handler = self.tree.handler(event.node, "feedback") if self.tree else None
         if handler is not None:
-            await self._run_handler(handler, self, message, value, comment)
-        else:
-            self.refresh()
+            return self._plain(handler, message, value, comment)
+        self.refresh()
+        return None
 
-    async def _chat_action(self, event: Event, component: Chat) -> None:
+    def _chat_action(self, event: Event, component: Chat) -> Plan | None:
         target = self._chat_target(event, component, "assistant")
         if target is None:
-            return
+            return None
         thread, index, payload = target
         action = payload.get("action")
         if not any(a.id == action for a in component.actions):
-            return
+            return None
         handler = self.tree.handler(event.node, "action") if self.tree else None
         if handler is not None:
-            await self._run_handler(handler, self, thread.messages[index], action)
+            return self._plain(handler, thread.messages[index], action)
+        return None
 
-    async def _chat_regenerate(self, event: Event, component: Chat) -> None:
+    def _chat_regenerate(self, event: Event, component: Chat) -> None:
         """Answer a user message again: the assistant message named and everything
         after it go, and ``on_message`` runs for the user message before it."""
         target = self._chat_target(event, component, "assistant")
@@ -592,7 +775,7 @@ class Session[S]:
         thread.truncate(index)
         self._chat_run(event.node, thread, thread.messages[user])
 
-    async def _chat_edit(self, event: Event, component: Chat) -> None:
+    def _chat_edit(self, event: Event, component: Chat) -> None:
         """A user message with new text: what followed it goes, and it is answered again."""
         target = self._chat_target(event, component, "user")
         if target is None or not component.edit:
@@ -613,21 +796,12 @@ class Session[S]:
         thread.truncate(index + 1)
         self._chat_run(event.node, thread, message)
 
-    def spawn(self, coro: Any, what: str = "work") -> asyncio.Task[Any]:
-        """Run a coroutine for this session: tracked, cancelled on close, failures logged."""
-        task = self._loop.create_task(coro, name=what)
-        self._spawned.add(task)
-
-        def done(t: asyncio.Task[Any]) -> None:
-            self._spawned.discard(t)
-            if t.cancelled():
-                return
-            exc = t.exception()
-            if exc is not None:
-                log.error("%s failed for session %s", what, self.id, exc_info=exc)
-
-        task.add_done_callback(done)
-        return task
+    def spawn(self, coro: Any, what: str = "work") -> asyncio.Task[Any] | None:
+        """Run a coroutine for this session: it is one of the session's own,
+        stopped when the session ends, and a failure it lets out is logged.
+        On a session that is over it does not run at all, and there is no
+        task to return."""
+        return self.scope.start(coro, what)
 
     # ------------------------------------------------------------- tasks
 
@@ -645,7 +819,7 @@ class Session[S]:
         **kwargs: Any,
     ) -> Task[Any]:
         """Start work the session owns."""
-        self._effects += 1
+        self._tasks_started += 1
         if key is not None:
             for existing in self.tasks:
                 if existing.key == key and not existing.done:
@@ -657,14 +831,13 @@ class Session[S]:
         task._on_done = on_done
         if on_done is not None:
             task._observed = True
-        self.tasks.append(task)
-        if delay:
-            task._delay_handle = self._loop.call_later(
-                delay, lambda: task._start(work, args, kwargs, timeout)
-            )
+        if not self.over:
+            self.tasks.append(task)
+        # On a session that is over the scope starts nothing, and the task
+        # ends as cancelled there and then.
+        task._begin(work, args, kwargs, timeout, delay)
+        if delay and not self.over:
             self.refresh()
-        else:
-            task._start(work, args, kwargs, timeout)
         return task
 
     def later(self, delay: float, work: Any, *args: Any, **kwargs: Any) -> Task[Any]:
@@ -678,128 +851,94 @@ class Session[S]:
     def _task_finished(self, task: Task[Any]) -> None:
         """A task reached a terminal status: run ``on_done`` as a handler, then render."""
         on_done = getattr(task, "_on_done", None)
-        if on_done is not None:
-            self._loop.create_task(self._run_handler(on_done, self, task))
+        if on_done is not None and not self.over:
+            # One of the session's own, so it ends with the session, and none
+            # for a task the end itself cancelled.
+            self._start_turn(self._plain(on_done, task), "on_done")
         if len(self.tasks) > 50:
             self.tasks = [t for t in self.tasks if not t.done][-50:] + [
                 t for t in self.tasks if t.done
             ][-10:]
         self.refresh()
 
-    async def _run_handler(self, fn: Callable[..., Any], *args: Any) -> None:
-        async with self._hold():
-            token = context.bind(self)
-            self._handler_runs += 1
-            try:
-                await _call(fn, *args)
-            except Exception as exc:
-                log.exception("handler %s failed", getattr(fn, "__name__", fn))
-                self._failed(f"the handler {getattr(fn, '__name__', fn)}", exc)
-                self.toast(self.text("something_went_wrong"), tone="destructive")
-            finally:
-                context.unbind(token)
-        self.refresh()
+    # ------------------------------------------------------------- turns
 
-    @contextlib.asynccontextmanager
-    async def _hold(self) -> AsyncIterator[None]:
-        """The one-handler-at-a-time lock, remembering who holds it so ``ask`` can let go."""
-        await self._lock.acquire()
-        self._lock_holder = asyncio.current_task()
-        try:
-            yield
-        finally:
-            self._lock_holder = None
-            self._lock.release()
+    def _plain(self, handler: Callable[..., Any], *args: Any) -> Plan:
+        """A handler that is not an event's own: a task's ``on_done``, a
+        chat's ``on_stop``."""
+        name = getattr(handler, "__name__", handler)
+        return Plan(handler, (self, *args), f"the handler {name}", f"handler {name} failed")
 
-    # ------------------------------------------------------------- ask
+    def _start_turn(self, plan: Plan, name: str) -> None:
+        """Run a handler as a child that takes its turn. The scope gives the
+        turn back when the child is done, however it ends."""
+        self._inflight += 1
+        self.scope.start(work.turn(self, plan), name, done=self._turn_done)
 
-    async def ask(  # noqa: ASYNC109
-        self, component: Component, timeout: float | None = None
-    ) -> Any:
-        """Render a component, wait for its submit or close, return the answer or None.
+    def _turn_done(self, child: asyncio.Task[Any] | None) -> None:
+        self._inflight -= 1
+        if child is not None:
+            self.turn.give_back(child)
 
-        The handler lock is released while waiting, so other handlers run.
-        A ``Form`` inside answers with its validated model; a ``Dialog``'s
-        close, a cancel, or a timeout answers ``None``. The session closing
-        cancels the handler itself, as it does any other work.
-        """
+    def _handler_begins(self) -> int:
+        self._handler_runs += 1
+        return self._effects
+
+    def _handler_ended(self, where: str, before: int) -> None:
+        self._noop_watch = (where, before)
+
+    # ------------------------------------------------------------- asking
+
+    def open_ask(self, component: Component) -> _Ask:
+        """Put a question on the page. Its future gets the answer."""
         request = secrets.token_urlsafe(8)
-        component = _askable(component)
-        ask = _Ask(request=request, component=component, future=self._loop.create_future())
+        ask = _Ask(
+            request=request, component=_askable(component), future=self._loop.create_future()
+        )
         self._asks[request] = ask
         self.refresh()
-        try:
-            async with self._unlocked():
-                if timeout:
-                    return await asyncio.wait_for(ask.future, timeout)
-                return await ask.future
-        except TimeoutError:
-            return None
-        finally:
-            self._asks.pop(request, None)
-            self.refresh()
+        return ask
 
-    @contextlib.asynccontextmanager
-    async def _unlocked(self) -> AsyncIterator[None]:
-        """Let go of the handler lock while waiting on the user or a task, then take it back."""
-        held = self._lock_holder is asyncio.current_task() and self._lock.locked()
-        if held:
-            self._lock_holder = None
-            self._lock.release()
-        try:
-            yield
-        finally:
-            if held:
-                await self._lock.acquire()
-                self._lock_holder = asyncio.current_task()
+    def close_ask(self, ask: _Ask) -> None:
+        if self._asks.get(ask.request) is ask:
+            del self._asks[ask.request]
+        self.refresh()
 
-    async def wait_for_task(self, task: Task[Any]) -> Any:
-        """``await task`` from a handler: renders keep flowing while it runs.
-
-        A cancelled task raises ``millwork.Cancelled`` (an ordinary exception the
-        handler can catch), never asyncio's cancellation of the handler itself.
-        """
-        async with self._unlocked():
-            try:
-                return await asyncio.shield(task.future)
-            except asyncio.CancelledError:
-                if task.status == "cancelled":
-                    raise Cancelled(task.label) from None
-                raise
-
-    async def confirm(
+    def _confirm_dialog(
         self,
         title: str,
-        description: str | None = None,
-        ok: str = "OK",
-        cancel: str = "Cancel",
-        destructive: bool = False,
-    ) -> bool:
-        """Ask a yes-or-no question in a dialog and wait for the answer."""
+        description: str | None,
+        ok: str | None,
+        cancel: str | None,
+        destructive: bool,
+    ) -> Component:
         buttons = _ConfirmButtons(
             children=[
-                Button(cancel, key="cancel", variant="outline", on_click=_noop),
                 Button(
-                    ok,
+                    cancel or self.text("cancel"),
+                    key="cancel",
+                    variant="outline",
+                    on_click=_noop,
+                ),
+                Button(
+                    ok or self.text("ok"),
                     key="ok",
                     variant="destructive" if destructive else "primary",
                     on_click=_noop,
                 ),
             ]
         )
-        dialog = Dialog(
+        return Dialog(
             *([Text(description)] if description else []),
             title=title,
             size="sm",
             footer=buttons,
         )
-        answer = await self.ask(dialog)
-        return answer is True
 
     def _ask_root(self, request: str) -> str:
         return f"{self.tree.root if self.tree else 'root'}/@ask:{request}"
 
-    async def _answer_ask(self, event: Event, component: Component | None) -> bool:
+    def _answer_ask(self, event: Event, component: Component | None) -> bool:
         """An event inside an open ask: resolve it, or let it through to its own handler."""
         for request, ask in self._asks.items():
             prefix = self._ask_root(request)
@@ -809,7 +948,7 @@ class Session[S]:
                 return True
             if event.name == "submit" and isinstance(component, Form):
                 draft = resolve_files(event.payload, self._form_file(event.node))
-                instance, issues = validate(component.model, draft)
+                instance, issues = validate(component.model, draft, self.text)
                 if issues:
                     self.command(
                         "form_issues", node=event.node, issues=[i.model_dump() for i in issues]
@@ -829,80 +968,46 @@ class Session[S]:
             return False
         return False
 
-    # ------------------------------------------------------------- navigation
-
-    async def navigate_to(self, path: str) -> None:
-        """Switch this session to another page. The state stays; the page left is
-        closed before the next one connects."""
-        if self.closed:
-            return
-        # A fragment names a heading: the tab scrolls to it after the mount.
-        path, _, fragment = path.partition("#")
-        resolved = self.app.resolve(path) or self.app.fallback("not_found", path)
-        page, params = resolved
-        if self.app.auth is not None and not page.public and self.user is None:
-            await self._send_now(ServerError(message=self.text("sign_in_hint"), fatal=True))
-            return
-        # Under the handler lock: no render runs against the new page before its
-        # connect has finished, and no handler runs across the switch.
-        async with self._hold():
-            if self.closed:
-                return
-            previous = (self.page, self.params, self.path, self.tree)
-            # Leaving comes first. The page's close hook sees the state as the page
-            # left it, before the next page's connect writes to it, which matters
-            # most when the next page is this one with other parameters.
-            await self._close_page(previous[0])
-            if self.closed:
-                return
-            self.page, self.params, self.path = page, params, path
-            self.tree = None
-            self._slow_builds = 0
-            try:
-                await self.connect_or_fall_back()
-            except Exception as exc:
-                log.exception("connect failed for %s", path)
-                self._failed(f"the connect hook of {path}", exc)
-                # The tab keeps the page it came from, already closed; what the
-                # failed connect wrote to the state stays.
-                self.page, self.params, self.path, self.tree = previous
-                await self._send_now(ServerError(message=self.text("page_failed"), fatal=False))
-                return
-            if self.closed:
-                return
-            for ask in list(self._asks.values()):
-                if not ask.future.done():
-                    ask.future.set_result(None)
-            self._asks.clear()
-            args: dict[str, Any] = {"path": path, "title": self.page.title}
-            if fragment:
-                args["hash"] = fragment
-            await self._send_now(Command(name="navigate", args=args))
-            await self._mount()
-
     # ------------------------------------------------------------- rendering
 
     def refresh(self) -> None:
         """Render soon. Coalesced: many calls in one tick are one patch."""
-        if self._render_scheduled or self.closed:
+        if self.over:
             return
-        self._render_scheduled = True
-        self._render_handle = self._loop.call_later(RENDER_COALESCE_SECONDS, self._flush)
+        self._render_due = True
+        if self._render_timer is None:
+            self._render_timer = self.scope.later(RENDER_COALESCE_SECONDS, self._render_tick)
 
-    def _flush(self) -> None:
-        self._render_scheduled = False
-        self._render_handle = None
-        self._loop.create_task(self._render())
+    def _render_tick(self) -> None:
+        self._render_timer = None
+        if self.turn.free:
+            self.render()
+        else:
+            # A handler is in the middle of its turn. The page is drawn when
+            # it is done, and never from state it has half changed.
+            self._render_late = True
 
-    async def _mount(self) -> None:
-        if self.closed:
-            return
+    def _turn_free(self) -> None:
+        if self._render_late:
+            self.render()
+
+    def flush(self) -> None:
+        """Render now what is due, if the turn is free. For the test harness,
+        which does not wait out the timer."""
+        if self._render_timer is not None:
+            self._render_timer.cancel()
+            self._render_timer = None
+        if self._render_due:
+            self._render_tick()
+
+    def _mount(self) -> None:
+        self._render_due = self._render_late = False
         tree = self._build()
         if tree is None:
             return
         self.tree = tree
         self._title_shown = self._title(tree)
-        await self._send_now(Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown))
+        self.post(Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown))
 
     def _title(self, tree: Tree) -> str | None:
         """The tab's title: the root ``Page``'s own when it has one, else the page's."""
@@ -910,37 +1015,42 @@ class Session[S]:
         title = root.props.get("title") if root.type == "Page" else None
         return title if isinstance(title, str) else self.page.title
 
-    async def _render(self) -> None:
-        """Render under the handler lock, so a page never sees half-mutated state."""
-        if self.closed:
+    def render(self) -> None:
+        """Draw the page from the state as it stands and say what changed.
+        Only when the page is ready and nobody is in the middle of a turn."""
+        self._render_late = False
+        if self.over or self.stage != READY or not self._render_due:
             return
-        async with self._hold():
-            if self.closed:
-                return
-            if self.tree is None:
-                await self._mount()
-                return
-            tree = self._build()
-            if tree is None:
-                return
-            ops = diff(self.tree, tree)
-            self._check_keyless(self.tree, tree)
-            self.tree = tree
-            if ops:
-                await self._send_now(Patch(ops=ops))
-            title = self._title(tree)
-            if title != self._title_shown:
-                self._title_shown = title
-                self.command("title", title=title)
-            self._signal_activity()
-            watch, self._noop_watch = self._noop_watch, None
-            if watch is not None and not ops and self._effects == watch[1]:
-                self.warn(
-                    f"noop:{watch[0]}",
-                    f"{watch[0]} changed nothing the page shows: no patch, no command, "
-                    "no task. A forgotten await, state the page does not draw, or a "
-                    "handler that should not be one?",
-                )
+        self._render_due = False
+        if self.tree is None:
+            self._mount()
+            return
+        tree = self._build()
+        if tree is None:
+            return
+        ops = diff(self.tree, tree)
+        self._check_keyless(self.tree, tree)
+        self.tree = tree
+        if ops:
+            self.post(Patch(ops=ops))
+        if self._print_asked:
+            # After the patch, which is the page the handler meant to print.
+            self._print_asked = False
+            self.command("print")
+        title = self._title(tree)
+        if title != self._title_shown:
+            self._title_shown = title
+            self.command("title", title=title)
+        watch, self._noop_watch = self._noop_watch, None
+        quiet = watch is not None and not ops and self._effects == watch[1]
+        self._signal_activity()
+        if watch is not None and quiet:
+            self.warn(
+                f"noop:{watch[0]}",
+                f"{watch[0]} changed nothing the page shows: no patch, no command, "
+                "no task. A forgotten await, state the page does not draw, or a "
+                "handler that should not be one?",
+            )
 
     def _check_keyless(self, old: Tree, new: Tree) -> None:
         """A run of keyless same-type siblings whose length changed is a data list
@@ -999,65 +1109,73 @@ class Session[S]:
         except Exception as exc:
             log.exception("page %s failed to render", self.page.path)
             self._failed(f"the page function of {self.page.path}", exc)
-            self._loop.create_task(
-                self._send_now(ServerError(message=self.text("render_failed"), fatal=False))
-            )
+            self.post(ServerError(message=self.text("render_failed"), fatal=False))
             return None
         finally:
             context.unbind(token)
 
     # ------------------------------------------------------------- events
 
-    async def _toast_action(self, token: str) -> None:
-        """The button on a toast was pressed: run its handler once, as a handler."""
-        handler = self._toast_actions.pop(token, None)
-        if handler is None:
-            log.debug("toast action %s unknown or already used", token)
+    def event(self, event: Event) -> None:
+        """The tab says something happened on a node. It is looked at by a
+        child of the session, which takes its turn if a handler is to run."""
+        if self.over:
             return
-        async with self._hold():
-            ctx = context.bind(self)
-            try:
-                await _call(handler, self, None)
-            except Exception as exc:
-                log.exception("toast action failed")
-                self._failed("a toast action", exc)
-                self.toast(self.text("something_went_wrong"), tone="destructive")
-            finally:
-                context.unbind(ctx)
-        self.refresh()
+        if self._inflight >= MAX_INFLIGHT and "/@ask:" not in event.node:
+            # An answer to an open question resolves a waiting handler and
+            # starts no new work, so it passes the bound: the backlog cannot
+            # clear without it.
+            if not self._overflowed:
+                self._overflowed = True
+                log.warning("session %s: %d messages pending, dropping", self.id, MAX_INFLIGHT)
+                self.post(ServerError(message=self.text("too_many_actions"), fatal=False))
+            return
+        self._overflowed = False
+        self._inflight += 1
+        self.scope.start(
+            work.event(self, event), f"event {event.name} on {event.node}", done=self._turn_done
+        )
 
-    async def dispatch(self, event: Event) -> None:
-        """Run the handler bound to this event, then render.
+    def answer(self, msg: Answer) -> None:
+        """The tab answered an ``ask``. Asks arrive with tasks; until then, log."""
+        log.warning("answer for unknown request %s", msg.request)
+
+    def sort(self, event: Event) -> Plan | None:
+        """What an event comes to: done here and now when it needs no turn,
+        or a handler to run in one.
 
         Everything the tab sends is untrusted: the node must exist in the
         current tree, a disabled component takes no events, an upload refers
         only to files uploaded for that node, a form submit is validated
         before its handler sees it.
         """
-        if self.tree is None or self.closed:
-            return
+        if self.tree is None or self.over or self.stage != READY:
+            return None
         if event.node.startswith("toast:") and event.name == "action":
-            await self._toast_action(event.node[6:])
-            return
+            handler = self._toast_actions.pop(event.node[6:], None)
+            if handler is None:
+                log.debug("toast action %s unknown or already used", event.node[6:])
+                return None
+            return Plan(handler, (self, None), "a toast action", "toast action failed")
         component = self.tree.components.get(event.node)
         if component is None:
             log.debug("event %s for unknown node %s", event.name, event.node)
-            return
-        if self._asks and await self._answer_ask(event, component):
-            return
+            return None
+        if self._asks and self._answer_ask(event, component):
+            return None
         if getattr(component, "disabled", False):
             log.debug("event %s on disabled node %s dropped", event.name, event.node)
-            return
+            return None
         if (
             isinstance(component, Form)
             and component.read_only
             and event.name in ("submit", "cancel")
         ):
-            return
+            return None
         payload = event.payload
 
         if isinstance(component, Chat):
-            chat_events = {
+            chat_events: dict[str, Callable[[Event, Chat], Plan | None]] = {
                 "message": self._chat_message,
                 "stop": self._chat_stop,
                 "feedback": self._chat_feedback,
@@ -1066,8 +1184,7 @@ class Session[S]:
                 "edit": self._chat_edit,
             }
             if event.name in chat_events:
-                await chat_events[event.name](event, component)
-                return
+                return chat_events[event.name](event, component)
 
         if event.name == "download" and isinstance(component, Download):
             token = context.bind(self)
@@ -1079,12 +1196,12 @@ class Session[S]:
                 self.toast(self.text("download_failed"), tone="destructive")
             finally:
                 context.unbind(token)
-            return
+            return None
 
         handler = self.tree.handler(event.node, event.name)
         if handler is None:
             log.warning("no handler for %s on %s", event.name, event.node)
-            return
+            return None
 
         if event.name == "upload" and isinstance(component, FileUpload):
             # The tab echoes the upload route's answers; the session's own records are
@@ -1098,46 +1215,30 @@ class Session[S]:
                 and ref.node == event.node
             ][: component.max_files if component.multiple else 1]
             if not payload:
-                return
+                return None
 
+        form: str | None = None
         if event.name == "submit" and isinstance(component, Form):
+            form = event.node
             draft = resolve_files(payload, self._form_file(event.node))
-            instance, issues = validate(component.model, draft)
+            instance, issues = validate(component.model, draft, self.text)
             if issues:
                 self.command(
                     "form_issues", node=event.node, issues=[i.model_dump() for i in issues]
                 )
-                return
+                return None
             payload = instance
 
-        question = _confirmation(component, event)
-        rejected = False
-        async with self._hold():
-            token = context.bind(self)
-            try:
-                if question is not None:
-                    title, destructive = question
-                    if not await self.confirm(title, destructive=destructive):
-                        return
-                self._handler_runs += 1
-                before = self._effects
-                await _call(handler, self, payload)
-                self._noop_watch = (f"the {event.name} handler on {event.node}", before)
-            except FormIssues as exc:
-                rejected = True
-                self.command(
-                    "form_issues", node=event.node, issues=[i.model_dump() for i in exc.issues]
-                )
-            except Exception as exc:
-                log.exception("handler %s on %s failed", event.name, event.node)
-                self._failed(f"the {event.name} handler on {event.node}", exc)
-                self.toast(self.text("something_went_wrong"), tone="destructive")
-            finally:
-                context.unbind(token)
-        if event.name == "submit" and isinstance(component, Form) and not rejected:
-            # The empty issue list is the form's acknowledgement: the draft was accepted.
-            self.command("form_issues", node=event.node, issues=[])
-        self.refresh()
+        return Plan(
+            handler,
+            (self, payload),
+            f"the {event.name} handler on {event.node}",
+            f"handler {event.name} on {event.node} failed",
+            event=event,
+            question=_confirmation(component, event),
+            form=form,
+            visit=self.visit,
+        )
 
     def _form_file(self, node: str) -> Callable[[str], FileRef | None]:
         """A lookup for the files a form's draft refers to: uploaded for that form, or none."""
@@ -1150,141 +1251,70 @@ class Session[S]:
 
     # --------------------------------------------------------- requests
 
-    def start_request(self, msg: Request) -> None:
-        """Begin answering a ``request``: registered here, synchronously, so that a
-        ``cancel`` or binary frames right behind it on the socket find it."""
-        if self.closed:
+    def request(self, conn: Connection, msg: Request, pipe: Pipe | None) -> None:
+        """Begin answering a ``request`` with a ``reply``, for the connection
+        it came in on. Registered here, in the step, so that a ``cancel`` or
+        the bytes right behind it on the socket find it. What is registered
+        here is taken back by the scope when the child is done, however it
+        ends, and that includes a child that never ran a line."""
+        if self.over:
+            conn.forget(msg.request)
             return
         if msg.request in self._requests:
-            self._send_later(Reply(request=msg.request, error="duplicate request"))
+            if pipe is not None:
+                conn.forget(msg.request)
+            conn.say(Reply(request=msg.request, error="duplicate request"))
             return
         if len(self._requests) >= MAX_REQUESTS:
-            self._send_later(Reply(request=msg.request, error="too many requests"))
+            conn.forget(msg.request)
+            conn.say(Reply(request=msg.request, error="too many requests"))
             return
-        if msg.name == "upload":
-            self._inbound[msg.request] = _Inbound(msg.size or 0)
-        task = self.spawn(self._request(msg), f"request {msg.name} on {msg.node}")
-        self._requests[msg.request] = task
-
-    def _send_later(self, msg: Any) -> None:
-        self._loop.create_task(self._send_unnumbered(msg))
-
-    async def feed(self, request: str, data: bytes) -> None:
-        """A binary frame for an upload in flight. Unknown or finished: dropped."""
-        stream = self._inbound.get(request)
-        if stream is None:
-            log.debug("frame for unknown request %s dropped", request)
+        key = (msg.node, msg.name) if msg.name not in ("file", "upload") else None
+        self._requests[msg.request] = (None, conn)
+        child = self.scope.start(
+            work.request(self, conn, msg, pipe),
+            f"request {msg.name} on {msg.node}",
+            done=lambda done: self._request_done(conn, msg.request, key, done),
+        )
+        if child is None or msg.request not in self._requests:
             return
-        await stream.put(data)
+        self._requests[msg.request] = (child, conn)
+        if key is not None:
+            # A newer handler request on the same node and name takes the
+            # place of the one in flight: a search never answers for what was
+            # typed before.
+            previous = self._queries.get(key)
+            if previous is not None:
+                previous.cancel()
+            self._queries[key] = child
 
-    def cancel_request(self, request: str) -> None:
-        task = self._requests.get(request)
-        if task is not None:
-            task.cancel()
+    def _request_done(
+        self,
+        conn: Connection,
+        request: str,
+        key: tuple[str, str] | None,
+        child: asyncio.Task[Any] | None,
+    ) -> None:
+        self._requests.pop(request, None)
+        conn.forget(request)
+        if key is not None and self._queries.get(key) is child:
+            del self._queries[key]
+        if child is None or child.cancelled():
+            # Cancelled by the tab, a newer request, or the connection going
+            # away: the reply, if it still has somewhere to go, says so.
+            conn.say(Reply(request=request, error="cancelled"))
 
-    def _abort_requests(self, why: str) -> None:
-        """Every request belongs to one socket connection: when it goes, so do they.
-        Their "cancelled" replies may still reach a socket attached later; the tab
-        ignores replies to requests it never made."""
-        for stream in self._inbound.values():
-            stream.fail(why)
-        for task in list(self._requests.values()):
-            task.cancel()
+    def cancel(self, request: str) -> None:
+        entry = self._requests.get(request)
+        if entry is not None and entry[0] is not None:
+            entry[0].cancel()
 
-    async def _request(self, msg: Request) -> None:
-        """Answer a ``request`` with a ``reply``, over the socket, without a render.
-
-        ``file`` streams one of the session's files to the tab; ``upload`` stores the
-        bytes that follow the message; any other name is a handler on the node,
-        run outside the handler lock (a search never waits on a click), whose
-        return value is the payload. A newer handler request on the same node and
-        name cancels the one in flight.
-        """
-        try:
-            if msg.name == "file":
-                await self._serve_file(msg)
-            elif msg.name == "upload":
-                await self._receive_upload(msg)
-            else:
-                await self._ask_handler(msg)
-        except asyncio.CancelledError:
-            # Cancelled by the tab, a newer request, or the socket going away: the
-            # reply, if it still has somewhere to go, says so. The cancellation
-            # itself goes on to whoever awaits this task.
-            await self._reply(msg.request, error="cancelled")
-            raise
-        finally:
-            self._requests.pop(msg.request, None)
-            stream = self._inbound.pop(msg.request, None)
-            if stream is not None:
-                stream.fail("done")
-
-    async def _reply(self, request: str, payload: Any = None, error: str | None = None) -> None:
-        await self._send_unnumbered(Reply(request=request, payload=payload, error=error))
-
-    async def _ask_handler(self, msg: Request) -> None:
-        tree = self.tree
-        component = tree.components.get(msg.node) if tree is not None else None
-        handler = tree.handler(msg.node, msg.name) if tree is not None and component else None
-        if handler is None or getattr(component, "disabled", False) or msg.size is not None:
-            await self._reply(msg.request, error="unknown request")
-            return
-        key = (msg.node, msg.name)
-        previous = self._queries.pop(key, None)
-        if previous is not None:
-            previous.cancel()
-        self._queries[key] = self._requests[msg.request]
-        token = context.bind(self)
-        try:
-            result = await _call(handler, self, msg.payload)
-            if isinstance(result, list):
-                result = [
-                    o.model_dump(exclude_none=True, exclude_defaults=True)
-                    for o in as_options(result)
-                ]
-            await self._reply(msg.request, payload=result)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            log.exception("request %s on %s failed", msg.name, msg.node)
-            self._failed(f"the {msg.name} handler on {msg.node}", exc)
-            await self._reply(msg.request, error="The request failed.")
-        finally:
-            context.unbind(token)
-            if self._queries.get(key) is self._requests.get(msg.request):
-                self._queries.pop(key, None)
-
-    async def _serve_file(self, msg: Request) -> None:
-        """One of the session's files, as a ``head`` and binary frames, then the reply.
-
-        A few at a time per session, so a tab cannot hold an open file per request.
-        """
-        file_id = msg.payload.get("id") if isinstance(msg.payload, dict) else None
-        ref = self.files.get(file_id) if isinstance(file_id, str) else None
-        if ref is None or not ref.path.is_file():
-            await self._reply(msg.request, error="no such file")
-            return
-        async with self._file_slots:
-            head = {"name": ref.name, "mime": ref.mime, "size": ref.size}
-            await self._send_unnumbered(Head(request=msg.request, payload=head))
-            sent = 0
-            with ref.path.open("rb") as fh:
-                while True:
-                    chunk = await asyncio.to_thread(fh.read, STREAM_CHUNK)
-                    if not chunk:
-                        break
-                    send_bytes = self._send_bytes
-                    if send_bytes is None:
-                        return
-                    frame = pack_frame(msg.request, chunk)
-                    try:
-                        await send_bytes(frame)
-                    except Exception:
-                        log.debug("file stream to %s failed; detached", self.id)
-                        self.detach(self._send)
-                        return
-                    sent += len(chunk)
-        await self._reply(msg.request, payload={"size": sent})
+    def _drop_requests(self, conn: Connection) -> None:
+        """Every request belongs to the connection it came in on: when that
+        goes, so do they."""
+        for child, theirs in list(self._requests.values()):
+            if theirs is conn and child is not None:
+                child.cancel()
 
     def upload_spec(self, node_id: str, field: str | None) -> tuple[list[str] | None, int]:
         """What an upload for this node may be: ``(accept, max_bytes)``. Raises ``Reject``."""
@@ -1308,83 +1338,6 @@ class Session[S]:
         else:
             raise Reject("no upload component for this node")
         return accept, (max_mb * 1024 * 1024 if max_mb else self.app.files.default_max_bytes)
-
-    async def _receive_upload(self, msg: Request) -> None:
-        """Store the bytes that follow an ``upload`` request as a session file.
-
-        Frames are taken off the stream on the loop and each write goes to a
-        thread, so an upload that stalls holds a queue, never a thread.
-        """
-        stream = self._inbound.get(msg.request)
-        payload = msg.payload if isinstance(msg.payload, dict) else {}
-        writer = None
-        try:
-            if stream is None or msg.size is None:
-                raise Reject("an upload needs a size")
-            field = payload.get("field")
-            accept, max_bytes = self.upload_spec(
-                msg.node, field if isinstance(field, str) else None
-            )
-            if msg.size > max_bytes:
-                raise Reject(f"the file is larger than {max_bytes // (1024 * 1024)} MB")
-            name = payload.get("name")
-            mime = payload.get("mime")
-            writer = self.app.files.begin(
-                self,
-                name if isinstance(name, str) and name else "file",
-                mime=mime if isinstance(mime, str) else None,
-                max_bytes=max_bytes,
-                accept=accept,
-                node=msg.node,
-            )
-            while True:
-                chunk = await stream.get()
-                if chunk is None:
-                    break
-                await asyncio.to_thread(writer.write, chunk)
-            ref = await asyncio.to_thread(writer.finish)
-        except Reject as exc:
-            if writer is not None:
-                writer.abort()
-            await self._reply(msg.request, error=exc.reason)
-            return
-        except asyncio.CancelledError:
-            if writer is not None:
-                writer.abort()
-            raise
-        except Exception as exc:
-            log.exception("upload on %s failed", msg.node)
-            self._failed(f"the upload handler on {msg.node}", exc)
-            if writer is not None:
-                writer.abort()
-            await self._reply(msg.request, error="The upload failed.")
-            return
-        await self._reply(msg.request, payload=ref.__millwork_wire__())
-
-    async def answer(self, msg: Answer) -> None:
-        """The tab answered an ``ask``. Asks arrive with tasks; until then, log."""
-        log.warning("answer for unknown request %s", msg.request)
-
-    async def connect(self) -> None:
-        """Run the page's connect hook, in the session context. The page is open
-        once it returns, and owed a close."""
-        if self.page.on_connect is not None:
-            token = context.bind(self)
-            try:
-                await _call(self.page.on_connect, self, **self.params)
-            finally:
-                context.unbind(token)
-        self._page_open = True
-
-    async def connect_or_fall_back(self) -> None:
-        """Connect, and when the hook refuses with NotFound or Forbidden, land on the
-        app's page for that instead, under the path that was asked for."""
-        try:
-            await self.connect()
-        except (Forbidden, NotFound) as exc:
-            kind = "forbidden" if isinstance(exc, Forbidden) else "not_found"
-            self.page, self.params = self.app.fallback(kind, self.path, exc.message)
-            await self.connect()
 
 
 def _confirmation(component: Component, event: Event) -> tuple[str, bool] | None:
@@ -1418,13 +1371,6 @@ def _menu_items(component: Component, event: str) -> list[Any]:
     return []
 
 
-async def _call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    result = fn(*args, **kwargs)
-    if inspect.isawaitable(result):
-        result = await result
-    return result
-
-
 @dataclass
 class _Ask:
     request: str
@@ -1440,7 +1386,7 @@ class _ConfirmButtons(Component):
     justify: str = "end"
 
 
-async def _noop(*args: Any, **kwargs: Any) -> None:
+def _noop(*args: Any, **kwargs: Any) -> None:
     return None
 
 
@@ -1462,56 +1408,8 @@ def _askable(component: Component) -> Component:
     return component.model_copy(update=update)
 
 
-STREAM_CHUNK = 256 * 1024
 # A page function slower than this is doing more than building a tree.
 SLOW_PAGE_MS = 20
 # Requests in flight per session, of any kind, and files streaming out at once.
 MAX_REQUESTS = 32
 FILE_SLOTS = 4
-
-
-class _Inbound:
-    """The byte stream of one upload: frames go in from the socket's receive loop,
-    the upload task takes them out. Bounded, so a slow disk holds the receive
-    loop back instead of buffering a whole file in memory. Failing it wakes
-    both sides: a blocked putter, and a getter, which sees the failure."""
-
-    def __init__(self, size: int) -> None:
-        self.size = size
-        self.received = 0
-        self._queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=16)
-        self.failed: str | None = None
-        if size == 0:
-            self._queue.put_nowait(None)
-
-    async def put(self, data: bytes) -> None:
-        if self.failed is not None:
-            return
-        self.received += len(data)
-        if self.received > self.size:
-            self.fail("more bytes than announced")
-            return
-        await self._queue.put(data)
-        if self.failed is not None:
-            return
-        if self.received == self.size:
-            await self._queue.put(None)
-
-    async def get(self) -> bytes | None:
-        """The next chunk, or None at the end. Raises ``Reject`` once failed."""
-        if self.failed is not None:
-            raise Reject(f"the upload was interrupted: {self.failed}")
-        item = await self._queue.get()
-        if self.failed is not None:
-            raise Reject(f"the upload was interrupted: {self.failed}")
-        return item
-
-    def fail(self, why: str) -> None:
-        if self.failed is not None:
-            return
-        self.failed = why
-        # Drop what is queued: it wakes a putter blocked on a full queue, and makes
-        # room for the end marker that wakes a waiting getter.
-        while not self._queue.empty():
-            self._queue.get_nowait()
-        self._queue.put_nowait(None)

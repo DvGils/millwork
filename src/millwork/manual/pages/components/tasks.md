@@ -7,7 +7,7 @@ order: 8
 
 Work that takes longer than a click goes in a task. The session owns it, the
 page shows its progress, and the user can cancel it. A handler that awaits a
-task releases the handler lock, so the page stays live meanwhile.
+task lends the handler's turn, so the page stays live meanwhile.
 
 ## Starting one
 
@@ -80,8 +80,8 @@ user canceled, so a loop stops at its next check.
 
 ## Waiting for a result
 
-A handler can `await` the task to use its result, and the lock is
-released while it waits. `on_done=` names a handler to run when the task
+A handler can `await` the task to use its result, and lends its turn
+while it waits. `on_done=` names a handler to run when the task
 ends, with the task as its argument. `timeout=` cancels a task that runs
 too long.
 

@@ -9,7 +9,7 @@ import { cn } from "cn";
 import { icon } from "../icons";
 import { fileUrl, onStatus, request, saveFile } from "../ws";
 import { toast } from "@/components/ui/toast";
-import { safeUrl } from "../lib";
+import { linkLook, safeUrl } from "../lib";
 import { Button } from "@/components/ui/button";
 import { Progress, ProgressIndicator, ProgressTrack } from "@/components/ui/progress";
 import {
@@ -171,7 +171,7 @@ export const FileUpload: Renderer = ({ node, props, emit }) => {
           )}
         >
           {Up ? <Up className="size-5 text-muted-foreground" /> : null}
-          <span className="font-medium">{String(props.label ?? (multiple ? "Drop files or click to choose" : "Drop a file or click to choose"))}</span>
+          <span className="font-medium">{String(props.label ?? t(multiple ? "drop_files" : "drop_file"))}</span>
           {props.description || accept ? (
             <span className="text-xs text-muted-foreground">{String(props.description ?? accept?.join(", "))}</span>
           ) : null}
@@ -246,7 +246,7 @@ export const FileCard: Renderer = ({ props, emit }) => {
         </div>
       </div>
       {url || file ? (
-        <a href={url ?? "#"} target="_blank" rel="noreferrer" className="text-xs text-primary underline-offset-4 hover:underline" onClick={file ? open : (e) => e.stopPropagation()}>
+        <a href={url ?? "#"} target="_blank" rel="noreferrer" className={cn("text-xs text-primary", linkLook)} onClick={file ? open : (e) => e.stopPropagation()}>
           {t("open")}
         </a>
       ) : null}

@@ -29,18 +29,23 @@ def load_app(target: str, debug: bool = False, proxied: bool = False) -> object:
     tab, the theme file watched) as well as raising the log level, and
     ``--proxied`` tells the App a reverse proxy is in front of it.
     """
+    app = load_object(target)
+    if debug and hasattr(app, "debug"):
+        app.debug = True
+    if proxied and hasattr(app, "proxied"):
+        app.proxied = True
+    return getattr(app, "asgi", app)
+
+
+def load_object(target: str) -> Any:
+    """What a target names, as the module holds it."""
     module_name, attr = split_target(target)
     if module_name.endswith(".py") or os.sep in module_name:
         module = _import_file(module_name)
     else:
         sys.path.insert(0, os.getcwd())
         module = importlib.import_module(module_name)
-    app = getattr(module, attr or "app")
-    if debug and hasattr(app, "debug"):
-        app.debug = True
-    if proxied and hasattr(app, "proxied"):
-        app.proxied = True
-    return getattr(app, "asgi", app)
+    return getattr(module, attr or "app")
 
 
 def split_target(target: str) -> tuple[str, str]:
@@ -121,6 +126,12 @@ def main(argv: list[str] | None = None) -> int:
     docs.add_argument("--proxied", action="store_true", help="as for run; implied by --uds")
     docs.add_argument("--theme", default=None, help="a theme file to show the manual in")
     docs.add_argument("--root-path", default="", help="the path prefix the manual is served under")
+    routes = sub.add_parser(
+        "routes", help="list an app's pages, routes and mounts with who may reach each"
+    )
+    routes.add_argument(
+        "target", help="the App as module:attribute or file.py:attribute, for example app:app"
+    )
     sub.add_parser("reference", help="print the catalogue as a Markdown reference")
     sub.add_parser("secret", help="print a signing secret for App(secret=...)")
     hp = sub.add_parser("hash-password", help="hash a password for a Password provider")
@@ -150,6 +161,16 @@ def main(argv: list[str] | None = None) -> int:
             root_path=args.root_path,
             debug=False,
         )
+    if args.command == "routes":
+        app = load_object(args.target)
+        if not callable(getattr(app, "access", None)):
+            print(f"{args.target} is not a millwork App", file=sys.stderr)
+            return 2
+        rows = app.access()
+        wide = max((len(path) for _, path, _ in rows), default=0)
+        for kind, path, who in rows:
+            print(f"{kind:<5}  {path:<{wide}}  {who}")
+        return 0
     if args.command == "reference":
         from millwork.reference import reference
 

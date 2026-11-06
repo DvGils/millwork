@@ -243,3 +243,36 @@ body.mw-dragging * {
     --input: var(--sidebar-border);
     --ring: var(--sidebar-ring);
 }
+
+/* On paper a page is as long as its content. The shell is a viewport-high
+   column whose body scrolls under the header, which on its own prints one
+   sheet and cuts the rest, so in print the column and every box that scrolls
+   let their content run. The sidebar and the header are for getting around
+   and stay off the paper. */
+@media print {
+  .mw-shell {
+    display: block;
+    height: auto;
+    min-height: 0;
+  }
+  .mw-shell-body,
+  .mw-scroll {
+    overflow: visible;
+    max-height: none !important;
+  }
+  .mw-fill {
+    max-height: none;
+  }
+  [data-slot="sidebar"],
+  [data-slot="header"] {
+    display: none;
+  }
+  /* A heading belongs with what it heads: it never ends a sheet. */
+  h1,
+  h2,
+  h3,
+  [data-slot="card-header"] {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+}

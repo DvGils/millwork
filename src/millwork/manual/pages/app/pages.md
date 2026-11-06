@@ -49,6 +49,14 @@ the segment, and a path that does not convert simply does not match.
 `{name:path}` takes the rest of the path. The values arrive in `s.params`,
 and `s.path` holds the path as it was opened.
 
+Where a path fits more than one page, the one that is exact soonest
+wins, read from the left. `/orders/new` is its own page next to
+`/orders/{order_id}` in whichever order the two are written. A parameter
+with a converter comes before a bare one, so `/items/{id:int}` takes the
+numbers and `/items/{slug}` the rest, and `{name:path}` comes last at its
+place in the path. Two pages that are equally exact go by the order they
+were added in.
+
 ```python
 @app.page("/projects/{project_id:int}")
 def project(s: mw.Session) -> ui.Component:
@@ -195,6 +203,13 @@ ends. A page whose connect raises is reported with a toast, and the tab
 keeps the page it came from, already closed, with whatever the failed
 connect wrote to the state.
 
+Nothing of a page is drawn until its connect has returned, also when the
+hook waits on a task. A session can end while a connect is still running,
+when the person signs out or their sign-in runs out. The hook is stopped
+where it stands then. A connect that did not return is not followed by a
+close, so a hook that takes something it has to give back does that itself
+in a `finally`.
+
 A session does not end when its tab closes. The server cannot tell a
 closed tab from a reload or a dropped network, so the session waits for
 the tab to come back, and ends when it has been gone longer than the
@@ -207,14 +222,20 @@ waiting to see. A session also ends when the app calls `s.end(message)`,
 when a sign-out ends it, and when the server stops. At a stop every page
 closes before the `on_shutdown` hooks run, so a close hook still has the
 database those hooks close. The session's tasks are canceled before the
-hook runs. A handler or a task that ends its own session goes on until
-the hook is done and stops at its next `await`.
+hook runs. A session is over the moment `s.end` is called, and nothing
+after that line runs in a handler or a task of that session. A session
+that has ended runs nothing more, so a task started on it afterwards is
+canceled at once. A close hook has thirty seconds. After that it is
+stopped and the log says so, which keeps a hook that never returns from
+holding up a server that is stopping.
 
 ## Navigation in the frame
 
 `ui.Header(links=[...])` puts links in the app bar, and `ui.Sidebar` holds
-a longer list. This manual's sidebar is a `Sidebar` of `Link`s with the
-current page drawn as text instead. The Layout chapter shows both.
+a longer list. A `ui.Link` in a sidebar is drawn as a row to press, with
+its `icon` in front and the one marked `active=True` set apart, so the
+list needs no classes of its own. This manual's sidebar is a `Sidebar` of
+such links. The Layout chapter shows both.
 
 ## Beyond pages
 
@@ -222,7 +243,9 @@ current page drawn as text instead. The Layout chapter shows both.
 `app.route(path, endpoint, methods=[...])` adds an API endpoint,
 `app.mount(path, asgi_app)` mounts anything ASGI, FastAPI included, and
 `app.middleware(cls)` adds pure ASGI middleware. `app.on_startup` and
-`app.on_shutdown` register hooks around the process. The `public/` folder
+`app.on_shutdown` register hooks around the process. In an app with auth
+a route and a mount need a sign-in like a page does, unless they are
+marked `public=True`, as the Signing in chapter describes. The `public/` folder
 next to the app is served at `/public/`. Everything millwork owns lives
 under `/_mw/`, which leaves every other path to the app. `/_mw/health`
 answers 200 once the startup hooks are done.

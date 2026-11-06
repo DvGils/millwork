@@ -32,8 +32,11 @@ def check_prefix(value: str) -> str:
 def root_of(scope: Mapping[str, Any]) -> str:
     """The path prefix the app runs under, from the ASGI scope and nothing else:
     the server is told it (``--root-path``) or a mount sets it. Never a request
-    header, which a client could write. Empty at the root, else ``/prefix``."""
-    return check_prefix(str(scope.get("root_path") or ""))
+    header, which a client could write. Empty at the root, else ``/prefix``.
+    Inside something the app mounts it is still the app's own root, as noted
+    when the request came in."""
+    root = scope.get("millwork.root")
+    return check_prefix(str(scope.get("root_path") or "") if root is None else str(root))
 
 
 TEMPLATE = """<!doctype html>
@@ -181,6 +184,10 @@ class Shell:
         )
         # After the bundle's stylesheet: both declare :root tokens and the later wins.
         styles = styles + f'<style id="mw-theme">{theme_css}</style>'
+        if theme is not None and theme.stylesheet:
+            # Last, so the app's rules win over the theme's where they meet.
+            href = html.escape(under(base, theme.stylesheet) or "")
+            styles += f'<link rel="stylesheet" id="mw-stylesheet" href="{href}">'
         payload: dict[str, object] = {
             "path": path,
             "base": base,

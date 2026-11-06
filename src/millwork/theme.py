@@ -102,6 +102,45 @@ STRINGS: dict[str, str] = {
     "edit": "Edit",
     "save": "Save",
     "cancel": "Cancel",
+    "ok": "OK",
+    "other": "Other",
+    "type": "Type",
+    "one_row": "1 row",
+    "rows": "{n} rows",
+    "rows_of": "{shown} of {n} rows",
+    "type_message": "Type a message",
+    "drop_file": "Drop a file or click to choose",
+    "drop_files": "Drop files or click to choose",
+    # Why an upload was refused. The tab puts the file's name and a colon in
+    # front, so these start in lower case and end without a full stop.
+    "file_too_large": "the file is larger than {mb} MB",
+    "file_empty": "the file is empty",
+    "file_not_valid": "the file is not a valid .{ext}",
+    "file_not_text": "the file is not UTF-8 text",
+    "file_not_accepted": "this type of file is not accepted; expected {expected}",
+    "file_failed": "the upload failed",
+    "file_interrupted": "the upload was interrupted",
+    "disconnected": "the connection was lost",
+    "file_quota": "the session's file quota is used up",
+    "file_space": "the server's file space is used up",
+    "issue_required": "This is required.",
+    "issue_too_short": "At least {n} characters.",
+    "issue_too_long": "At most {n} characters.",
+    "issue_too_long_one": "At most 1 character.",
+    "issue_too_few": "The minimum is {n}.",
+    "issue_too_many": "The maximum is {n}.",
+    "issue_above": "More than {n}.",
+    "issue_min": "At least {n}.",
+    "issue_below": "Less than {n}.",
+    "issue_max": "At most {n}.",
+    "issue_whole_number": "Enter a whole number.",
+    "issue_number": "Enter a number.",
+    "issue_choice": "Choose one of the options.",
+    "issue_format": "This is not in the expected format.",
+    "issue_date": "Enter a date.",
+    "issue_datetime": "Enter a date and a time.",
+    "issue_time": "Enter a time.",
+    "issue_url": "Enter a web address.",
     "canceled": "Canceled",
     "failed": "Failed",
     "actions": "Actions",
@@ -120,6 +159,8 @@ STRINGS: dict[str, str] = {
     "select_all": "Select all",
     "select_row": "Select row",
     "dismiss": "Dismiss",
+    "close": "Close",
+    "toggle_sidebar": "Toggle sidebar",
     "previous": "Previous",
     "next": "Next",
     "wait_for_reply": "Wait for the current reply to finish.",
@@ -145,6 +186,7 @@ STRINGS: dict[str, str] = {
     "username": "Username",
     "password": "Password",
     "continue_with": "Continue with {provider}",
+    "or": "or",
     "no_sign_in": "No sign-in method is configured.",
     "proxy_sign_in": "Sign-in happens before this app, and this request carried no identity.",
     "proxy_denied": "You are signed in, but this app does not admit you.",
@@ -234,7 +276,12 @@ class Theme(BaseModel):
     locale: str = "en"
     currency: str = "EUR"
     strings: dict[str, str] = Field(default_factory=dict)
+    # The app's own stylesheet, a file under public/, loaded after the theme.
+    stylesheet: str | None = None
 
+    _stylesheet = field_validator("stylesheet")(
+        staticmethod(lambda v: v and _check_path(v, "stylesheet"))
+    )
     _favicon = field_validator("favicon")(staticmethod(lambda v: v and _check_path(v, "favicon")))
     _image = field_validator("login_image")(
         staticmethod(lambda v: v and _check_path(v, "login_image"))
@@ -327,6 +374,7 @@ class Theme(BaseModel):
             "mode": self.mode,
             "logo": self.logo.model_dump() if self.logo else None,
             "login_image": self.login_image,
+            "stylesheet": self.stylesheet,
             "density": self.density,
             "scrollbars": self.scrollbars,
             "locale": self.locale,

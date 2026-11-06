@@ -10,7 +10,7 @@ import { type Sort, emptyFilter, equalsFilter, includesFilter, rangeFilter, sort
 import { cn } from "cn";
 import { icon } from "../icons";
 import { useRowWindow, useSteadyColumns } from "../hooks/use-row-window";
-import { safeUrl } from "../lib";
+import { linkLook, safeUrl } from "../lib";
 import {
   TableBody,
   TableCell,
@@ -162,7 +162,7 @@ function formatCell(value: unknown, format: string, tone?: string) {
       );
     case "link":
       return (
-        <a href={safeUrl(value)} target="_blank" rel="noreferrer" className={cn(tone ? cellTone[tone] : "text-primary", "underline-offset-4 hover:underline")}>
+        <a href={safeUrl(value)} target="_blank" rel="noreferrer" className={cn(tone ? cellTone[tone] : "text-primary", linkLook)}>
           {String(value)}
         </a>
       );
@@ -411,7 +411,7 @@ export const Table: Renderer = ({ props, emit }) => {
 
   const clickable = selection === "row" || Boolean(props.on_row_click);
   const total = entries.length;
-  const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown.length === total ? `${total} rows` : `${shown.length} of ${total} rows`;
+  const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown.length !== total ? t("rows_of", { shown: shown.length, n: total }) : total === 1 ? t("one_row") : t("rows", { n: total });
 
   return (
     <div className={cn("flex flex-col gap-2", props.cls as string)}>
@@ -419,7 +419,7 @@ export const Table: Renderer = ({ props, emit }) => {
         <Input value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} placeholder={t("search")} className="max-w-xs" />
       ) : null}
       <div
-        className={cn("overflow-auto rounded-lg border", props.height && "min-h-0")}
+        className={cn("mw-scroll overflow-auto rounded-lg border", props.height && "min-h-0")}
         style={props.height ? { maxHeight: typeof props.height === "number" ? `${props.height}px` : String(props.height) } : undefined}
       >
         {/* The box above is the one scroller, both ways, so the header sticks to

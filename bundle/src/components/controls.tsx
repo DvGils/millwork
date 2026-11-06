@@ -7,7 +7,8 @@ import { has } from "../lib";
 import { icon } from "../icons";
 import { t } from "../theme";
 import { useDebounced, useOwned } from "./inputs";
-import { Button as UiButton } from "@/components/ui/button";
+import { Button as UiButton, buttonVariants } from "@/components/ui/button";
+import { anchorProps } from "./anchor";
 import { Input as UiInput } from "@/components/ui/input";
 import {
   Card as UiCard,
@@ -39,6 +40,35 @@ export const Button: Renderer = ({ props, emit }) => {
   const click = () => {
     if (props.on_click) emit("click");
   };
+  const inner = (
+    <>
+      {props.loading ? <Spinner /> : Icon && props.icon_position !== "end" ? <Icon /> : null}
+      {label}
+      {!props.loading && Icon && props.icon_position === "end" ? <Icon /> : null}
+    </>
+  );
+  // With an href the button is a link that looks like one: the browser can
+  // open it in a new tab, copy it and show where it goes. A disabled one goes
+  // nowhere, so it stays a button.
+  if (props.href && !props.disabled && !props.loading) {
+    return (
+      <a
+        {...anchorProps(props.href, props.target)}
+        data-slot="button"
+        title={props.tooltip ? String(props.tooltip) : undefined}
+        // Merged like the button's own classes: a variant overrides the base.
+        className={cn(
+          buttonVariants({
+            variant: buttonVariant[String(props.variant ?? "primary")],
+            size: buttonSize[String(props.size ?? "md")],
+            className: props.cls as string,
+          }),
+        )}
+      >
+        {inner}
+      </a>
+    );
+  }
   return (
     <UiButton
       variant={buttonVariant[String(props.variant ?? "primary")]}
@@ -50,9 +80,7 @@ export const Button: Renderer = ({ props, emit }) => {
       type={props.form ? "submit" : "button"}
       form={props.form ? `mw-form-${String(props.form)}` : undefined}
     >
-      {props.loading ? <Spinner /> : Icon && props.icon_position !== "end" ? <Icon /> : null}
-      {label}
-      {!props.loading && Icon && props.icon_position === "end" ? <Icon /> : null}
+      {inner}
     </UiButton>
   );
 };
@@ -133,7 +161,9 @@ export const Card: Renderer = ({ props, children, emit }) => (
         {props.description ? <CardDescription>{String(props.description)}</CardDescription> : null}
       </CardHeader>
     ) : null}
-    <CardContent className={cn("flex flex-col gap-4", props.padding === false && "p-0")}>{children}</CardContent>
+    {/* The content takes the height a taller neighbor gives the card, so the
+        footer sits at the bottom of every card in a row. */}
+    <CardContent className={cn("flex grow flex-col gap-4", props.padding === false && "p-0")}>{children}</CardContent>
     {props.footer ? (
       <CardFooter>
         <Slot value={props.footer} />

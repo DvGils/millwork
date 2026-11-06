@@ -18,7 +18,7 @@ import shutil
 import tempfile
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -63,9 +63,22 @@ class FileRef(BaseModel):
 
 
 class Reject(Exception):
-    def __init__(self, reason: str, status: int = 400) -> None:
+    """An upload refused, with the reason. ``key`` names the theme string that
+    says it to the person, filled with ``vars``; without one, as for a
+    refusal of the app's own, the reason itself is what they read."""
+
+    def __init__(
+        self,
+        reason: str,
+        status: int = 400,
+        *,
+        key: str | None = None,
+        vars: Mapping[str, Any] | None = None,
+    ) -> None:
         self.reason = reason
         self.status = status
+        self.key = key
+        self.vars = dict(vars or {})
         super().__init__(reason)
 
 
@@ -113,18 +126,20 @@ def safe_name(name: str) -> str:
 def check_content(name: str, head: bytes) -> None:
     ext = Path(name).suffix.lower().lstrip(".")
     if not head:
-        raise Reject("the file is empty")
+        raise Reject("the file is empty", key="file_empty")
     if ext in _MAGIC:
         if not any(head.startswith(m) for m in _MAGIC[ext]):
-            raise Reject(f"the file is not a valid .{ext}")
+            raise Reject(f"the file is not a valid .{ext}", key="file_not_valid", vars={"ext": ext})
         if ext == "webp" and b"WEBP" not in head[:16]:
-            raise Reject("the file is not a valid .webp")
+            raise Reject(
+                "the file is not a valid .webp", key="file_not_valid", vars={"ext": "webp"}
+            )
     elif ext in _TEXT:
         # The head may end inside a multibyte character: only invalid bytes count.
         try:
             codecs.getincrementaldecoder("utf-8")().decode(head, final=False)
         except UnicodeDecodeError as exc:
-            raise Reject("the file is not UTF-8 text") from exc
+            raise Reject("the file is not UTF-8 text", key="file_not_text") from exc
 
 
 def _owner() -> str:
@@ -176,9 +191,9 @@ class Files:
                 raise Reject("the session closed", 410)
             held = self._usage.get(session.id, 0)
             if held + size > self.max_session_bytes:
-                raise Reject("the session's file quota is used up", 413)
+                raise Reject("the session's file quota is used up", 413, key="file_quota")
             if sum(self._usage.values()) + size > self.max_total_bytes:
-                raise Reject("the server's file space is used up", 507)
+                raise Reject("the server's file space is used up", 507, key="file_space")
             self._usage[session.id] = held + size
 
     def _release(self, session_id: str, size: int) -> None:
@@ -276,8 +291,11 @@ class Files:
         if accept:
             allowed = {a.lower() if a.startswith(".") else "." + a.lower() for a in accept}
             if ext not in allowed:
+                expected = ", ".join(sorted(allowed))
                 raise Reject(
-                    f"{ext or 'this type'} is not accepted; expected {', '.join(sorted(allowed))}"
+                    f"{ext or 'this type'} is not accepted; expected {expected}",
+                    key="file_not_accepted",
+                    vars={"expected": expected},
                 )
         file_id = secrets.token_urlsafe(12)
         self._ensure_root()
@@ -329,10 +347,19 @@ class FileWriter:
         self._reserved = 0
         self._head = b""
         self._checked = not check
+        # Writes and the finish run in a thread, the abort on the loop: one
+        # at a time, so an abort cannot pull the file from under a write.
+        self._lock = threading.Lock()
+        self.ref: FileRef | None = None
+        """The file, once finished."""
         self._fh: Any = path.open("wb")
         self._done = False
 
     def write(self, chunk: bytes) -> None:
+        with self._lock:
+            self._write(chunk)
+
+    def _write(self, chunk: bytes) -> None:
         if self._done:
             raise Reject("the upload is over")
         if not chunk:
@@ -341,7 +368,10 @@ class FileWriter:
             if len(self._head) < 64:
                 self._head += chunk[: 64 - len(self._head)]
             if self._size + len(chunk) > self._limit:
-                raise Reject(f"the file is larger than {self._limit // (1024 * 1024)} MB", 413)
+                mb = self._limit // (1024 * 1024)
+                raise Reject(
+                    f"the file is larger than {mb} MB", 413, key="file_too_large", vars={"mb": mb}
+                )
             self._files._take(self._session, len(chunk))
             self._reserved += len(chunk)
             self._size += len(chunk)
@@ -351,10 +381,14 @@ class FileWriter:
                 self._checked = True
             self._fh.write(chunk)
         except BaseException:
-            self.abort()
+            self._abort()
             raise
 
     def finish(self) -> FileRef:
+        with self._lock:
+            return self._finish()
+
+    def _finish(self) -> FileRef:
         if self._done:
             raise Reject("the upload is over")
         try:
@@ -362,7 +396,7 @@ class FileWriter:
                 check_content(self.name, self._head)
             self._fh.close()
         except BaseException:
-            self.abort()
+            self._abort()
             raise
         self._done = True
         guessed = mimetypes.guess_type(self.name)[0]
@@ -376,10 +410,15 @@ class FileWriter:
             node=self._node,
         )
         self._session.files.register(ref)
+        self.ref = ref
         return ref
 
     def abort(self) -> None:
         """Nothing half-written is left behind. Safe to call more than once."""
+        with self._lock:
+            self._abort()
+
+    def _abort(self) -> None:
         if self._done:
             return
         self._done = True

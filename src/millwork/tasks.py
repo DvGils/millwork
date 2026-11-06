@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, GetCoreSchemaHandler
 from pydantic_core import core_schema
 
 if TYPE_CHECKING:
+    from millwork.scope import Timer
     from millwork.session import Session
 
 log = logging.getLogger("millwork.tasks")
@@ -81,8 +82,10 @@ class Task[T]:
         self._future: asyncio.Future[T] = session._loop.create_future()
         self._observed = False
         self._cancel_flag = threading.Event()
-        self._asyncio_task: asyncio.Task[Any] | None = None
-        self._delay_handle: asyncio.TimerHandle | None = None
+        # While it waits to start: the timer, and the work it will run.
+        self._timer: Timer | None = None
+        self._waiting: Any = None
+        self._child: asyncio.Task[Any] | None = None
         self._on_done: Callable[..., Any] | None = None
 
     @classmethod
@@ -128,7 +131,7 @@ class Task[T]:
         return self._future
 
     def __await__(self) -> Any:
-        """Awaiting from a handler lets renders through (the session releases its lock)."""
+        """Awaiting from a handler lets renders through (the handler lends its turn)."""
         self._observed = True
         return self._session.wait_for_task(self).__await__()
 
@@ -174,23 +177,62 @@ class Task[T]:
         if self.done:
             return
         self._cancel_flag.set()
-        if self._delay_handle is not None:
-            self._delay_handle.cancel()
-            self._delay_handle = None
-            self._finish("cancelled")
-            return
-        if self._asyncio_task is not None:
-            self._asyncio_task.cancel()
+        if self.status == "pending":
+            # Not started yet: there is nothing to stop but the wait.
+            if self._timer is not None:
+                self._timer.cancel()
+            self._never_ran()
+        elif self._child is not None:
+            self._child.cancel()
 
     # ------------------------------------------------------------- internals
+
+    def _begin(
+        self,
+        work: Any,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        timeout: float | None,
+        delay: float | None,
+    ) -> None:
+        """Start the work in the session's scope, now or after ``delay``. On
+        a session that is over the scope starts nothing, and the task ends
+        as cancelled there and then."""
+        self._waiting = work
+        if self._session.over:
+            self._never_ran()
+        elif delay:
+            self._timer = self._session.scope.later(
+                delay, self._start, work, args, kwargs, timeout, dropped=self._never_ran
+            )
+        else:
+            self._start(work, args, kwargs, timeout)
 
     def _start(
         self, work: Any, args: tuple[Any, ...], kwargs: dict[str, Any], timeout: float | None
     ) -> None:
+        self._timer = None
         self.status = "running"
         self.started_at = _now()
-        self._asyncio_task = self._session._loop.create_task(self._run(work, args, kwargs, timeout))
+        self._child = self._session.scope.start(
+            self._run(work, args, kwargs, timeout),
+            f"task {self.label}",
+            done=lambda _: self._never_ran(),
+        )
         self._session.refresh()
+
+    def _never_ran(self) -> None:
+        """A task that was dropped before it started, or cancelled in the
+        moment it was started, never gets to run a line, so nothing in it can
+        say that it ended. It is said here: the task is cancelled, and whoever
+        waits on it hears so."""
+        work, self._waiting, self._timer = self._waiting, None, None
+        if self.done:
+            return
+        if inspect.iscoroutine(work):
+            work.close()
+        self._cancel_flag.set()
+        self._finish("cancelled")
 
     async def _run(  # noqa: ASYNC109
         self, work: Any, args: tuple[Any, ...], kwargs: dict[str, Any], timeout: float | None
@@ -213,8 +255,10 @@ class Task[T]:
                 )
             result = await asyncio.wait_for(coro, timeout) if timeout else await coro
         except asyncio.CancelledError:
+            # However the cancellation came, work in a thread is told too.
+            self._cancel_flag.set()
             self._finish("cancelled")
-            return
+            raise
         except Cancelled:
             self._finish("cancelled")
             return

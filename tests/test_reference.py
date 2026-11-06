@@ -26,6 +26,8 @@ def test_the_reference_covers_every_component_and_the_tables(capsys) -> None:
     assert "- `page.answer(payload=None)`" in text and "`{id:int}`" in text
     assert "also takes plain strings" in text
     assert "- `page.stream`: Every chunk the chats on the page streamed" in text
+    assert "\n## Signing in\n" in text and "- `auth.Auth(providers, on_login=None" in text
+    assert "### ui.SignIn" in text and "`ui.SignIn(provider, *children, **props)`" in text
     assert "``(row, value) -> tone`` for a cell's" in text
     assert "- `cols: int | dict['sm' | 'md' | 'lg' | 'xl', int]` = `2`" in text
     assert "- `label: str` (required)" in text  # Stat

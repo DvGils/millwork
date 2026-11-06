@@ -23,6 +23,7 @@ flash of the default look. Without a file the app looks like stock shadcn.
   "logo": {"light": "/public/logo.svg", "dark": "/public/logo-dark.svg"},
   "favicon": "/public/favicon.svg",
   "login_image": "/public/login.jpg",
+  "stylesheet": "/public/app.css",
   "density": "comfortable"
 }
 ```
@@ -98,6 +99,23 @@ default, drawn in the page's own ink, or `auto` for the platform's.
 and `currency` is the ISO code the `currency` format uses, `EUR` unless
 the theme says otherwise.
 
+## A stylesheet of the app's own
+
+`stylesheet` is the path of a CSS file under `/public/`, loaded on every
+page after the theme. It holds what tokens cannot say, such as a class
+the app's `cls` props name, or a rule for print. Where one of its rules
+and one of the bundle's classes set the same property, the app's rule
+wins.
+
+```css
+/* public/app.css */
+.figure { break-inside: avoid; }
+
+@media print {
+  .screen-only { display: none; }
+}
+```
+
 ## Strings
 
 Interface copy comes from the app's own Python, in its own language. The
@@ -109,6 +127,14 @@ the server sends on its own account (`wait_for_reply`, `message_too_long`,
 They are English. An app in another language sets them in the theme's
 `strings` section, key by key, and a key the framework does not know is
 refused. Every key is in the table below, with its English.
+
+A label the framework fills in follows the same table. A form's submit
+button says `save`, a `ui.Download` says `download` and a pie chart's
+folded slice says `other`, until the app gives the component a label of
+its own. The keys that start with `issue_` say what is wrong with a form
+field when pydantic found it, and the ones that start with `file_` say
+why an upload was refused. Words the app wrote itself, in a validator or
+a refusal of its own, are shown as written.
 
 ```json
 {"locale": "nl", "strings": {"send": "Verstuur", "stop": "Stop", "search": "Zoeken"}}
@@ -126,7 +152,7 @@ ui.Table(
 
 ## While designing
 
-In debug mode the theme file is watched, and a save reaches every open tab
-as a command, without a reload. `millwork docs --theme path/to/theme.json`
+In debug mode the theme file and its stylesheet are watched, and a save
+reaches every open tab as a command, without a reload. `millwork docs --theme path/to/theme.json`
 shows this whole manual in a theme, which is the quickest way to see a
 token set on every component in both schemes.

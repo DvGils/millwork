@@ -7,7 +7,7 @@ import { cn } from "cn";
 // wrapper) gets a zero flex basis here, so it fills what is left instead of
 // growing with its content; everything else scrolls as usual.
 export const pageBodyClass = (padding: unknown) =>
-  cn("min-h-0 grow overflow-y-auto", padding !== false && "p-6");
+  cn("mw-shell-body min-h-0 grow overflow-y-auto", padding !== false && "p-6");
 
 export const PageBody = ({
   className,

@@ -3,9 +3,10 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { App } from "./App";
 import { connect } from "./ws";
-import { applyTheme } from "./theme";
+import { applyTheme, printInLight } from "./theme";
 
 applyTheme();
+printInLight();
 
 if (!(window as unknown as { __mw?: { login?: unknown } }).__mw?.login) connect();
 

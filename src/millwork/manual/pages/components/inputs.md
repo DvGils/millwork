@@ -53,7 +53,11 @@ def example(s):
 `ui.Button` takes a label, a `variant`, a `size`, an `icon` before the
 label or after it with `icon_position="end"`, `loading`, `disabled` and a
 `tooltip`. `confirm="..."` asks before the handler runs. `form="key"`
-submits the Form with that key from anywhere on the page. An `icon` is one
+submits the Form with that key from anywhere on the page. With `href` the
+button goes somewhere instead of calling a handler. A page of the app
+opens on the session like a `ui.Link` does, any other address is the
+browser's, and `target="_blank"` opens a new tab. Such a button is a real
+link, so a middle click opens it in a new tab. An `icon` is one
 of lucide's names, the set in `mw.ICONS`, and a name outside it is refused
 when the component is made, with the closest names in the error.
 
@@ -88,6 +92,12 @@ ui.Stack(
             confirm="Delete this for good?",
             on_click=lambda s, _: s.toast("Deleted.", tone="destructive"),
         ),
+        gap=2,
+        wrap=True,
+    ),
+    ui.Row(
+        ui.Button("To the Layout chapter", href="/components/layout", icon="arrow-right", icon_position="end"),
+        ui.Button("Print this page", icon="printer", variant="outline", on_click=lambda s, _: s.print()),
         gap=2,
         wrap=True,
     ),
@@ -335,7 +345,8 @@ receives the chosen id. `confirm="..."` on an item asks before its handler
 runs, in the dialog's destructive style when the item is destructive. The
 look alone asks nothing, since only the app knows whether an action can be
 undone. The same holds for a table's `row_actions` and a file card's
-`actions`.
+`actions`. The menu is at least as wide as its trigger and grows to fit
+its longest item.
 
 ```python live
 ui.DropdownMenu(

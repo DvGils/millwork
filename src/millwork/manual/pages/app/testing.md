@@ -32,16 +32,22 @@ runs the page's `connect` and the first render and yields a `Page`.
 Leaving the block closes the session, `close` hook included, and a hook
 that raises fails the test there. `open(path,
 user=User(...))` signs a person in. Without one, a gated page raises
-`Forbidden`, and a `connect` that raises `NotFound` or `Forbidden` raises
-it from `open` too, which makes a test of its own. `open(path,
+`Forbidden`. So does a page whose `allow=` rule refuses that user, and a
+`connect` that raises `NotFound` or `Forbidden` raises it from `open`
+too, which makes a test of its own. `open(path,
 state=State(...))` starts from a prepared state and skips `connect`.
 
 ## Finding things
 
 `page.find(ui.Table)` is the first node of a type, `page.find("more")` the
-node with that key, and `find_all` every one of them. A found node has
-`id`, `type`, `props` as they would go to the tab, `children` and, on a
-table, `rows`. `page.text()` is every string on the page, for a quick "is
+node with that key, and `find_all` every one of them. `within=` looks
+inside one node only, so `page.find("save", within="orders")` is the save
+button of the card with the key `orders` when every card has one.
+Any other keyword is a prop the node has to have, so
+`page.find(ui.Button, label="Delete")` is the button that says Delete.
+`page.find_all(ui.Custom)` finds the app's own components, and the `type`
+of each is the name it goes by. A found node has `id`, `type`, `props` as
+they would go to the tab, `children` and, on a table, `rows`. `page.text()` is every string on the page, for a quick "is
 it there". `page.state` is the live state and `page.session` the session
 itself.
 
@@ -50,7 +56,8 @@ itself.
 Each action is an event through the real dispatcher, followed by the real
 render. There is `click(node)`, `change(node, value)`, `submit(form,
 draft)` with a dict or a model instance, `select(table, keys)`,
-`action(node, id, key)` for a row or menu action, `upload(node, path,
+`choose(menu, item)` for an item of a `DropdownMenu` by its id or label,
+`action(node, id, key)` for a row or card action, `upload(node, path,
 field=)`, which runs every check an upload gets and returns the `FileRef`,
 `send(chat, text, files=)`, `stop(chat)`, `navigate(path)`, and `event(node,
 name, payload)` for anything else. A draft that fails validation produces

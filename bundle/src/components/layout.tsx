@@ -39,7 +39,7 @@ export const Page: Renderer = ({ node, props, children }) => {
     return <PageWithSidebar sidebarId={sidebarId} rest={node.children.filter((c) => c !== sidebarId)} className={className} style={style} padding={props.padding} gap={gapClass(props.gap ?? 6)} header={props.header} />;
   }
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="mw-shell flex h-dvh flex-col">
       <Slot value={props.header} />
       <main className={pageBodyClass(props.padding)}>
         <PageBody className={cn(gapClass(props.gap ?? 6), className)} style={style}>

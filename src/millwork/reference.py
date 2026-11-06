@@ -17,6 +17,7 @@ from pydantic_core import PydanticUndefined
 
 from millwork import ui
 from millwork.app import App, PageDef
+from millwork.auth import Auth, AzureAD, Dev, Google, Headers, OAuth, Password
 from millwork.forms import WIDGETS
 from millwork.icons import ICONS
 from millwork.nodes import Component
@@ -41,7 +42,9 @@ SESSION_API = (
     "toast",
     "navigate",
     "navigate_to",
+    "can",
     "clipboard",
+    "print",
     "download",
     "logout",
     "reset",
@@ -76,6 +79,7 @@ PAGE_API = (
     "change",
     "submit",
     "select",
+    "choose",
     "action",
     "upload",
     "send",
@@ -175,13 +179,43 @@ def reference() -> str:
     out.append(_call("page.close", PageDef.close))
     out += [
         "",
+        "## Signing in",
+        "",
+        "`from millwork import auth`, then `App(auth=auth.Auth([...providers]))`.",
+        "With auth every page asks for a login except one marked `public=True`,",
+        "and `s.user` is the `auth.User`. `on_login(identity)` returns the `User`",
+        "to admit or `None` to refuse. `allow=` on a page, a route or a mount is",
+        "a plain function of the user, and of the path parameters it names, that",
+        "returns `True` for who may open it. It is asked at every way in, and",
+        "`s.can(path)` asks it for a link. Routes and mounts need a sign-in",
+        "unless `public=True`. `recheck(user)` returns the user as they are now,",
+        "or `None` to end the sign-in, asked at most once per `recheck_every`.",
+        "`on_logout(user)` returns where the tab",
+        "goes after sign-out, a path or a URL, or `None` for the login page, and",
+        "is asked as well when a sign-in expires under an open tab. `login=` lays",
+        "the login page out from",
+        "components that need no session, with a `ui.SignIn(provider_id)` where",
+        "each way in goes.",
+        "",
+        "- `auth.Auth" + _signature(Auth.__init__, skip_self=True) + "`",
+        "- `auth.AzureAD" + _signature(AzureAD, skip_self=False) + "`",
+        "- `auth.Google" + _signature(Google, skip_self=False) + "`",
+        "- `auth.OAuth" + _signature(OAuth.__init__, skip_self=True) + "`. `icon` is",
+        "  `microsoft`, `google`, the path of an image under `public/`, or an icon name.",
+        "- `auth.Password" + _signature(Password.__init__, skip_self=True) + "`",
+        "- `auth.Headers" + _signature(Headers.__init__, skip_self=True) + "`",
+        "- `auth.Dev" + _signature(Dev.__init__, skip_self=True) + "`",
+        "",
+    ]
+    out += [
+        "",
         "## Testing",
         "",
         "`from millwork.testing import TestApp`. `async with TestApp(app).open(path,",
         "user=) as page` opens a page as a session with no socket; what the app's",
         "code raises is raised in the test, or with `strict=False` collected in",
-        "`page.failures`. `page.find(key or type)` gives a node with `.props`, and",
-        "`.rows` on a table. `page.state`, `page.toasts`, `page.commands` and",
+        "`page.failures`. `page.find(key or type, within=, **props)` gives a node with",
+        "`.props`, and `.rows` on a table. `page.state`, `page.toasts`, `page.commands` and",
         "`page.stream` are what the tab would have seen. A handler that calls",
         "`s.confirm` or `s.ask` waits for `page.answer(value)`.",
         "",

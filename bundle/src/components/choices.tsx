@@ -334,7 +334,8 @@ export const ButtonGroup: Renderer = ({ props, children }) => (
   <div
     role="group"
     className={cn(
-      "inline-flex items-stretch [&>*>button]:rounded-none [&>*:first-child>button]:rounded-l-md [&>*:last-child>button]:rounded-r-md [&>*:not(:first-child)>button]:-ml-px [&>*>button]:relative [&>*>button:focus-visible]:z-10",
+      // By data-slot, not by tag: a button with an href is an anchor.
+      "inline-flex items-stretch [&>*>[data-slot=button]]:rounded-none [&>*:first-child>[data-slot=button]]:rounded-l-md [&>*:last-child>[data-slot=button]]:rounded-r-md [&>*:not(:first-child)>[data-slot=button]]:-ml-px [&>*>[data-slot=button]]:relative [&>*>[data-slot=button]:focus-visible]:z-10",
       props.cls as string,
     )}
   >

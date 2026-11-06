@@ -351,6 +351,7 @@ class PieChart(Component):
     share beside it."""
 
     type: ClassVar[str] = "PieChart"
+    theme_words: ClassVar[dict[str, str]] = {"other": "other"}
     payloads: ClassVar[dict[str, str]] = {
         "on_click": "{'x': slice, 'value': number, 'share': fraction of the total, or None}",
     }
@@ -439,7 +440,10 @@ class PieChart(Component):
         return self._slices
 
     def wire_extra(self) -> dict[str, Any]:
-        return {"data": self._slices}
+        # The folded slice is named here, as the page is drawn, so a chart
+        # made before any session existed still gets the theme's word.
+        other = self.in_theme_words("other")
+        return {"data": [{**s, "x": other} if s["other"] else s for s in self._slices]}
 
 
 __all__ = ["AreaChart", "BarChart", "LineChart", "PieChart", "MAX_SERIES"]

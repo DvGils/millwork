@@ -392,7 +392,7 @@ function ItemField({ item, pointer, schemaPointer, ctx }: { item: FieldSpec; poi
     return (
       <>
         <Field>
-          <FieldLabel>Type</FieldLabel>
+          <FieldLabel>{t("type")}</FieldLabel>
           <Select
             value={tag || null}
             disabled={ctx.disabled}

@@ -33,6 +33,21 @@ def current() -> Session[Any] | None:
     return _session.get()
 
 
+# The Auth whose login page is being laid out. That page is built before any
+# session exists, so what it needs of the app's sign-in comes through here.
+_auth: ContextVar[Any] = ContextVar("millwork_auth", default=None)
+
+
+def auth() -> Any:
+    """The app's ``Auth`` as a component being built can see it: the current
+    session's, or the one laying out its login page. ``None`` without either."""
+    laying_out = _auth.get()
+    if laying_out is not None:
+        return laying_out
+    s = _session.get()
+    return s.app.auth if s is not None else None
+
+
 def bind(s: Session[Any] | None) -> object:
     """Set the current session; returns the token for ``unbind``."""
     return _session.set(s)

@@ -23,6 +23,7 @@ class FileUpload(Component):
     """Uploads go over the session's socket; the handler receives ``FileRef``s."""
 
     type: ClassVar[str] = "FileUpload"
+    needs_session: ClassVar[bool] = True
     payloads: ClassVar[dict[str, str]] = {
         "on_upload": "the FileRefs",
         "on_reject": "{'name': filename, 'reason': why}",
@@ -155,7 +156,9 @@ class Download(Component):
     """A button that downloads a file, bytes, text, or what a callable returns on click."""
 
     type: ClassVar[str] = "Download"
+    needs_session: ClassVar[bool] = True
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"content"})
+    theme_words: ClassVar[dict[str, str]] = {"label": "download"}
 
     label: str = "Download"
     filename: str
@@ -169,7 +172,7 @@ class Download(Component):
 
         def __init__(
             self,
-            label: str = "Download",
+            label: str | None = None,
             *children: Any,
             key: str | None = None,
             hidden: bool = False,
@@ -183,8 +186,12 @@ class Download(Component):
         ) -> None: ...
     else:
 
-        def __init__(self, label: str = "Download", **props: Any) -> None:
-            super().__init__(label=label, **props)
+        def __init__(self, label: str | None = None, **props: Any) -> None:
+            # Passed on only when given, so a label left out stays the
+            # framework's word and follows the theme.
+            if label is not None:
+                props["label"] = label
+            super().__init__(**props)
 
     def wire_extra(self) -> dict[str, Any]:
         # A session file downloads by id, straight over the socket: no click round

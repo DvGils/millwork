@@ -12,6 +12,7 @@ and the empty and loading states.
 
 `ui.Alert` is a banner with a `title`, a `description`, a `tone`, an `icon`,
 `actions` and, with `dismissable`, a close button that fires `on_dismiss`.
+Children go under the description, for what a line of text cannot hold.
 
 ```python live
 ui.Stack(
@@ -23,6 +24,11 @@ ui.Stack(
         description="The file was larger than 50 MB.",
         tone="destructive",
         actions=[ui.Button("Try again", size="sm", on_click=lambda s, _: s.toast("Retrying"))],
+    ),
+    ui.Alert(
+        ui.Markdown("- `orders.csv` has no header row\n- `returns.csv` is empty"),
+        title="Two files were skipped",
+        tone="warning",
     ),
     ui.Alert(title="Dismiss me", dismissable=True, on_dismiss=lambda s, _: s.toast("Dismissed")),
     gap=3,

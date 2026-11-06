@@ -54,12 +54,41 @@ export function toApp(pathname: string, prefix: string = base()): string {
   return pathname;
 }
 
-// Where sign-out lands: the proxy's own sign-out page when one signed the
-// person in (the server puts its URL on the boot user), otherwise millwork's
-// login page.
-export function signOutUrl(): string {
+// Where sign-out lands. The proxy's own sign-out page comes first when one
+// signed the person in (the server puts its URL on the boot user), since only
+// going there signs them out. Otherwise it is where the app's on_logout said,
+// which the server's answer to the sign-out carries, or millwork's login page.
+export function signOutUrl(next?: unknown): string {
   const user = (window as unknown as { __mw?: { user?: { sign_out?: string | null } | null } }).__mw?.user;
-  return user?.sign_out || mw("/login");
+  if (user?.sign_out) return user.sign_out;
+  return typeof next === "string" && next ? safeUrl(next) : mw("/login");
+}
+
+// Sign out, then leave the page whether or not the server answered.
+export async function signOut(): Promise<void> {
+  let next: unknown = null;
+  try {
+    const response = await fetch(mw("/auth/logout"), { method: "POST" });
+    next = ((await response.json()) as { next?: unknown }).next;
+  } catch {
+    next = null;
+  }
+  window.location.assign(signOutUrl(next));
+}
+
+// Whether two paths name the same page. One may be spelled as the address bar
+// has it, percent signs and all, and the other as the app wrote it, so both
+// are decoded before they are compared. A path that does not decode is its
+// own spelling.
+export function samePath(a: string, b: string): boolean {
+  const plain = (p: string) => {
+    try {
+      return decodeURI(p);
+    } catch {
+      return p;
+    }
+  };
+  return plain(a) === plain(b);
 }
 
 // One of the framework's own routes, under the prefix: mw("/auth/logout").
@@ -91,6 +120,17 @@ export function isSameOriginPath(value: unknown): value is string {
 // static file.
 export function isInternalPath(value: unknown): value is string {
   return isSameOriginPath(value) && !/^\/_mw(\/|$)/.test(value) && !/^\/public(\/|$)/.test(value);
+}
+
+// How a link in running text looks. It is underlined, faintly, since under a
+// theme whose primary is the color of the text nothing else tells it from
+// the words around it, and the line firms up under the pointer.
+export const linkLook = "underline decoration-current/35 underline-offset-4 hover:decoration-current";
+
+// The login page has no session and no socket: a link there is the browser's
+// to follow, where on a page of the app the session changes page.
+export function hasSession(): boolean {
+  return !(window as unknown as { __mw?: { login?: unknown } }).__mw?.login;
 }
 
 // Controlled when the server put the key on the wire (an explicit None arrives as null).

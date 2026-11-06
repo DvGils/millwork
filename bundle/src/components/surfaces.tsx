@@ -1,13 +1,13 @@
 // Surfaces and feedback: tabs, dialogs, empties, alerts, progress, split panes.
 
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useContext, useEffect, useState } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
 import { t } from "../theme";
 import { store, useNode } from "../store";
-import { navigate } from "../ws";
-import { has, isInternalPath, safeUrl } from "../lib";
+import { has, linkLook } from "../lib";
+import { anchorProps, InSidebar } from "./anchor";
 import { ScrollArea as UiScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "cn";
 import { icon } from "../icons";
@@ -182,7 +182,7 @@ const alertTone: Record<string, string> = {
   warning: "text-warning *:data-[slot=alert-description]:text-warning/90",
 };
 
-export const Alert: Renderer = ({ props, emit }) => {
+export const Alert: Renderer = ({ node, props, emit, children }) => {
   const tone = String(props.tone ?? "default");
   const Icon = icon(props.icon ?? alertIcon[tone]);
   return (
@@ -193,6 +193,7 @@ export const Alert: Renderer = ({ props, emit }) => {
       {Icon ? <Icon /> : null}
       {props.title ? <AlertTitle>{String(props.title)}</AlertTitle> : null}
       {props.description ? <AlertDescription>{String(props.description)}</AlertDescription> : null}
+      {node.children.length ? <div className="col-start-2 mt-1 flex min-w-0 flex-col gap-2">{children}</div> : null}
       {Array.isArray(props.actions) && props.actions.length ? (
         <div className="col-start-2 mt-2 flex flex-wrap gap-2">
           {(props.actions as unknown[]).map((a, i) => (
@@ -339,25 +340,29 @@ export const Stat: Renderer = ({ props }) => {
   );
 };
 
+// How a link in a sidebar looks: a row to press, the current page marked,
+// in the sidebar's own colors.
+const navLook =
+  "flex items-start gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-sidebar-accent-foreground";
+
 // A same-origin page link navigates on the session; anything else is a plain anchor.
 export const Link: Renderer = ({ props }) => {
   const Icon = icon(props.icon);
-  const href = safeUrl(props.href);
-  const internal = isInternalPath(props.href) && props.target !== "_blank";
+  const inSidebar = useContext(InSidebar);
   return (
     <a
-      href={href}
+      {...anchorProps(props.href, props.target)}
       aria-current={props.active ? "page" : undefined}
-      target={props.target === "_blank" ? "_blank" : undefined}
-      rel={props.target === "_blank" ? "noreferrer" : undefined}
-      onClick={internal ? (e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-        e.preventDefault();
-        navigate(props.href as string);
-      } : undefined}
-      className={cn("inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline aria-[current=page]:font-medium", props.cls as string)}
+      // In the header a link is one of a row of places to go, and a row of
+      // underlined words is not how that reads.
+      className={cn(
+        inSidebar
+          ? navLook
+          : ["inline-flex items-center gap-1 text-sm text-primary aria-[current=page]:font-medium", linkLook, "in-data-[slot=header]:no-underline"],
+        props.cls as string,
+      )}
     >
-      {Icon ? <Icon className="size-3.5" /> : null}
+      {Icon ? <Icon className={inSidebar ? "mt-0.5 size-4 shrink-0" : "size-3.5"} /> : null}
       {String(props.label ?? "")}
     </a>
   );

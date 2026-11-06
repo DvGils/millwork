@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, type ComponentType } from "react";
 import { cn } from "cn";
-import { safeUrl, slugify } from "../lib";
+import { linkLook, safeUrl, slugify } from "../lib";
 import { CodeBlock } from "./copy";
 
 type Props = { content: string; tight?: boolean };
@@ -28,7 +28,7 @@ const Inner = lazy(async () => {
         urlTransform={(url) => safeUrl(url, { image: true })}
         components={{
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">
+            <a href={href} target="_blank" rel="noreferrer" className={cn("text-primary", linkLook)}>
               {children}
             </a>
           ),

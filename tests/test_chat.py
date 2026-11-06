@@ -188,8 +188,8 @@ async def test_a_second_message_before_the_reply_starts_waits(tmp_path: Path) ->
         )
 
     async with TestApp(app).open("/") as page:
-        await page.session.dispatch(message("one"))
-        await page.session.dispatch(message("two"))
+        page.session.event(message("one"))
+        page.session.event(message("two"))
         await page.settle()
         assert turns == ["one"]
         assert "Wait for the current reply to finish." in page.toasts
@@ -434,7 +434,7 @@ async def test_drop_chat_forgets_a_thread_unless_it_is_replying(tmp_path: Path) 
         s.chat("old").load([{"id": "1", "role": "user", "parts": []}])
         s.drop_chat("old")
         assert "old" not in s._threads and s.chat("old").messages == []
-        s.spawn(s.dispatch(Event(node="root/main", name="message", payload={"text": "hi"})))
+        s.event(Event(node="root/main", name="message", payload={"text": "hi"}))
 
         await started.wait()
         s.drop_chat("main")

@@ -87,6 +87,27 @@ def test_shell_renders_theme_mode_script_and_boot(tmp_path: Path) -> None:
     assert '<style id="mw-theme"></style>' in plain and 'data-density="comfortable"' in plain
 
 
+def test_the_themes_stylesheet_is_linked_after_the_theme(tmp_path: Path) -> None:
+    (tmp_path / ".vite").mkdir()
+    (tmp_path / ".vite" / "manifest.json").write_text(
+        json.dumps(
+            {"src/main.tsx": {"file": "main-abc.js", "isEntry": True, "css": ["main-abc.css"]}}
+        )
+    )
+    shell = Shell(tmp_path, prefix="/_mw")
+    theme = Theme(stylesheet="/public/app.css")
+    html = shell.render(title="T", path="/", theme=theme, base="/sales")
+    # The bundle's styles, then the theme's tokens, then the app's own rules,
+    # so each can overrule the one before. Under the prefix like every path.
+    link = '<link rel="stylesheet" id="mw-stylesheet" href="/sales/public/app.css">'
+    assert html.index("main-abc.css") < html.index('id="mw-theme"') < html.index(link)
+    assert theme.boot()["stylesheet"] == "/public/app.css"
+    assert "mw-stylesheet" not in shell.render(title="T", path="/", theme=Theme())
+    for bad in ("https://cdn.example/x.css", "//cdn.example/x.css", "app.css", "/public/a b.css"):
+        with pytest.raises(ValueError, match="stylesheet must be a same-origin path"):
+            Theme(stylesheet=bad)
+
+
 def test_app_picks_up_public_theme_and_serves_the_favicon(tmp_path: Path) -> None:
     public = tmp_path / "public"
     public.mkdir()

@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { applyTheme, t, type ThemeBoot } from "./theme";
 import { store, type Node, type PatchOp } from "./store";
-import { mw, signOutUrl, toApp, toBrowser } from "./lib";
+import { samePath, safeUrl, signOut, toApp, toBrowser } from "./lib";
 import { toast } from "@/components/ui/toast";
 import { invalidate, syncVersions } from "./custom";
 
@@ -409,7 +409,7 @@ function command(name: string, args: Record<string, unknown>) {
       const target = pendingHash ? `${browserPath}#${pendingHash}` : browserPath;
       // Compared as app paths: the prefix with and without its slash is one page,
       // so a popped history entry is never pushed over.
-      if (toApp(window.location.pathname) !== path || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
+      if (!samePath(toApp(window.location.pathname), path) || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
         window.history.pushState({ mw: true }, "", target);
       }
       if (args.title) document.title = String(args.title);
@@ -422,6 +422,10 @@ function command(name: string, args: Record<string, unknown>) {
       void navigator.clipboard?.writeText(String(args.text ?? ""));
       toast.add({ title: t("copied"), type: "success", timeout: 1500 });
       break;
+    case "print":
+      // After two frames: the patch that came just before has been drawn by then.
+      requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+      break;
     case "reload":
       closedForGood = true;
       window.location.reload();
@@ -431,7 +435,12 @@ function command(name: string, args: Record<string, unknown>) {
       break;
     case "logout":
       closedForGood = true;
-      void fetch(mw("/auth/logout"), { method: "POST" }).finally(() => window.location.assign(signOutUrl()));
+      void signOut();
+      break;
+    case "leave":
+      // The sign-in behind this session is over: the page goes, not only its input.
+      closedForGood = true;
+      window.location.assign(safeUrl(String(args.to ?? "/")));
       break;
     case "reload_component":
       invalidate(args.name ? String(args.name) : undefined, args.version ? String(args.version) : undefined);
@@ -460,7 +469,7 @@ function command(name: string, args: Record<string, unknown>) {
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     const path = toApp(window.location.pathname);
-    if (path !== boot.path) navigate(path);
+    if (!samePath(path, boot.path)) navigate(path);
   });
 }
 
@@ -481,7 +490,7 @@ export function connect() {
     } catch {
       stored = null;
     }
-    const resumable = stored && stored.path === boot.path ? stored : null;
+    const resumable = stored && samePath(stored.path, boot.path) ? stored : null;
     sendNow({
       type: "hello",
       path: boot.path,
@@ -509,7 +518,7 @@ export function connect() {
 
   socket.onclose = (ev) => {
     socket = null;
-    rejectPending("disconnected");
+    rejectPending(t("disconnected"));
     if (closedForGood || ev.code === 4426) return;
     if (ev.code === 4409) {
       // Another tab took this session over.
