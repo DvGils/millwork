@@ -7,43 +7,66 @@ broken, and when one of the known failures stops failing, so the list below
 only ever gets shorter.
 """
 
+import re
 from collections import Counter
 
 import lifecycle_fuzz as fuzz
 
-# Promises the session's life does not keep yet, each found by the fuzzer and
-# reduced to a few actions:
-#
-# stranded            a tab that was not reading when its session ended is
-#                     never told, and stays connected to nothing
-# leak                a connect hook that raises for a tab that has already
-#                     gone leaves its session behind for good
-# sent after the end  a toast or a navigation asked for before the end, or a
-#                     reconnecting tab's replay, reaches the tab after it
-# lost                a handler waiting on a question when its session ends
-#                     releases a lock it no longer holds
-# left running        a recheck that is being asked when the app stops goes
-#                     on after it
-KNOWN = {"stranded", "leak", "sent after the end", "lost", "left running"}
+# Promises the session's life does not keep yet. Each was found by the fuzzer
+# and reduced to a few actions, and each is known by the kind of promise and
+# by what the record says about it, so that a different way of breaking the
+# same promise still fails this test.
+KNOWN = {
+    # A tab that was not reading when its session ended is never told, and
+    # stays connected to nothing.
+    "stranded": r"never told$",
+    # A connect hook that raises for a tab that has already gone leaves its
+    # session behind for good.
+    "leak": r"^sessions left with no tab",
+    # Something reaches a tab after its session ended: the closing chunks of
+    # a chat reply that was under way, a toast or a navigation asked for just
+    # before, or what is replayed to a tab that was reconnecting.
+    "sent after the end": (
+        r" got (stream|toast|activity|logout|navigate|mount|theme|patch|form_issues) "
+    ),
+    # The app telling every session something at once waits on a tab that is
+    # not reading, and on it everyone after.
+    "hung": r"^\('push',\) did not return",
+    # A task started after a delay goes on once it has started, whatever
+    # becomes of its session.
+    "ran after the end": r"^tick on ",
+    # A handler waiting on a question when its session ends releases a lock
+    # it no longer holds.
+    "lost": r"Lock is not acquired",
+    # A recheck or a sign-out being asked about when the app stops goes on
+    # after it.
+    "left running": r"^(Auth\._ask|Session\._recheck_user|App\._end_sign_in)$",
+}
 SCENARIOS = 250
+AGAIN = "uv run python tests/lifecycle_fuzz.py --steps 60 --shrink"
 
 
 def test_sessions_keep_their_promises_through_random_lives() -> None:
-    broken: Counter[str] = Counter()
-    first: dict[str, int] = {}
+    new: dict[tuple[str, str], int] = {}
+    seen: Counter[str] = Counter()
     for seed in range(SCENARIOS):
-        for kind in fuzz.run(seed=seed, steps=60).kinds:
-            broken[kind] += 1
-            first.setdefault(kind, seed)
-    new = {kind: first[kind] for kind in broken if kind not in KNOWN}
-    assert not new, "a promise that held is broken; replay with " + ", ".join(
-        f"`uv run python tests/lifecycle_fuzz.py --seed {seed} --steps 60 --shrink` ({kind})"
-        for kind, seed in new.items()
+        for kind, detail in fuzz.run(seed=seed, steps=60).violations:
+            seen[kind] += 1
+            if kind not in KNOWN or not re.search(KNOWN[kind], detail):
+                new.setdefault((kind, detail), seed)
+    assert not new, "a promise that held is broken:\n" + "\n".join(
+        f"  {kind}: {detail}\n    {AGAIN} --seed {seed}" for (kind, detail), seed in new.items()
     )
+    # The run is only worth something if it gets as far as the known failures.
+    assert seen["stranded"] and seen["sent after the end"]
 
 
 def test_a_scenario_runs_the_same_way_twice() -> None:
-    for seed in (3, 58, 457):
+    # With and without worker threads in it: both run the same way every time.
+    threaded = next(
+        s for s in range(50) if ("setup", "threads") in fuzz.run(seed=s, steps=5).actions
+    )
+    for seed in (3, 58, threaded):
         once, again = fuzz.run(seed=seed, steps=60), fuzz.run(seed=seed, steps=60)
         assert once.actions == again.actions
         assert once.violations == again.violations

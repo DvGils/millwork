@@ -7,6 +7,13 @@ connection, a role taken away, time passing) chosen at random from a seed.
 Time is virtual, so a five-minute grace period or a ten-second hook costs
 nothing to wait for, and a scenario runs the same way every time.
 
+The app under test has one of most things a page can hold: buttons, an input,
+a form, a table with row actions, a chat that streams its reply, an upload, a
+download, a custom component, questions, and tasks that are async, delayed,
+failing or run in a thread. In some scenarios its sign-in hooks are plain
+functions, so they run in threads too. A thread takes turns with the loop
+(see ``_Turns``), which keeps such a scenario repeatable.
+
 What makes it a test is the oracle. The app writes down what its own code did
 (which handler ran, for whom, when a hook started and finished) and each tab
 writes down what it was sent. From that record the checks in ``examine`` ask
@@ -31,8 +38,10 @@ import json
 import logging
 import random
 import selectors
+import shutil
 import sys
 import tempfile
+import threading
 import types
 import warnings
 from collections import Counter
@@ -41,10 +50,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import millwork as mw
 from millwork import auth, ui
+from millwork.protocol import pack_frame
 
 ADMIN_MARK = "ADMIN-ONLY-CONTENT"
 RECHECK_EVERY = 30.0
@@ -66,20 +76,16 @@ class Clock:
 
 class _Selector:
     """A selector that never sleeps: when nothing is ready it moves the clock
-    to the next timer instead. Work in a thread is real, so while any is in
-    flight the clock stands still and the selector waits for it."""
+    to the next timer instead."""
 
     def __init__(self, clock: Clock) -> None:
         self._real = selectors.DefaultSelector()
         self._clock = clock
-        self.busy = 0
 
     def select(self, timeout: float | None = None) -> Any:
         ready = self._real.select(0)
         if ready:
             return ready
-        if self.busy:
-            return self._real.select(0.002)
         if timeout is None:
             raise RuntimeError("the loop has nothing left to wait for")
         if timeout > 0:
@@ -90,24 +96,92 @@ class _Selector:
         return getattr(self._real, name)
 
 
+_worker = threading.local()
+
+
+class _Turns:
+    """Work for a thread, run so that it and the loop take turns.
+
+    The thread only moves while the loop stands still waiting for it, and it
+    hands back when it finishes or when it naps, which lets virtual time pass
+    for it. So what a thread does between two naps is one indivisible moment
+    to everything on the loop, and a scenario with threads in it runs the
+    same way every time. It also cannot be stopped from outside, which is
+    true of a real thread and the reason to have it in here."""
+
+    def __init__(self, loop: VirtualLoop, future: Any, work: Any) -> None:
+        self.loop, self.future, self.work = loop, future, work
+        self.back = threading.Semaphore(0)
+        self.on = threading.Semaphore(0)
+        self.thread: threading.Thread | None = None
+        self.nap_for: float | None = None
+        self.finished = False
+        self.result: Any = None
+        self.error: BaseException | None = None
+
+    def go(self) -> None:
+        """On the loop: let the thread run until it finishes or naps."""
+        if self.thread is None:
+            self.thread = threading.Thread(target=self._run, daemon=True)
+            self.thread.start()
+        else:
+            self.on.release()
+        if not self.back.acquire(timeout=30):
+            raise RuntimeError("a worker thread waited on the loop, which was waiting on it")
+        if not self.finished:
+            self.loop.call_later(self.nap_for or 0.0, self.go)
+        elif not self.future.done():
+            if self.error is not None:
+                self.future.set_exception(self.error)
+            else:
+                self.future.set_result(self.result)
+
+    def _run(self) -> None:
+        _worker.turns = self
+        try:
+            self.result = self.work()
+        except BaseException as exc:
+            self.error = exc
+        self.finished = True
+        self.back.release()
+
+    def nap(self, seconds: float) -> None:
+        """In the thread: hand back to the loop for ``seconds`` of its time."""
+        if self.loop.over:
+            return
+        self.nap_for = seconds
+        self.back.release()
+        self.on.acquire()
+
+
 class VirtualLoop(asyncio.SelectorEventLoop):
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
-        self._virtual = _Selector(clock)
-        super().__init__(selector=self._virtual)  # type: ignore[arg-type]
+        self._turns: list[_Turns] = []
+        self.over = False
+        super().__init__(selector=_Selector(clock))  # type: ignore[arg-type]
 
     def time(self) -> float:
         return self._clock.now
 
     def run_in_executor(self, executor: Any, func: Any, *args: Any) -> Any:
-        self._virtual.busy += 1
-        future = super().run_in_executor(executor, func, *args)
-
-        def done(_: Any) -> None:
-            self._virtual.busy -= 1
-
-        future.add_done_callback(done)
+        future = self.create_future()
+        turns = _Turns(self, future, lambda: func(*args))
+        self._turns.append(turns)
+        turns.go()
         return future
+
+    def nap(self, seconds: float) -> None:
+        """Called from a worker thread: let ``seconds`` of virtual time pass."""
+        turns = getattr(_worker, "turns", None)
+        if turns is not None and turns.loop is self:
+            turns.nap(seconds)
+
+    def release(self) -> None:
+        """The scenario is over: no thread is left waiting for its turn."""
+        self.over = True
+        for turns in self._turns:
+            turns.on.release()
 
 
 @contextlib.contextmanager
@@ -153,6 +227,7 @@ class World:
     knobs on the app's own hooks, and the record of everything that happened."""
 
     clock: Clock
+    loop: Any = None
     people: dict[str, dict[str, Any]] = field(
         default_factory=lambda: {
             "ada": {"role": "admin", "active": True},
@@ -207,6 +282,11 @@ class World:
     def end(self, kind: str, s: Any, span: int, **facts: Any) -> None:
         self.note(f"{kind}:end", span=span, sid=self.name(s.id), **facts)
 
+    def nap(self, seconds: float) -> None:
+        """From a worker thread: wait out ``seconds`` of the scenario's time."""
+        if seconds > 0 and self.loop is not None:
+            self.loop.nap(seconds)
+
     def change(self, who: str, **what: Any) -> None:
         self.people[who].update(what)
         person = self.people[who]
@@ -216,6 +296,9 @@ class World:
 
 class State(BaseModel):
     n: int = 0
+    # How many rows the page's table has: enough for its updates to travel
+    # as edits to the list rather than as the whole list.
+    rows: int = 20
 
 
 def make_bundle() -> Path:
@@ -231,7 +314,14 @@ def make_bundle() -> Path:
 BUNDLE = make_bundle()
 
 
-def make_app(world: World) -> mw.App:
+class Person(BaseModel):
+    name: str = Field(min_length=2)
+    age: int = Field(18, ge=18)
+
+
+def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
+    """The app under test. With ``threads`` its sign-in hooks are plain
+    functions, which millwork runs in worker threads."""
     knobs = world.knobs
 
     async def verify(username: str, password: str) -> bool:
@@ -267,11 +357,31 @@ def make_app(world: World) -> mw.App:
         world.note("on_logout:end", user=user.id, to=knobs["logout_to"])
         return knobs["logout_to"]
 
+    def recheck_in_a_thread(user: auth.User) -> auth.User | None:
+        world.note("recheck:begin", user=user.id)
+        world.nap(knobs["recheck_delay"])
+        if knobs["recheck_fails"]:
+            raise RuntimeError("the people database is away")
+        person = world.people[user.id]
+        world.note("recheck:end", user=user.id, role=person["role"], active=person["active"])
+        if not person["active"]:
+            return None
+        return user.model_copy(update={"claims": {"role": person["role"]}})
+
+    def on_logout_in_a_thread(user: auth.User) -> str | None:
+        world.note("on_logout:begin", user=user.id)
+        world.nap(knobs["logout_delay"])
+        if knobs["logout_fails"]:
+            raise RuntimeError("no idea where to send them")
+        world.note("on_logout:end", user=user.id, to=knobs["logout_to"])
+        return knobs["logout_to"]
+
     app = mw.App(
         "fuzz",
         state=State,
         public=None,
         bundle_dir=BUNDLE,
+        files=mw.Files(files),
         secret="fuzz-fuzz-fuzz-fuzz-fuzz-fuzz-fuzz-fuzz",
         session_grace=GRACE,
         max_sessions=6,
@@ -279,9 +389,9 @@ def make_app(world: World) -> mw.App:
         auth=auth.Auth(
             [auth.Password(verify)],
             on_login=admit,
-            recheck=recheck,
+            recheck=recheck_in_a_thread if threads else recheck,
             recheck_every=dt.timedelta(seconds=RECHECK_EVERY),
-            on_logout=on_logout,
+            on_logout=on_logout_in_a_thread if threads else on_logout,
             session=dt.timedelta(seconds=SIGN_IN_LASTS),
         ),
     )
@@ -364,9 +474,121 @@ def make_app(world: World) -> mw.App:
 
         return go
 
+    def working(s: mw.Session[State], about: dict[str, Any]) -> None:
+        """Work for a thread, in steps. Each step looks first at whether it
+        has been told to stop, which is the one way a thread can be."""
+        reporter = mw.progress()
+        for _ in range(3):
+            world.nap(0.2)
+            reporter.check()
+            world.note("tick", thread=True, **about)
+
+    @handler("thread")
+    async def start_thread(s: mw.Session[State], _: Any) -> None:
+        s.task(working, s, world.about(s), label="thread", on_done=finished)
+
+    @handler("later")
+    async def later(s: mw.Session[State], _: Any) -> None:
+        s.later(5.0, work, s, label="later")
+
+    async def breaks(s: mw.Session[State]) -> None:
+        await asyncio.sleep(0.2)
+        raise RuntimeError("the task broke")
+
+    @handler("task_boom")
+    async def task_boom(s: mw.Session[State], _: Any) -> None:
+        s.task(breaks, s, label="breaks", on_done=finished)
+
+    @handler("one_task")
+    async def one_task(s: mw.Session[State], _: Any) -> None:
+        s.task(work, s, key="one", replace=True, label="one")
+
+    @handler("ask_form", plain=False)
+    async def ask_form(s: mw.Session[State], _: Any) -> None:
+        answer = await s.ask(ui.Dialog(ui.Form(Person, key="details"), title="Who?"))
+        if answer is not None:
+            s.state.n += 1
+
+    @handler("print")
+    async def print_page(s: mw.Session[State], _: Any) -> None:
+        s.state.n += 1
+        s.print()
+
+    @handler("send_file")
+    async def send_file(s: mw.Session[State], _: Any) -> None:
+        s.download("report.txt", "the numbers")
+
+    @handler("grow")
+    async def grow(s: mw.Session[State], _: Any) -> None:
+        s.state.rows += 7
+
+    @handler("typed")
+    async def typed(s: mw.Session[State], value: Any) -> None:
+        s.state.n += 1
+
+    @handler("submitted")
+    async def submitted(s: mw.Session[State], value: Any) -> None:
+        s.state.n += 1
+
+    @handler("table")
+    async def on_table(s: mw.Session[State], payload: Any) -> None:
+        await asyncio.sleep(0)
+        s.state.n += 1
+
+    @handler("uploaded")
+    async def uploaded(s: mw.Session[State], refs: Any) -> None:
+        s.state.n += len(refs)
+
+    @handler("rejected")
+    async def rejected(s: mw.Session[State], info: Any) -> None:
+        s.state.n += 0
+
+    @handler("waved")
+    async def waved(s: mw.Session[State], payload: Any) -> None:
+        s.state.n += 1
+
+    async def chat(s: mw.Session[State], turn: Any) -> None:
+        span = world.begin("handler", s, name="chat", plain=False)
+        try:
+            async with turn.reply() as reply:
+                for word in ("one ", "two ", "three"):
+                    await asyncio.sleep(knobs["handler_delay"])
+                    await reply.text(word)
+        finally:
+            world.end("handler", s, span)
+
     def body(s: mw.Session[State], mark: str) -> ui.Component:
+        rows = [{"id": i, "name": f"row {i}", "n": s.state.n + i} for i in range(s.state.rows)]
         return ui.Page(
             ui.Text(f"{mark} n={s.state.n}", key="mark"),
+            ui.Button("thread", key="thread", on_click=start_thread),
+            ui.Button("later", key="later", on_click=later),
+            ui.Button("task_boom", key="task_boom", on_click=task_boom),
+            ui.Button("one_task", key="one_task", on_click=one_task),
+            ui.Button("ask_form", key="ask_form", on_click=ask_form),
+            ui.Button("print", key="print", on_click=print_page),
+            ui.Button("send_file", key="send_file", on_click=send_file),
+            ui.Button("grow", key="grow", on_click=grow),
+            ui.Input(key="input", on_change=typed),
+            ui.Form(Person, key="form", on_submit=submitted),
+            ui.Table(
+                rows=rows,
+                key="table",
+                selection="rows",
+                row_actions=[
+                    ui.MenuItem(id="open", label="Open"),
+                    ui.MenuItem(id="remove", label="Remove", confirm="Remove it?"),
+                ],
+                on_select=on_table,
+                on_row_click=on_table,
+                on_action=on_table,
+                on_sort=on_table,
+                on_filter=on_table,
+            ),
+            ui.FileUpload(key="upload", max_size_mb=1, on_upload=uploaded, on_reject=rejected),
+            ui.Download(filename="page.txt", content="what the page holds", key="download"),
+            ui.Custom("Widget", key="custom", events={"wave": waved}),
+            ui.Chat(key="chat", on_message=chat),
             ui.Button("bump", key="bump", on_click=bump),
             ui.Button("slow", key="slow", on_click=slow),
             ui.Button("end", key="end", on_click=end),
@@ -383,6 +605,9 @@ def make_app(world: World) -> mw.App:
 
     def is_admin(user: auth.User) -> bool:
         return user.claims.get("role") == "admin"
+
+    def owns(user: auth.User, owner: str) -> bool:
+        return user.id == owner
 
     async def connect(s: mw.Session[State], **params: Any) -> None:
         span = world.begin("connect", s)
@@ -412,6 +637,7 @@ def make_app(world: World) -> mw.App:
         ("/", "home", {}),
         ("/admin", ADMIN_MARK, {"allow": is_admin}),
         ("/open", "open to all", {"public": True}),
+        ("/desk/{owner}", "a desk", {"allow": owns}),
     ):
         page = app.page(path, **options)(lambda s, mark=mark: body(s, mark))
         page.connect(connect)
@@ -443,6 +669,9 @@ class Tab:
         self.leaving = False
         self.received: list[dict[str, Any]] = []
         self.task: asyncio.Task[Any] | None = None
+        # Requests the tab has made and not had an answer to: what each was for.
+        self.asked: dict[str, tuple[str, str]] = {}
+        self.files: list[str] = []
 
     @property
     def label(self) -> str:
@@ -484,6 +713,17 @@ class Tab:
         self.sent += 1
         self.inbox.put_nowait({"type": "websocket.receive", "text": text})
 
+    def ask(self, kind: str, node: str, **fields: Any) -> str:
+        """Make a request, and remember what it was for."""
+        request = f"q{self.number}x{self.sent}"
+        self.asked[request] = (kind, node)
+        self.say({"type": "request", "request": request, "node": node, **fields})
+        return request
+
+    def bytes(self, request: str, data: bytes) -> None:
+        """A binary frame for an upload in flight."""
+        self.inbox.put_nowait({"type": "websocket.receive", "bytes": pack_frame(request, data)})
+
     def drop(self) -> None:
         if not self.gone:
             self.gone = True
@@ -510,7 +750,18 @@ class Tab:
             self.server_closed = True
             self.sim.world.note("tab:closed", tab=self.label, code=event.get("code"))
             return
-        if kind != "websocket.send" or event.get("text") is None:
+        if kind != "websocket.send":
+            return
+        if event.get("text") is None:
+            # A frame of a file the tab asked for.
+            self.sim.world.note(
+                "tab:got",
+                tab=self.label,
+                type="bytes",
+                seq=0,
+                sent=sent,
+                sid=self.sim.world.name(self.session),
+            )
             return
         envelope = json.loads(event["text"])
         seq, msg = envelope["seq"], envelope["msg"]
@@ -541,6 +792,22 @@ class Tab:
             fact["message"] = msg["message"]
             if msg["fatal"]:
                 self.fatal = msg["message"]
+        elif kind == "stream":
+            fact["chunk"] = (msg.get("chunk") or {}).get("type")
+        elif kind == "reply":
+            what, node = self.asked.pop(msg["request"], ("", ""))
+            fact["for"] = what
+            fact["error"] = msg.get("error")
+            if what == "upload" and isinstance(msg.get("payload"), dict):
+                # The upload is in: the tab says so, with what it was given back.
+                self.files.append(msg["payload"]["id"])
+                self.say(
+                    {"type": "event", "node": node, "name": "upload", "payload": [msg["payload"]]}
+                )
+        if kind == "command" and msg["name"] == "download":
+            # Told that a file is ready, the tab fetches it.
+            self.files.append(msg["args"]["id"])
+            self.ask("file", "root", name="file", payload={"id": msg["args"]["id"]})
         fact["sid"] = fact.get("sid") or self.sim.world.name(self.session)
         self.received.append(self.sim.world.note("tab:got", **fact))
         if self.left_for is not None or self.leaving:
@@ -682,7 +949,10 @@ def _status(response: Any) -> Any:
 
 # ------------------------------------------------------------------ scenarios
 
-PATHS = ("/", "/admin", "/open", "/admin?x=1", "/nowhere")
+PATHS = ("/", "/admin", "/open", "/admin?x=1", "/nowhere", "/desk/ada", "/desk/cy")
+# How an upload goes: all of it, part of it and then nothing more, or part of
+# it and then the tab is gone.
+UPLOADS = ("whole", "whole", "part", "part then gone")
 # Small steps let things interleave, and the long ones cross a boundary each:
 # the notice a tab is given, the hooks' time limit, the recheck interval, the
 # grace period, the sign-in's lifetime.
@@ -716,8 +986,10 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
     kinds = ["wait"] * 5 + ["sign_in"] * 2 + ["open"] * 4 + ["knob"] * 2 + ["world"] * 2
     kinds += ["sign_out", "shutdown_soon"]
     if live:
-        kinds += ["click"] * 10 + ["navigate"] * 2 + ["drop"] * 2 + ["deafen", "hear"]
-        kinds += ["request", "stale", "answer"]
+        kinds += ["click"] * 14 + ["navigate"] * 2 + ["drop"] * 2 + ["deafen", "hear"]
+        kinds += ["request", "stale", "answer", "chat", "chat", "upload", "upload", "fetch"]
+    if sim.app.sessions:
+        kinds += ["push"]
     if any(t.gone or t.server_closed for t in sim.tabs):
         kinds += ["reconnect"] * 3
     kind = rng.choice(kinds)
@@ -738,14 +1010,22 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
         return ("world", who, what)
     if kind == "shutdown_soon":
         return ("wait", 0.0)
+    if kind == "push":
+        return ("push",)
     tab = rng.choice(live).number if live else 0
     if kind == "stale" and rng.random() < 0.5:
         open_still = [t.number for t in sim.tabs if not t.gone and not t.server_closed]
         tab = rng.choice(open_still) if open_still else tab
     if kind == "click":
-        return ("click", tab, rng.randrange(40))
+        return ("click", tab, rng.randrange(60), rng.randrange(3))
     if kind == "navigate":
         return ("navigate", tab, rng.choice(PATHS))
+    if kind == "chat":
+        return ("chat", tab, rng.choice(["message", "message", "stop", "regenerate"]))
+    if kind == "upload":
+        return ("upload", tab, rng.choice(["small", "small", "big"]), rng.choice(UPLOADS))
+    if kind == "fetch":
+        return ("fetch", tab, rng.randrange(4))
     if kind == "drop":
         return ("drop", tab)
     if kind == "deafen":
@@ -793,6 +1073,12 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
         }[what]
         world.change(who, **change)
         return True
+    if kind == "push":
+        # The app says something to every session at once, as it does when a
+        # theme file changes while it is being worked on.
+        world.note("act:push")
+        await sim.app._push_theme()
+        return True
     tab = tabs.get(action[1])
     if tab is None:
         return False
@@ -808,19 +1094,46 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
         # does anyway is somebody trying their luck.
         return False
     if kind == "click":
-        handlers = [h for h in sim.handlers(tab) if h[1] in ("click", "action")]
+        # Any event the page has a handler for, with something that event
+        # would carry: a click, a change, a submitted form, a table's row.
+        handlers = [h for h in sim.handlers(tab) if h[1] not in ("upload", "reject", "search")]
         if not handlers:
             return False
         node, name = handlers[action[2] % len(handlers)]
-        world.note("act:click", tab=tab.label, node=node)
-        tab.say({"type": "event", "node": node, "name": name})
+        variant = action[3] if len(action) > 3 else 0
+        world.note("act:event", tab=tab.label, node=node, name=name)
+        tab.say({"type": "event", "node": node, "name": name, "payload": carried(name, variant)})
+    elif kind == "chat":
+        node = next((n for n, name in sim.handlers(tab) if name == "message"), None)
+        if node is None:
+            return False
+        world.note("act:chat", tab=tab.label, what=action[2])
+        payload = {"text": "hello"} if action[2] == "message" else None
+        tab.say({"type": "event", "node": node, "name": action[2], "payload": payload})
+    elif kind == "upload":
+        node = next((n for n, name in sim.handlers(tab) if name == "upload"), None)
+        if node is None:
+            return False
+        size = 2 * 1024 * 1024 if action[2] == "big" else 2000
+        world.note("act:upload", tab=tab.label, size=size, how=action[3])
+        details = {"name": "notes.txt", "mime": "text/plain"}
+        request = tab.ask("upload", node, name="upload", payload=details, size=size)
+        send = size if action[3] == "whole" else size // 2
+        for start in range(0, send, 256 * 1024):
+            tab.bytes(request, b"a" * min(256 * 1024, send - start))
+        if action[3] == "part then gone":
+            tab.drop()
+    elif kind == "fetch":
+        if not tab.files:
+            return False
+        world.note("act:fetch", tab=tab.label)
+        tab.ask("file", "root", name="file", payload={"id": tab.files[action[2] % len(tab.files)]})
     elif kind == "navigate":
         world.note("act:navigate", tab=tab.label, path=action[2])
         tab.say({"type": "navigate", "path": action[2]})
     elif kind == "request":
         world.note("act:request", tab=tab.label)
-        request = {"type": "request", "request": f"r{tab.sent}", "node": "root/combo"}
-        tab.say({**request, "name": "search", "payload": "a"})
+        tab.ask("search", "root/combo", name="search", payload="a")
     elif kind == "stale":
         world.note("act:stale", tab=tab.label, node=action[2])
         tab.say({"type": "event", "node": action[2], "name": "click"})
@@ -847,6 +1160,28 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
     for _ in range(3):
         await asyncio.sleep(0)
     return True
+
+
+def carried(name: str, variant: int) -> Any:
+    """What an event of this name brings with it, in one of a few variants."""
+    if name == "change":
+        return ("typed", "", True)[variant]
+    if name == "submit":
+        return ({"name": "Ada", "age": 30}, {"name": "", "age": 3}, None)[variant]
+    if name == "select":
+        return ([0, 1], [], [99])[variant]
+    if name == "row_click":
+        return (3, 99, None)[variant]
+    if name == "action":
+        return (["open", 2], ["remove", 1], ["nothing", 99])[variant]
+    if name == "sort":
+        return ([["name", "asc"]], [], [["nope", "asc"]])[variant]
+    if name == "filter":
+        searching = {"columns": {}, "search": "row 1"}
+        return (searching, {"columns": {"name": "x"}, "search": ""}, {})[variant]
+    if name in ("toggle", "wave"):
+        return variant
+    return None
 
 
 # ------------------------------------------------------------------ running one
@@ -909,13 +1244,22 @@ def run(
             world.note("session:over", sid=world.name(self.id))
         original_shut(self)
 
-    # A replayed scenario ends the way the original did.
+    # How the app is set up and how the scenario ends are part of it, so a
+    # replay has them as the original did.
     endings = [a[1] for a in actions or [] if a[0] == "finish"]
+    setups = [a[1] for a in actions or [] if a[0] == "setup"]
     if actions is not None:
-        actions = [a for a in actions if a[0] != "finish"]
+        actions = [a for a in actions if a[0] not in ("finish", "setup")]
+        threads = "threads" in setups
+    else:
+        threads = "threads" not in avoid and rng.random() < 0.3
+    if threads:
+        done.append(("setup", "threads"))
+        made.append(None)
+    files_root = Path(tempfile.mkdtemp(prefix="mw-fuzz-files-"))
 
     async def scenario() -> Sim:
-        app = make_app(world)
+        app = make_app(world, files_root, threads)
         sim = Sim(world, app)
         await sim.start()
         tabs_before = 0
@@ -959,6 +1303,7 @@ def run(
         return sim
 
     loop = VirtualLoop(clock)
+    world.loop = loop
 
     def dropped(_: Any, context: dict[str, Any]) -> None:
         error = context.get("exception")
@@ -995,6 +1340,8 @@ def run(
         noisy.removeHandler(logged)
         noisy.propagate = propagate
         noisy.setLevel(level)
+        loop.release()
+        shutil.rmtree(files_root, ignore_errors=True)
         for task in asyncio.all_tasks(loop):
             task.cancel()
         with contextlib.suppress(Exception):
@@ -1071,6 +1418,11 @@ def emptied(sim: Sim) -> None:
         sim.problems.append(("leak", f"{len(app.ending)} session(s) never finished ending"))
     if app._ending:
         sim.problems.append(("leak", f"{len(app._ending)} sign-in(s) never finished ending"))
+    root = app.files.root
+    kept = [p for p in root.rglob("*") if p.is_file()] if root.exists() else []
+    if kept or app.files.used():
+        held = f"{len(kept)} file(s) and {app.files.used()} bytes"
+        sim.problems.append(("files kept", f"{held} with no session left"))
 
 
 def examine(world: World, sim: Sim, loop: asyncio.AbstractEventLoop) -> list[tuple[str, str]]:
@@ -1179,9 +1531,14 @@ def examine(world: World, sim: Sim, loop: asyncio.AbstractEventLoop) -> list[tup
     # Where the app said a sign-in's tabs should go is where they are sent.
     # (Only when every answer in the scenario was the same one.)
     answers = {e["to"] for e in log if e["kind"] == "on_logout:end"}
-    asked = sum(1 for e in log if e["kind"] == "on_logout:begin")
-    answered = sum(1 for e in log if e["kind"] == "on_logout:end")
-    if asked and asked == answered and len(answers) == 1 and None not in answers:
+    asked = [e["t"] for e in log if e["kind"] == "on_logout:begin"]
+    answered = [e["t"] for e in log if e["kind"] == "on_logout:end"]
+    # An answer that took longer than the hook is given does not count, and
+    # one from a thread arrives all the same, long after it was given up on.
+    in_time = len(asked) == len(answered) and all(
+        b - a < 9.0 for a, b in zip(asked, answered, strict=True)
+    )
+    if asked and in_time and len(answers) == 1 and None not in answers:
         (wanted,) = answers
         for tab in sim.tabs:
             if tab.left_for is not None and "/_mw/login" in tab.left_for:
@@ -1224,6 +1581,9 @@ ON_A_TAB = {
     "deafen",
     "hear",
     "reconnect",
+    "chat",
+    "upload",
+    "fetch",
 }
 
 
