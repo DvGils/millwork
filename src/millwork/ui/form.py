@@ -13,6 +13,7 @@ from millwork.nodes import Component
 
 class Form(Component):
     type: ClassVar[str] = "Form"
+    needs_session: ClassVar[bool] = True
     payloads: ClassVar[dict[str, str]] = {
         "on_submit": "the validated model instance",
         "on_cancel": "None",

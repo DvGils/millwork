@@ -150,6 +150,7 @@ export const Header: Renderer = ({ props, children }) => {
   const links = ((props.links as { $node: string }[] | undefined) ?? []).map((s) => s.$node);
   return (
     <header
+      data-slot="header"
       className={cn(
         "sticky top-0 z-20 flex h-16 shrink-0 items-center gap-5 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80",
         props.cls as string,

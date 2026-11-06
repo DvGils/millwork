@@ -31,7 +31,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from millwork import context
+from millwork.icons import check_icon
+from millwork.nodes import Component, Tree, build
 from millwork.shell import root_of
+from millwork.theme import _check_path
 
 log = logging.getLogger("millwork.auth")
 
@@ -161,6 +165,20 @@ def email_of(raw: dict[str, Any]) -> str | None:
 # ------------------------------------------------------------------ providers
 
 
+BRANDS = ("microsoft", "google")
+"""The provider marks the login page draws in the brand's own colors."""
+
+
+def _provider_icon(icon: str | None) -> str | None:
+    """What a sign-in button may show: a brand's mark, an image the app serves,
+    or one of the bundle's icons by name."""
+    if icon is None or icon in BRANDS:
+        return icon
+    if icon.startswith("/"):
+        return _check_path(icon, "a provider's icon")
+    return check_icon(icon)
+
+
 class Provider:
     id: str
     label: str
@@ -193,7 +211,7 @@ class OAuth(Provider):
     ) -> None:
         self.id = id
         self.label = label
-        self.icon = icon
+        self.icon = _provider_icon(icon)
         self.authorize_url = authorize_url
         self.token_url = token_url
         self.userinfo_url = userinfo_url
@@ -289,6 +307,7 @@ def AzureAD(
         client_secret=client_secret,
         scopes=scopes,
         extra_params={"response_mode": "query"},
+        icon="microsoft",
         http=http,
     )
 
@@ -303,6 +322,7 @@ def Google(*, client_id: str, client_secret: str, http: httpx.AsyncClient | None
         client_id=client_id,
         client_secret=client_secret,
         scopes="openid email profile",
+        icon="google",
         http=http,
     )
 
@@ -502,15 +522,26 @@ class Auth:
         session: dt.timedelta = dt.timedelta(days=7),
         log_identity: Literal["plain", "hashed"] = "plain",
         intents: dict[str, str] | None = None,
+        login: Component | None = None,
     ) -> None:
         self.providers = {p.id: p for p in providers}
         self.on_login = on_login
         self.session = session
         self.log_identity = log_identity
         self.intents = intents or {}
+        # The login page under its heading, laid out by the app: any components
+        # that need no session, with a ``ui.SignIn`` where each way in goes.
+        if login is not None and not isinstance(login, Component):
+            raise TypeError(
+                "Auth(login=) takes one component, a ui.Stack of them for several, "
+                f"not {type(login).__name__}"
+            )
+        self.login_page = login
         self.secret = ""
         self.debug = False
         self._warned_unproxied = False
+        if login is not None:
+            self._check_layout()
 
     def bind(
         self, secret: str, debug: bool, origins: list[str] | None = None, app: str = ""
@@ -568,13 +599,69 @@ class Auth:
 
     # ------------------------------------------------------------- login
 
-    def describe(self, next_path: str, error: str | None = None) -> dict[str, Any]:
+    def layout(self, either: str = "or") -> Component:
+        """What the login page shows under its heading: the app's own layout, or
+        every OAuth provider's button, a button per intent, and the password
+        form, with ``either`` on the line between buttons and form."""
+        from millwork import ui
+
+        if self.login_page is not None:
+            return self.login_page
+        oauth = [p for p in self.providers.values() if p.kind == "oauth"]
+        buttons: list[Component] = [ui.SignIn(p.id) for p in oauth]
+        if oauth:
+            buttons += [ui.SignIn(oauth[0].id, intent=intent) for intent in self.intents]
+        parts: list[Component] = [ui.Stack(*buttons, gap=2)] if buttons else []
+        form = next((p for p in self.providers.values() if p.kind == "password"), None)
+        if form is not None:
+            if buttons:
+                parts.append(ui.Separator(label=either))
+            parts.append(ui.SignIn(form.id))
+        return ui.Stack(*parts, gap=6)
+
+    def _tree(self, either: str = "or") -> Tree:
+        """The login page's layout as nodes, built with this Auth in scope so a
+        ``ui.SignIn`` finds its provider without a session."""
+        token = context._auth.set(self)
+        try:
+            return build(self.layout(either), "login")
+        finally:
+            context._auth.reset(token)
+
+    def _check_layout(self) -> None:
+        """Refuse a layout the login page cannot draw, when the app starts and
+        not when the first visitor arrives."""
+        tree = self._tree()
+        # No session exists before sign-in, so nothing there can call Python.
+        for node_id, name in [*tree.handlers, *tree.callables]:
+            raise ValueError(
+                f"the login page has no session, so {tree.nodes[node_id].type}'s "
+                f"{name} cannot run there"
+            )
+        for node_id in tree.session_bound:
+            raise ValueError(
+                f"the login page has no session, and a {tree.nodes[node_id].type} "
+                "does nothing without one"
+            )
+        placed = {n.props["provider"] for n in tree.nodes.values() if n.type == "SignIn"}
+        for p in self.providers.values():
+            if p.kind in ("oauth", "password") and p.id not in placed:
+                # Leaving it off the page hides it and no more: its sign-in
+                # still answers until it leaves the list of providers.
+                log.warning(
+                    "the login page has no ui.SignIn(%r): that provider is not shown there", p.id
+                )
+
+    def describe(
+        self, next_path: str, error: str | None = None, either: str = "or"
+    ) -> dict[str, Any]:
         """What the login page needs, and nothing a browser should not see."""
+        tree = self._tree(either)
         return {
-            "providers": [
-                p.public() for p in self.providers.values() if p.kind in ("oauth", "password")
-            ],
-            "intents": [{"id": k, "label": v} for k, v in self.intents.items()],
+            "root": tree.root,
+            "nodes": {
+                node_id: node.model_dump(mode="json") for node_id, node in tree.nodes.items()
+            },
             "proxied": any(isinstance(p, Headers) for p in self.providers.values()),
             "next": next_path,
             "error": error,

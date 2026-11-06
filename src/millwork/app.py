@@ -615,7 +615,7 @@ class App:
         if error is None and self.auth.proxy_identity(request):
             error = self.theme.text("proxy_denied")
         boot = {
-            **self.auth.describe(next_path, error),
+            **self.auth.describe(next_path, error, self.theme.text("or")),
             "name": self.name,
             "image": self.theme.login_image,
         }

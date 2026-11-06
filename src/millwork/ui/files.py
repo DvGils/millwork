@@ -23,6 +23,7 @@ class FileUpload(Component):
     """Uploads go over the session's socket; the handler receives ``FileRef``s."""
 
     type: ClassVar[str] = "FileUpload"
+    needs_session: ClassVar[bool] = True
     payloads: ClassVar[dict[str, str]] = {
         "on_upload": "the FileRefs",
         "on_reject": "{'name': filename, 'reason': why}",
@@ -155,6 +156,7 @@ class Download(Component):
     """A button that downloads a file, bytes, text, or what a callable returns on click."""
 
     type: ClassVar[str] = "Download"
+    needs_session: ClassVar[bool] = True
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"content"})
 
     label: str = "Download"

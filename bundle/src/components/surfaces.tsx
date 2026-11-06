@@ -7,7 +7,7 @@ import { useStatus } from "../ws";
 import { t } from "../theme";
 import { store, useNode } from "../store";
 import { navigate } from "../ws";
-import { has, isInternalPath, safeUrl } from "../lib";
+import { has, hasSession, isInternalPath, linkLook, safeUrl } from "../lib";
 import { ScrollArea as UiScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "cn";
 import { icon } from "../icons";
@@ -343,7 +343,7 @@ export const Stat: Renderer = ({ props }) => {
 export const Link: Renderer = ({ props }) => {
   const Icon = icon(props.icon);
   const href = safeUrl(props.href);
-  const internal = isInternalPath(props.href) && props.target !== "_blank";
+  const internal = isInternalPath(props.href) && props.target !== "_blank" && hasSession();
   return (
     <a
       href={href}
@@ -355,7 +355,14 @@ export const Link: Renderer = ({ props }) => {
         e.preventDefault();
         navigate(props.href as string);
       } : undefined}
-      className={cn("inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline aria-[current=page]:font-medium", props.cls as string)}
+      // In a sidebar or the header a link is one of a row of places to go,
+      // and a row of underlined words is not how that reads.
+      className={cn(
+        "inline-flex items-center gap-1 text-sm text-primary aria-[current=page]:font-medium",
+        linkLook,
+        "in-data-[slot=sidebar]:no-underline in-data-[slot=header]:no-underline",
+        props.cls as string,
+      )}
     >
       {Icon ? <Icon className="size-3.5" /> : null}
       {String(props.label ?? "")}

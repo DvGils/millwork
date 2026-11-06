@@ -133,7 +133,9 @@ export const Card: Renderer = ({ props, children, emit }) => (
         {props.description ? <CardDescription>{String(props.description)}</CardDescription> : null}
       </CardHeader>
     ) : null}
-    <CardContent className={cn("flex flex-col gap-4", props.padding === false && "p-0")}>{children}</CardContent>
+    {/* The content takes the height a taller neighbor gives the card, so the
+        footer sits at the bottom of every card in a row. */}
+    <CardContent className={cn("flex grow flex-col gap-4", props.padding === false && "p-0")}>{children}</CardContent>
     {props.footer ? (
       <CardFooter>
         <Slot value={props.footer} />

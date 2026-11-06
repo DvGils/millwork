@@ -1473,6 +1473,71 @@ class Steps(Component):
         ) -> None: ...
 
 
+class SignIn(Component):
+    """One way to sign in, put where the page wants it. ``provider`` is the id
+    of one of the app's auth providers: an OAuth provider is drawn as its
+    button, and ``"password"`` as the username and password form. ``intent``
+    makes it the button for one of ``Auth(intents=)``, and ``label`` replaces
+    the words on the button. It is what ``Auth(login=)`` lays the login page
+    out with, and it works on a public page of the app as well."""
+
+    type: ClassVar[str] = "SignIn"
+    provider: str
+    intent: str | None = None
+    label: str | None = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            provider: str,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            intent: str | None = None,
+            label: str | None = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, provider: str, **props: Any) -> None:
+            super().__init__(provider=provider, **props)
+
+    def wire_extra(self) -> dict[str, Any]:
+        from millwork import context
+
+        auth = context.auth()
+        if auth is None:
+            raise ValueError("ui.SignIn needs an app with auth")
+        provider = auth.providers.get(self.provider)
+        if provider is None or provider.kind not in ("oauth", "password"):
+            offered = sorted(
+                p.id for p in auth.providers.values() if p.kind in ("oauth", "password")
+            )
+            raise ValueError(
+                f"ui.SignIn({self.provider!r}) names no provider with a sign-in of its own; "
+                f"the app has {', '.join(offered) or 'none'}"
+            )
+        label = self.label
+        if self.intent is not None:
+            if provider.kind != "oauth":
+                raise ValueError(
+                    "an intent goes with an OAuth provider, not with the password form"
+                )
+            if self.intent not in auth.intents:
+                raise ValueError(
+                    f"ui.SignIn(intent={self.intent!r}) is not one of Auth(intents=): "
+                    f"{', '.join(sorted(auth.intents)) or 'none'}"
+                )
+            label = label or auth.intents[self.intent]
+        return {
+            "kind": provider.kind,
+            "name": provider.label,
+            "icon": provider.icon,
+            "label": label,
+        }
+
+
 class Skeleton(Component):
     type: ClassVar[str] = "Skeleton"
     rows: int = 3
@@ -1565,6 +1630,7 @@ __all__ = [
     "Separator",
     "Sheet",
     "Sidebar",
+    "SignIn",
     "Skeleton",
     "Slider",
     "Spinner",

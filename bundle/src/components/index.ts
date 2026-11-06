@@ -37,6 +37,7 @@ import { ButtonGroup, DatePicker, DropdownMenu, Field, MultiSelect } from "./cho
 import { Progress as TaskProgress, Steps } from "./tasks";
 import { Form } from "./form";
 import { Chat } from "./chat";
+import { SignIn } from "./sign-in";
 import { Download, FileCard, FileUpload, Image, Pdf } from "./files";
 import { AreaChart, BarChart, LineChart, PieChart } from "./charts";
 
@@ -93,6 +94,7 @@ export const registry: Record<string, Renderer> = {
   Table,
   Form,
   Chat,
+  SignIn,
   FileUpload,
   FileCard,
   Image,

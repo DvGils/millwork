@@ -3,6 +3,28 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.1.8
+
+- The login page can be laid out by the app. `Auth(login=)` takes
+  components, with a `ui.SignIn(provider_id)` where each way in goes, so
+  a heading, a note or a line with "or" sits wherever it is wanted, and
+  the ways in come in the app's order. Left alone, the page now draws a
+  line between the provider buttons and the password form, whose word is
+  the new interface string `or`, for a theme that sets its own strings.
+  `ui.SignIn` works on a public page too.
+- The Microsoft and Google buttons show their brand's mark.
+  `auth.OAuth(icon=)` takes `microsoft`, `google`, the path of an image
+  under `public/`, or an icon name, and an icon the bundle does not have
+  is now refused when the app starts.
+- A link is underlined, faintly, and the line firms up under the pointer.
+  Under the default theme the primary color is the color of the text, so
+  a link in Markdown, a `ui.Link`, a link cell in a table and a file
+  card's link looked like the words around them. Links in a sidebar and
+  in the header stay plain.
+- A card's footer sits at the bottom of the card. In a grid, a card with
+  less in it than its neighbor left its footer floating under the content
+  with empty card below it.
+
 ## 0.1.7
 
 - A theme's `font-sans` and `font-heading` tokens had no effect. The

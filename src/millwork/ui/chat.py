@@ -57,6 +57,7 @@ class Accept(BaseModel):
 
 class Chat(Component):
     type: ClassVar[str] = "Chat"
+    needs_session: ClassVar[bool] = True
     payloads: ClassVar[dict[str, str]] = {
         "on_message": "the ChatTurn: its text, files and reply()",
         "on_stop": "None",

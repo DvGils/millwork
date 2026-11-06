@@ -17,6 +17,7 @@ from starlette.testclient import TestClient
 
 import millwork as mw
 from millwork import auth, ui
+from millwork.nodes import build
 
 
 def fake_provider() -> Starlette:
@@ -415,3 +416,157 @@ def test_state_cookie_cannot_pose_as_a_login() -> None:
         a.secret, "oauth-state", {"id": "eve", "name": "Eve", "exp": int(time.time()) + 60}
     )
     assert a.read(state) is None
+
+
+def two_ways(**kw: Any) -> auth.Auth:
+    return auth.Auth(
+        [
+            auth.AzureAD(tenant="t", client_id="c", client_secret="x"),
+            auth.Password(lambda username, password: True),
+        ],
+        intents={"demo": "Try the demo"},
+        **kw,
+    )
+
+
+def laid_out(described: dict[str, Any]) -> list[tuple[str, Any]]:
+    """The login page's nodes in the order they are drawn, as (type, what it shows)."""
+    nodes = described["nodes"]
+    out: list[tuple[str, Any]] = []
+
+    def walk(node_id: str) -> None:
+        node = nodes[node_id]
+        props = node["props"]
+        if node["type"] == "SignIn":
+            out.append(("SignIn", (props["provider"], props.get("intent"), props["label"])))
+        elif node["type"] != "Stack":
+            out.append((node["type"], props.get("label") or props.get("content")))
+        for child in node["children"]:
+            walk(child)
+
+    walk(described["root"])
+    return out
+
+
+def test_the_login_page_offers_every_way_in_with_a_line_between() -> None:
+    described = two_ways().describe("/next", either="of")
+    assert laid_out(described) == [
+        ("SignIn", ("azure-ad", None, None)),
+        ("SignIn", ("azure-ad", "demo", "Try the demo")),
+        ("Separator", "of"),
+        ("SignIn", ("password", None, None)),
+    ]
+    button = next(n for n in described["nodes"].values() if n["type"] == "SignIn")
+    assert button["props"]["kind"] == "oauth" and button["props"]["name"] == "Microsoft"
+    assert button["props"]["icon"] == "microsoft"
+    assert described["next"] == "/next"
+    # The form goes with the provider that checks passwords, whatever an
+    # OAuth provider is called.
+    named = auth.Auth(
+        [
+            auth.OAuth(
+                "password",
+                label="Vault",
+                authorize_url="https://idp/a",
+                token_url="https://idp/t",
+                userinfo_url="https://idp/u",
+                client_id="c",
+                client_secret="s",
+                scopes="openid",
+            )
+        ]
+    ).describe("/")
+    assert [n["props"]["kind"] for n in named["nodes"].values() if n["type"] == "SignIn"] == [
+        "oauth"
+    ]
+    # One way in needs no line, and none at all is an empty page.
+    only = auth.Auth([auth.Password(lambda u, p: True)]).describe("/")
+    assert laid_out(only) == [("SignIn", ("password", None, None))]
+    assert laid_out(auth.Auth([]).describe("/")) == []
+
+
+def test_an_app_lays_its_login_page_out_itself() -> None:
+    page = ui.Stack(
+        ui.Text("Partners"),
+        ui.SignIn("password", label="Sign in as a partner"),
+        ui.Separator(label="or"),
+        ui.Text("Staff"),
+        ui.SignIn("azure-ad"),
+        ui.SignIn("azure-ad", intent="demo", label="Look around"),
+    )
+    assert laid_out(two_ways(login=page).describe("/")) == [
+        ("Text", "Partners"),
+        ("SignIn", ("password", None, "Sign in as a partner")),
+        ("Separator", "or"),
+        ("Text", "Staff"),
+        ("SignIn", ("azure-ad", None, None)),
+        ("SignIn", ("azure-ad", "demo", "Look around")),
+    ]
+
+
+def test_a_login_page_that_cannot_be_drawn_is_refused_at_start(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with pytest.raises(ValueError, match="names no provider.*the app has azure-ad, password"):
+        two_ways(login=ui.SignIn("github"))
+    with pytest.raises(ValueError, match="not one of Auth\\(intents=\\): demo"):
+        two_ways(login=ui.SignIn("azure-ad", intent="trial"))
+    with pytest.raises(ValueError, match="an intent goes with an OAuth provider"):
+        two_ways(login=ui.SignIn("password", intent="demo"))
+    # Nothing on the page can call Python: there is no session before sign-in.
+    with pytest.raises(ValueError, match="no session, so Button's click cannot run there"):
+        two_ways(login=ui.Stack(ui.SignIn("password"), ui.Button("Help", on_click=print)))
+    # Nor can it hold what only talks to Python, handler or not.
+    for bound in (
+        ui.Download("Get", filename="a.txt", content=b"abc"),
+        ui.Chat(key="c"),
+        ui.FileUpload(key="f"),
+    ):
+        with pytest.raises(ValueError, match="does nothing without one"):
+            two_ways(login=ui.Stack(ui.SignIn("password"), bound))
+    with pytest.raises(TypeError, match="takes one component, a ui.Stack of them for several"):
+        two_ways(login=[ui.SignIn("password")])  # type: ignore[arg-type]
+    # A provider left off the page is said once, since it may be a slip.
+    with caplog.at_level("WARNING", logger="millwork.auth"):
+        two_ways(login=ui.SignIn("azure-ad"))
+    assert "no ui.SignIn('password')" in caplog.text
+    # Outside an app with auth there is no provider to draw.
+    with pytest.raises(ValueError, match="needs an app with auth"):
+        build(ui.SignIn("password"))
+
+
+def test_a_provider_shows_a_brand_an_image_or_an_icon() -> None:
+    def provider(icon: str | None) -> auth.OAuth:
+        return auth.OAuth(
+            "x",
+            label="X",
+            authorize_url="https://idp/a",
+            token_url="https://idp/t",
+            userinfo_url="https://idp/u",
+            client_id="c",
+            client_secret="s",
+            scopes="openid",
+            icon=icon,
+        )
+
+    for icon in (None, "google", "microsoft", "/public/okta.svg", "lock"):
+        assert provider(icon).icon == icon
+    assert auth.Google(client_id="c", client_secret="s").icon == "google"
+    with pytest.raises(ValueError, match="no icon named 'octocat'"):
+        provider("octocat")
+    with pytest.raises(ValueError, match="same-origin path"):
+        provider("//evil.example/x.svg")
+
+
+async def test_a_public_page_can_hold_a_sign_in(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    app = make_app(tmp_path)
+
+    @app.page("/welcome", public=True)
+    def welcome(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.SignIn("fake", key="in"))
+
+    async with TestApp(app).open("/welcome") as page:
+        props = page.find("in").props
+        assert props["kind"] == "oauth" and props["name"] == "Fake IdP"

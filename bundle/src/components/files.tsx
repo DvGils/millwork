@@ -9,7 +9,7 @@ import { cn } from "cn";
 import { icon } from "../icons";
 import { fileUrl, onStatus, request, saveFile } from "../ws";
 import { toast } from "@/components/ui/toast";
-import { safeUrl } from "../lib";
+import { linkLook, safeUrl } from "../lib";
 import { Button } from "@/components/ui/button";
 import { Progress, ProgressIndicator, ProgressTrack } from "@/components/ui/progress";
 import {
@@ -246,7 +246,7 @@ export const FileCard: Renderer = ({ props, emit }) => {
         </div>
       </div>
       {url || file ? (
-        <a href={url ?? "#"} target="_blank" rel="noreferrer" className="text-xs text-primary underline-offset-4 hover:underline" onClick={file ? open : (e) => e.stopPropagation()}>
+        <a href={url ?? "#"} target="_blank" rel="noreferrer" className={cn("text-xs text-primary", linkLook)} onClick={file ? open : (e) => e.stopPropagation()}>
           {t("open")}
         </a>
       ) : null}

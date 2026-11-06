@@ -93,6 +93,17 @@ export function isInternalPath(value: unknown): value is string {
   return isSameOriginPath(value) && !/^\/_mw(\/|$)/.test(value) && !/^\/public(\/|$)/.test(value);
 }
 
+// How a link in running text looks. It is underlined, faintly, since under a
+// theme whose primary is the color of the text nothing else tells it from
+// the words around it, and the line firms up under the pointer.
+export const linkLook = "underline decoration-current/35 underline-offset-4 hover:decoration-current";
+
+// The login page has no session and no socket: a link there is the browser's
+// to follow, where on a page of the app the session changes page.
+export function hasSession(): boolean {
+  return !(window as unknown as { __mw?: { login?: unknown } }).__mw?.login;
+}
+
 // Controlled when the server put the key on the wire (an explicit None arrives as null).
 export function has(props: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(props, key);

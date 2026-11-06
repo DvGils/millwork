@@ -281,7 +281,8 @@ def test_sign_out_goes_through_the_proxy(tmp_path: Path) -> None:
         user = boot_of(client.get("/", headers=headers).text)["user"]
         assert user["sign_out"] == "/oauth2/sign_out"
         login = boot_of(client.get("/_mw/login").text)["login"]
-        assert login["proxied"] is True and login["providers"] == []
+        assert login["proxied"] is True
+        assert not any(n["type"] == "SignIn" for n in login["nodes"].values())
         # Logout still ends the person's sessions on this process.
         with client.websocket_connect("/_mw/ws", headers=headers) as ws:
             ws.send_text(json.dumps({"seq": 1, "msg": {"type": "hello", "path": "/"}}))

@@ -17,6 +17,7 @@ from pydantic_core import PydanticUndefined
 
 from millwork import ui
 from millwork.app import App, PageDef
+from millwork.auth import Auth, AzureAD, Dev, Google, Headers, OAuth, Password
 from millwork.forms import WIDGETS
 from millwork.icons import ICONS
 from millwork.nodes import Component
@@ -173,6 +174,27 @@ def reference() -> str:
         out.append(_call(f"app.{name}", getattr(App, name)))
     out.append(_call("page.connect", PageDef.connect))
     out.append(_call("page.close", PageDef.close))
+    out += [
+        "",
+        "## Signing in",
+        "",
+        "`from millwork import auth`, then `App(auth=auth.Auth([...providers]))`.",
+        "With auth every page asks for a login except one marked `public=True`,",
+        "and `s.user` is the `auth.User`. `on_login(identity)` returns the `User`",
+        "to admit or `None` to refuse. `login=` lays the login page out from",
+        "components that need no session, with a `ui.SignIn(provider_id)` where",
+        "each way in goes.",
+        "",
+        "- `auth.Auth" + _signature(Auth.__init__, skip_self=True) + "`",
+        "- `auth.AzureAD" + _signature(AzureAD, skip_self=False) + "`",
+        "- `auth.Google" + _signature(Google, skip_self=False) + "`",
+        "- `auth.OAuth" + _signature(OAuth.__init__, skip_self=True) + "`. `icon` is",
+        "  `microsoft`, `google`, the path of an image under `public/`, or an icon name.",
+        "- `auth.Password" + _signature(Password.__init__, skip_self=True) + "`",
+        "- `auth.Headers" + _signature(Headers.__init__, skip_self=True) + "`",
+        "- `auth.Dev" + _signature(Dev.__init__, skip_self=True) + "`",
+        "",
+    ]
     out += [
         "",
         "## Testing",

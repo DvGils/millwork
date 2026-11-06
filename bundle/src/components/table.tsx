@@ -10,7 +10,7 @@ import { type Sort, emptyFilter, equalsFilter, includesFilter, rangeFilter, sort
 import { cn } from "cn";
 import { icon } from "../icons";
 import { useRowWindow, useSteadyColumns } from "../hooks/use-row-window";
-import { safeUrl } from "../lib";
+import { linkLook, safeUrl } from "../lib";
 import {
   TableBody,
   TableCell,
@@ -162,7 +162,7 @@ function formatCell(value: unknown, format: string, tone?: string) {
       );
     case "link":
       return (
-        <a href={safeUrl(value)} target="_blank" rel="noreferrer" className={cn(tone ? cellTone[tone] : "text-primary", "underline-offset-4 hover:underline")}>
+        <a href={safeUrl(value)} target="_blank" rel="noreferrer" className={cn(tone ? cellTone[tone] : "text-primary", linkLook)}>
           {String(value)}
         </a>
       );
