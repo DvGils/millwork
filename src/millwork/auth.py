@@ -1002,10 +1002,9 @@ class Auth:
             ]
             # All of them are over at once, and each tab is then told on its
             # own, so one that is slow to listen keeps none of the others.
-            for session in theirs:
-                session._shut()
             said = app.theme.text("signed_out")
-            await asyncio.gather(*(s.end(said) for s in theirs), return_exceptions=True)
+            for session in theirs:
+                session.dismiss(said)
         return response
 
     async def route_oauth_start(self, request: Request) -> Response:

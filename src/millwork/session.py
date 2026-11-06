@@ -108,6 +108,7 @@ class Session[S]:
         # are cancelled last.
         self.end_to: str | None = None
         self._finishing: asyncio.Task[None] | None = None
+        self._page_closing: asyncio.Task[None] | None = None
         self._own: list[Any] = []
         self.state: S = app.make_state()
         self.tree: Tree | None = None
@@ -271,8 +272,14 @@ class Session[S]:
             self._expiry = None
         self.sign_in, self.sign_in_expires = sign_in or (None, None)
         if sign_in is not None and not self.closed:
-            delay = max(0.0, sign_in[1] - time.time())
-            self._expiry = self._loop.call_later(delay, self._sign_in_expired)
+            delay = sign_in[1] - time.time()
+            if delay <= 0:
+                # It ran out while the session was being connected. That is
+                # acted on here and now, before anything of the page is sent,
+                # and not a moment later when a timer gets round to it.
+                self._sign_in_expired()
+            else:
+                self._expiry = self._loop.call_later(delay, self._sign_in_expired)
 
     def watch_user(self, identified: tuple[str, Any] | None) -> None:
         """Keep asking the app's ``recheck`` about this session's user for as
@@ -365,10 +372,15 @@ class Session[S]:
         """End the session and send its tab away: to ``to``, or to the login
         page for a page that needs a sign-in, or back onto a public page as a
         visitor."""
-        if to is None:
-            path = self.path.split("?", 1)[0].split("#", 1)[0]
-            to = path if self.page.public else f"/_mw/login?{urlencode({'next': path})}"
-        await self.end(self.text("sign_in_hint"), to=to)
+        await self.end(self.text("sign_in_hint"), to=self.leaving_for(to))
+
+    def leaving_for(self, to: str | None) -> str:
+        """Where this session's tab goes when it is sent away: ``to``, or the
+        login page for a page that needs a sign-in, or its own public page."""
+        if to is not None:
+            return to
+        path = self.path.split("?", 1)[0].split("#", 1)[0]
+        return path if self.page.public else f"/_mw/login?{urlencode({'next': path})}"
 
     async def end(self, message: str, *, to: str | None = None) -> None:
         """Close the session and tell its tab why, so the tab stops instead of
@@ -378,9 +390,25 @@ class Session[S]:
         The session is over before its tab is told, and the telling is given
         a moment and no more. A tab that does not read what it is sent can
         then hold up neither its own session's end nor anyone else's."""
-        self._shut()
-        await asyncio.shield(self._finish(message, to))
+        finishing = self.dismiss(message, to=to)
+        if self._inside_the_end():
+            return
+        await asyncio.shield(finishing)
         self._stop_self()
+
+    def dismiss(self, message: str, *, to: str | None = None) -> asyncio.Task[None]:
+        """``end`` without the wait: the session is over as this returns, and
+        telling its tab and closing its page go on by themselves. For ending
+        a session from somewhere that must not be held up by its close hook."""
+        self._shut()
+        return self._finish(message, to)
+
+    def _inside_the_end(self) -> bool:
+        """Whether the caller is the end itself: the page's close hook, which
+        may well end the session it is closing. It has nothing to wait for,
+        and waiting would be waiting for itself."""
+        me = asyncio.current_task()
+        return me is not None and me in (self._finishing, self._page_closing)
 
     async def _close(self) -> None:
         """The session is over: its work is cancelled, the page it is on is
@@ -388,7 +416,10 @@ class Session[S]:
         that is gone or a server that stops, and it tells the tab nothing.
         An app ends a session with ``end``, which does."""
         self._shut()
-        await asyncio.shield(self._finish(None, None))
+        finishing = self._finish(None, None)
+        if self._inside_the_end():
+            return
+        await asyncio.shield(finishing)
         self._stop_self()
 
     def _stop_self(self) -> None:
@@ -482,12 +513,33 @@ class Session[S]:
         moving to another page or by ending. The state is still as the page
         left it. A page whose connect never finished has nothing to close."""
         if not self._page_open:
+            # A close that is under way, for a page a navigation was leaving
+            # when the session ended, is waited for: the end is not done
+            # while a close hook is still running.
+            closing = self._page_closing
+            if closing is not None and not closing.done() and closing is not asyncio.current_task():
+                await asyncio.shield(closing)
             return
         self._page_open = False
         if page.on_close is None:
             return
+        # In a task of the framework's own, so the hook runs to its end
+        # whatever becomes of whoever was leaving the page.
+        self._page_closing = self._loop.create_task(self._run_close_hook(page))
+        await asyncio.shield(self._page_closing)
+
+    async def _run_close_hook(self, page: PageDef) -> None:
+        assert page.on_close is not None
         try:
             await _call(page.on_close, self)
+        except asyncio.CancelledError:
+            # The hook waited on work of the session's that the end had just
+            # cancelled. That is the hook's failure, not a reason to stop
+            # ending. Only a cancellation of this task itself passes on.
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise
+            log.warning("close hook of %s was cancelled for session %s", page.path, self.id)
         except Exception as exc:
             log.exception("close hook of %s failed for session %s", page.path, self.id)
             self._failed(f"the close hook of {page.path}", exc)
@@ -562,7 +614,7 @@ class Session[S]:
     def navigate(self, path: str) -> None:
         """Go to another page on this session: its connect runs, the tab's history
         updates. This returns at once; ``navigate_to`` is the same, awaited."""
-        self._loop.create_task(self.navigate_to(path))
+        self.spawn(self.navigate_to(path), f"navigate {path}")
 
     def clipboard(self, text: str) -> None:
         """Put text on the tab's clipboard."""
@@ -807,8 +859,12 @@ class Session[S]:
         self._chat_run(event.node, thread, message)
 
     def spawn(self, coro: Any, what: str = "work") -> asyncio.Task[Any]:
-        """Run a coroutine for this session: tracked, cancelled on close, failures logged."""
+        """Run a coroutine for this session: tracked, cancelled on close, failures logged.
+        On a session that is over it does not run at all."""
         task = self._loop.create_task(coro, name=what)
+        if self.closed:
+            task.cancel()
+            return task
         self._spawned.add(task)
 
         def done(t: asyncio.Task[Any]) -> None:
@@ -847,6 +903,13 @@ class Session[S]:
                     existing.cancel()
         name = label or getattr(work, "__name__", None) or "task"
         task: Task[Any] = Task(self, name, key, quiet)
+        if self.closed:
+            # The session is over: nothing new starts on it.
+            if inspect.iscoroutine(work):
+                work.close()
+            task._cancel_flag.set()
+            task._finish("cancelled")
+            return task
         task._on_done = on_done
         if on_done is not None:
             task._observed = True
@@ -871,8 +934,10 @@ class Session[S]:
     def _task_finished(self, task: Task[Any]) -> None:
         """A task reached a terminal status: run ``on_done`` as a handler, then render."""
         on_done = getattr(task, "_on_done", None)
-        if on_done is not None:
-            self._loop.create_task(self._run_handler(on_done, self, task))
+        if on_done is not None and not self.closed:
+            # One of the session's own, so it ends with the session, and none
+            # for a task the end itself cancelled.
+            self.spawn(self._run_handler(on_done, self, task), "on_done")
         if len(self.tasks) > 50:
             self.tasks = [t for t in self.tasks if not t.done][-50:] + [
                 t for t in self.tasks if t.done
@@ -1395,7 +1460,7 @@ class Session[S]:
         for stream in self._inbound.values():
             stream.fail(why)
         for task in list(self._requests.values()):
-            if task is not but:
+            if task is not but and task not in self._own:
                 task.cancel()
 
     async def _request(self, msg: Request) -> None:
@@ -1590,6 +1655,10 @@ class Session[S]:
             finally:
                 context.unbind(token)
         self._page_open = True
+        if self.closed:
+            # The session ended while the hook ran. What the hook opened is
+            # closed now: the end has been and gone, and found no page open.
+            await self._close_page(self.page)
 
     async def connect_or_fall_back(self) -> None:
         """Connect, and when the hook refuses with NotFound or Forbidden, land on the

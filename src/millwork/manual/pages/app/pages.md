@@ -216,7 +216,9 @@ when a sign-out ends it, and when the server stops. At a stop every page
 closes before the `on_shutdown` hooks run, so a close hook still has the
 database those hooks close. The session's tasks are canceled before the
 hook runs. A handler or a task that ends its own session goes on until
-the hook is done and stops at its next `await`.
+the hook is done and stops at its next `await`. A session that has ended
+runs nothing more, so a task started on it afterwards is canceled at
+once.
 
 ## Navigation in the frame
 

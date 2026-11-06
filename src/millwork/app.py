@@ -12,6 +12,7 @@ import hashlib
 import logging
 import re
 import secrets
+import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -289,6 +290,8 @@ class App:
         # Sign-ins that ran out and are being ended: the task doing it, and
         # the sessions it will send away, which one that connects late joins.
         self._ending: dict[str, tuple[asyncio.Task[None], list[Session[Any]]]] = {}
+        # Where the tabs of a sign-in that has just ended were sent, and when.
+        self._ended: dict[str, tuple[str | None, float]] = {}
         self.shell = Shell(self.bundle_dir, prefix=PREFIX)
         self._routes: list[Any] = []
         self._extra: list[_Extra] = []
@@ -533,7 +536,17 @@ class App:
             # That goes for a session already on its way out as well, which
             # is no longer among the sessions and may not have closed its page.
             for session in [*self.sessions.values(), *self.ending]:
-                await session._close()
+                try:
+                    await session._close()
+                except asyncio.CancelledError:
+                    # One session's end going wrong does not leave the next
+                    # one open, nor the shutdown hooks unrun.
+                    task = asyncio.current_task()
+                    if task is not None and task.cancelling():
+                        raise
+                    log.error("session %s did not close cleanly at shutdown", session.id)
+                except Exception:
+                    log.exception("session %s did not close cleanly at shutdown", session.id)
             for fn in self._shutdown:
                 await _maybe_await(fn())
 
@@ -671,7 +684,9 @@ class App:
             if not idle:
                 return False
             oldest = min(idle, key=lambda s: s.detached_at)
-            await oldest.end(self.theme.text("made_room"))
+            # Over now, which is what makes the room. Its close hook runs on
+            # without holding up whoever is waiting to get in.
+            oldest.dismiss(self.theme.text("made_room"))
             return True
 
         async with self._admit_lock:
@@ -699,6 +714,13 @@ class App:
             # whose connect was still running, leaves with the rest.
             under_way[1].extend(theirs)
             return
+        ended = self._ended.get(sign_in)
+        if ended is not None and time.monotonic() - ended[1] < 60.0:
+            # A straggler of a sign-in that has just ended goes where the
+            # others went: ``on_logout`` has answered for it already.
+            for session in theirs:
+                session.dismiss(self.theme.text("sign_in_hint"), to=session.leaving_for(ended[0]))
+            return
         task = asyncio.get_running_loop().create_task(self._end_sign_in(sign_in, user, theirs))
         self._ending[sign_in] = (task, theirs)
 
@@ -715,6 +737,9 @@ class App:
                 session._shut()
             theirs.extend(late)
             self._ending.pop(sign_in, None)
+            now = time.monotonic()
+            self._ended = {k: v for k, v in self._ended.items() if now - v[1] < 60.0}
+            self._ended[sign_in] = (to, now)
             # Each tab is told on its own, so one that does not listen holds
             # up none of the others, and one that fails does not keep the rest.
             done = await asyncio.gather(*(s.leave(to) for s in theirs), return_exceptions=True)

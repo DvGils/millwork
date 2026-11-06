@@ -190,7 +190,18 @@ class Task[T]:
         self.status = "running"
         self.started_at = _now()
         self._asyncio_task = self._session._loop.create_task(self._run(work, args, kwargs, timeout))
+        self._asyncio_task.add_done_callback(lambda _: self._never_ran(work))
         self._session.refresh()
+
+    def _never_ran(self, work: Any) -> None:
+        """A task cancelled in the moment it was started never gets to run a
+        line, so nothing in it can say that it ended. It is said here: the
+        task is cancelled, and whoever waits on it hears so."""
+        if self.done:
+            return
+        if inspect.iscoroutine(work):
+            work.close()
+        self._finish("cancelled")
 
     async def _run(  # noqa: ASYNC109
         self, work: Any, args: tuple[Any, ...], kwargs: dict[str, Any], timeout: float | None

@@ -36,6 +36,19 @@ from millwork.shell import root_of
 log = logging.getLogger("millwork.ws")
 
 
+async def _say_it_ended(ws: WebSocket, session: Session[Any], app: Any) -> None:
+    """Tell a tab that its session is over, where to go if it was sent
+    somewhere, and close the socket, within a moment."""
+    with contextlib.suppress(Exception):
+        async with asyncio.timeout(END_NOTICE_SECONDS):
+            if session.end_to is not None:
+                gone = Command(name="leave", args={"to": session.end_to})
+                await ws.send_text(pack(0, gone))
+            why = session.end_reason or app.theme.text("session_ended")
+            await ws.send_text(pack(0, ServerError(message=why, fatal=True)))
+            await ws.close(code=4409)
+
+
 def origin_allowed(ws: WebSocket, origins: list[str]) -> bool:
     """Same origin by default; an explicit allow-list otherwise.
 
@@ -149,6 +162,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     # sign-in than the one the session was opened on.
     session.watch_sign_in(ws.scope.get("millwork.sign_in"))
     session.watch_user(ws.scope.get("millwork.identified"))
+    # Connecting took time, and the person's standing may have changed in it:
+    # a sign-in that ended meanwhile takes this session with it here, before
+    # anything of the page is sent.
+    await session.stay_current()
     send = ws.send_text
 
     async def close_this_socket() -> None:
@@ -165,12 +182,14 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     finally:
         session.connecting = False
     if session.closed:
-        # Ended while it was being connected (signed out elsewhere): the tab is
-        # told now, since nothing could reach it before.
-        reason = session.end_reason or "The session ended."
-        await ws.send_text(pack(0, ServerError(message=reason, fatal=True)))
-        await ws.close(code=4409)
-        return
+        # Ended while it was being connected (signed out elsewhere), so the
+        # socket was never attached and nothing could reach the tab.
+        if session._finishing is not None and session._send is not send:
+            await _say_it_ended(ws, session, app)
+            return
+        # Over, and not yet told anything: where its tab is to go is still
+        # being asked. It is given the socket to hear it on, and waits below.
+        session._send, session._close_socket = send, close_this_socket
 
     overflowed = False
     try:
@@ -198,16 +217,15 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 log.warning("bad message from session %s", session.id)
                 continue
             if session.closed:
+                if session._finishing is None:
+                    # Over, and the word for its tab is still being worked
+                    # out: where a sign-in's tabs go is being asked. What the
+                    # tab sends meanwhile is dropped, and it hears on this
+                    # socket as soon as there is something to say.
+                    continue
                 # The session ended and its tab may not have heard: it was not
                 # reading then. It is told now that it speaks, and let go.
-                with contextlib.suppress(Exception):
-                    async with asyncio.timeout(END_NOTICE_SECONDS):
-                        if session.end_to is not None:
-                            gone = Command(name="leave", args={"to": session.end_to})
-                            await ws.send_text(pack(0, gone))
-                        why = session.end_reason or app.theme.text("session_ended")
-                        await ws.send_text(pack(0, ServerError(message=why, fatal=True)))
-                        await ws.close(code=4409)
+                await _say_it_ended(ws, session, app)
                 break
             # Each message is its own task: the receive loop never waits on a handler,
             # so an answer to an open ask (or a click during a long handler) still arrives.

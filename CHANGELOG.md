@@ -38,6 +38,16 @@ versions; a release says so here when it does.
   first and the tab is told after, within two seconds. Before, a tab that
   had stopped reading its socket could keep its session, and the ones
   ended after it, open.
+- A session that is over runs nothing more. Work started on it after the
+  end is cancelled at once, a task the end cancelled does not come back
+  through its `on_done`, and a page whose `connect` finishes after the
+  end is closed straight away. A page's close hook runs to its end
+  whatever becomes of the handler or navigation that was leaving the
+  page, and may end the session it is closing.
+- Making room for a new session, and signing out, no longer wait for the
+  close hook of the sessions they end.
+- A task cancelled in the moment it is started ends as cancelled. Before,
+  it stayed running, and whatever awaited it waited for good.
 - Something an app mounts sees the app's own sign-in. Before, the cookie
   was looked up under a name that included the mount's path, so
   `app.user_for` found nobody there.

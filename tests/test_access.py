@@ -21,6 +21,7 @@ import millwork as mw
 from millwork import auth, ui
 from millwork.access import ALLOWED, REFUSED, Forbidden, ask, rule_for
 from millwork.cli import main
+from millwork.session import Session
 from millwork.testing import TestApp
 
 
@@ -44,6 +45,8 @@ class World:
         self.broken = False
         # How long the app's recheck takes to answer, in seconds.
         self.slow = 0.0
+        # How long the slow page's connect hook takes, in seconds.
+        self.connecting = 0.0
 
 
 def make_app(
@@ -121,6 +124,21 @@ def make_app(
     @app.page("/welcome", public=True)
     def welcome(s: mw.Session) -> ui.Component:
         return ui.Page(ui.Text("welcome", key="t"))
+
+    @app.page("/slow")
+    def slow(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("the slow page", key="t"))
+
+    @slow.connect
+    async def slowly(s: mw.Session) -> None:
+        await asyncio.sleep(world.connecting)
+        world.connected.append(f"{s.user.id} slowly")
+        # Work the page starts as it opens, which has to end with the session.
+        s.task(asyncio.sleep(30), label="poll")
+
+    @slow.close
+    def slow_left(s: mw.Session) -> None:
+        world.closed.append(f"{s.user.id} from the slow page")
 
     async def who(request: Request) -> PlainTextResponse:
         return PlainTextResponse(f"for {request.state.user.id}")
@@ -392,6 +410,7 @@ def test_the_listing_says_who_may_reach_what(
         ("page", "/admin", "signed in and is_admin"),
         ("page", "/desk/{owner}", "signed in and owns"),
         ("page", "/welcome", "anyone"),
+        ("page", "/slow", "signed in"),
         ("route", "/api/export", "signed in and is_admin"),
         ("route", "/api/mine", "signed in"),
         ("route", "/api/save", "signed in"),
@@ -907,29 +926,176 @@ async def test_a_session_that_joins_a_sign_in_as_it_ends_leaves_with_the_rest(
         assert app.sessions == {} and app.ending == set() and app._ending == {}
 
 
-def test_a_session_on_its_way_out_still_closes_its_page_before_the_app_shuts_down(
-    tmp_path: Path,
+def gone(ws: Any) -> list[Any]:
+    """What a tab hears as its session ends: where it is sent, then that it ended."""
+    heard = []
+    while True:
+        msg = json.loads(ws.receive_text())["msg"]
+        if msg["type"] == "command" and msg["name"] == "leave":
+            heard.append(msg["args"]["to"])
+        if msg["type"] == "error":
+            heard.append(msg["message"])
+            return heard
+
+
+def test_tabs_hear_where_to_go_however_the_ending_finds_them(tmp_path: Path) -> None:
+    world = World()
+    app = make_app(tmp_path, world, recheck=True)
+    app.auth.recheck_every = 30.0
+    asked: list[str] = []
+
+    async def slow_answer(user: auth.User) -> str | None:
+        asked.append(user.id)
+        await asyncio.sleep(0.3)
+        return "/welcome"
+
+    app.auth.on_logout = slow_answer
+    world.connecting = 0.15
+    with TestClient(app.asgi) as client:
+        sign_in(client, "ada")
+        with (
+            client.websocket_connect("/_mw/ws") as busy,
+            client.websocket_connect("/_mw/ws") as idle,
+            client.websocket_connect("/_mw/ws") as arriving,
+        ):
+            opened(busy, "/admin")
+            opened(idle, "/")
+            # A third tab is still in its connect hook when the person is
+            # removed and the busy tab's click finds it out.
+            arriving.send_text(json.dumps({"seq": 1, "msg": {"type": "hello", "path": "/slow"}}))
+            del world.roles["ada"]
+            stale(app)
+            click(busy, "root/act")
+            # The app is being asked where the tabs should go, which takes a
+            # while, and the busy tab clicks again meanwhile. Every tab is
+            # sent where the app said: the one that kept clicking, the one
+            # that sat idle, and the one that was still arriving.
+            click(busy, "root/act", 3)
+            sent = "Sign in to continue."
+            assert gone(busy) == ["/welcome", sent]
+            assert gone(idle) == ["/welcome", sent]
+            assert gone(arriving) == ["/welcome", sent]
+        assert world.acted == [] and asked == ["ada"]
+        # The page that was still opening is closed, and what it started is not left running.
+        assert sorted(world.closed) == ["ada", "ada from the slow page"]
+        assert app.sessions == {} and app.ending == set()
+
+
+def test_a_tab_that_was_not_reading_is_told_when_it_speaks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(importlib.import_module("millwork.session"), "END_NOTICE_SECONDS", 0.05)
     world = World()
     app = make_app(tmp_path, world)
-    order: list[str] = []
-    app.on_shutdown(lambda: order.append(f"shutdown, closed so far: {world.closed}"))
+
+    async def never(text: str) -> None:
+        await asyncio.Event().wait()
+
     with TestClient(app.asgi) as client:
         sign_in(client, "ada")
         with client.websocket_connect("/_mw/ws") as ws:
             session = app.sessions[opened(ws, "/admin")["id"]]
-            # Over, and still owed its end: the state an ending is in while
-            # the app is asked where its tab should go.
-            client.portal.call(session._shut)
-            assert session in app.ending and app.sessions == {}
-            # A tab that speaks to a session that ended without its hearing
-            # is told so then, and let go.
-            session.end_reason, session.end_to = "It is over.", "/welcome"
+            # The tab stops taking what it is sent, and its session is ended.
+            session._send = never
+            client.portal.call(lambda: session.dismiss("It is over.", to="/welcome"))
+            time.sleep(0.15)
+            assert session.closed and app.ending == set() and world.closed == ["ada"]
+            # When it speaks again it is told then, and let go.
             click(ws, "root/act")
-            assert json.loads(ws.receive_text())["msg"]["args"] == {"to": "/welcome"}
-            told = json.loads(ws.receive_text())["msg"]
-            assert told["type"] == "error" and told["message"] == "It is over."
+            assert gone(ws) == ["/welcome", "It is over."]
             with pytest.raises(WebSocketDisconnect):
                 ws.receive_text()
-    # The page's close hook ran before the app's shutdown hook did.
+        assert world.acted == []
+
+
+def test_a_session_on_its_way_out_closes_its_page_before_the_app_shuts_down(tmp_path: Path) -> None:
+    world = World()
+    app = make_app(tmp_path, world, recheck=True)
+    app.auth.recheck_every = 30.0
+    order: list[str] = []
+    app.on_shutdown(lambda: order.append(f"shutdown, closed so far: {world.closed}"))
+
+    async def very_slow(user: auth.User) -> str | None:
+        await asyncio.sleep(30)
+        return None
+
+    app.auth.on_logout = very_slow
+    with TestClient(app.asgi) as client:
+        sign_in(client, "ada")
+        with client.websocket_connect("/_mw/ws") as ws:
+            session = app.sessions[opened(ws, "/admin")["id"]]
+            del world.roles["ada"]
+            stale(app)
+            click(ws, "root/act")
+            deadline = time.monotonic() + 2
+            while not session.closed and time.monotonic() < deadline:
+                time.sleep(0.01)
+            # Over, and still owed its end while the app is asked where its
+            # tab should go. The app stops in that moment.
+            assert session in app.ending and app.sessions == {} and world.closed == []
     assert order == ["shutdown, closed so far: ['ada']"] and world.acted == []
+
+
+async def test_the_end_of_a_session_is_not_at_the_mercy_of_the_apps_code(tmp_path: Path) -> None:
+    app = mw.App("mercy", public=None, bundle_dir=tmp_path, max_sessions=1)
+    seen: list[str] = []
+    waiting: dict[str, Any] = {}
+
+    async def work() -> None:
+        await asyncio.sleep(30)
+
+    def finished(s: mw.Session, task: Any) -> None:
+        seen.append("on_done ran")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("home", key="t"))
+
+    def start_work(s: mw.Session) -> None:
+        s.task(work, label="work", on_done=finished)
+        waiting[s.id] = s.spawn(asyncio.sleep(30))
+
+    @home.close
+    async def closed(s: mw.Session) -> None:
+        seen.append("close started")
+        # A close hook may end the session it is closing, start work on it,
+        # and wait on work of its own that the end has just cancelled.
+        await s.end("said by the close hook")
+        late = s.task(work, label="late")
+        assert late.status == "cancelled" and s.spawn(asyncio.sleep(30)).cancelling()
+        await asyncio.sleep(0.05)
+        seen.append("close finished")
+        await waiting[s.id]
+
+    harness = TestApp(app)
+    async with harness.open("/") as page:
+        session = page.session
+        start_work(session)
+        # Whoever asks for the end is cancelled while it is under way.
+        asking = asyncio.create_task(session.end("gone"))
+        await asyncio.sleep(0.01)
+        asking.cancel()
+        assert session.closed
+        await asyncio.sleep(0.15)
+        # The page was closed all the same, to the end of its hook, once. The
+        # task the end cancelled did not come back as a handler.
+        assert seen == ["close started", "close finished"]
+        assert app.ending == set() and session._finishing.done()
+        fatal = [m.message for m in page.messages if getattr(m, "fatal", False)]
+        assert fatal == ["gone"]
+
+    # Making room for a newcomer does not wait for the close hook of the
+    # session that is put out.
+    seen.clear()
+    async with harness.open("/") as page:
+        start_work(page.session)
+        page.session.detach()
+        resolved = app.resolve("/")
+        assert resolved is not None
+        newcomer = Session(app, resolved[0], resolved[1], "/")
+        started = time.monotonic()
+        assert await app.admit(newcomer) and time.monotonic() - started < 0.04
+        assert page.session.closed and "close finished" not in seen
+        await asyncio.sleep(0.15)
+        assert seen == ["close started", "close finished"]
+        await newcomer._close()
