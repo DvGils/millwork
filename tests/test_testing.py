@@ -512,3 +512,99 @@ async def test_a_close_hook_that_raises_fails_a_strict_test(tmp_path: Path) -> N
     async with TestApp(app, strict=False).open("/") as page:
         pass
     assert [where for where, _ in page.failures] == ["the close hook of /"]
+
+
+async def test_finding_inside_a_node_custom_components_and_menu_choices(tmp_path: Path) -> None:
+    app = mw.App("f", state=State, public=None, bundle_dir=tmp_path, components=None)
+
+    def card(name: str) -> ui.Component:
+        return ui.Card(
+            ui.Text(name, key="title"),
+            key=name,
+            footer=ui.Button(
+                "Save", key="save", on_click=lambda s, _: setattr(s.state, "asked", name)
+            ),
+        )
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            card("first"),
+            card("second"),
+            ui.Custom("Gauge", key="gauge", props={"value": 3}),
+            ui.Custom("Dial", ui.Text("inside", key="title")),
+            ui.DropdownMenu(
+                key="menu",
+                trigger=ui.Button("More"),
+                items=[
+                    ui.MenuItem(id="open", label="Open"),
+                    ui.MenuItem(id="archive", label="Archive it", confirm="Archive?"),
+                    ui.MenuItem(id="locked", label="Locked", disabled=True),
+                ],
+                on_select=lambda s, item: setattr(s.state, "asked", item),
+            ),
+        )
+
+    async with TestApp(app).open("/") as page:
+        # Both cards have a "save" and a "title": the card to look in tells them apart.
+        assert len(page.find_all("save")) == 2
+        await page.click(page.find("save", within="second"))
+        assert page.state.asked == "second"
+        first = page.find("first")
+        assert page.find("title", within=first).props["content"] == "first"
+        assert [b.id for b in page.find_all(ui.Button, within=first)] == [
+            page.find("save", within="first").id
+        ]
+        with pytest.raises(LookupError, match="no nope in 'first'"):
+            page.find("nope", within="first")
+        # A custom component is found by the class it is written with, and
+        # its type is the name it goes by.
+        assert [c.type for c in page.find_all(ui.Custom)] == ["Gauge", "Dial"]
+        assert page.find(ui.Custom).props["value"] == 3
+        dial = page.find_all(ui.Custom)[1]
+        assert page.find("title", within=dial).props["content"] == "inside"
+        # A menu choice, by id or by label, with the question an item asks first.
+        await page.choose("menu", "open")
+        assert page.state.asked == "open"
+        await page.choose("menu", "Archive it")
+        assert page.find(ui.Dialog).props["title"] == "Archive?"
+        await page.answer(True)
+        assert page.state.asked == "archive"
+        with pytest.raises(LookupError, match="has no item 'nope'"):
+            await page.choose("menu", "nope")
+        with pytest.raises(LookupError, match="is disabled"):
+            await page.choose("menu", "locked")
+        assert page.state.asked == "archive"
+
+
+async def test_confirm_buttons_speak_the_themes_language(tmp_path: Path) -> None:
+    from millwork.theme import Theme
+
+    app = mw.App(
+        "c",
+        state=State,
+        public=None,
+        bundle_dir=tmp_path,
+        theme=Theme(strings={"ok": "Doe het", "cancel": "Laat maar"}),
+    )
+
+    async def own_words(s: mw.Session[State], _: Any) -> None:
+        await s.confirm("Sure?", ok="Yes", cancel="No")
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Button("Wipe", key="wipe", confirm="Wipe it?", on_click=lambda s, _: None),
+            ui.Button("Ask", key="ask", on_click=own_words),
+        )
+
+    async with TestApp(app).open("/") as page:
+        await page.click("wipe")
+        labels = [b.props["label"] for b in page.find_all(ui.Button, within=page.find(ui.Dialog))]
+        assert labels == ["Laat maar", "Doe het"]
+        await page.answer(False)
+        # Words given to the call win over the theme's.
+        await page.click("ask")
+        labels = [b.props["label"] for b in page.find_all(ui.Button, within=page.find(ui.Dialog))]
+        assert labels == ["No", "Yes"]
+        await page.answer(True)

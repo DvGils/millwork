@@ -810,16 +810,22 @@ class Session[S]:
         self,
         title: str,
         description: str | None = None,
-        ok: str = "OK",
-        cancel: str = "Cancel",
+        ok: str | None = None,
+        cancel: str | None = None,
         destructive: bool = False,
     ) -> bool:
-        """Ask a yes-or-no question in a dialog and wait for the answer."""
+        """Ask a yes-or-no question in a dialog and wait for the answer. The
+        buttons say ``ok`` and ``cancel``, or the theme's words for them."""
         buttons = _ConfirmButtons(
             children=[
-                Button(cancel, key="cancel", variant="outline", on_click=_noop),
                 Button(
-                    ok,
+                    cancel or self.text("cancel"),
+                    key="cancel",
+                    variant="outline",
+                    on_click=_noop,
+                ),
+                Button(
+                    ok or self.text("ok"),
                     key="ok",
                     variant="destructive" if destructive else "primary",
                     on_click=_noop,

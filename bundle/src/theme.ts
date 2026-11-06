@@ -4,6 +4,7 @@
 // The token CSS itself is in the shell before this code runs.
 
 import { useEffect, useState } from "react";
+import { safeUrl } from "./lib";
 
 export type Mode = "light" | "dark" | "system";
 
@@ -11,6 +12,7 @@ export interface ThemeBoot {
   mode: Mode;
   logo: { light: string; dark?: string | null } | null;
   login_image?: string | null;
+  stylesheet?: string | null;
   density: "comfortable" | "compact";
   scrollbars: "auto" | "thin";
   locale: string;
@@ -117,6 +119,29 @@ export function isCompact(): boolean {
   return boot().density === "compact";
 }
 
+// The app's own stylesheet, which the shell links at start. A pushed theme
+// may name another one or none, and the file itself may have changed, so it is
+// fetched again under a new query.
+function linkStylesheet(path: string | null | undefined) {
+  const current = document.getElementById("mw-stylesheet");
+  if (!path) {
+    current?.remove();
+    return;
+  }
+  const link = (current as HTMLLinkElement | null) ?? document.createElement("link");
+  link.id = "mw-stylesheet";
+  link.rel = "stylesheet";
+  link.href = `${safeUrl(path)}?v=${Date.now()}`;
+  if (!current) document.head.appendChild(link);
+}
+
+// Paper is light: a page printed from the dark scheme would put pale text on
+// white, so the scheme steps aside while the browser prints.
+export function printInLight() {
+  window.addEventListener("beforeprint", () => document.documentElement.classList.remove("dark"));
+  window.addEventListener("afterprint", () => applyMode());
+}
+
 // Applied once at start and again when the server pushes a changed theme.
 export function applyTheme(next?: { css?: string; boot?: ThemeBoot }) {
   if (next?.boot) {
@@ -127,6 +152,7 @@ export function applyTheme(next?: { css?: string; boot?: ThemeBoot }) {
     const el = document.getElementById("mw-theme");
     if (el) el.textContent = next.css;
   }
+  if (next?.boot) linkStylesheet(next.boot.stylesheet);
   const b = boot();
   document.documentElement.dataset.density = b.density;
   document.documentElement.dataset.scrollbars = b.scrollbars;

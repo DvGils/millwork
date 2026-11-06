@@ -367,7 +367,7 @@ class App:
         for fn in self._startup:
             await _maybe_await(fn())
         self.component_versions = self._component_hashes()
-        if self.debug and self._theme_path is not None:
+        if self.debug and (self._theme_path is not None or self._stylesheet_file()):
             self._theme_watch = asyncio.create_task(self._watch_theme())
         if self.debug and self.components_dir is not None and self.components_dir.is_dir():
             self._components_watch = asyncio.create_task(self._watch_components())
@@ -428,19 +428,40 @@ class App:
         app.state.millwork = self
         return app
 
+    def _stylesheet_file(self) -> Path | None:
+        """The theme's stylesheet as a file, when it is one under ``public/``."""
+        sheet = self.theme.stylesheet
+        if sheet and sheet.startswith("/public/") and self.public_dir is not None:
+            return self.public_dir / sheet.removeprefix("/public/")
+        return None
+
+    def _stylesheet_mtime(self) -> float:
+        sheet = self._stylesheet_file()
+        try:
+            return sheet.stat().st_mtime if sheet is not None else 0.0
+        except OSError:
+            return 0.0
+
     async def _watch_theme(self) -> None:
-        """Debug only: push a changed theme file to every open session."""
-        assert self._theme_path is not None
+        """Debug only: push a changed theme file, or a changed stylesheet of
+        the theme's, to every open session."""
+        styled = self._stylesheet_mtime()
         while True:
             await asyncio.sleep(1.0)
-            try:
-                mtime = self._theme_path.stat().st_mtime
-            except OSError:
-                continue
-            if mtime == self._theme_mtime:
-                continue
-            self._theme_mtime = mtime
-            await self.reload_theme()
+            if self._theme_path is not None:
+                try:
+                    mtime = self._theme_path.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime != self._theme_mtime:
+                    self._theme_mtime = mtime
+                    await self.reload_theme()
+                    styled = self._stylesheet_mtime()
+                    continue
+            now = self._stylesheet_mtime()
+            if now != styled:
+                styled = now
+                await self._push_theme()
 
     async def _watch_components(self) -> None:
         """Debug only: a changed custom component is re-fetched by every open tab."""
@@ -548,11 +569,15 @@ class App:
             log.error("theme not reloaded: %s", exc)
             return False
         log.info("theme reloaded from %s", self._theme_path)
+        await self._push_theme()
+        return True
+
+    async def _push_theme(self) -> None:
+        """Send the theme to every open tab, which also fetches its stylesheet anew."""
         for session in list(self.sessions.values()):
             if not session.closed:
                 args = {"css": self.theme.css(session.base), "boot": self.theme.boot()}
                 await session._send_now(Command(name="theme", args=args))
-        return True
 
     async def _favicon(self, request: Request) -> Any:
         if self.theme.favicon:

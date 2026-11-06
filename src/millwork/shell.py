@@ -181,6 +181,10 @@ class Shell:
         )
         # After the bundle's stylesheet: both declare :root tokens and the later wins.
         styles = styles + f'<style id="mw-theme">{theme_css}</style>'
+        if theme is not None and theme.stylesheet:
+            # Last, so the app's rules win over the theme's where they meet.
+            href = html.escape(under(base, theme.stylesheet) or "")
+            styles += f'<link rel="stylesheet" id="mw-stylesheet" href="{href}">'
         payload: dict[str, object] = {
             "path": path,
             "base": base,

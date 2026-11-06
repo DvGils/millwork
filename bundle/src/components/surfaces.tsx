@@ -182,7 +182,7 @@ const alertTone: Record<string, string> = {
   warning: "text-warning *:data-[slot=alert-description]:text-warning/90",
 };
 
-export const Alert: Renderer = ({ props, emit }) => {
+export const Alert: Renderer = ({ node, props, emit, children }) => {
   const tone = String(props.tone ?? "default");
   const Icon = icon(props.icon ?? alertIcon[tone]);
   return (
@@ -193,6 +193,7 @@ export const Alert: Renderer = ({ props, emit }) => {
       {Icon ? <Icon /> : null}
       {props.title ? <AlertTitle>{String(props.title)}</AlertTitle> : null}
       {props.description ? <AlertDescription>{String(props.description)}</AlertDescription> : null}
+      {node.children.length ? <div className="col-start-2 mt-1 flex min-w-0 flex-col gap-2">{children}</div> : null}
       {Array.isArray(props.actions) && props.actions.length ? (
         <div className="col-start-2 mt-2 flex flex-wrap gap-2">
           {(props.actions as unknown[]).map((a, i) => (

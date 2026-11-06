@@ -102,6 +102,7 @@ STRINGS: dict[str, str] = {
     "edit": "Edit",
     "save": "Save",
     "cancel": "Cancel",
+    "ok": "OK",
     "canceled": "Canceled",
     "failed": "Failed",
     "actions": "Actions",
@@ -120,6 +121,8 @@ STRINGS: dict[str, str] = {
     "select_all": "Select all",
     "select_row": "Select row",
     "dismiss": "Dismiss",
+    "close": "Close",
+    "toggle_sidebar": "Toggle sidebar",
     "previous": "Previous",
     "next": "Next",
     "wait_for_reply": "Wait for the current reply to finish.",
@@ -235,7 +238,12 @@ class Theme(BaseModel):
     locale: str = "en"
     currency: str = "EUR"
     strings: dict[str, str] = Field(default_factory=dict)
+    # The app's own stylesheet, a file under public/, loaded after the theme.
+    stylesheet: str | None = None
 
+    _stylesheet = field_validator("stylesheet")(
+        staticmethod(lambda v: v and _check_path(v, "stylesheet"))
+    )
     _favicon = field_validator("favicon")(staticmethod(lambda v: v and _check_path(v, "favicon")))
     _image = field_validator("login_image")(
         staticmethod(lambda v: v and _check_path(v, "login_image"))
@@ -328,6 +336,7 @@ class Theme(BaseModel):
             "mode": self.mode,
             "logo": self.logo.model_dump() if self.logo else None,
             "login_image": self.login_image,
+            "stylesheet": self.stylesheet,
             "density": self.density,
             "scrollbars": self.scrollbars,
             "locale": self.locale,

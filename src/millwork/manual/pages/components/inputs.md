@@ -335,7 +335,8 @@ receives the chosen id. `confirm="..."` on an item asks before its handler
 runs, in the dialog's destructive style when the item is destructive. The
 look alone asks nothing, since only the app knows whether an action can be
 undone. The same holds for a table's `row_actions` and a file card's
-`actions`.
+`actions`. The menu is at least as wide as its trigger and grows to fit
+its longest item.
 
 ```python live
 ui.DropdownMenu(

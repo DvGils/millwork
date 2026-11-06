@@ -85,32 +85,47 @@ class Page:
     def state(self) -> Any:
         return self.session.state
 
-    def find_all(self, what: type[Component] | str) -> list[Found]:
-        """Every node of a component type, or with a key (or a full id)."""
+    def find_all(
+        self, what: type[Component] | str, *, within: Found | str | None = None
+    ) -> list[Found]:
+        """Every node of a component type, or with a key (or a full id).
+
+        A type finds its subclasses too, so ``ui.Custom`` finds every custom
+        component, and ``found.type`` says which one each is. ``within``
+        narrows the search to what is inside one node, for a key that several
+        cards or rows each have."""
         tree = self.session.tree
         if tree is None:
             return []
+        inside = None
+        if within is not None:
+            scope = within if isinstance(within, Found) else self.find(within)
+            inside = scope.id + "/"
         out = []
         for node_id, node in tree.nodes.items():
+            if inside is not None and not node_id.startswith(inside):
+                continue
+            component = tree.components.get(node_id)
             if isinstance(what, str):
-                component = tree.components.get(node_id)
                 hit = (
                     node_id == what
                     or node_id.rsplit("/", 1)[-1] == what
                     or (component is not None and component.key == what)
                 )
             else:
-                hit = node.type == what.type
+                hit = isinstance(component, what) or node.type == what.type
             if hit:
-                out.append(Found(node, tree.components.get(node_id)))
+                out.append(Found(node, component))
         return out
 
-    def find(self, what: type[Component] | str) -> Found:
-        """The first node of a component type, or with a key; raises when there is none."""
-        found = self.find_all(what)
+    def find(self, what: type[Component] | str, *, within: Found | str | None = None) -> Found:
+        """The first node of a component type, or with a key; raises when
+        there is none. ``within`` looks inside one node only."""
+        found = self.find_all(what, within=within)
         if not found:
             name = what if isinstance(what, str) else what.__name__
-            raise LookupError(f"no {name} on the page")
+            where = "on the page" if within is None else f"in {within!r}"
+            raise LookupError(f"no {name} {where}")
         return found[0]
 
     def text(self) -> str:
@@ -206,6 +221,20 @@ class Page:
     async def select(self, table: Found | str, keys: list[Any]) -> None:
         """Select rows of a table by key."""
         await self.event(table, "select", keys)
+
+    async def choose(self, menu: Found | str, item: str) -> None:
+        """Choose an item of a ``DropdownMenu``, by its id or its label. An
+        item with ``confirm`` then waits for ``answer``, like a button."""
+        found = menu if isinstance(menu, Found) else self.find(menu)
+        items = getattr(found.component, "items", None) or []
+        match = next((i for i in items if i.id == item), None) or next(
+            (i for i in items if i.label == item), None
+        )
+        if match is None:
+            raise LookupError(f"{found!r} has no item {item!r}")
+        if match.disabled:
+            raise LookupError(f"the item {item!r} of {found!r} is disabled")
+        await self.event(found, "select", match.id)
 
     async def action(self, node: Found | str, action: str, key: Any = None) -> None:
         """A row action on a Table (``[action, key]``) or a card action (``action``)."""

@@ -36,7 +36,7 @@ function Connected() {
         <Splash status={status} />
       )}
       {status === "reconnecting" && root ? (
-        <div className="fixed bottom-3 right-3 rounded-md border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
+        <div className="fixed bottom-3 right-3 rounded-md border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-sm print:hidden">
           {t("reconnecting")}
         </div>
       ) : null}

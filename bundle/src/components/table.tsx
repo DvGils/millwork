@@ -419,7 +419,7 @@ export const Table: Renderer = ({ props, emit }) => {
         <Input value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} placeholder={t("search")} className="max-w-xs" />
       ) : null}
       <div
-        className={cn("overflow-auto rounded-lg border", props.height && "min-h-0")}
+        className={cn("mw-scroll overflow-auto rounded-lg border", props.height && "min-h-0")}
         style={props.height ? { maxHeight: typeof props.height === "number" ? `${props.height}px` : String(props.height) } : undefined}
       >
         {/* The box above is the one scroller, both ways, so the header sticks to

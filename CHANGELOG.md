@@ -5,6 +5,26 @@ versions; a release says so here when it does.
 
 ## 0.1.8
 
+- A page prints in full. The shell is a viewport-high column whose body
+  scrolls, so printing gave one sheet and cut the rest. In print the
+  column and its scrolling boxes now run as long as their content, the
+  sidebar and header are left out, and a dark page prints light.
+- A theme takes a `stylesheet`, the path of a CSS file under `/public/`
+  that loads after the theme, for rules the tokens cannot express.
+- A dropdown menu grows to fit its longest item. Before, it was as wide
+  as its trigger, so long items needed a wide button.
+- `ui.Alert` shows its children under the description. Before, they were
+  dropped.
+- The buttons of `Button(confirm=)`, a menu item's `confirm` and
+  `s.confirm` come from the theme's strings, `ok` and `cancel`. Before,
+  they said "OK" and "Cancel" whatever the theme. The labels for screen
+  readers on a dialog's close button, a toast, the spinner and the
+  sidebar toggle follow the theme too, with the new strings `close` and
+  `toggle_sidebar`.
+- Testing: `page.find` and `page.find_all` take `within=` to look inside
+  one node, a component type finds its subclasses, so `ui.Custom` finds
+  custom components, and `page.choose(menu, item)` picks an item of a
+  dropdown menu.
 - A session ends when the sign-in it runs on expires. Its tab leaves for
   the login page and comes back to its page after a new sign-in, and a
   tab on a public page reloads for a visitor. Before, the lifetime set by

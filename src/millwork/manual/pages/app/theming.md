@@ -23,6 +23,7 @@ flash of the default look. Without a file the app looks like stock shadcn.
   "logo": {"light": "/public/logo.svg", "dark": "/public/logo-dark.svg"},
   "favicon": "/public/favicon.svg",
   "login_image": "/public/login.jpg",
+  "stylesheet": "/public/app.css",
   "density": "comfortable"
 }
 ```
@@ -98,6 +99,23 @@ default, drawn in the page's own ink, or `auto` for the platform's.
 and `currency` is the ISO code the `currency` format uses, `EUR` unless
 the theme says otherwise.
 
+## A stylesheet of the app's own
+
+`stylesheet` is the path of a CSS file under `/public/`, loaded on every
+page after the theme. It holds what tokens cannot say, such as a class
+the app's `cls` props name, or a rule for print. Where one of its rules
+and one of the bundle's classes set the same property, the app's rule
+wins.
+
+```css
+/* public/app.css */
+.figure { break-inside: avoid; }
+
+@media print {
+  .screen-only { display: none; }
+}
+```
+
 ## Strings
 
 Interface copy comes from the app's own Python, in its own language. The
@@ -126,7 +144,7 @@ ui.Table(
 
 ## While designing
 
-In debug mode the theme file is watched, and a save reaches every open tab
-as a command, without a reload. `millwork docs --theme path/to/theme.json`
+In debug mode the theme file and its stylesheet are watched, and a save
+reaches every open tab as a command, without a reload. `millwork docs --theme path/to/theme.json`
 shows this whole manual in a theme, which is the quickest way to see a
 token set on every component in both schemes.

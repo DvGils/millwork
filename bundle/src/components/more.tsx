@@ -93,7 +93,7 @@ export function PageWithSidebar({
       onOpenChange={(open) => {
         if (p.on_toggle) window.__mwEmit?.(sidebarId, "toggle", open);
       }}
-      className="h-dvh"
+      className="mw-shell h-dvh"
       style={p.width ? ({ "--sidebar-width": String(p.width) } as React.CSSProperties) : undefined}
     >
       <UiSidebar
@@ -113,7 +113,7 @@ export function PageWithSidebar({
       </UiSidebar>
       <SidebarInset className="min-h-0 min-w-0">
         <Slot value={header} />
-        <div className="flex items-center gap-2 border-b px-3 py-2 md:hidden">
+        <div className="flex items-center gap-2 border-b px-3 py-2 md:hidden print:hidden">
           <SidebarTrigger />
         </div>
         <div className={pageBodyClass(padding)}>
