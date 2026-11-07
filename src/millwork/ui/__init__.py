@@ -1407,12 +1407,17 @@ class Tooltip(Component):
         ) -> None: ...
 
 
+_OWN_NAMES = frozenset({"key", "cls", "hidden", "name", "children"})
+
+
 class Custom(Component):
     """An app's own component: ``components/<name>.jsx``, compiled in the tab.
 
     ``props`` arrive as React props next to ``emit`` and ``children``; events
     the component emits reach ``on_event`` as ``(session, (name, payload))``,
-    or a handler per event name through ``events``.
+    or a handler per event name through ``events``. ``cls`` and ``hidden``
+    are applied around the component, as for any other, so a prop may not
+    be named after them, nor ``key``, ``name`` or ``children``.
     """
 
     type: ClassVar[str] = "Custom"
@@ -1442,6 +1447,12 @@ class Custom(Component):
     else:
 
         def __init__(self, name: str, *children: Any, **kw: Any) -> None:
+            taken = set(kw.get("props") or ()) & _OWN_NAMES
+            if taken:
+                raise ValueError(
+                    f"a prop of Custom({name!r}) is named {sorted(taken)!r}, which is the "
+                    "component's own; give it another name"
+                )
             super().__init__(*children, name=name, **kw)
 
     def wire_type(self) -> str:
@@ -1462,6 +1473,9 @@ class Progress(Component):
     label: str | None = None
     description: str | None = None
     task: Any = None
+    percent: bool = True
+    """Whether the value is written out next to the bar. Off, the bar is a
+    plain meter."""
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -1475,6 +1489,7 @@ class Progress(Component):
             label: str | None = None,
             description: str | None = None,
             task: Any = None,
+            percent: bool = True,
         ) -> None: ...
 
 

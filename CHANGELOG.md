@@ -3,6 +3,24 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.2.1
+
+- The `public` and `components` folders, and a theme given by path, are
+  found next to the file that makes the `App`, wherever the server is
+  started from. Before, they were looked up from the working directory,
+  so `millwork run pond/app.py` from one folder up silently lost the
+  theme and the custom components. A folder the app names that does not
+  exist is now said in the log at startup.
+- `cls` and `hidden` on `ui.Custom` are applied around the component, as
+  for every other component. Before, they arrived among the component's
+  own props and it had to apply them itself. A custom prop named `key`,
+  `cls`, `hidden`, `name` or `children` is refused, since it would collide
+  with the component's own.
+- `ui.Progress(percent=False)` draws a plain meter, without the value
+  written out next to the bar.
+- In tests, `page.notices` lists every toast with its tone and title,
+  where `page.toasts` gives the messages alone.
+
 ## 0.2.0
 
 - A page, a route or a mount takes `allow=`, a rule about the signed-in

@@ -430,7 +430,7 @@ def test_the_listing_says_who_may_reach_what(
     (tmp_path / "listed.py").write_text(
         "import millwork as mw\n"
         "from millwork import ui\n"
-        "app = mw.App('l', public=None)\n"
+        "app = mw.App('l', public=None, components=None)\n"
         "@app.page('/')\n"
         "def home(s): return ui.Page()\n"
     )

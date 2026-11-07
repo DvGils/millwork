@@ -102,7 +102,8 @@ async def test_wiping_asks_first(app):
 
 `page.messages` is every message the server sent. `patches`,
 `last_patch`, `commands` (toasts, downloads, navigations, form issues),
-`toasts` as plain text, `stream` and `errors` are views on it.
+`toasts` as plain text, `notices` as toasts with their tone and title,
+`stream` and `errors` are views on it.
 `toast_action("Undo")` presses the button of the latest toast that has
 one. `settle()` waits until the session has nothing left to do. Running
 tasks and spawned work are awaited, the coalesced render runs at once,
