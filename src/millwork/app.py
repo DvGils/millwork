@@ -1067,13 +1067,17 @@ def _forbidden_view(s: Any) -> Component:
 
 def _home_of_caller() -> Path:
     """The folder of the file that is making the App: the first frame outside
-    this package, or the working directory when there is no such file."""
-    here = Path(__file__).parent
+    this package. Code with no file, a notebook cell or the REPL, works from
+    the working directory."""
+    here = Path(__file__).resolve().parent
     frame = inspect.currentframe()
     while frame is not None:
         file = frame.f_globals.get("__file__")
-        if isinstance(file, str) and not Path(file).resolve().is_relative_to(here):
-            return Path(file).resolve().parent
+        if not isinstance(file, str):
+            return Path.cwd()
+        where = Path(file).resolve()
+        if not where.is_relative_to(here):
+            return where.parent
         frame = frame.f_back
     return Path.cwd()
 

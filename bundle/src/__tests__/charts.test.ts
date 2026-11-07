@@ -103,4 +103,12 @@ describe("the value axis", () => {
     const half = valueAxis([0.3, 0.93], [0, null], false);
     expect(half.domain).toEqual([0, 1]);
   });
+
+  it("still runs from low to high when the data misses the end the app fixed", () => {
+    expect(valueAxis([0.5, 0.6], [0.9, null], false).domain).toEqual([0.9, 1]);
+    expect(valueAxis([5, 6], [null, 1], false).domain).toEqual([0.9, 1]);
+    expect(valueAxis(null, [100, null], false).domain).toEqual([100, 110]);
+    expect(valueAxis([-50, -10], null, true).domain).toEqual([-50, 0]);
+    expect(valueAxis([-50, -10], null, false).domain).toEqual([-50, -10]);
+  });
 });

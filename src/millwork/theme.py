@@ -186,7 +186,6 @@ STRINGS: dict[str, str] = {
     "username": "Username",
     "password": "Password",
     "show_password": "Show password",
-    "hide_password": "Hide password",
     "continue_with": "Continue with {provider}",
     "or": "or",
     "no_sign_in": "No sign-in method is configured.",

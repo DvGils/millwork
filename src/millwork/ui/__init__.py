@@ -1407,7 +1407,7 @@ class Tooltip(Component):
         ) -> None: ...
 
 
-_OWN_NAMES = frozenset({"key", "cls", "hidden", "name", "children"})
+_OWN_NAMES = frozenset({"key", "cls", "hidden", "on_event"})
 
 
 class Custom(Component):
@@ -1417,7 +1417,7 @@ class Custom(Component):
     the component emits reach ``on_event`` as ``(session, (name, payload))``,
     or a handler per event name through ``events``. ``cls`` and ``hidden``
     are applied around the component, as for any other, so a prop may not
-    be named after them, nor ``key``, ``name`` or ``children``.
+    be named after them, nor ``key`` or ``on_event``.
     """
 
     type: ClassVar[str] = "Custom"

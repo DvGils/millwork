@@ -77,7 +77,7 @@ export function PasswordInput({ className, type: _type, ...props }: React.Compon
       {Eye ? (
         <button
           type="button"
-          aria-label={t(shown ? "hide_password" : "show_password")}
+          aria-label={t("show_password")}
           aria-pressed={shown}
           onClick={() => setShown((s) => !s)}
           disabled={props.disabled}

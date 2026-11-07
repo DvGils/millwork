@@ -14,6 +14,9 @@ from millwork.testing import Notice, TestApp
 def test_a_custom_prop_may_not_take_the_components_own_names() -> None:
     with pytest.raises(ValueError, match="named \\['cls'\\]"):
         ui.Custom("Pond", props={"cls": "x", "fish": 3})
+    with pytest.raises(ValueError, match="on_event"):
+        ui.Custom("Pond", props={"on_event": 1})
+    ui.Custom("Pond", props={"name": "a prop of its own", "children": 2})
     pond = ui.Custom("Pond", props={"fish": 3}, cls="lg:col-span-2", hidden=False)
     node = mw.nodes.build(pond).nodes["root"]
     assert node.props["cls"] == "lg:col-span-2" and node.props["fish"] == 3

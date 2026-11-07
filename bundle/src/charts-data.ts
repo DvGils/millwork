@@ -93,6 +93,10 @@ export function valueAxis(
   const fixedHi = given[1] !== null;
   if (fixedLo) lo = given[0] as number;
   if (fixedHi) hi = given[1] as number;
+  // Data that falls outside the end the app fixed does not pull the open
+  // end past it: the axis still runs from low to high.
+  if (!fixedHi) hi = Math.max(hi, lo);
+  if (!fixedLo) lo = Math.min(lo, hi);
   const ticks = niceTicks(lo, hi);
   // A bound the app set is kept as it is; one the data gave is rounded out.
   const domain: [number, number] = [

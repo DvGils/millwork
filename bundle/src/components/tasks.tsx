@@ -68,7 +68,7 @@ export const Progress: Renderer = ({ props }) => {
             <span className={cn("text-xs", failed ? "text-destructive" : "text-muted-foreground")}>{ended}</span>
           ) : value !== null && props.percent !== false ? (
             <ProgressValue />
-          ) : t ? (
+          ) : t && value === null ? (
             <span className="text-xs text-muted-foreground">{t.status}</span>
           ) : null}
         </div>

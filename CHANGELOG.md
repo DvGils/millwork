@@ -6,29 +6,36 @@ versions; a release says so here when it does.
 ## 0.2.1
 
 - The `public` and `components` folders, and a theme given by path, are
-  found next to the file that makes the `App`, wherever the server is
+  found next to the file that calls `App(...)`, wherever the server is
   started from. Before, they were looked up from the working directory,
   so `millwork run pond/app.py` from one folder up silently lost the
   theme and the custom components. A folder the app names that does not
-  exist is now said in the log at startup.
+  exist is now said in the log at startup. A `components` folder next to
+  the app file is served from now on, where before only one in the
+  working directory was. Code with no file, a notebook cell or the REPL,
+  keeps working from the working directory, and an app made by a helper
+  in another module finds the folders next to that module, so a helper
+  passes absolute paths.
 - `cls` and `hidden` on `ui.Custom` are applied around the component, as
   for every other component. Before, they arrived among the component's
-  own props and it had to apply them itself. A custom prop named `key`,
-  `cls`, `hidden`, `name` or `children` is refused, since it would collide
-  with the component's own.
+  own props and it had to apply them itself, and a component that still
+  reads `props.cls` finds nothing there now. A custom prop named `key`,
+  `cls`, `hidden` or `on_event` is refused, since it would collide with
+  the component's own.
 - `ui.Progress(percent=False)` draws a plain meter, without the value
   written out next to the bar.
 - In tests, `page.notices` lists every toast with its tone and title,
   where `page.toasts` gives the messages alone.
 - A password field has a button that shows what was typed: on
   `ui.Input(kind="password")`, on a form's password field and on the
-  sign-in page. Its label comes from the theme's new `show_password` and
-  `hide_password` strings.
-- A line or area chart takes `y_range=(low, high)` for its value axis,
-  with `None` for an end that follows the data, so values that sit close
-  together far from zero are not drawn as a flat line over an axis from
-  zero. Every chart's axis now has its ticks at round steps (10, 20, 30),
-  where they could read 13, 26, 39 before. Bars keep their zero baseline.
+  sign-in page. Its label comes from the theme's new `show_password`
+  string.
+- The value axis of a line or area chart now sits where the data is,
+  rounded out to its ticks, where before it started at zero. `y_range=(low,
+  high)` pins either end, with `None` for one that follows the data, for
+  when zero should stay in view. Every chart's axis now has its ticks at
+  round steps (10, 20, 30), where they could read 13, 26, 39 before. Bars
+  keep their zero baseline.
 
 ## 0.2.0
 

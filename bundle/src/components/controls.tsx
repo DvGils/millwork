@@ -94,7 +94,9 @@ export const Input: Renderer = ({ props, emit }) => {
   const Clear = icon("x");
   const secret = props.kind === "password";
   const Field = secret ? PasswordInput : UiInput;
-  const wrapped = Boolean(Prefix || props.suffix || props.clearable);
+  // A password is wrapped as well: its eye sits at the field's end, and the
+  // app's classes go on the box around both.
+  const wrapped = Boolean(Prefix || props.suffix || props.clearable || secret);
   const clearable = Boolean(props.clearable) && current !== "" && !props.disabled && !props.readonly;
   const clear = () => {
     setDraft("");
