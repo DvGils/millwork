@@ -87,6 +87,16 @@ def test_validation() -> None:
         ui.BarChart([("Jan", 1)], x="month", y="sales")
 
 
+def test_a_line_or_area_takes_a_range_for_its_value_axis() -> None:
+    node = build(ui.LineChart(WIDE, x="month", y="sales", y_range=(0.9, None)))
+    assert node.nodes["root"].props["y_range"] == [0.9, None]
+    assert "y_range" not in build(ui.BarChart(WIDE, x="month", y="sales")).nodes["root"].props
+    with pytest.raises(ValueError, match="low to high"):
+        ui.LineChart(WIDE, x="month", y="sales", y_range=(2, 1))
+    with pytest.raises(ValueError, match="percent"):
+        ui.AreaChart(WIDE, x="month", y="sales", stacked="percent", y_range=(0, 1))
+
+
 def test_empty_rows_are_fine() -> None:
     props = build(ui.LineChart(x="month", y="sales")).nodes["root"].props
     assert props["data"] == [] and props["series"] == [

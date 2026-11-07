@@ -20,6 +20,11 @@ versions; a release says so here when it does.
   written out next to the bar.
 - In tests, `page.notices` lists every toast with its tone and title,
   where `page.toasts` gives the messages alone.
+- A line or area chart takes `y_range=(low, high)` for its value axis,
+  with `None` for an end that follows the data, so values that sit close
+  together far from zero are not drawn as a flat line over an axis from
+  zero. Every chart's axis now has its ticks at round steps (10, 20, 30),
+  where they could read 13, 26, 39 before. Bars keep their zero baseline.
 
 ## 0.2.0
 

@@ -32,6 +32,8 @@ import {
   chartSlot,
   seriesColors,
   slot,
+  valueAxis,
+  valueExtent,
   type Row,
   type Series,
 } from "../charts-data";
@@ -223,6 +225,18 @@ export function Chart({ kind, props, emit }: ChartProps) {
   const valueFormat = stacked === "percent" ? "percent" : format;
   // A diverging chart stacks one side below zero; its axis still reads as counts.
   const tick = (v: unknown) => formatNumber(diverging ? Math.abs(Number(v)) : v, valueFormat, true);
+  // Where the value axis runs and where its ticks are: round steps, a
+  // baseline at zero for bars, the app's own range on a line or an area.
+  const yRange = (props.y_range as [number | null, number | null] | null | undefined) ?? null;
+  const axis = useMemo(() => {
+    if (stacked === "percent") return { domain: [0, 1] as [number, number], ticks: [0, 0.25, 0.5, 0.75, 1] };
+    if (diverging) {
+      const extent = valueExtent(rows, n, true);
+      const reach = Math.max(Math.abs(extent?.[0] ?? 0), Math.abs(extent?.[1] ?? 0));
+      return valueAxis([-reach, reach], null, true);
+    }
+    return valueAxis(valueExtent(rows, n, Boolean(stacked)), yRange, kind === "bar");
+  }, [rows, n, stacked, diverging, kind, yRange]);
 
   const click = props.on_click
     ? (row: Row, index: number | null) =>
@@ -249,10 +263,26 @@ export function Chart({ kind, props, emit }: ChartProps) {
   ) : (
     <XAxis dataKey="x" tickLine={false} axisLine={false} tickMargin={8} />
   );
-  const valueAxis = horizontal ? (
-    <XAxis type="number" tickLine={false} axisLine={false} tickFormatter={tick} />
+  const numberAxis = horizontal ? (
+    <XAxis
+      type="number"
+      tickLine={false}
+      axisLine={false}
+      tickFormatter={tick}
+      domain={axis.domain}
+      ticks={axis.ticks}
+      allowDataOverflow
+    />
   ) : (
-    <YAxis tickLine={false} axisLine={false} width="auto" tickFormatter={tick} />
+    <YAxis
+      tickLine={false}
+      axisLine={false}
+      width="auto"
+      tickFormatter={tick}
+      domain={axis.domain}
+      ticks={axis.ticks}
+      allowDataOverflow
+    />
   );
   const tooltip = (
     <Tooltip
@@ -316,7 +346,7 @@ export function Chart({ kind, props, emit }: ChartProps) {
       <RBarChart {...common} barGap={2} barCategoryGap="20%">
         <CartesianGrid vertical={horizontal} horizontal={!horizontal} />
         {categoryAxis}
-        {valueAxis}
+        {numberAxis}
         {tooltip}
         {bars}
       </RBarChart>
@@ -326,7 +356,7 @@ export function Chart({ kind, props, emit }: ChartProps) {
       <RLineChart {...common}>
         <CartesianGrid vertical={false} />
         {categoryAxis}
-        {valueAxis}
+        {numberAxis}
         {tooltip}
         {series.map((s, i) => (
           <Line
@@ -349,7 +379,7 @@ export function Chart({ kind, props, emit }: ChartProps) {
       <RAreaChart {...common}>
         <CartesianGrid vertical={false} />
         {categoryAxis}
-        {valueAxis}
+        {numberAxis}
         {tooltip}
         {series.map((s, i) => (
           <Area

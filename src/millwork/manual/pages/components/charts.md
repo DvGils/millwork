@@ -131,12 +131,27 @@ ui.LineChart(
 rather than numbering every point. `ui.AreaChart` fills under the line,
 and `stacked=True` adds the series up.
 
+The value axis of a bar chart starts at zero, since a bar's length is its
+value. A line or an area sits where its data is, and `y_range=(low, high)`
+pins either end, with `None` for one that follows the data. Values that
+sit close together far from zero, a measure that drifts around 1.0 say,
+would otherwise read as a flat line.
+
 ```python live
 ui.Grid(
     ui.LineChart(MONTHS, x="month", y="visits", curve=True, dots=True, height=200),
     ui.AreaChart(
         MONTHS, x="month", y={"sales": "Sales", "costs": "Costs"}, stacked=True, height=200
     ),
+    cols={"sm": 1, "md": 2},
+)
+```
+
+```python live
+DRIFT = [{"day": d, "speed": 1 + 0.004 * d + (0.01 if d % 3 == 0 else 0)} for d in range(1, 21)]
+ui.Grid(
+    ui.LineChart(DRIFT, x="day", y={"speed": "Speed, relative to the founders"}, height=180),
+    ui.LineChart(DRIFT, x="day", y={"speed": "The same, from zero"}, y_range=(0, None), height=180),
     cols={"sm": 1, "md": 2},
 )
 ```
