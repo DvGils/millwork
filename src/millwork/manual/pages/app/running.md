@@ -33,6 +33,12 @@ app = mw.App(
 )
 ```
 
+- `public`, `components` and a `theme` given by path are found next to
+  the file that calls `App(...)`, so `millwork run pond/app.py` works from
+  any folder. A helper module that makes apps for others therefore passes
+  absolute paths, and code with no file, a notebook cell say, works from
+  the working directory. A folder the app names that is not there is said
+  in the log at startup.
 - `origins` is the allow-list for the socket and the login route. The
   default is the app's own origin.
 - `files` is where uploads and generated files live while a session

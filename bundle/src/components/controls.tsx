@@ -6,7 +6,7 @@ import { cn } from "cn";
 import { has } from "../lib";
 import { icon } from "../icons";
 import { t } from "../theme";
-import { useDebounced, useOwned } from "./inputs";
+import { PasswordInput, useDebounced, useOwned } from "./inputs";
 import { Button as UiButton, buttonVariants } from "@/components/ui/button";
 import { anchorProps } from "./anchor";
 import { Input as UiInput } from "@/components/ui/input";
@@ -92,15 +92,19 @@ export const Input: Renderer = ({ props, emit }) => {
   const later = useDebounced(typeof props.debounce_ms === "number" ? props.debounce_ms : 250);
   const Prefix = icon(props.prefix_icon);
   const Clear = icon("x");
-  const wrapped = Boolean(Prefix || props.suffix || props.clearable);
+  const secret = props.kind === "password";
+  const Field = secret ? PasswordInput : UiInput;
+  // A password is wrapped as well: its eye sits at the field's end, and the
+  // app's classes go on the box around both.
+  const wrapped = Boolean(Prefix || props.suffix || props.clearable || secret);
   const clearable = Boolean(props.clearable) && current !== "" && !props.disabled && !props.readonly;
   const clear = () => {
     setDraft("");
     if (props.on_change) emit("change", "");
   };
   const field = (
-    <UiInput
-      type={String(props.kind ?? "text")}
+    <Field
+      type={secret ? undefined : String(props.kind ?? "text")}
       value={current}
       placeholder={props.placeholder ? String(props.placeholder) : undefined}
       disabled={Boolean(props.disabled)}
@@ -116,10 +120,12 @@ export const Input: Renderer = ({ props, emit }) => {
           emit("submit", current);
         }
       }}
-      className={cn(Prefix && "pl-8", props.clearable && "pr-8", !wrapped && (props.cls as string))}
+      className={cn(Prefix && "pl-8", props.clearable && (secret ? "pr-14" : "pr-8"), !wrapped && (props.cls as string))}
     />
   );
   if (!wrapped) return field;
+  // The clear button sits left of the suffix and of a password's eye.
+  const clearAt = props.suffix ? (secret ? "right-20" : "right-14") : secret ? "right-8" : "right-2";
   // The app's classes (a margin, a width) go on the outer box, so the icon and
   // the clear button stay centred on the input itself.
   return (
@@ -131,7 +137,7 @@ export const Input: Renderer = ({ props, emit }) => {
           type="button"
           aria-label={t("clear")}
           onClick={clear}
-          className={cn("absolute top-1/2 -translate-y-1/2 rounded-sm text-muted-foreground hover:text-foreground", props.suffix ? "right-14" : "right-2")}
+          className={cn("absolute top-1/2 -translate-y-1/2 rounded-sm text-muted-foreground hover:text-foreground", clearAt)}
         >
           <Clear className="size-4" />
         </button>

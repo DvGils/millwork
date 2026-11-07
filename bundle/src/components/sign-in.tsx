@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { icon } from "../icons";
+import { PasswordInput } from "./inputs";
 import { brands } from "../brands";
 import { mw, safeUrl, toApp } from "../lib";
 import { t } from "../theme";
@@ -88,7 +89,7 @@ function PasswordForm({ label, cls }: { label: string | null; cls?: string }) {
       </Field>
       <Field>
         <FieldLabel htmlFor={`${id}pass`}>{t("password")}</FieldLabel>
-        <Input id={`${id}pass`} name="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <PasswordInput id={`${id}pass`} name="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
       <Button type="submit" disabled={busy || !username || !password}>
         {label ?? t("sign_in")}

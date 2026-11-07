@@ -185,6 +185,7 @@ STRINGS: dict[str, str] = {
     "sign_in_failed": "Sign-in failed",
     "username": "Username",
     "password": "Password",
+    "show_password": "Show password",
     "continue_with": "Continue with {provider}",
     "or": "or",
     "no_sign_in": "No sign-in method is configured.",

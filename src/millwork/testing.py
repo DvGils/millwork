@@ -12,6 +12,7 @@ import contextlib
 import json
 import mimetypes
 from collections.abc import AsyncIterator, Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
@@ -185,7 +186,20 @@ class Page:
 
     @property
     def toasts(self) -> list[str]:
-        return [str(c.args.get("message", "")) for c in self.commands if c.name == "toast"]
+        return [n.message for n in self.notices]
+
+    @property
+    def notices(self) -> list[Notice]:
+        """Every toast shown, with its tone and title."""
+        return [
+            Notice(
+                str(c.args.get("message", "")),
+                str(c.args.get("tone") or "default"),
+                c.args.get("title") if isinstance(c.args.get("title"), str) else None,
+            )
+            for c in self.commands
+            if c.name == "toast"
+        ]
 
     @property
     def stream(self) -> list[dict[str, Any]]:
@@ -451,6 +465,15 @@ class _Tab:
             self._closed.set_result(None)
 
 
+@dataclass(frozen=True)
+class Notice:
+    """A toast as the page showed it."""
+
+    message: str
+    tone: str
+    title: str | None = None
+
+
 _MISSING: Any = object()
 
 
@@ -564,4 +587,4 @@ class TestApp:
             raise exc
 
 
-__all__ = ["Found", "Page", "TestApp"]
+__all__ = ["Found", "Notice", "Page", "TestApp"]

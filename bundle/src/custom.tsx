@@ -125,7 +125,10 @@ export function CustomComponent({
     };
   }, [node.type, tick]);
 
-  const stable = useMemo(() => ({ ...props }), [props]);
+  // `cls` and `hidden` are the wrapper's, as for any component; the
+  // component gets the props the app gave it.
+  const { cls, hidden: _hidden, ...own } = props as { cls?: unknown; hidden?: unknown } & Record<string, unknown>;
+  const stable = useMemo(() => ({ ...own }), [props]); // eslint-disable-line react-hooks/exhaustive-deps
   // A custom component asks its own handlers (`on_<name>` on the Python side) and
   // fetches session files the same way the catalogue does.
   const ask = useCallback((name: string, payload?: unknown) => request(node.id, name, payload ?? null), [node.id]);
@@ -134,9 +137,10 @@ export function CustomComponent({
 
   if (error) return <div className="text-destructive text-sm">{error}</div>;
   if (!Comp) return null;
-  return (
+  const rendered = (
     <Comp props={stable} emit={emit} request={ask} fileUrl={fileUrl} chat={chat ?? undefined}>
       {children}
     </Comp>
   );
+  return typeof cls === "string" && cls ? <div className={cls}>{rendered}</div> : rendered;
 }

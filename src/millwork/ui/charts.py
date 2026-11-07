@@ -276,15 +276,35 @@ class BarChart(_Chart):
         ) -> None: ...
 
 
+YRange = tuple[float | None, float | None]
+
+
+def _check_range(y_range: YRange | None) -> None:
+    if y_range is None:
+        return
+    low, high = y_range
+    if low is not None and high is not None and low >= high:
+        raise ValueError(f"y_range runs from low to high; {y_range!r} does not")
+
+
 class LineChart(_Chart):
     """Lines over an ordered x: one per series, a crosshair tooltip across them.
 
-    ``curve`` smooths the lines; ``dots`` marks every point.
+    ``curve`` smooths the lines; ``dots`` marks every point. ``y_range``
+    sets the value axis, ``(low, high)``, where either may be None to keep
+    the data's own bound: for values that sit close together far from zero,
+    where an axis from zero would show a flat line.
     """
 
     type: ClassVar[str] = "LineChart"
     curve: bool = False
     dots: bool = False
+    y_range: YRange | None = None
+
+    @model_validator(mode="after")
+    def _check_line(self) -> LineChart:
+        _check_range(self.y_range)
+        return self
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -307,15 +327,27 @@ class LineChart(_Chart):
             on_click: Any = None,
             curve: bool = False,
             dots: bool = False,
+            y_range: YRange | None = None,
         ) -> None: ...
 
 
 class AreaChart(_Chart):
-    """Lines with the space under them filled; ``stacked`` adds the series up."""
+    """Lines with the space under them filled; ``stacked`` adds the series up.
+    ``y_range`` sets the value axis as on a line chart."""
 
     type: ClassVar[str] = "AreaChart"
     stacked: bool | Literal["percent"] = False
     curve: bool = False
+    y_range: YRange | None = None
+
+    @model_validator(mode="after")
+    def _check_area(self) -> AreaChart:
+        _check_range(self.y_range)
+        if self.y_range is not None and self.stacked == "percent":
+            raise ValueError(
+                "a chart stacked to percent runs from 0 to 100%; y_range does not apply"
+            )
+        return self
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -338,6 +370,7 @@ class AreaChart(_Chart):
             on_click: Any = None,
             stacked: bool | Literal["percent"] = False,
             curve: bool = False,
+            y_range: YRange | None = None,
         ) -> None: ...
 
 

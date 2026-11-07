@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import inspect
 import logging
 import re
 import secrets
@@ -251,19 +252,25 @@ class App:
         self.keep_alive = keep_alive
         self.ready = False
         self.files = files or Files()
-        self.components_dir = Path(components) if components else None
+        # Folders are found next to the file that makes the App, wherever the
+        # server is started from. A folder the app names that is not there is
+        # said so at once, where the page it affects would only look bare.
+        home = _home_of_caller()
+        self.components_dir = _folder(
+            home, components, "components", explicit=components != "components"
+        )
         self.auth = auth
         if auth is not None:
             auth.bind(secret, debug, origins, app=name)
         self._startup: list[Callable[[], Any]] = []
         self._shutdown: list[Callable[[], Any]] = []
         self.state_model = state
-        self.public_dir = Path(public) if public else None
+        self.public_dir = _folder(home, public, "public", explicit=public != "public")
         self._theme_path: Path | None = None
         if isinstance(theme, Theme):
             self.theme = theme
         elif theme is not None:
-            self._theme_path = Path(theme)
+            self._theme_path = _under_home(home, theme)
             self.theme = Theme.load(self._theme_path)
         else:
             candidate = self.public_dir / "theme.json" if self.public_dir else None
@@ -1056,6 +1063,39 @@ def _not_found_view(s: Any) -> Component:
 
 def _forbidden_view(s: Any) -> Component:
     return _error_view(s, "forbidden")
+
+
+def _home_of_caller() -> Path:
+    """The folder of the file that is making the App: the first frame outside
+    this package. Code with no file, a notebook cell or the REPL, works from
+    the working directory."""
+    here = Path(__file__).resolve().parent
+    frame = inspect.currentframe()
+    while frame is not None:
+        file = frame.f_globals.get("__file__")
+        if not isinstance(file, str):
+            return Path.cwd()
+        where = Path(file).resolve()
+        if not where.is_relative_to(here):
+            return where.parent
+        frame = frame.f_back
+    return Path.cwd()
+
+
+def _under_home(home: Path, path: str | Path) -> Path:
+    given = Path(path)
+    return given if given.is_absolute() else home / given
+
+
+def _folder(home: Path, path: str | Path | None, what: str, *, explicit: bool) -> Path | None:
+    """A folder the app names, next to its own file. One named by the app
+    that does not exist is logged; the default being absent is nothing."""
+    if not path:
+        return None
+    folder = _under_home(home, path)
+    if explicit and not folder.is_dir():
+        log.warning("the %s folder %s does not exist", what, folder)
+    return folder
 
 
 async def _maybe_await(value: Any) -> Any:

@@ -122,7 +122,8 @@ ui.ButtonGroup(
 `ui.Input` is a single line of text. `kind` chooses the keyboard and the
 validation, from `text`, `password`, `email`, `number`, `search` and
 `url`. `prefix_icon` and `suffix` decorate it, and `clearable` adds a
-clear button. `on_change` fires after a pause in typing, set by
+clear button. A password has a button that shows what was typed, as does
+a password field in a form and on the sign-in page. `on_change` fires after a pause in typing, set by
 `debounce_ms` and 250 ms by default, and `on_submit` fires on Enter.
 
 ```python live

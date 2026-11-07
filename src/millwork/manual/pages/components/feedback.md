@@ -205,6 +205,7 @@ ui.Empty(
 
 `ui.Progress` is a bar for a `value` from 0 to 1 with a `label` and a
 `description`, or for a running task, as the Tasks chapter shows.
+`percent=False` leaves the value off the bar, for a plain meter.
 `ui.Steps` draws a list of `mw.Step` items with their status.
 
 ```python live

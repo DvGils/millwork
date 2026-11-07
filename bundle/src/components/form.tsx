@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { Renderer } from "../render";
 import { cn } from "cn";
 import { icon } from "../icons";
+import { PasswordInput } from "./inputs";
 import { t } from "../theme";
 import { onStatus } from "../ws";
 import { formatSize, upload, type FileRef } from "./files";
@@ -490,7 +491,7 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
     case "textarea":
       return <Textarea {...common} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />;
     case "password":
-      return <Input {...common} type="password" value={str} placeholder={f.placeholder ?? undefined} onChange={(e) => set(e.target.value || null)} />;
+      return <PasswordInput {...common} value={str} placeholder={f.placeholder ?? undefined} onChange={(e) => set(e.target.value || null)} />;
     case "number":
       return (
         <Input

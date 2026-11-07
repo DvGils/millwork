@@ -61,14 +61,14 @@ export const Progress: Renderer = ({ props }) => {
         props.cls as string,
       )}
     >
-      {label || value !== null || ended ? (
+      {label || (value !== null && props.percent !== false) || ended ? (
         <div className="flex items-center justify-between text-sm">
           {label ? <ProgressLabel>{String(label)}</ProgressLabel> : <span />}
           {ended ? (
             <span className={cn("text-xs", failed ? "text-destructive" : "text-muted-foreground")}>{ended}</span>
-          ) : value !== null ? (
+          ) : value !== null && props.percent !== false ? (
             <ProgressValue />
-          ) : t ? (
+          ) : t && value === null ? (
             <span className="text-xs text-muted-foreground">{t.status}</span>
           ) : null}
         </div>
