@@ -5,6 +5,7 @@
 // when the key is absent.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
 import type { Renderer } from "../render";
 import { cn } from "cn";
 import { has } from "../lib";
@@ -64,6 +65,31 @@ function grouped(items: Opt[]): Array<{ group: string | null; items: Opt[] }> {
 // changes (by content, so a value rebuilt on every render does not loop) and
 // what the user does in between stays until then. Uncontrolled: the draft
 // starts at `initial` and is the component's own.
+// A password field with a button that shows what was typed, for whoever is
+// typing it. The same field serves ui.Input, a form's password widget and
+// the sign-in form.
+export function PasswordInput({ className, type: _type, ...props }: React.ComponentProps<"input">) {
+  const [shown, setShown] = useState(false);
+  const Eye = icon(shown ? "eye-off" : "eye");
+  return (
+    <div className="relative flex w-full items-center">
+      <UiInput type={shown ? "text" : "password"} className={cn("pr-8", className)} {...props} />
+      {Eye ? (
+        <button
+          type="button"
+          aria-label={t(shown ? "hide_password" : "show_password")}
+          aria-pressed={shown}
+          onClick={() => setShown((s) => !s)}
+          disabled={props.disabled}
+          className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm text-muted-foreground hover:text-foreground disabled:pointer-events-none"
+        >
+          <Eye className="size-4" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export function useOwned<T>(controlled: boolean, value: T, initial: T): [T, (v: T) => void] {
   const [draft, setDraft] = useState<T>(controlled ? value : initial);
   const key = JSON.stringify(value);

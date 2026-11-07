@@ -20,6 +20,10 @@ versions; a release says so here when it does.
   written out next to the bar.
 - In tests, `page.notices` lists every toast with its tone and title,
   where `page.toasts` gives the messages alone.
+- A password field has a button that shows what was typed: on
+  `ui.Input(kind="password")`, on a form's password field and on the
+  sign-in page. Its label comes from the theme's new `show_password` and
+  `hide_password` strings.
 - A line or area chart takes `y_range=(low, high)` for its value axis,
   with `None` for an end that follows the data, so values that sit close
   together far from zero are not drawn as a flat line over an axis from
