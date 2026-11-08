@@ -31,6 +31,12 @@ versions; a release says so here when it does.
   runtime compiler had styled it, then jumped into place. The first such
   page now waits for the compiler, which is a moment on a fresh tab and
   nothing after.
+- A page with Markdown on it painted the Markdown's source first, in a
+  monospace block, and then the rendered text once the renderer's chunk
+  had arrived, which moved everything below it. The first such page now
+  waits for the chunk, as it does for the runtime compiler, and draws
+  once. A theme's self-hosted fonts are preloaded from the page's head,
+  so the text is drawn in them from the first paint.
 - A page opened over the session kept the scroll position of the page
   before it, so a reader halfway down one chapter landed halfway down the
   next. A new page opens at the top. The back and forward buttons return to

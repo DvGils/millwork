@@ -51,7 +51,11 @@ def test_css_head_and_strings() -> None:
     assert "format('woff2')" in css
     assert ":root{--primary:oklch(0.52 0.17 150);--radius:0.5rem}" in css
     assert ".dark{--primary:#9fd}" in css
-    assert theme.head() == '<link rel="stylesheet" href="https://fonts.example/inter.css">'
+    assert theme.head() == (
+        '<link rel="preload" as="font" type="font/woff2" href="/public/fonts/montserrat.woff2"'
+        ' crossorigin><link rel="stylesheet" href="https://fonts.example/inter.css">'
+    )
+    assert 'href="/sales/public/fonts/montserrat.woff2"' in theme.head("/sales")
     strings = theme.all_strings()
     assert strings["send"] == "Stuur" and strings["sign_in"] == "Sign in"
     assert set(strings) == set(STRINGS)

@@ -10,6 +10,7 @@ import { samePath, safeUrl, signOut, toApp, toBrowser } from "./lib";
 import { toast } from "@/components/ui/toast";
 import { invalidate, syncVersions } from "./custom";
 import { ensureTailwindRuntime, needsRuntime, runtimeLoaded } from "./tailwind-runtime";
+import { markdownLoaded, needsMarkdown, preloadMarkdown } from "./components/markdown";
 import { keepScrollInHistory, restoreScroll, scrollFromHistory, watchScroll } from "./scroll";
 
 interface Boot {
@@ -298,13 +299,14 @@ export function navigate(path: string) {
   send({ type: "navigate", path: bare });
 }
 
-// Settles when the promise does, or after the wait, whichever comes first.
-function within(p: Promise<unknown>, ms: number): Promise<void> {
+// Settles when the promise does, or after the wait, whichever comes first,
+// and says which it was.
+function within(p: Promise<unknown>, ms: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const timer = window.setTimeout(resolve, ms);
+    const timer = window.setTimeout(() => resolve(false), ms);
     const done = () => {
       window.clearTimeout(timer);
-      resolve();
+      resolve(true);
     };
     p.then(done, done);
   });
@@ -328,13 +330,22 @@ function storeSession() {
   }
 }
 
-// A class the precompiled stylesheet lacks is styled by the runtime compiler.
-// Drawn before it has loaded, the page would paint without those styles and
-// then jump, so the first page that needs it waits, parked with everything
-// about the page that follows it, while the page before stays on screen.
-// The wait is bounded; after it the page is drawn as it is.
+// Two things a page may need that arrive after the bundle: the runtime
+// compiler for a class the precompiled stylesheet lacks, and the Markdown
+// renderer's chunk. Drawn before they have loaded, the page would paint
+// without them and then jump, so the first page that needs one waits, parked
+// with everything about the page that follows it, while the page before stays
+// on screen. The wait is bounded, and after a wait that ran out the page is
+// drawn as it is from then on.
 let parked: ServerMessage[] | null = null;
-let runtimeWaited = false;
+let gaveUp = false;
+
+function stillLoading(nodes: Record<string, Node>): Promise<unknown> | null {
+  const waits: Promise<unknown>[] = [];
+  if (!runtimeLoaded() && needsRuntime(nodes)) waits.push(ensureTailwindRuntime());
+  if (!markdownLoaded() && needsMarkdown(nodes)) waits.push(preloadMarkdown());
+  return waits.length ? Promise.all(waits) : null;
+}
 
 function park(m: ServerMessage): boolean {
   if (parked === null) return false;
@@ -381,10 +392,11 @@ function apply(m: ServerMessage) {
       break;
     }
     case "mount": {
-      if (!runtimeLoaded() && !runtimeWaited && needsRuntime(m.nodes)) {
+      const loading = gaveUp ? null : stillLoading(m.nodes);
+      if (loading) {
         parked = [m];
-        void within(ensureTailwindRuntime(), 2000).then(() => {
-          runtimeWaited = !runtimeLoaded();
+        void within(loading, 2000).then((inTime) => {
+          gaveUp = !inTime;
           const queued = parked ?? [];
           parked = null;
           for (const q of queued) apply(q);
