@@ -257,7 +257,7 @@ export const Textarea: Renderer = ({ props, emit }) => {
       placeholder={props.placeholder ? String(props.placeholder) : undefined}
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}
-      className={cn(props.autosize && "field-sizing-content", props.cls as string)}
+      className={cn(props.autosize ? "field-sizing-content" : "resize-y", props.cls as string)}
       onChange={(e) => {
         const next = e.target.value;
         setDraft(next);

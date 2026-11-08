@@ -137,3 +137,13 @@ export function hasSession(): boolean {
 export function has(props: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(props, key);
 }
+
+// Above this many characters a text field stops being spellchecked. The
+// browser's spellchecker marks every word of a change, and on a long paste
+// that takes seconds and freezes the tab; a field this long is not prose
+// anyone is proofreading in place. Back under it, checking resumes.
+export const LONG_TEXT = 5000;
+export function spellcheckForLength(field: { value: string; spellcheck: boolean }) {
+  const wanted = field.value.length <= LONG_TEXT;
+  if (field.spellcheck !== wanted) field.spellcheck = wanted;
+}

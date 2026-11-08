@@ -5,6 +5,17 @@ versions; a release says so here when it does.
 
 ## 0.2.3
 
+### Bug fixes
+
+- Pasting a long text into an input or a textarea froze the tab for
+  seconds, or for good. The browser's spellchecker marks every word of a
+  change, and its cost grows faster than the text. A text field now turns
+  spellchecking off once it holds more than 5,000 characters and back on
+  when it shrinks below that, so a long paste lands at once. A `Textarea`
+  also no longer grows past the viewport: it follows `rows` unless
+  `autosize=True`, and then stops at most of the window's height and
+  scrolls inside.
+
 ### Features
 
 - `ui.Assistant` is a round button in a corner of the page that becomes a
