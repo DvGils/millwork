@@ -6,8 +6,25 @@
 // runtime generates use the same tokens as the precompiled ones.
 
 import themeBlock from "./theme-block.css?raw";
+import type { Node } from "./store";
 
 let loading: Promise<void> | null = null;
+let loaded = false;
+
+export function runtimeLoaded(): boolean {
+  return loaded;
+}
+
+// Whether a page has anything the runtime styles: a class of its own on a
+// catalogue component, or a custom component.
+export function needsRuntime(nodes: Record<string, Node>): boolean {
+  for (const node of Object.values(nodes)) {
+    if (node.type === "Custom") return true;
+    const cls = node.props.cls;
+    if (typeof cls === "string" && cls !== "") return true;
+  }
+  return false;
+}
 
 export function ensureTailwindRuntime(): Promise<void> {
   if (loading) return loading;
@@ -22,6 +39,7 @@ export function ensureTailwindRuntime(): Promise<void> {
     ].join("\n");
     document.head.appendChild(style);
     await import("@tailwindcss/browser");
+    loaded = true;
   })();
   return loading;
 }

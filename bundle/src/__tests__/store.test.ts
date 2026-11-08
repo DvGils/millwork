@@ -92,4 +92,32 @@ describe("store splice", () => {
     expect(after.props.keys).toBe(keys);
     unsub();
   });
+
+  it("a held store keeps the root off the screen until the wait is over", async () => {
+    const seen: string[] = [];
+    store.mount("root", { root: node("root", "Page") }, null);
+    const unsub = store.subscribeRoot(() => seen.push(String(store.shown())));
+    let release!: () => void;
+    store.hold(new Promise<void>((r) => (release = r)));
+    expect(store.shown()).toBeNull();
+    // mounts and patches still land while held
+    store.mount("root2", { root2: node("root2", "Page") }, null);
+    expect(store.root).toBe("root2");
+    expect(store.shown()).toBeNull();
+    release();
+    await Promise.resolve();
+    expect(store.shown()).toBe("root2");
+    expect(seen[0]).toBe("null");
+    expect(seen.at(-1)).toBe("root2");
+    unsub();
+  });
+
+  it("a hold that fails releases as well", async () => {
+    store.mount("root", { root: node("root", "Page") }, null);
+    store.hold(Promise.reject(new Error("no runtime")));
+    expect(store.shown()).toBeNull();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.shown()).toBe("root");
+  });
 });

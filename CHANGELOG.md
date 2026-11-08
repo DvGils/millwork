@@ -3,6 +3,25 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.2.2
+
+### Bug fixes
+
+- A page that uses a class the precompiled stylesheet does not have, through
+  `cls` or a custom component, waited for nothing and painted before the
+  runtime compiler had styled it, then jumped into place. The first such
+  page now waits for the compiler, which is a moment on a fresh tab and
+  nothing after.
+- A page opened over the session kept the scroll position of the page
+  before it, so a reader halfway down one chapter landed halfway down the
+  next. A new page opens at the top. The back and forward buttons return to
+  where the reader was on that page.
+- Two examples in the manual, the navigation row and the chat buttons, ran
+  past their panel on a phone. They wrap now, and an example wider than its
+  panel scrolls inside it instead of floating over the border.
+- A chart example in the manual labeled its series after an app the reader
+  has never seen.
+
 ## 0.2.1
 
 - The `public` and `components` folders, and a theme given by path, are

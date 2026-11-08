@@ -69,7 +69,8 @@ A `ui.Link` whose `href` is a path inside the app navigates over the
 session. Nothing reloads, the tab's history gets an entry, and the back
 button works. From a handler, `s.navigate(path)` does the same. A
 `#heading` on the path scrolls to that heading once the page is up, which
-is how this manual's search opens a section.
+is how this manual's search opens a section. Without one, the page opens
+at the top, and the back button returns to where the reader was.
 
 ```python live
 def example(s):
@@ -78,6 +79,7 @@ def example(s):
         ui.Link(label="or follow a link", href="/components/charts#stat"),
         ui.Text(f"You are at {s.path}", variant="muted"),
         gap=4,
+        wrap=True,
     )
 ```
 

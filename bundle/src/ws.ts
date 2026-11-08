@@ -9,6 +9,8 @@ import { store, type Node, type PatchOp } from "./store";
 import { samePath, safeUrl, signOut, toApp, toBrowser } from "./lib";
 import { toast } from "@/components/ui/toast";
 import { invalidate, syncVersions } from "./custom";
+import { ensureTailwindRuntime, needsRuntime, runtimeLoaded } from "./tailwind-runtime";
+import { keepScrollInHistory, restoreScroll, scrollFromHistory, watchScroll } from "./scroll";
 
 interface Boot {
   path: string;
@@ -285,12 +287,27 @@ function forgetFiles() {
 }
 
 // A hash names a heading on the page being opened: the server never sees it,
-// the tab scrolls there once the page has mounted.
+// the tab scrolls there once the page has mounted. Without one, the page
+// opens at the top, or where the reader left it when the history brings it back.
 let pendingHash: string | null = null;
+let pendingScroll: number | null = null;
+let poppedScroll: number | null = null;
 export function navigate(path: string) {
   const [bare, hash] = path.split("#", 2);
   pendingHash = hash || null;
   send({ type: "navigate", path: bare });
+}
+
+// Settles when the promise does, or after the wait, whichever comes first.
+function within(p: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, ms);
+    const done = () => {
+      window.clearTimeout(timer);
+      resolve();
+    };
+    p.then(done, done);
+  });
 }
 
 function scrollToHash(hash: string, tries = 20) {
@@ -342,10 +359,16 @@ function handle(env: Envelope<ServerMessage>) {
       break;
     }
     case "mount": {
+      // A class the precompiled stylesheet lacks is styled by the runtime
+      // compiler. Shown before it has loaded, the page would paint without
+      // those styles and then jump, so the first such page waits for it.
+      if (!runtimeLoaded() && needsRuntime(m.nodes)) store.hold(within(ensureTailwindRuntime(), 2000));
       store.mount(m.root, m.nodes, m.title);
       const hash = pendingHash ?? (window.location.hash ? window.location.hash.slice(1) : null);
       pendingHash = null;
       if (hash) window.setTimeout(() => scrollToHash(hash), 50);
+      else if (pendingScroll !== null) restoreScroll(pendingScroll);
+      pendingScroll = null;
       break;
     }
     case "patch":
@@ -410,9 +433,14 @@ function command(name: string, args: Record<string, unknown>) {
       // Compared as app paths: the prefix with and without its slash is one page,
       // so a popped history entry is never pushed over.
       if (!samePath(toApp(window.location.pathname), path) || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
+        keepScrollInHistory();
         window.history.pushState({ mw: true }, "", target);
       }
       if (args.title) document.title = String(args.title);
+      // The mount that follows opens the page at the top, or where it was
+      // left when the back or forward button brought it back.
+      pendingScroll = poppedScroll ?? 0;
+      poppedScroll = null;
       break;
     }
     case "title":
@@ -469,8 +497,12 @@ function command(name: string, args: Record<string, unknown>) {
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     const path = toApp(window.location.pathname);
-    if (!samePath(path, boot.path)) navigate(path);
+    if (!samePath(path, boot.path)) {
+      poppedScroll = scrollFromHistory();
+      navigate(path);
+    }
   });
+  watchScroll();
 }
 
 export function connect() {
