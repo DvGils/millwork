@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampPosition, clampRect, cursorFor, edgesAt, isClick, minimizeTo, openFrom, panelSize, resizeRect, restingPlace } from "../assistant-math";
+import { clampPosition, clampRect, cursorFor, edgesAt, isClick, minimizeTo, onRightHalf, openFrom, panelSize, resizeRect, restingPlace } from "../assistant-math";
 
 const viewport = { width: 1280, height: 900 };
 const button = { width: 48, height: 48 };
@@ -56,8 +56,18 @@ describe("the window", () => {
     expect(resizeRect(rect, edges, 100, 50, viewport)).toEqual({ x: 500, y: 200, width: 480, height: 650 });
     const fromLeft = resizeRect(rect, { left: true, right: false, top: true, bottom: false }, 200, 400, viewport);
     expect(fromLeft).toEqual({ x: 600, y: 480, width: 280, height: 320 });
+    // an edge pulled past the margin stops there; the other edges stay put
     const tooFar = resizeRect(rect, edges, 2000, 2000, viewport);
-    expect(tooFar.width).toBe(1280 - 32);
-    expect(tooFar.x + tooFar.width).toBeLessThanOrEqual(1280 - 16);
+    expect(tooFar).toEqual({ x: 500, y: 200, width: 1280 - 16 - 500, height: 900 - 16 - 200 });
+    const leftOut = resizeRect({ x: 100, y: 200, width: 380, height: 600 }, { left: true, right: false, top: false, bottom: false }, -200, 0, viewport);
+    expect(leftOut).toEqual({ x: 16, y: 200, width: 464, height: 600 });
+  });
+
+  it("minimizes to the side the button came from, and a tiny thing has no edges", () => {
+    const panel = { x: 600, y: 200, width: 380, height: 600 };
+    expect(onRightHalf({ x: 600, y: 0, ...button }, viewport)).toBe(false);
+    expect(minimizeTo(panel, button, viewport, false)).toEqual({ x: 600, y: 752 });
+    expect(minimizeTo(panel, button, viewport, true)).toEqual({ x: 932, y: 752 });
+    expect(edgesAt({ x: 12, y: 12 }, { x: 10, y: 10, width: 12, height: 12 })).toEqual({ left: false, right: false, top: false, bottom: false });
   });
 });

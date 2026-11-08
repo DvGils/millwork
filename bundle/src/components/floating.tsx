@@ -4,7 +4,7 @@
 // it changes size. `Floating` is the plain container; the Assistant's button
 // and window use the same hooks.
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { cn } from "cn";
 import type { Renderer } from "../render";
 import {
@@ -15,6 +15,7 @@ import {
   fitSize,
   hasEdge,
   isClick,
+  MIN_SIZE,
   resizeRect,
   restingPlace,
   type Edges,
@@ -25,6 +26,17 @@ import {
 
 export function viewport(): Size {
   return { width: window.innerWidth, height: window.innerHeight };
+}
+
+// The browser window's size as state, so a thing kept inside it follows it.
+function useViewport(): Size {
+  const [size, setSize] = useState<Size>(viewport);
+  useEffect(() => {
+    const onResize = () => setSize(viewport());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
 }
 
 function read<T>(key: string, check: (v: unknown) => v is T): T | null {
@@ -54,7 +66,8 @@ const isRect = (v: unknown): v is Rect =>
 type Drag = { from: Point; origin: Point; moved: boolean };
 
 // A press is a drag once it has moved more than a few pixels; the click that
-// ends a drag is swallowed before it reaches anything.
+// ends a drag is swallowed before it reaches anything. `reset` forgets a
+// gesture whose element went away under it.
 function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, move: (to: Point) => void, done: () => void, onPress?: () => void) {
   const drag = useRef<Drag | null>(null);
   const dragged = useRef(false);
@@ -99,7 +112,14 @@ function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, m
     drag.current = null;
     if (d?.moved) done();
   };
-  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onLost, onLostPointerCapture: onLost, onClickCapture, onClick };
+  const reset = useCallback(() => {
+    drag.current = null;
+    dragged.current = false;
+  }, []);
+  return {
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onLost, onLostPointerCapture: onLost, onClickCapture, onClick },
+    reset,
+  };
 }
 
 export interface FloatingOptions {
@@ -113,7 +133,12 @@ export interface FloatingOptions {
 // A thing of fixed size pinned in a corner until dragged.
 export function useFloating<T extends HTMLElement>({ storageKey, side, draggable, size, onPress }: FloatingOptions) {
   const ref = useRef<T>(null);
+  // Where the reader put it. What is shown is that, brought inside the
+  // screen of the moment, so a smaller screen for a while changes nothing
+  // that is remembered.
   const [at, setAt] = useState<Point | null>(() => (draggable ? read(storageKey, isPoint) : null));
+  const screen = useViewport();
+  const shown = useMemo(() => (at ? clampPosition(at, size, screen) : null), [at, size, screen]);
 
   const measured = useCallback((): Size => {
     const el = ref.current;
@@ -126,8 +151,8 @@ export function useFloating<T extends HTMLElement>({ storageKey, side, draggable
       const r = el.getBoundingClientRect();
       return { x: r.left, y: r.top, width: r.width, height: r.height };
     }
-    return { ...(at ?? restingPlace(side, size, viewport())), ...size };
-  }, [at, side, size]);
+    return { ...(shown ?? restingPlace(side, size, viewport())), ...size };
+  }, [shown, side, size]);
 
   const moveTo = useCallback(
     (p: Point) => {
@@ -138,14 +163,7 @@ export function useFloating<T extends HTMLElement>({ storageKey, side, draggable
     [measured, storageKey],
   );
 
-  useEffect(() => {
-    if (!at) return;
-    const onResize = () => setAt((p) => (p ? clampPosition(p, measured(), viewport()) : p));
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [at, measured]);
-
-  const handlers = useDrag<T>(
+  const { handlers, reset } = useDrag<T>(
     draggable,
     () => place(),
     (to) => setAt(clampPosition(to, measured(), viewport())),
@@ -156,14 +174,9 @@ export function useFloating<T extends HTMLElement>({ storageKey, side, draggable
     onPress,
   );
 
-  return {
-    ref,
-    place,
-    moveTo,
-    style: at ? ({ left: at.x, top: at.y } as CSSProperties) : undefined,
-    corner: at ? undefined : side === "left" ? "bottom-6 left-6" : "right-6 bottom-6",
-    handlers,
-  };
+  const style = useMemo(() => (shown ? ({ left: shown.x, top: shown.y } as CSSProperties) : undefined), [shown]);
+  const corner = shown ? undefined : side === "left" ? "bottom-6 left-6" : "right-6 bottom-6";
+  return { ref, place, moveTo, style, corner, handlers, reset };
 }
 
 export interface WindowOptions {
@@ -172,20 +185,34 @@ export interface WindowOptions {
   resizable: boolean;
   // The size the window has until the reader resizes it; null leaves it to its content.
   defaultSize: Size | null;
+  // The least it can be resized to.
+  min?: Size;
   // Where it goes when nothing is remembered yet.
   initial: (size: Size | null) => Point;
 }
 
+type Geometry = { at: Point; size: Size | null };
+
 // A window: dragged by a handle, resized from any edge or corner, kept
 // inside the browser window and shrunk to fit it, remembered as a whole.
-export function useWindow<T extends HTMLElement>({ storageKey, draggable, resizable, defaultSize, initial }: WindowOptions) {
+export function useWindow<T extends HTMLElement>({ storageKey, draggable, resizable, defaultSize, min = MIN_SIZE, initial }: WindowOptions) {
   const ref = useRef<T>(null);
-  const [geometry, setGeometry] = useState<{ at: Point; size: Size | null } | null>(() => {
+  const nominal = useMemo(() => defaultSize ?? { width: 200, height: 48 }, [defaultSize]);
+  // Where and how big the reader wants it. What is shown is that, brought
+  // inside the screen of the moment and shrunk to fit it, so a smaller
+  // screen for a while changes nothing that is remembered.
+  const [geometry, setGeometry] = useState<Geometry | null>(() => {
     const kept = read(storageKey, isRect);
     if (kept) return { at: { x: kept.x, y: kept.y }, size: { width: kept.width, height: kept.height } };
     const keptAt = read(storageKey, isPoint);
     return keptAt ? { at: keptAt, size: null } : null;
   });
+  const screen = useViewport();
+  const shown = useMemo<Geometry | null>(() => {
+    if (!geometry) return null;
+    const r = clampRect({ ...geometry.at, ...(geometry.size ?? nominal) }, screen, min);
+    return { at: { x: r.x, y: r.y }, size: geometry.size ? { width: r.width, height: r.height } : null };
+  }, [geometry, nominal, min, screen]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const resizing = useRef<{ edges: Edges; from: Rect; start: Point } | null>(null);
 
@@ -195,50 +222,43 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
       const r = el.getBoundingClientRect();
       return { x: r.left, y: r.top, width: r.width, height: r.height };
     }
-    const size = geometry?.size ?? defaultSize ?? { width: 200, height: 48 };
-    return { ...(geometry?.at ?? initial(size)), ...size };
-  }, [geometry, defaultSize, initial]);
+    const size = shown?.size ?? nominal;
+    return { ...(shown?.at ?? initial(size)), ...size };
+  }, [shown, nominal, initial]);
+
+  const sized = useRef(false);
+  sized.current = geometry?.size != null;
 
   const keep = useCallback(
-    (rect: Rect, sized: boolean) => {
-      setGeometry({ at: { x: rect.x, y: rect.y }, size: sized ? { width: rect.width, height: rect.height } : null });
-      write(storageKey, sized ? rect : { x: rect.x, y: rect.y });
+    (rect: Rect, withSize: boolean) => {
+      setGeometry({ at: { x: rect.x, y: rect.y }, size: withSize ? { width: rect.width, height: rect.height } : null });
+      write(storageKey, withSize ? rect : { x: rect.x, y: rect.y });
     },
     [storageKey],
   );
 
-  // Opened for the first time, or shown again: a place, and the size it was given.
+  // Shown for the first time: a place of its own. After that it keeps the one it had.
   const open = useCallback(() => {
     setGeometry((g) => {
       if (g) return g;
-      const size = defaultSize ? fitSize(defaultSize, viewport()) : null;
+      const size = defaultSize ? fitSize(defaultSize, viewport(), min) : null;
       return { at: initial(size), size };
     });
-  }, [defaultSize, initial]);
+  }, [defaultSize, min, initial]);
 
-  useEffect(() => {
-    if (!geometry) return;
-    const onResize = () =>
-      setGeometry((g) => {
-        if (!g) return g;
-        const size = g.size ?? (ref.current ? { width: ref.current.offsetWidth, height: ref.current.offsetHeight } : defaultSize ?? { width: 1, height: 1 });
-        const next = clampRect({ ...g.at, ...size }, viewport());
-        return { at: { x: next.x, y: next.y }, size: g.size ? { width: next.width, height: next.height } : null };
-      });
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [geometry, defaultSize]);
-
-  const dragHandlers = useDrag<HTMLElement>(
+  const drag = useDrag<HTMLElement>(
     draggable,
     () => current(),
     // The first drag of a thing still in its corner gives it a place of its own.
     (to) => setGeometry((g) => ({ at: clampPosition(to, current(), viewport()), size: g?.size ?? null })),
-    () => {
-      const r = current();
-      keep(r, geometry?.size !== null && geometry?.size !== undefined);
-    },
+    () => keep(current(), sized.current),
   );
+
+  const endResize = () => {
+    if (!resizing.current) return;
+    resizing.current = null;
+    keep(current(), true);
+  };
 
   // Resizing takes hold at the edges of the frame. It sees the press before
   // anything inside does, so a press on the edge of the header resizes and
@@ -256,56 +276,62 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
     onPointerMove: (e: ReactPointerEvent<T>) => {
       const r = resizing.current;
       if (r) {
-        const next = resizeRect(r.from, r.edges, e.clientX - r.start.x, e.clientY - r.start.y, viewport());
+        const next = resizeRect(r.from, r.edges, e.clientX - r.start.x, e.clientY - r.start.y, viewport(), min);
         setGeometry({ at: { x: next.x, y: next.y }, size: { width: next.width, height: next.height } });
         return;
       }
-      if (resizable) setCursor(cursorFor(edgesAt({ x: e.clientX, y: e.clientY }, current())));
+      if (resizable) {
+        const next = cursorFor(edgesAt({ x: e.clientX, y: e.clientY }, current()));
+        setCursor((c) => (c === next ? c : next));
+      }
     },
     onPointerUp: (e: ReactPointerEvent<T>) => {
-      const r = resizing.current;
-      if (!r) return;
-      resizing.current = null;
+      if (!resizing.current) return;
       e.currentTarget.releasePointerCapture(e.pointerId);
-      keep(current(), true);
+      endResize();
     },
     // The pointer gone, or taken by something else: the resize is over where it stands.
-    onPointerCancel: () => {
-      if (resizing.current) {
-        resizing.current = null;
-        keep(current(), true);
-      }
-    },
-    onLostPointerCapture: () => {
-      if (resizing.current) {
-        resizing.current = null;
-        keep(current(), true);
-      }
-    },
+    onPointerCancel: endResize,
+    onLostPointerCapture: endResize,
     onPointerLeave: () => {
       if (!resizing.current) setCursor(undefined);
     },
   };
 
-  const style: CSSProperties | undefined = geometry
-    ? { left: geometry.at.x, top: geometry.at.y, width: geometry.size?.width, height: geometry.size?.height, cursor }
-    : cursor
-      ? { cursor }
-      : undefined;
+  // The element went away under a gesture: nothing is left waiting for its release.
+  const reset = useCallback(() => {
+    resizing.current = null;
+    drag.reset();
+  }, [drag.reset]);
 
-  return { ref, geometry, current, open, style, dragHandlers, frameHandlers, placed: geometry !== null };
+  const style = useMemo<CSSProperties | undefined>(
+    () =>
+      shown
+        ? { left: shown.at.x, top: shown.at.y, width: shown.size?.width, height: shown.size?.height, cursor }
+        : cursor
+          ? { cursor }
+          : undefined,
+    [shown, cursor],
+  );
+
+  return { ref, current, open, style, dragHandlers: drag.handlers, frameHandlers, reset, placed: shown !== null };
 }
+
+// The least a plain floating thing can be resized to.
+const FLOATING_MIN: Size = { width: 48, height: 32 };
 
 export const Floating: Renderer = ({ node, props, children }) => {
   const draggable = props.draggable === true;
   const resizable = props.resizable === true;
   const side = props.side === "left" ? "left" : "right";
+  const initial = useCallback((size: Size | null) => restingPlace(side, size ?? { width: 200, height: 48 }, viewport()), [side]);
   const win = useWindow<HTMLDivElement>({
     storageKey: `mw:floating:${node.id}`,
     draggable,
     resizable,
     defaultSize: null,
-    initial: (size) => restingPlace(side, size ?? { width: 200, height: 48 }, viewport()),
+    min: FLOATING_MIN,
+    initial,
   });
   return (
     <div

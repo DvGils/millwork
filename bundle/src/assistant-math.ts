@@ -66,18 +66,27 @@ export function openFrom(button: Rect, panel: Size, viewport: Size): Rect {
   return clampRect({ x, y, ...panel }, viewport);
 }
 
+// Whether a thing sits in the right half of the viewport, which decides the
+// side a window opens toward and the corner a button minimizes to.
+export function onRightHalf(rect: Rect, viewport: Size): boolean {
+  return rect.x + rect.width / 2 > viewport.width / 2;
+}
+
 // Where the button lands when the window is minimized: the window's bottom
-// corner on the side the window is on.
-export function minimizeTo(panel: Rect, button: Size, viewport: Size): Point {
-  const onRight = panel.x + panel.width / 2 > viewport.width / 2;
+// corner on the side the button came from, so the round trip returns it.
+export function minimizeTo(panel: Rect, button: Size, viewport: Size, onRight: boolean = onRightHalf(panel, viewport)): Point {
   const x = onRight ? panel.x + panel.width - button.width : panel.x;
   return clampPosition({ x, y: panel.y + panel.height - button.height }, button, viewport);
 }
 
-// Which edges of a rectangle a point takes hold of, for resizing.
+const NO_EDGES: Edges = { left: false, right: false, top: false, bottom: false };
+
+// Which edges of a rectangle a point takes hold of, for resizing. A thing
+// too small to have a middle has no edges to take: it is moved, not resized.
 export function edgesAt(at: Point, rect: Rect, grip: number = GRIP): Edges {
+  if (rect.width < 4 * grip || rect.height < 4 * grip) return NO_EDGES;
   const inside = at.x >= rect.x - grip && at.x <= rect.x + rect.width + grip && at.y >= rect.y - grip && at.y <= rect.y + rect.height + grip;
-  if (!inside) return { left: false, right: false, top: false, bottom: false };
+  if (!inside) return NO_EDGES;
   return {
     left: at.x <= rect.x + grip,
     right: at.x >= rect.x + rect.width - grip,
@@ -100,23 +109,22 @@ export function cursorFor(edges: Edges): string | undefined {
   return undefined;
 }
 
-// The rectangle after the held edges moved by (dx, dy). An edge that would
-// take the window below its minimum size stays, and the result fits the viewport.
+// The rectangle after the held edges moved by (dx, dy). An edge stops at the
+// minimum size and at the viewport's margin; the edges not held stay where
+// they are.
 export function resizeRect(from: Rect, edges: Edges, dx: number, dy: number, viewport: Size, min: Size = MIN_SIZE): Rect {
   let { x, y, width, height } = from;
-  if (edges.right) width = from.width + dx;
-  if (edges.bottom) height = from.height + dy;
+  const right = from.x + from.width;
+  const bottom = from.y + from.height;
+  if (edges.right) width = Math.min(Math.max(min.width, from.width + dx), viewport.width - MARGIN - from.x);
+  if (edges.bottom) height = Math.min(Math.max(min.height, from.height + dy), viewport.height - MARGIN - from.y);
   if (edges.left) {
-    const w = from.width - dx;
-    const applied = Math.max(min.width, w);
-    x = from.x + (from.width - applied);
-    width = applied;
+    width = Math.min(Math.max(min.width, from.width - dx), right - MARGIN);
+    x = right - width;
   }
   if (edges.top) {
-    const h = from.height - dy;
-    const applied = Math.max(min.height, h);
-    y = from.y + (from.height - applied);
-    height = applied;
+    height = Math.min(Math.max(min.height, from.height - dy), bottom - MARGIN);
+    y = bottom - height;
   }
-  return clampRect({ x, y, width: Math.max(min.width, width), height: Math.max(min.height, height) }, viewport, min);
+  return clampRect({ x, y, width, height }, viewport, min);
 }

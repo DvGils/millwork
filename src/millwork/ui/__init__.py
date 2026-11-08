@@ -457,8 +457,9 @@ class Floating(Component):
     """Children pinned over the page in a bottom corner, for a status chip or
     a panel that should stay at hand while the page scrolls. ``draggable``
     lets the reader move it where they want it and ``resizable`` lets them
-    pull its edges, and the browser remembers both, per ``key``. It never
-    leaves the browser window and shrinks to fit when the window does."""
+    pull its edges, down to a small floor, and the browser remembers both
+    for this component. It never leaves the browser window and shrinks to
+    fit when the window does."""
 
     type: ClassVar[str] = "Floating"
     side: Literal["left", "right"] = "right"
@@ -484,9 +485,10 @@ class Assistant(_Owned):
     button in a corner of the page that the reader can drag about. Opened,
     it is a window that grows from the button's corner, holds a chat or
     anything else that should be at hand wherever the reader is, and is
-    dragged by its header and resized from its edges. Minimized again, it
-    folds back into the button. The browser remembers where both are. On a
-    phone the window is a sheet. ``open`` makes Python the owner of whether
+    dragged by its header and resized from its edges, unless ``draggable``
+    is off, which fixes both. Minimized again, it folds back into the
+    button. The browser remembers where both are. On a phone the window is
+    a sheet. ``open`` makes Python the owner of whether
     it is open, with ``on_toggle`` reporting the clicks; otherwise the
     browser holds it, starting from ``default_open``."""
 
