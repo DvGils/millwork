@@ -7,9 +7,11 @@ related: /sign-in/rechecking-users, /running/hosting-checklist
 
 # Sign-out and cookies
 
-The user menu's sign-out and `s.logout()` from a handler do the same
-thing. The cookie is cleared, the person's other sessions on this process
-end with a note in their tabs, and the tab goes to the login page.
+The sign-out in the header's user menu and `s.logout()` from a handler do
+the same thing. The cookie is cleared, the person's other sessions on this
+process end with a note in their tabs, where the page stays readable and
+offers a reload as [Sessions](/pages/sessions) describes, and the tab goes
+to the login page.
 
 `Auth(on_logout=)` sends the tab somewhere else. The hook gets the `User`
 who is leaving and returns a path on the app or a full URL, or `None` for
@@ -46,7 +48,7 @@ a `sign_out` URL the tab goes there, and the hook's answer is not used.
 
 The cookie is a signed token holding the `User`. It is `HttpOnly`,
 `SameSite=Lax`, `Secure` over HTTPS, and it lives for a fixed time set by
-`session`, seven days by default, after which the person signs in again.
+`Auth(session=)`, seven days by default, after which the person signs in again.
 A tab still open at that time ends its session and leaves the page.
 Its name and path carry the app's prefix, `mw_auth_sales` under `/sales`,
 so apps side by side on one host each read their own. It is also signed

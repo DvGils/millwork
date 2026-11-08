@@ -15,11 +15,12 @@ there.
 A page's `connect` hook, the function that runs before a page is first
 drawn, reaches the same pages by raising. `mw.NotFound(message)` says that
 what the path names does not exist, and `mw.Forbidden(message)` that this
-person may not open it. [Sessions](/pages/sessions) describes the hook. The HTTP response for such a path is
-still a 200, since the shell is served before the session connects and
-the hook runs, so a crawler sees the status and a reader sees the page.
-The session lands on the error page under the path that was asked for,
-with the message if one was given.
+person may not open it. The session lands on the error page under the
+path that was asked for, with the message if one was given. The HTTP
+response for such a path is still a 200, since the shell is served before
+the session connects and the hook runs, so a crawler sees the status and a
+reader sees the page. [Sessions](/pages/sessions) describes the hook
+itself.
 
 ## The app's own pages
 

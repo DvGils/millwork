@@ -8,8 +8,8 @@ related: /state/state-and-handlers, /components/tasks, /running/app-options
 # Sessions
 
 A session is one tab. It starts when the tab connects, holds the state,
-the files, the identity and the tasks, and it outlives the page: the tab
-moves from page to page on the same session. Two tabs of one visitor are
+the files, the identity and the tasks, and it outlives the page, since
+the tab moves from page to page on the same session. Two tabs of one visitor are
 two sessions with two states, and nothing is shared by being in the same
 browser or signed in as the same person.
 
@@ -20,8 +20,7 @@ opened, before the first render, with the path parameters as keyword
 arguments, and it may be async. This is where a page loads what it needs,
 starts a task, or decides that the visitor may not be here. Raising
 `mw.NotFound()` or `mw.Forbidden(message)` from it lands the session on
-the app's page for that, under the path that was asked for, with the
-message.
+the app's error page, as [Error pages](/pages/error-pages) describes.
 
 ```python
 @project.connect

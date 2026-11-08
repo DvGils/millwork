@@ -7,8 +7,9 @@ related: /components/tasks, /pages/sessions
 
 # Accessing the session
 
-Handlers get the session as their first argument. Code further down, a
-helper or a library that wants to show a toast, calls `mw.session()`. It
+Any code that runs for a session can reach it, and this page shows the
+two ways. Handlers get the session as their first argument. Code further
+down, a helper or a library that wants to show a toast, calls `mw.session()`. It
 returns the session of the handler or task that is running, whether on the
 loop or in the thread of a sync task.
 
@@ -33,7 +34,8 @@ tick become one render.
 Data that several visitors share lives in a database, not in the session,
 and a page that should follow changes made elsewhere runs a task that
 waits for them and calls `s.refresh()` when one arrives. The task is
-started in `connect` and dies with the session.
+started in the page's `connect` hook, which [Sessions](/pages/sessions)
+describes, and dies with the session.
 
 ```python
 @board.connect
@@ -48,5 +50,5 @@ async def watch_notices(s: mw.Session[State]) -> None:
         s.refresh()
 ```
 
-The [Tasks](/components/tasks) page has the task itself, its progress
-and its cancel.
+`s.task` runs the work beyond the handler, reports its progress and can
+be canceled, as the [Tasks](/components/tasks) page shows.

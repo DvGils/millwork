@@ -1,7 +1,7 @@
 ---
 title: Quickstart
 order: 1
-description: Install millwork and run a first app in a few minutes.
+description: Install millwork and run a first app.
 related: /pages/pages-and-routes, /state/state-and-handlers, /components/layout
 ---
 
@@ -32,7 +32,8 @@ def home(s: mw.Session) -> ui.Component:
     return ui.Page(ui.Text("Hello."))
 ```
 
-Run it and open the address it prints:
+Save it as `app.py`, run it, and open the address it prints,
+`http://127.0.0.1:8000` unless `--port` says otherwise:
 
 ```
 uv run millwork run app.py
@@ -70,7 +71,7 @@ def home(s: mw.Session[State]) -> ui.Component:
     )
 ```
 
-That is the shape of every millwork app: a state, pages that draw it, and
+That is the shape of every millwork app. A state, pages that draw it, and
 handlers that change it. `millwork run app.py --reload --debug` restarts
 the process when a file changes and shows page errors in the tab, which is
 the loop while building.

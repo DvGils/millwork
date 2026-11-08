@@ -32,8 +32,8 @@ def about(s: mw.Session) -> ui.Component:
 
 `title` sets the browser tab's title, and the app's name is used when a
 page has none. Paths match in the order the pages were registered. A path
-no page matches is a 404, and [Missing and forbidden
-pages](/pages/error-pages) says what is shown then.
+no page matches is a 404, and [Error pages](/pages/error-pages) says
+what is shown then.
 
 ## The page function
 
@@ -41,8 +41,8 @@ A page function builds the tree and nothing else. It reads `s.state`,
 which is the session's one state model, and what a handler put there is
 what the next render shows. It runs on every render, so it stays quick,
 and anything that waits, a query or a file, happens in the page's
-`connect` hook or in a task. [State and the
-loop](/state/state-and-handlers) covers the state, and
+`connect` hook or in a task. [State and
+handlers](/state/state-and-handlers) covers the state, and
 [Sessions](/pages/sessions) the hooks.
 
 `ui.Page` is the root of every page. It lays itself out around a
@@ -51,8 +51,6 @@ as the [Layout](/components/layout) page shows.
 
 ## Serving the file
 
-`millwork run app.py` serves the file's `app`, and `millwork run
-package.module:app` names the object instead. Under uvicorn or another
-ASGI server, `app.asgi` is the application. [Development](/running/development)
-has the flags for building, and [Deployment](/running/deployment) those for
-production.
+`millwork run app.py` serves the file's `app`. [Development](/running/development)
+has the command's flags for building, and [Deployment](/running/deployment)
+those for production.

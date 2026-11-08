@@ -1,7 +1,7 @@
 ---
 title: App options
 order: 3
-description: Every setting on App(...), what it bounds, and the values this manual runs with.
+description: Every setting on App(...), with its default, and the values this manual runs with.
 related: /pages/sessions, /components/files, /running/hosting-checklist
 ---
 
@@ -9,7 +9,7 @@ related: /pages/sessions, /components/files, /running/hosting-checklist
 
 Everything the app needs is said on the `App`, in Python, with values
 from wherever the app keeps its secrets. Every option has a default, so
-`mw.App("projects")` alone runs; the rest is here for when the default
+`mw.App("projects")` alone runs. The rest is here for when the default
 does not fit.
 
 ```python
@@ -26,9 +26,9 @@ app = mw.App(
     max_sessions_per_client=20,       # live sessions per user, or per address without auth
     max_sessions=1000,                # live sessions in the process
     files=mw.Files("/var/lib/projects/files", max_session_mb=200, max_total_mb=2000),
-    threads=8,                        # the pool sync tasks and handlers run in
+    threads=8,                        # the pool s.thread, uploads and file reads run on
     keep_alive=False,
-    proxied=False,                    # True behind a reverse proxy; see Serving
+    proxied=False,                    # True behind a reverse proxy; see Deployment
 )
 ```
 

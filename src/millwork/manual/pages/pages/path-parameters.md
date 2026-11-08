@@ -21,8 +21,8 @@ def project(s: mw.Session) -> ui.Component:
 
 A page's `connect` hook gets the parameters as keyword arguments, which is
 where a page loads what the path names. [Sessions](/pages/sessions) shows
-that, and a rule on who may open the page gets them the same way, as [Who
-may open what](/sign-in/access-rules) describes.
+that, and a rule on who may open the page gets them the same way, as
+[Access rules](/sign-in/access-rules) describes.
 
 ## Which page wins
 

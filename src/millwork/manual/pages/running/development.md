@@ -14,10 +14,10 @@ package.module:app` names the object instead. `--port` picks the port.
 the process when a Python file changes. The tab shows "Reconnecting" and
 remounts when the server is back. `--debug` shows page errors in the tab,
 pushes a changed theme file or custom component to every open tab, allows
-the `Dev` auth provider, and turns the framework's warnings into toasts: a
+the `Dev` auth provider, and turns the framework's warnings into toasts, a
 slow page function, a list without keys, a handler that changed nothing, a
-sync task that changed state from its thread. [What the framework
-notices](/state/warnings) says what each means.
+sync task that changed state from its thread. [Framework
+warnings](/state/warnings) says what each means.
 
 Tests drive a session without a browser, so for most changes the loop is
 edit, run pytest, and open the browser only to look. [Testing](/testing)

@@ -1,11 +1,11 @@
 ---
-title: Setting up auth
+title: Setting up sign-in
 order: 0
 description: Auth on the App, public pages, s.user and the sign-in a visitor meets.
 related: /sign-in/providers, /sign-in/admitting-users, /running/app-options
 ---
 
-# Setting up auth
+# Setting up sign-in
 
 Without auth, every page is open to anyone who reaches the server. With
 auth, every page asks for a login first, except a page marked
@@ -47,12 +47,10 @@ app's `on_login` hook. It turns who the provider saw into a `User`, or
 refuses them, and [Admitting users](/sign-in/admitting-users) writes it. `session`
 is how long a sign-in lasts, seven days unless set.
 
-The login page is part of millwork. It shows the app's name, the theme's
-`login_image`, one button per OAuth provider, a username and password form
-when there is a password provider, and the reason when a login was
-refused. A visitor who opens a gated page lands there and comes back to
-that page after signing in. [The login page](/sign-in/login-page) shows
-how to lay it out differently.
+A visitor who opens a gated page lands on millwork's own login page and
+comes back to that page after signing in. [The login
+page](/sign-in/login-page) says what it shows and how to lay it out
+differently.
 
 ## In a page
 

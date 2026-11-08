@@ -56,10 +56,9 @@ def example(s):
     )
 ```
 
-The manual composes its state from the models its examples define, one
-field per model named after the class, so `Counter` here is
-`s.state.counter`. An app declares the model itself, as the next section
-shows.
+`Counter` here is `s.state.counter` because the manual composes its state
+from its examples, as the [Welcome](/) page explains. An app declares the
+model itself, as the next section shows.
 
 A handler that raises shows "Something went wrong." as a toast and puts
 the traceback in the log. The page stays as it was. A handler that needs
@@ -97,7 +96,7 @@ def show(s: mw.Session[State]) -> ui.Component:
 ```
 
 The `State` here is small because the app is. A bigger app does not grow
-one long class; [Organizing your app](/state/organizing) shows how it
+one long class, and [Organizing your app](/state/organizing) shows how it
 splits.
 
 ## Who owns a value

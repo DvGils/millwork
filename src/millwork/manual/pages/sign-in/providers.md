@@ -7,8 +7,8 @@ related: /sign-in/login-page, /running/deployment
 
 # Providers
 
-A provider establishes who the visitor is: an OAuth issuer such as
-Microsoft Entra ID or Google, a username and password the app checks, a
+A provider establishes who the visitor is. It may be an OAuth issuer such
+as Microsoft Entra ID or Google, a username and password the app checks, a
 stand-in while developing, or a proxy that signed the person in before
 the request reached the app. Several can be listed together, and the
 login page offers each of them. Whoever a provider identifies then goes

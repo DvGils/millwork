@@ -14,9 +14,8 @@ millwork app. It provides:
   passed through.
 - `--proxied`, and a listener only the proxy can reach, whether a unix
   socket, a loopback port or the container's network.
-- `/_mw/health` as the readiness probe, 200 once the startup hooks have
-  run and 503 before that and during shutdown. As a liveness probe it
-  would restart a slow start, so that one gets a generous threshold.
+- `/_mw/health` as the readiness probe. As a liveness probe it would
+  restart a slow start, so that one gets a generous threshold.
 - A files directory with room, named with `Files(...)`, when uploads are
   larger than the temporary directory should hold.
 - The `secret` and the provider's credentials from the environment or the

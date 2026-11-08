@@ -7,7 +7,8 @@ related: /sign-in/access-rules, /sign-in/rechecking-users
 
 # Admitting users
 
-After a provider has identified the visitor, `on_login(identity)` decides.
+After a provider has identified the visitor, `on_login(identity)` decides
+whether they get in.
 `identity` carries `provider`, `subject`, `email` in lower case, `name`,
 `picture_url`, the provider's `raw` document and an `intent`. The hook
 returns a `User` to let the visitor in, or `None` to refuse them with a
@@ -46,5 +47,6 @@ app.
 
 `Auth(intents={"demo": "Try the demo"})` adds a secondary button to the
 login page for each intent. The one pressed arrives as `identity.intent`,
-and the hook decides what it means. A login page of your own places it
-with `ui.SignIn(provider_id, intent="demo")`.
+and the hook decides what it means. [A login page of your
+own](/sign-in/login-page) places it with `ui.SignIn(provider_id,
+intent="demo")`.

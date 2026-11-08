@@ -25,13 +25,13 @@ app.mount("/api", fastapi_app)
 ```
 
 In an app with auth a route and a mount need a sign-in like a page does,
-unless they are marked `public=True`. The route's endpoint finds the user
-in `request.state.user`. [Access rules](/sign-in/access-rules)
-has the rules.
+unless they are marked `public=True`, and a route takes `allow=` like a
+page. [Access rules](/sign-in/access-rules) has the rules.
 
 Everything millwork owns lives under `/_mw/`, which leaves every other
 path to the app. The `public/` folder next to the app is served at
-`/public/`. `/_mw/health` answers 200 once the startup hooks are done.
+`/public/`, and `/_mw/health` is the health route that
+[Deployment](/running/deployment) describes.
 
 ## Hooks around the process
 

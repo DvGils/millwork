@@ -26,7 +26,7 @@ def example(s):
 ```
 
 A link to another site is an ordinary link. Give it `target="_blank"` to
-open a new tab. A link inside `ui.Markdown` behaves the same way: a path
+open a new tab. A link inside `ui.Markdown` behaves the same way. A path
 of the app opens on the session, anything else opens a new tab.
 
 ## In the header and the sidebar

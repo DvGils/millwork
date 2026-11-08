@@ -55,5 +55,5 @@ leaving it out of the list of providers turns it off.
 its own button for one. After signing in, the visitor comes back to that
 page.
 
-The page's look comes from the theme: its logo, its `login_image` and its
+The page's look comes from the theme, its logo, its `login_image` and its
 colors, as [Theming](/theming) describes.
