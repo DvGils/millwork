@@ -42,7 +42,10 @@ def privacy(s: mw.Session) -> ui.Component:
 
 `secret` signs the session cookie and must be at least 32 characters.
 `millwork secret` prints a good one. The secret and the provider's
-credentials come from wherever the app keeps its secrets.
+credentials come from wherever the app keeps its secrets. `admit` is the
+app's `on_login` hook. It turns who the provider saw into a `User`, or
+refuses them, and [Who gets in](/sign-in/who-gets-in) writes it. `session`
+is how long a sign-in lasts, seven days unless set.
 
 The login page is part of millwork. It shows the app's name, the theme's
 `login_image`, one button per OAuth provider, a username and password form

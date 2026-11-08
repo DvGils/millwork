@@ -8,7 +8,9 @@ related: /pages/sessions, /components/files, /running/hosts
 # The App's options
 
 Everything the app needs is said on the `App`, in Python, with values
-from wherever the app keeps its secrets.
+from wherever the app keeps its secrets. Every option has a default, so
+`mw.App("projects")` alone runs; the rest is here for when the default
+does not fit.
 
 ```python
 app = mw.App(

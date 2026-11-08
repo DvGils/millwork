@@ -7,7 +7,9 @@ related: /state/lists-and-keys, /testing
 
 # One slice per feature
 
-A bigger app does not grow one long class. Each feature owns a slice,
+A session's state is one Pydantic model, named once on the `App`. In an
+app of two pages it is a few fields. In an app of ten features it is
+still one model, but not one long class. Each feature owns a slice,
 declared next to the pages that use it, and the root composes the slices.
 The root is the app's table of contents, the one file that knows every
 feature, and it grows by one line per feature.

@@ -7,8 +7,10 @@ related: /sign-in/providers, /theming
 
 # The login page
 
-Left alone, the login page lists every OAuth provider's button, then a
-line with "or", then the username and password form. `Auth(login=)` lays
+millwork has a login page of its own. A visitor who opens a gated page
+lands on it and comes back to that page after signing in. Left alone, it
+lists every OAuth provider's button, then a line with "or", then the
+username and password form. `Auth(login=)` lays
 it out your way instead. It takes components like any page does, and
 `ui.SignIn(provider_id)` is one way in, put where you want it. It draws an
 OAuth provider as its button and `"password"` as the form.

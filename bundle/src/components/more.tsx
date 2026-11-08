@@ -144,6 +144,9 @@ export const Sidebar: Renderer = ({ props, children }) => (
 // A group of links under a label. Folded, only the label shows; the label
 // is the button that opens it. The look follows the sidebar's own links.
 const groupLabel = "h-8 px-2 text-xs font-medium tracking-wider text-sidebar-foreground/70 uppercase";
+// The links of a group stand in from the label, along a rail, so what
+// belongs to the group reads as one block.
+const groupLinks = "ml-3 flex flex-col gap-0.5 border-l border-sidebar-border pl-2";
 
 export const SidebarGroup: Renderer = ({ props, children, emit }) => {
   const controlled = has(props, "open");
@@ -154,7 +157,7 @@ export const SidebarGroup: Renderer = ({ props, children, emit }) => {
     return (
       <UiSidebarGroup className={cn("p-0", props.cls as string)}>
         <SidebarGroupLabel className={groupLabel}>{label}</SidebarGroupLabel>
-        <SidebarGroupContent className="flex flex-col gap-0.5">{children}</SidebarGroupContent>
+        <SidebarGroupContent className={groupLinks}>{children}</SidebarGroupContent>
       </UiSidebarGroup>
     );
   }
@@ -176,7 +179,7 @@ export const SidebarGroup: Renderer = ({ props, children, emit }) => {
         {label}
         {Chevron ? <Chevron className="ml-auto size-3.5 transition-transform" /> : null}
       </CollapsibleTrigger>
-      <CollapsibleContent className="flex flex-col gap-0.5 pt-0.5">{children}</CollapsibleContent>
+      <CollapsibleContent className={cn(groupLinks, "mt-0.5")}>{children}</CollapsibleContent>
     </UiCollapsible>
   );
 };

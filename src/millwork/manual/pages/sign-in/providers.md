@@ -7,8 +7,13 @@ related: /sign-in/login-page, /running/serving
 
 # Providers
 
-A provider establishes who the visitor is. Several can be listed together,
-and the login page offers each of them.
+A provider establishes who the visitor is: an OAuth issuer such as
+Microsoft Entra ID or Google, a username and password the app checks, a
+stand-in while developing, or a proxy that signed the person in before
+the request reached the app. Several can be listed together, and the
+login page offers each of them. Whoever a provider identifies then goes
+through the app's `on_login` hook, which [Who gets in](/sign-in/who-gets-in)
+describes.
 
 ## OAuth
 
@@ -54,7 +59,8 @@ It names who it saw in request headers, and `auth.Headers` reads them.
 Give it the header names the proxy uses. `user` or `email` is required,
 while `name`, `groups` and `picture` are optional, and `groups` is split
 on commas into `identity.raw["groups"]`. The person goes through
-`on_login` on every page load and socket connect, so keep that hook cheap.
+`on_login` on every page load and socket connect, since the proxy signs
+them in anew each time, so keep that hook cheap.
 A sync hook runs off the event loop. One that raises shows the error page,
 and the tab stops retrying. A visitor the hook refuses sees the login page
 say so.

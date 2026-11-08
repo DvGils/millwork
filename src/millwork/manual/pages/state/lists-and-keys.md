@@ -13,7 +13,8 @@ per column, a search returns rows with a control each. The state holds
 one entry per piece in a dict or a list, the page renders a component per
 entry, and each handler carries which entry it belongs to. The identity
 travels with the handler, so nothing has to be looked up by a string
-later, and `key` gives each component an identity across renders.
+later, and `key` gives each component an identity across renders, which
+the second half of this page is about.
 
 ```python live
 from functools import partial
