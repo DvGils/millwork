@@ -150,7 +150,7 @@ ui.Grid(
 ```python live
 DRIFT = [{"day": d, "speed": 1 + 0.004 * d + (0.01 if d % 3 == 0 else 0)} for d in range(1, 21)]
 ui.Grid(
-    ui.LineChart(DRIFT, x="day", y={"speed": "Speed, relative to the founders"}, height=180),
+    ui.LineChart(DRIFT, x="day", y={"speed": "Ratio to the baseline"}, height=180),
     ui.LineChart(DRIFT, x="day", y={"speed": "The same, from zero"}, y_range=(0, None), height=180),
     cols={"sm": 1, "md": 2},
 )

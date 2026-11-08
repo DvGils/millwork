@@ -311,7 +311,7 @@ def specimen(view: ui.Component, source: str) -> ui.Component:
     return ui.Stack(
         ui.Stack(
             view,
-            cls="rounded-t-lg border border-b-0 bg-muted/40 px-6 py-6",
+            cls="overflow-x-auto rounded-t-lg border border-b-0 bg-muted/40 px-6 py-6",
         ),
         ui.Code(
             content=source,

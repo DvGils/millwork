@@ -92,6 +92,7 @@ ui.Row(
         on_click=lambda s, _: s.toast(f"{len(s.chat('demo').messages)} messages"),
     ),
     gap=2,
+    wrap=True,
 )
 ```
 
