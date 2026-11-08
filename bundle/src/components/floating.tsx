@@ -94,7 +94,12 @@ function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, m
     e.stopPropagation();
   };
   const onClick = () => onPress?.();
-  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: () => (drag.current = null), onClickCapture, onClick };
+  const onLost = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (d?.moved) done();
+  };
+  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onLost, onLostPointerCapture: onLost, onClickCapture, onClick };
 }
 
 export interface FloatingOptions {
@@ -235,9 +240,11 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
     },
   );
 
-  // Resizing takes hold at the edges of the frame itself.
+  // Resizing takes hold at the edges of the frame. It sees the press before
+  // anything inside does, so a press on the edge of the header resizes and
+  // never also starts a drag.
   const frameHandlers = {
-    onPointerDown: (e: ReactPointerEvent<T>) => {
+    onPointerDownCapture: (e: ReactPointerEvent<T>) => {
       if (!resizable || e.button !== 0) return;
       const edges = edgesAt({ x: e.clientX, y: e.clientY }, current());
       if (!hasEdge(edges)) return;
@@ -261,6 +268,19 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
       resizing.current = null;
       e.currentTarget.releasePointerCapture(e.pointerId);
       keep(current(), true);
+    },
+    // The pointer gone, or taken by something else: the resize is over where it stands.
+    onPointerCancel: () => {
+      if (resizing.current) {
+        resizing.current = null;
+        keep(current(), true);
+      }
+    },
+    onLostPointerCapture: () => {
+      if (resizing.current) {
+        resizing.current = null;
+        keep(current(), true);
+      }
     },
     onPointerLeave: () => {
       if (!resizing.current) setCursor(undefined);
