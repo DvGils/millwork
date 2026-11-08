@@ -29,6 +29,7 @@ import {
   RadioGroup,
   Sheet,
   Sidebar,
+  SidebarGroup,
   Slider,
   ToggleGroup,
 } from "./more";
@@ -89,6 +90,7 @@ export const registry: Record<string, Renderer> = {
   RadioGroup,
   Sheet,
   Sidebar,
+  SidebarGroup,
   Slider,
   ToggleGroup,
   Table,

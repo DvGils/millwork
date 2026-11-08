@@ -3,8 +3,9 @@
 
 import { lazy, Suspense, type ComponentType } from "react";
 import { cn } from "cn";
-import { linkLook, safeUrl, slugify } from "../lib";
+import { isInternalPath, linkLook, safeUrl, slugify } from "../lib";
 import { CodeBlock } from "./copy";
+import { anchorProps } from "./anchor";
 
 type Props = { content: string; tight?: boolean };
 
@@ -27,8 +28,10 @@ const Inner = lazy(async () => {
         remarkPlugins={[gfm]}
         urlTransform={(url) => safeUrl(url, { image: true })}
         components={{
+          // A link to a page of the app opens it on the session, as `ui.Link`
+          // does; a link to anywhere else opens a new tab.
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer" className={cn("text-primary", linkLook)}>
+            <a {...anchorProps(href, isInternalPath(href) ? undefined : "_blank")} className={cn("text-primary", linkLook)}>
               {children}
             </a>
           ),

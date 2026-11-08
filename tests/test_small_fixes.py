@@ -43,3 +43,12 @@ async def test_the_harness_shows_each_toasts_tone(tmp_path: Path) -> None:
         await page.click("go")
         assert page.toasts == ["Careful.", "Fine."]
         assert page.notices == [Notice("Careful.", "warning", "Pond"), Notice("Fine.", "default")]
+
+
+def test_a_sidebar_group_has_one_owner_of_its_open_state() -> None:
+    from millwork import ui
+
+    group = ui.SidebarGroup(ui.Link(label="A", href="/a"), label="Part", default_open=False)
+    assert group.default_open is False and group.label == "Part"
+    with pytest.raises(ValueError):
+        ui.SidebarGroup(label="Part", open=True, default_open=True)
