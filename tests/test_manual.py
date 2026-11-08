@@ -23,7 +23,7 @@ def test_pages_parse_into_prose_and_live_blocks() -> None:
     assert cards[0].titles["/components/layout"] == "Components"
     sessions = next(p for p in pages if p.slug == "/pages/sessions")
     assert sessions.group == "pages" and sessions.chapter == "Pages"
-    assert sessions.description and "/state/state-and-the-loop" in sessions.related
+    assert sessions.description and "/state/state-and-handlers" in sessions.related
     with pytest.raises(ValueError, match="neither defines"):
         parse("```python live\nx = 1\n```\n", "/t")
 
@@ -64,11 +64,12 @@ async def test_the_sidebar_folds_groups_and_the_pages_lead_on(tmp_path: Path) ->
         # the way on: the next page of the group, and the related cards
         links = [n.props for n in page.find_all(ui.Link)]
         assert any(
-            x["label"] == "Beyond pages" and x["href"] == "/pages/beyond-pages" for x in links
+            x["label"] == "Routes and middleware" and x["href"] == "/pages/routes-and-middleware"
+            for x in links
         )
-        assert any(x["label"] == "Missing and forbidden pages" for x in links)
+        assert any(x["label"] == "Error pages" for x in links)
         cards = [c for c in page.find_all(ui.Card) if c.props.get("on_click")]
-        assert "State and the loop" in [c.props["title"] for c in cards]
+        assert "State and handlers" in [c.props["title"] for c in cards]
         await page.click(next(c for c in cards if c.props["title"] == "Tasks"))
         await page.settle()
         nav = [c for c in page.commands if c.name == "navigate"]
@@ -86,7 +87,7 @@ def test_old_chapter_addresses_redirect(tmp_path: Path) -> None:
     app.bundle_dir = tmp_path
     with TestClient(app.asgi) as client:
         r = client.get("/app/auth", follow_redirects=False)
-        assert r.status_code == 301 and r.headers["location"] == "/sign-in/turning-it-on"
+        assert r.status_code == 301 and r.headers["location"] == "/sign-in/setup"
 
 
 def test_a_card_or_relation_to_a_page_that_is_not_there_is_refused(tmp_path: Path) -> None:

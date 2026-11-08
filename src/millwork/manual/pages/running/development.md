@@ -2,7 +2,7 @@
 title: Development
 order: 0
 description: The loop while building, millwork run with its flags, and what the tools see before the page runs.
-related: /testing, /state/notices, /running/options
+related: /testing, /state/warnings, /running/app-options
 ---
 
 # Development
@@ -17,7 +17,7 @@ pushes a changed theme file or custom component to every open tab, allows
 the `Dev` auth provider, and turns the framework's warnings into toasts: a
 slow page function, a list without keys, a handler that changed nothing, a
 sync task that changed state from its thread. [What the framework
-notices](/state/notices) says what each means.
+notices](/state/warnings) says what each means.
 
 Tests drive a session without a browser, so for most changes the loop is
 edit, run pytest, and open the browser only to look. [Testing](/testing)

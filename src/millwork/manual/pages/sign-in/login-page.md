@@ -37,7 +37,7 @@ auth.Auth(
 The app's name, the logo and the reason a login was refused stay above
 the layout. `label` replaces the words on a button, and
 `ui.SignIn("azure-ad", intent="demo")` is the button for one of the
-intents that [Who gets in](/sign-in/who-gets-in) describes.
+intents that [Admitting users](/sign-in/admitting-users) describes.
 
 ## What the page cannot hold
 

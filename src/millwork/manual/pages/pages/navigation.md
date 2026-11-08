@@ -1,11 +1,11 @@
 ---
-title: Moving between pages
+title: Navigation
 order: 2
 description: Links and s.navigate, headings, the history, and navigation in the header and sidebar.
-related: /components/layout, /pages/missing-pages
+related: /components/layout, /pages/error-pages
 ---
 
-# Moving between pages
+# Navigation
 
 A `ui.Link` whose `href` is a path inside the app navigates over the
 session. Nothing reloads, the tab's history gets an entry, and the back

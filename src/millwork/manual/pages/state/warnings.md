@@ -1,11 +1,11 @@
 ---
-title: What the framework notices
+title: Warnings
 order: 4
 description: The mistakes millwork can see and says so, once per session.
 related: /running/development, /components/tasks
 ---
 
-# What the framework notices
+# Warnings
 
 Some mistakes the framework can see, and it says so once per session, as a
 log line with the page's path, and in debug mode as a toast as well.

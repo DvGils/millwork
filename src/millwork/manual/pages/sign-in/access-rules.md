@@ -1,11 +1,11 @@
 ---
-title: Who may open what
+title: Access rules
 order: 4
 description: A rule per page or route with allow=, s.can for links, and millwork routes to read it all in one place.
-related: /pages/path-parameters, /pages/beyond-pages, /pages/missing-pages
+related: /pages/path-parameters, /pages/routes-and-middleware, /pages/error-pages
 ---
 
-# Who may open what
+# Access rules
 
 Being signed in gets a person into every page that is not public. A page
 for fewer people says so with `allow=`, a rule about the user.

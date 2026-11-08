@@ -2,7 +2,7 @@
 title: Providers
 order: 1
 description: Microsoft Entra ID, Google and any OpenID Connect issuer, passwords, a dev provider, and a proxy that signs in for the app.
-related: /sign-in/login-page, /running/serving
+related: /sign-in/login-page, /running/deployment
 ---
 
 # Providers
@@ -12,7 +12,7 @@ Microsoft Entra ID or Google, a username and password the app checks, a
 stand-in while developing, or a proxy that signed the person in before
 the request reached the app. Several can be listed together, and the
 login page offers each of them. Whoever a provider identifies then goes
-through the app's `on_login` hook, which [Who gets in](/sign-in/who-gets-in)
+through the app's `on_login` hook, which [Admitting users](/sign-in/admitting-users)
 describes.
 
 ## OAuth
@@ -83,7 +83,7 @@ auth.Headers(
 ```
 
 The headers are read when the app runs with `--proxied` or
-`App(proxied=True)`, as [Serving](/running/serving) describes. A request
+`App(proxied=True)`, as [Deployment](/running/deployment) describes. A request
 that arrives without an identity lands on the login page, which explains
 that sign-in happens before the app. The proxy's or platform's
 documentation lists the header names it sets and its sign-out URL.

@@ -1,11 +1,11 @@
 ---
-title: Serving
+title: Deployment
 order: 1
 description: One process behind a reverse proxy, on a port or a unix socket, at the root or under a path prefix.
-related: /running/hosts, /sign-in/providers
+related: /running/hosting-checklist, /sign-in/providers
 ---
 
-# Serving
+# Deployment
 
 In production one process serves one app behind a reverse proxy that
 ends TLS and passes the websocket upgrade through.

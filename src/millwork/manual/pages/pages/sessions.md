@@ -2,7 +2,7 @@
 title: Sessions
 order: 4
 description: A page's connect and close hooks, and when a session begins, waits and ends.
-related: /state/state-and-the-loop, /components/tasks, /running/options
+related: /state/state-and-handlers, /components/tasks, /running/app-options
 ---
 
 # Sessions

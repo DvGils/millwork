@@ -1,11 +1,11 @@
 ---
-title: Beyond pages
+title: Routes and middleware
 order: 5
 description: Routes, mounts and middleware on the Starlette application, and hooks around the process.
-related: /sign-in/who-may-open-what, /running/serving
+related: /sign-in/access-rules, /running/deployment
 ---
 
-# Beyond pages
+# Routes and middleware
 
 `App` is a Starlette application, and an app adds to it the Starlette way.
 `app.route(path, endpoint, methods=[...])` adds an API endpoint,
@@ -26,7 +26,7 @@ app.mount("/api", fastapi_app)
 
 In an app with auth a route and a mount need a sign-in like a page does,
 unless they are marked `public=True`. The route's endpoint finds the user
-in `request.state.user`. [Who may open what](/sign-in/who-may-open-what)
+in `request.state.user`. [Access rules](/sign-in/access-rules)
 has the rules.
 
 Everything millwork owns lives under `/_mw/`, which leaves every other

@@ -1,11 +1,11 @@
 ---
-title: Missing and forbidden pages
+title: Error pages
 order: 3
 description: What a visitor sees for a path no page matches or a page they may not open, and how an app replaces it.
-related: /pages/sessions, /sign-in/who-may-open-what, /theming
+related: /pages/sessions, /sign-in/access-rules, /theming
 ---
 
-# Missing and forbidden pages
+# Error pages
 
 A path no page matches lands on the app's not-found page. Over HTTP that
 is a 404 that still serves the shell. Over the session, when a link or

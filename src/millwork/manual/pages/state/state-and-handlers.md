@@ -1,11 +1,11 @@
 ---
-title: State and the loop
+title: State and handlers
 order: 0
 description: One Pydantic model per session, handlers that change it, and who owns a control's value.
 related: /quickstart, /pages/sessions, /components/inputs
 ---
 
-# State and the loop
+# State and handlers
 
 A session has one state. It is a Pydantic model the app declares, it lives
 for as long as the session does, and every page is a function of it. A
@@ -97,7 +97,7 @@ def show(s: mw.Session[State]) -> ui.Component:
 ```
 
 The `State` here is small because the app is. A bigger app does not grow
-one long class; [One slice per feature](/state/slices) shows how it
+one long class; [Organizing your app](/state/organizing) shows how it
 splits.
 
 ## Who owns a value

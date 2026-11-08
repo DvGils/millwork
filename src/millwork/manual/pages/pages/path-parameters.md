@@ -1,11 +1,11 @@
 ---
-title: Parameters in the path
+title: Path parameters
 order: 1
 description: Paths that carry values, their converters, and which page wins when several fit.
-related: /pages/sessions, /sign-in/who-may-open-what
+related: /pages/sessions, /sign-in/access-rules
 ---
 
-# Parameters in the path
+# Path parameters
 
 A path can carry parameters in Starlette's syntax. `{name}` takes one
 segment as a string. `{name:int}`, `{name:float}` and `{name:uuid}` convert
@@ -22,7 +22,7 @@ def project(s: mw.Session) -> ui.Component:
 A page's `connect` hook gets the parameters as keyword arguments, which is
 where a page loads what the path names. [Sessions](/pages/sessions) shows
 that, and a rule on who may open the page gets them the same way, as [Who
-may open what](/sign-in/who-may-open-what) describes.
+may open what](/sign-in/access-rules) describes.
 
 ## Which page wins
 

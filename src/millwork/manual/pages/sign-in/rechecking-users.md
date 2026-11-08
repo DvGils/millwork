@@ -1,11 +1,11 @@
 ---
-title: Keeping the user current
+title: Rechecking users
 order: 5
 description: recheck asks who a person is now, and ends a session drawn for who they were.
-related: /sign-in/who-gets-in, /sign-in/signing-out, /pages/sessions
+related: /sign-in/admitting-users, /sign-in/sign-out-and-cookies, /pages/sessions
 ---
 
-# Keeping the user current
+# Rechecking users
 
 A cookie holds the `User` as `on_login` made it, and holds it until it
 expires. A person whose role changed, or who should no longer get in,

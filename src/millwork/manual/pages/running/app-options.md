@@ -1,11 +1,11 @@
 ---
-title: The App's options
+title: App options
 order: 3
 description: Every setting on App(...), what it bounds, and the values this manual runs with.
-related: /pages/sessions, /components/files, /running/hosts
+related: /pages/sessions, /components/files, /running/hosting-checklist
 ---
 
-# The App's options
+# App options
 
 Everything the app needs is said on the `App`, in Python, with values
 from wherever the app keeps its secrets. Every option has a default, so
@@ -57,7 +57,7 @@ app = mw.App(
 - `keep_alive=True` makes every open tab fetch the health route every
   thirty seconds, for a host that stops an idle process. By default a tab
   only does so while a task or a reply runs.
-- `proxied=True` says a reverse proxy is in front. [Serving](/running/serving)
+- `proxied=True` says a reverse proxy is in front. [Deployment](/running/deployment)
   has the rest.
 
 ## This manual's settings

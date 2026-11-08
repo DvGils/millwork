@@ -63,8 +63,8 @@ GROUPS = {key: label for key, label in NAV if label}
 # Where the chapters of earlier releases went; the old addresses answer with a redirect.
 MOVED = {
     "/app/pages": "/pages/pages-and-routes",
-    "/app/state": "/state/state-and-the-loop",
-    "/app/auth": "/sign-in/turning-it-on",
+    "/app/state": "/state/state-and-handlers",
+    "/app/auth": "/sign-in/setup",
     "/app/theming": "/theming",
     "/app/testing": "/testing",
     "/app/running": "/running/development",

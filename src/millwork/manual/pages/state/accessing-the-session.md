@@ -1,11 +1,11 @@
 ---
-title: The session from anywhere
+title: Accessing the session
 order: 3
 description: mw.session() for code that is not a handler, and s.refresh() for changes made outside one.
 related: /components/tasks, /pages/sessions
 ---
 
-# The session from anywhere
+# Accessing the session
 
 Handlers get the session as their first argument. Code further down, a
 helper or a library that wants to show a toast, calls `mw.session()`. It

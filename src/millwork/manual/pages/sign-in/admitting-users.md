@@ -1,11 +1,11 @@
 ---
-title: Who gets in
+title: Admitting users
 order: 3
 description: on_login turns an identity into a User or refuses it, and intents give the login page a second button.
-related: /sign-in/who-may-open-what, /sign-in/keeping-current
+related: /sign-in/access-rules, /sign-in/rechecking-users
 ---
 
-# Who gets in
+# Admitting users
 
 After a provider has identified the visitor, `on_login(identity)` decides.
 `identity` carries `provider`, `subject`, `email` in lower case, `name`,

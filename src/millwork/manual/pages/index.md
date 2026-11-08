@@ -14,7 +14,7 @@ to build, and every piece of state lives on the server.
 ```cards
 /quickstart
 /components/layout | Components | The catalog, one group at a time, from the frame of a page to charts and chat.
-/state/state-and-the-loop
+/state/state-and-handlers
 /testing
 ```
 
@@ -34,7 +34,7 @@ An example may hold state. An app declares one state model and reads
 `s.state`, and the manual composes its own from the models its examples
 define, one field per model named after the class, so `Clicks` is
 `s.state.clicks`. A handler changes it and the page renders again.
-[State and the loop](/state/state-and-the-loop) has the whole picture.
+[State and handlers](/state/state-and-handlers) has the whole picture.
 
 ```python live
 from pydantic import BaseModel

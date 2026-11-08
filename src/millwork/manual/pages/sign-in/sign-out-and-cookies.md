@@ -1,11 +1,11 @@
 ---
-title: Signing out and the cookie
+title: Sign-out and cookies
 order: 6
 description: Sign-out from the menu or s.logout, where the tab goes, and what the session cookie holds.
-related: /sign-in/keeping-current, /running/hosts
+related: /sign-in/rechecking-users, /running/hosting-checklist
 ---
 
-# Signing out and the cookie
+# Sign-out and cookies
 
 The user menu's sign-out and `s.logout()` from a handler do the same
 thing. The cookie is cleared, the person's other sessions on this process

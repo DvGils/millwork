@@ -1,11 +1,11 @@
 ---
-title: Turning it on
+title: Setting up auth
 order: 0
 description: Auth on the App, public pages, s.user and the sign-in a visitor meets.
-related: /sign-in/providers, /sign-in/who-gets-in, /running/options
+related: /sign-in/providers, /sign-in/admitting-users, /running/app-options
 ---
 
-# Turning it on
+# Setting up auth
 
 Without auth, every page is open to anyone who reaches the server. With
 auth, every page asks for a login first, except a page marked
@@ -44,7 +44,7 @@ def privacy(s: mw.Session) -> ui.Component:
 `millwork secret` prints a good one. The secret and the provider's
 credentials come from wherever the app keeps its secrets. `admit` is the
 app's `on_login` hook. It turns who the provider saw into a `User`, or
-refuses them, and [Who gets in](/sign-in/who-gets-in) writes it. `session`
+refuses them, and [Admitting users](/sign-in/admitting-users) writes it. `session`
 is how long a sign-in lasts, seven days unless set.
 
 The login page is part of millwork. It shows the app's name, the theme's
@@ -73,6 +73,6 @@ menu that holds the theme choice and sign-out. `user_menu=False` hides it.
 | Question | Where it is answered |
 |---|---|
 | Who is this | a provider, on [Providers](/sign-in/providers) |
-| Who gets in at all | `on_login`, on [Who gets in](/sign-in/who-gets-in) |
-| Who may open this page or route | `allow=`, on [Who may open what](/sign-in/who-may-open-what) |
-| Is that still true | `recheck`, on [Keeping the user current](/sign-in/keeping-current) |
+| Who gets in at all | `on_login`, on [Admitting users](/sign-in/admitting-users) |
+| Who may open this page or route | `allow=`, on [Access rules](/sign-in/access-rules) |
+| Is that still true | `recheck`, on [Rechecking users](/sign-in/rechecking-users) |

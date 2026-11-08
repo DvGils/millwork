@@ -1,11 +1,11 @@
 ---
-title: What a host needs
+title: Hosting checklist
 order: 2
 description: The checklist for any host, systemd and container examples, replicas, and the page's security headers.
-related: /running/serving, /running/options, /components/custom
+related: /running/deployment, /running/app-options, /components/custom
 ---
 
-# What a host needs
+# Hosting checklist
 
 Any host that runs one process and routes HTTPS to it can serve a
 millwork app. It provides:

@@ -1,11 +1,11 @@
 ---
-title: One slice per feature
+title: Organizing your app
 order: 1
 description: How a bigger app splits its state into slices that the root composes.
 related: /state/lists-and-keys, /testing
 ---
 
-# One slice per feature
+# Organizing your app
 
 A session's state is one Pydantic model, named once on the `App`. In an
 app of two pages it is a few fields. In an app of ten features it is

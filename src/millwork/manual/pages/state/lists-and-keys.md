@@ -2,7 +2,7 @@
 title: Lists and keys
 order: 2
 description: Components generated from data, handlers that know their entry, and the key that gives a component its identity.
-related: /state/slices, /components/data
+related: /state/organizing, /components/data
 ---
 
 # Lists and keys

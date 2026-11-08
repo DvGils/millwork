@@ -2,7 +2,7 @@
 title: Quickstart
 order: 1
 description: Install millwork and run a first app in a few minutes.
-related: /pages/pages-and-routes, /state/state-and-the-loop, /components/layout
+related: /pages/pages-and-routes, /state/state-and-handlers, /components/layout
 ---
 
 # Quickstart
@@ -97,6 +97,6 @@ def example(s):
 ```
 
 From here, [Pages and routes](/pages/pages-and-routes) is how an app
-grows beyond one page, [State and the loop](/state/state-and-the-loop) is
+grows beyond one page, [State and handlers](/state/state-and-handlers) is
 how state and handlers work in full, and the Components pages show what
 there is to draw with.
