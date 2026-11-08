@@ -18,6 +18,8 @@ versions; a release says so here when it does.
 
 ### Features
 
+- `ui.Input` takes `max_length`, as `ui.Textarea` does, to cap what can be
+  typed or pasted into it.
 - `ui.Assistant` is a round button in a corner of the page that becomes a
   window, for a chat that should be at hand on every page. The window
   grows from the button's corner, gives its child its height, is dragged

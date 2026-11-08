@@ -1058,6 +1058,7 @@ class Input(_Owned):
     disabled: bool = False
     readonly: bool = False
     clearable: bool = False
+    max_length: int | None = None
     debounce_ms: int = 250
     on_change: Any = None
     on_submit: Any = None
@@ -1079,6 +1080,7 @@ class Input(_Owned):
             disabled: bool = False,
             readonly: bool = False,
             clearable: bool = False,
+            max_length: int | None = None,
             debounce_ms: int = 250,
             on_change: Any = None,
             on_submit: Any = None,

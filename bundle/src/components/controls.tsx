@@ -107,6 +107,7 @@ export const Input: Renderer = ({ props, emit }) => {
       type={secret ? undefined : String(props.kind ?? "text")}
       value={current}
       placeholder={props.placeholder ? String(props.placeholder) : undefined}
+      maxLength={typeof props.max_length === "number" ? props.max_length : undefined}
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}
       onChange={(e) => {
