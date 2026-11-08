@@ -1,6 +1,7 @@
 ---
 title: Text
 order: 1
+description: Text, Markdown, Code, Badge, Kbd, Link and Tooltip.
 ---
 
 # Text

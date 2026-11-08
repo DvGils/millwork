@@ -1,6 +1,7 @@
 ---
 title: Tasks
 order: 8
+description: Work that runs beyond a handler, with progress, steps and cancel.
 ---
 
 # Tasks

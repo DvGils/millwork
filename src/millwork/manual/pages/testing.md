@@ -1,6 +1,8 @@
 ---
 title: Testing
 order: 4
+description: TestApp drives a session without a browser: find, act, answer, and read what the tab would have seen.
+related: /state/state-and-the-loop, /running/development
 ---
 
 # Testing

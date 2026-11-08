@@ -5,6 +5,25 @@ versions; a release says so here when it does.
 
 ## 0.2.2
 
+### Features
+
+- `ui.SidebarGroup` folds a set of sidebar links under a label. It opens
+  and closes in the browser unless `open` is given, in which case
+  `on_toggle` reports the click. `collapsible=False` makes it a plain
+  heading over its links.
+- A link in `ui.Markdown` to a path of the app opens that page on the
+  session, as `ui.Link` does. A link to anywhere else opens a new tab, as
+  before.
+
+### The manual
+
+- The App chapters are gone, and in their place are short pages in
+  groups: Pages, State, Sign-in and Running, with Theming and Testing on
+  their own and a Quickstart next to the Welcome. Each page ends with the
+  next one in its group and cards to the pages that relate to it. The
+  sidebar folds each group to its label, with the one you are in open.
+  The old addresses redirect.
+
 ### Bug fixes
 
 - A page that uses a class the precompiled stylesheet does not have, through

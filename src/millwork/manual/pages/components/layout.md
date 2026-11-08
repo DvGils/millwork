@@ -1,6 +1,7 @@
 ---
 title: Layout
 order: 0
+description: Page, Sidebar, Stack, Row, Grid, Card, Tabs and the rest of the frame.
 ---
 
 # Layout
@@ -28,7 +29,38 @@ draws only the rows in view, and those are the ones that print.
 `s.print()` opens the browser's print dialog from a handler, which is
 also how a person saves the page as a PDF.
 
-This manual is a `Page` with a `Sidebar`, so it is not shown inline.
+This manual is a `Page` with a `Sidebar`, so the page itself is not
+shown inline. The sidebar is.
+
+## Sidebar
+
+`ui.Sidebar` holds the places to go. A `ui.Link` in it is drawn as a row
+to press, with its `icon` in front and the one marked `active=True` set
+apart. `ui.SidebarGroup` folds a set of links under a label: open by
+default, folded with `default_open=False`, and the browser remembers what
+the reader did unless `open` is given, in which case `on_toggle` reports
+the click and Python decides. `collapsible=False` makes it a plain heading
+over its links. This manual's sidebar is one such group per part. Outside
+a `Page`, a `Sidebar` is its children in a column, which is how it is
+shown here.
+
+```python live
+ui.Sidebar(
+    ui.Link(label="Overview", href="/components/layout#sidebar", icon="home", active=True),
+    ui.SidebarGroup(
+        ui.Link(label="Orders", href="/components/layout#sidebar", icon="table"),
+        ui.Link(label="Customers", href="/components/layout#sidebar", icon="users"),
+        label="Sales",
+    ),
+    ui.SidebarGroup(
+        ui.Link(label="Members", href="/components/layout#sidebar", icon="user"),
+        ui.Link(label="Billing", href="/components/layout#sidebar", icon="settings"),
+        label="Settings",
+        default_open=False,
+    ),
+    cls="max-w-xs rounded-lg border bg-sidebar p-3 text-sidebar-foreground",
+)
+```
 
 ## Stack and Row
 

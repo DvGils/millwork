@@ -1,6 +1,7 @@
 ---
 title: Files
 order: 7
+description: Uploads, file cards, images, PDFs and downloads.
 ---
 
 # Files

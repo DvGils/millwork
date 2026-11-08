@@ -1,6 +1,7 @@
 ---
 title: Chat
 order: 9
+description: A chat with streamed replies, parts, tools and feedback.
 ---
 
 # Chat
@@ -14,7 +15,7 @@ inside a card. `attachments=ui.Accept(...)` says what a person may attach,
 of which types, how many and how large. Without it the composer takes no
 files. `max_chars` caps a message and `max_messages` the thread, as the
 section below says. `tools=[...]` puts your own buttons in the composer.
-The section below and the Custom chapter show what goes there.
+The section below and the [Custom](/components/custom) page show what goes there.
 
 ## A streamed reply
 
@@ -155,7 +156,7 @@ ordinary button with a handler in Python, and nothing says it must touch
 the conversation. This gear opens a `ui.Dialog` that lives next to the
 chat, the dialog changes state, and the next reply reads it. Nothing is
 sent and no message appears. A custom component in the slot gets a `chat`
-prop to upload and send with. The Custom chapter builds a voice note
+prop to upload and send with. The [Custom](/components/custom) page builds a voice note
 button on it.
 
 ```python live

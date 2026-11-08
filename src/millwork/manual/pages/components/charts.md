@@ -1,6 +1,7 @@
 ---
 title: Charts
 order: 5
+description: Bar, line, area and pie charts from rows, and a sparkline on a stat.
 ---
 
 # Charts
