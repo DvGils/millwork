@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, create_model
-from starlette.responses import PlainTextResponse
+from starlette.responses import PlainTextResponse, RedirectResponse
 
 import millwork as mw
 from millwork import ui
@@ -41,9 +41,34 @@ HIT_LINK = (
     "block px-2 pt-1.5 pb-0 text-sm font-medium text-primary "
     "hover:bg-transparent hover:text-primary hover:underline"
 )
-_FENCE = re.compile(r"^```python live[^\n]*\n(.*?)^```[ \t]*$", re.M | re.S)
+_FENCE = re.compile(r"^```(python live|cards)[^\n]*\n(.*?)^```[ \t]*$", re.M | re.S)
 _FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 _INLINE = {"Button", "Badge", "Link", "Switch", "Checkbox", "Kbd", "Spinner", "Download"}
+
+# The sidebar, top to bottom: a page at the root by its file name, or a folder
+# of pages under a label, folded to the label until it is opened.
+NAV: list[tuple[str, str]] = [
+    ("index", ""),
+    ("quickstart", ""),
+    ("pages", "Pages"),
+    ("state", "State"),
+    ("sign-in", "Sign-in"),
+    ("running", "Running"),
+    ("theming", ""),
+    ("testing", ""),
+    ("components", "Components"),
+]
+GROUPS = {key: label for key, label in NAV if label}
+
+# Where the chapters of earlier releases went; the old addresses answer with a redirect.
+MOVED = {
+    "/app/pages": "/pages/pages-and-routes",
+    "/app/state": "/state/state-and-handlers",
+    "/app/auth": "/sign-in/setup",
+    "/app/theming": "/theming",
+    "/app/testing": "/testing",
+    "/app/running": "/running/development",
+}
 
 
 @dataclass
@@ -57,12 +82,28 @@ class Live:
 
 
 @dataclass
+class Cards:
+    """A row of cards that each open another page. A line names the page by
+    slug, and may give the card its own title and text after ``|``."""
+
+    slugs: list[str]
+    titles: dict[str, str] = field(default_factory=dict)
+    texts: dict[str, str] = field(default_factory=dict)
+
+
+Segment = str | Live | Cards
+
+
+@dataclass
 class Page:
     slug: str
     title: str
     chapter: str
     order: int
-    segments: list[str | Live] = field(default_factory=list)
+    segments: list[Segment] = field(default_factory=list)
+    group: str = ""
+    description: str = ""
+    related: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -97,8 +138,8 @@ def index(pages: list[Page]) -> list[Section]:
     for page in pages:
         current: Section | None = None
         for seg in page.segments:
-            if isinstance(seg, Live):
-                if current is not None:
+            if not isinstance(seg, str):
+                if isinstance(seg, Live) and current is not None:
                     current.code += "\n" + seg.source
                 continue
             pos = 0
@@ -150,8 +191,8 @@ def _snippet(text: str, terms: list[str], width: int = 110) -> str:
     return ""
 
 
-def parse(text: str, slug: str) -> tuple[dict[str, str], list[str | Live]]:
-    """Front matter and the body split into prose and live blocks."""
+def parse(text: str, slug: str) -> tuple[dict[str, str], list[Segment]]:
+    """Front matter and the body split into prose, live blocks and card rows."""
     meta: dict[str, str] = {}
     m = _FRONT.match(text)
     if m:
@@ -160,13 +201,26 @@ def parse(text: str, slug: str) -> tuple[dict[str, str], list[str | Live]]:
                 k, v = line.split(":", 1)
                 meta[k.strip()] = v.strip()
         text = text[m.end() :]
-    segments: list[str | Live] = []
+    segments: list[Segment] = []
     pos = 0
     for n, block in enumerate(_FENCE.finditer(text)):
         prose = text[pos : block.start()].strip("\n")
         if prose.strip():
             segments.append(prose)
-        segments.append(_compile(block.group(1), f"{slug}#{n}"))
+        if block.group(1) == "cards":
+            cards = Cards([])
+            for line in block.group(2).splitlines():
+                if not line.strip():
+                    continue
+                target, *given = [part.strip() for part in line.split("|")]
+                cards.slugs.append(target)
+                if given and given[0]:
+                    cards.titles[target] = given[0]
+                if len(given) > 1 and given[1]:
+                    cards.texts[target] = given[1]
+            segments.append(cards)
+        else:
+            segments.append(_compile(block.group(2), f"{slug}#{n}"))
         pos = block.end()
     rest = text[pos:].strip("\n")
     if rest.strip():
@@ -198,17 +252,36 @@ def load(root: Path = PAGES) -> list[Page]:
         parts = list(rel.parts)
         slug = "/" if parts == ["index"] else "/" + "/".join(parts)
         meta, segments = parse(path.read_text(encoding="utf-8"), slug)
-        chapter = parts[0].replace("-", " ").title() if len(parts) > 1 else ""
+        group = parts[0] if len(parts) > 1 else ""
+        related = [r.strip() for r in meta.get("related", "").split(",") if r.strip()]
         pages.append(
             Page(
                 slug=slug,
                 title=meta.get("title", rel.name.replace("-", " ").title()),
-                chapter=chapter,
+                chapter=GROUPS.get(group, group.replace("-", " ").title()),
                 order=int(meta.get("order", "100")),
                 segments=segments,
+                group=group,
+                description=meta.get("description", ""),
+                related=related,
             )
         )
-    pages.sort(key=lambda p: (p.chapter != "", p.chapter, p.order, p.slug))
+    keys = [key for key, _ in NAV]
+
+    def place(page: Page) -> int:
+        key = page.group or page.slug.strip("/") or "index"
+        return keys.index(key) if key in keys else len(keys)
+
+    pages.sort(key=lambda p: (place(p), p.order, p.slug))
+    for page in pages:
+        for slug in page.related:
+            if not any(p.slug == slug for p in pages):
+                raise ValueError(f"{page.slug} relates to {slug}, which is not a page")
+        for seg in page.segments:
+            if isinstance(seg, Cards):
+                for slug in seg.slugs:
+                    if not any(p.slug == slug for p in pages):
+                        raise ValueError(f"{page.slug} has a card for {slug}, which is not a page")
     return pages
 
 
@@ -280,9 +353,15 @@ def state_model(pages: list[Page]) -> type[BaseModel]:
     fields: dict[str, Any] = {
         field_name(name): (cls, Field(default_factory=cls)) for name, (cls, _) in models.items()
     }
-    if "query" in fields:
-        raise ValueError("an example model may not be named Query; the search box holds that field")
-    return create_model("State", query=(str, ""), **fields)
+    for own in ("query", "groups"):
+        if own in fields:
+            raise ValueError(
+                f"an example model may not be named {own.title()}; "
+                "the manual's own state holds that field"
+            )
+    return create_model(
+        "State", query=(str, ""), groups=(dict[str, bool], Field(default_factory=dict)), **fields
+    )
 
 
 def render_block(s: mw.Session[Any], live: Live, ns: dict[str, Any]) -> ui.Component:
@@ -311,7 +390,7 @@ def specimen(view: ui.Component, source: str) -> ui.Component:
     return ui.Stack(
         ui.Stack(
             view,
-            cls="rounded-t-lg border border-b-0 bg-muted/40 px-6 py-6",
+            cls="overflow-x-auto rounded-t-lg border border-b-0 bg-muted/40 px-6 py-6",
         ),
         ui.Code(
             content=source,
@@ -348,6 +427,63 @@ def make_app(theme: Any = None) -> mw.App:
 
     app.route("/llms.txt", llms)
 
+    def moved(request: Any) -> RedirectResponse:
+        root = request.scope.get("root_path", "")
+        return RedirectResponse(root + MOVED[request.url.path.removeprefix(root)], 301)
+
+    for old_slug in MOVED:
+        app.route(old_slug, moved)
+
+    by_slug = {p.slug: p for p in pages}
+
+    def go(slug: str) -> Any:
+        return lambda s, _: s.navigate(slug)
+
+    def cards(
+        slugs: list[str], titles: dict[str, str] | None = None, texts: dict[str, str] | None = None
+    ) -> ui.Component:
+        """Cards that each open a page, with the page's title and its one line
+        unless the block gave the card its own."""
+        titles, texts = titles or {}, texts or {}
+        return ui.Grid(
+            *(
+                ui.Card(
+                    ui.Text(texts.get(slug, by_slug[slug].description), variant="muted"),
+                    title=titles.get(slug, by_slug[slug].title),
+                    on_click=go(slug),
+                    cls="transition-colors hover:bg-muted/40",
+                )
+                for slug in slugs
+            ),
+            cols={"sm": 1, "md": 2},
+            gap=4,
+        )
+
+    def footer(page: Page) -> list[ui.Component]:
+        """The way on from a page: the next page of its group, and related pages."""
+        parts: list[ui.Component] = [ui.Separator(cls="mt-4")]
+        if page.group in GROUPS:
+            siblings = [p for p in pages if p.group == page.group]
+            at = siblings.index(page)
+            before = siblings[at - 1] if at > 0 else None
+            after = siblings[at + 1] if at + 1 < len(siblings) else None
+            parts.append(
+                ui.Row(
+                    ui.Link(label=before.title, href=before.slug, icon="arrow-left")
+                    if before
+                    else ui.Text(""),
+                    ui.Link(label=after.title, href=after.slug, icon="arrow-right")
+                    if after
+                    else ui.Text(""),
+                    justify="between",
+                    wrap=True,
+                )
+            )
+        if page.related:
+            parts.append(ui.Text("Related", variant="label", cls="mt-2"))
+            parts.append(cards(page.related))
+        return parts
+
     def results(query: str) -> list[ui.Component]:
         found = search(sections, query)
         if not found:
@@ -370,7 +506,7 @@ def make_app(theme: Any = None) -> mw.App:
             )
         return items
 
-    def nav(current: Page, query: str) -> ui.Sidebar:
+    def nav(current: Page, query: str, opened: dict[str, bool]) -> ui.Sidebar:
         box = ui.Input(
             value=query,
             kind="search",
@@ -385,19 +521,28 @@ def make_app(theme: Any = None) -> mw.App:
         if query.strip():
             return ui.Sidebar(box, *results(query), title="Manual")
         items: list[ui.Component] = [box]
-        chapter = None
-        for p in pages:
-            if p.chapter != chapter:
-                chapter = p.chapter
-                if chapter:
-                    items.append(
-                        ui.Text(
-                            chapter.upper(),
-                            variant="caption",
-                            cls="mt-5 mb-1 px-2 tracking-wider text-muted-foreground",
-                        )
+        for key, label in NAV:
+            if not label:
+                at = "/" if key == "index" else f"/{key}"
+                page = next((p for p in pages if p.slug == at), None)
+                if page is not None:
+                    items.append(ui.Link(label=page.title, href=page.slug, active=page is current))
+                continue
+            links = [
+                ui.Link(label=p.title, href=p.slug, active=p is current)
+                for p in pages
+                if p.group == key
+            ]
+            if links:
+                items.append(
+                    ui.SidebarGroup(
+                        *links,
+                        label=label,
+                        open=opened.get(key, key == current.group),
+                        on_toggle=lambda s, open, g=key: s.state.groups.__setitem__(g, open),
+                        key=key,
                     )
-            items.append(ui.Link(label=p.title, href=p.slug, active=p is current))
+                )
         return ui.Sidebar(*items, title="Manual")
 
     async def first_hit(s: mw.Session[Any], query: str) -> None:
@@ -411,6 +556,10 @@ def make_app(theme: Any = None) -> mw.App:
         def drop_namespace(s: mw.Session[Any]) -> None:
             sys.modules.pop(live_module_name(page.slug, s.id), None)
 
+        def open_group(s: mw.Session[Any]) -> None:
+            if page.group in GROUPS:
+                s.state.groups[page.group] = True
+
         @app.page(page.slug, title=f"{page.title} · millwork")
         def view(s: mw.Session[Any]) -> ui.Component:
             body: list[ui.Component] = []
@@ -418,10 +567,13 @@ def make_app(theme: Any = None) -> mw.App:
             for seg in page.segments:
                 if isinstance(seg, str):
                     body.append(ui.Markdown(seg))
+                elif isinstance(seg, Cards):
+                    body.append(cards(seg.slugs, seg.titles, seg.texts))
                 else:
                     body.append(specimen(render_block(s, seg, ns), seg.source))
+            body.extend(footer(page))
             return ui.Page(
-                nav(page, s.state.query),
+                nav(page, s.state.query, s.state.groups),
                 ui.Stack(*body, gap=6, cls="mx-auto w-full min-w-0 max-w-3xl py-6"),
                 header=ui.Header(
                     ui.Link(
@@ -435,6 +587,7 @@ def make_app(theme: Any = None) -> mw.App:
                 ),
             )
 
+        view.connect(open_group)
         view.close(drop_namespace)
 
     for page in pages:
@@ -445,6 +598,7 @@ def make_app(theme: Any = None) -> mw.App:
 app = make_app()
 
 __all__ = [
+    "Cards",
     "Hit",
     "Live",
     "Page",

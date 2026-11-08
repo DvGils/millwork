@@ -1,6 +1,7 @@
 ---
 title: Custom components
 order: 10
+description: Your own React component in a .jsx file, driven from Python.
 ---
 
 # Custom components

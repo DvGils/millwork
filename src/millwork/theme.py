@@ -348,10 +348,17 @@ class Theme(BaseModel):
                 parts.append(f"{selector}{{{body}}}")
         return "".join(parts)
 
-    def head(self) -> str:
-        """Stylesheet links for font-service fonts; empty for a self-hosted theme."""
+    def head(self, base: str = "") -> str:
+        """A preload for each self-hosted font, so it is fetched with the page
+        and the text is drawn in it from the first paint, and a stylesheet
+        link for each font-service font."""
         links = []
         for f in self.fonts:
+            if f.src is not None:
+                ext = f.src.rsplit(".", 1)[-1].lower()
+                kind = f' type="font/{ext}"' if ext in ("woff2", "woff", "ttf", "otf") else ""
+                href = (under(base, f.src) or "").replace('"', "%22")
+                links.append(f'<link rel="preload" as="font"{kind} href="{href}" crossorigin>')
             if f.url is not None:
                 log.warning("theme font %s loads from %s on every page view", f.family, f.url)
                 safe = f.url.replace('"', "%22")

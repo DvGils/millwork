@@ -1,6 +1,7 @@
 ---
 title: Data
 order: 4
+description: Tables with sorting, filtering, selection and actions, and stats.
 ---
 
 # Data

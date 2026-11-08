@@ -10,14 +10,27 @@ from millwork.testing import TestApp
 
 
 def test_pages_parse_into_prose_and_live_blocks() -> None:
+    from millwork.manual import Cards, Live
+
     pages = load()
-    assert [p.slug for p in pages][:3] == ["/", "/app/pages", "/app/state"]
+    assert [p.slug for p in pages][:3] == ["/", "/quickstart", "/pages/pages-and-routes"]
     index = pages[0]
-    assert index.title == "Welcome" and index.chapter == ""
-    live = [s for s in index.segments if not isinstance(s, str)]
+    assert index.title == "Welcome" and index.chapter == "" and index.group == ""
+    live = [s for s in index.segments if isinstance(s, Live)]
     assert len(live) == 2 and live[0].tail is not None and live[1].tail is None
+    cards = [s for s in index.segments if isinstance(s, Cards)]
+    assert cards and cards[0].slugs[0] == "/quickstart"
+    assert cards[0].titles["/components/layout"] == "Components"
+    sessions = next(p for p in pages if p.slug == "/pages/sessions")
+    assert sessions.group == "pages" and sessions.chapter == "Pages"
+    assert sessions.description and "/state/state-and-handlers" in sessions.related
     with pytest.raises(ValueError, match="neither defines"):
         parse("```python live\nx = 1\n```\n", "/t")
+    # a card row before a live block leaves the block's id alone
+    _, segments = parse(
+        "```cards\n/other | Other\n```\n\n```python live\nui.Text('x')\n```\n", "/t"
+    )
+    assert isinstance(segments[1], Live) and segments[1].id == "/t#1"
 
 
 async def test_a_live_block_keeps_its_state_across_events(tmp_path: Path) -> None:
@@ -35,6 +48,66 @@ async def test_a_live_block_keeps_its_state_across_events(tmp_path: Path) -> Non
         assert page.toasts[-1] == "Hello from Python."
 
 
+async def test_the_sidebar_folds_groups_and_the_pages_lead_on(tmp_path: Path) -> None:
+    """Groups fold to their label, the current one open; a page ends with its
+    neighbors and its related pages as cards that navigate."""
+    app = make_app()
+    app.bundle_dir = tmp_path
+    async with TestApp(app).open("/pages/sessions") as page:
+        groups = page.find_all(ui.SidebarGroup)
+        by_label = {g.props["label"]: g for g in groups}
+        assert set(by_label) == {"Pages", "State", "Sign-in", "Running", "Components"}
+        assert by_label["Pages"].props["open"] is True
+        assert by_label["State"].props["open"] is False
+        titles = [page.tree[c].props["label"] for c in by_label["Pages"].children]
+        assert titles[0] == "Pages and routes" and "Sessions" in titles and len(titles) == 6
+        # the reader folds Pages and opens State; the choice is kept in the session
+        await page.event(by_label["Pages"], "toggle", False)
+        await page.event(page.find_all(ui.SidebarGroup)[1], "toggle", True)
+        groups = {g.props["label"]: g for g in page.find_all(ui.SidebarGroup)}
+        assert groups["Pages"].props["open"] is False and groups["State"].props["open"] is True
+        # the way on: the next page of the group, and the related cards
+        links = [n.props for n in page.find_all(ui.Link)]
+        assert any(
+            x["label"] == "Routes and middleware" and x["href"] == "/pages/routes-and-middleware"
+            for x in links
+        )
+        assert any(x["label"] == "Error pages" for x in links)
+        cards = [c for c in page.find_all(ui.Card) if c.props.get("on_click")]
+        assert "State and handlers" in [c.props["title"] for c in cards]
+        await page.click(next(c for c in cards if c.props["title"] == "Tasks"))
+        await page.settle()
+        nav = [c for c in page.commands if c.name == "navigate"]
+        assert nav[-1].args["path"] == "/components/tasks"
+        # arriving in a folded group opens it
+        assert {g.props["label"]: g.props["open"] for g in page.find_all(ui.SidebarGroup)}[
+            "Components"
+        ] is True
+
+
+def test_old_chapter_addresses_redirect(tmp_path: Path) -> None:
+    from starlette.testclient import TestClient
+
+    app = make_app()
+    app.bundle_dir = tmp_path
+    with TestClient(app.asgi) as client:
+        r = client.get("/app/auth", follow_redirects=False)
+        assert r.status_code == 301 and r.headers["location"] == "/sign-in/setup"
+    # under a path prefix the new address carries the prefix too
+    with TestClient(app.asgi, root_path="/manual") as client:
+        r = client.get("/manual/app/auth", follow_redirects=False)
+        assert r.status_code == 301 and r.headers["location"] == "/manual/sign-in/setup"
+
+
+def test_a_card_or_relation_to_a_page_that_is_not_there_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "index.md").write_text("---\ntitle: Home\n---\n\n```cards\n/nowhere\n```\n")
+    with pytest.raises(ValueError, match="card for /nowhere"):
+        load(tmp_path)
+    (tmp_path / "index.md").write_text("---\ntitle: Home\nrelated: /gone\n---\n\nText.\n")
+    with pytest.raises(ValueError, match="relates to /gone"):
+        load(tmp_path)
+
+
 def test_every_catalogue_component_has_a_live_example() -> None:
     """The manual is the gallery: a component without a live block is a gap."""
     import re
@@ -43,8 +116,10 @@ def test_every_catalogue_component_has_a_live_example() -> None:
 
     # The manual's own frame, and SignIn, which needs an app with auth to draw.
     exempt = {"Page", "Sidebar", "Header", "Component", "SignIn"}
+    from millwork.manual import Live
+
     live = "\n".join(
-        seg.source for page in load() for seg in page.segments if not isinstance(seg, str)
+        seg.source for page in load() for seg in page.segments if isinstance(seg, Live)
     )
     used = set(re.findall(r"ui\.([A-Z]\w+)\(", live))
     names = {

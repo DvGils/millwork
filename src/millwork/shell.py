@@ -170,7 +170,7 @@ class Shell:
         entry = self._entry()
         if theme is not None:
             theme_css = theme.css(base) + theme_css
-            head = theme.head() + head
+            head = theme.head(base) + head
             lang = theme.locale
             # Always a link: without one the browser asks the host's root for
             # /favicon.ico, which an app under a prefix never sees.

@@ -422,6 +422,37 @@ class AccordionItem(Component):
         ) -> None: ...
 
 
+class SidebarGroup(_Owned):
+    """A labeled group of links in a ``Sidebar``, folded to its label or open.
+    The browser keeps whether it is open unless ``open`` is given, and
+    ``collapsible=False`` makes it a plain heading over its links."""
+
+    type: ClassVar[str] = "SidebarGroup"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_toggle": "True when open",
+    }
+    label: str
+    open: bool | None = None
+    default_open: bool | None = None
+    collapsible: bool = True
+    on_toggle: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str,
+            open: bool | None = None,
+            default_open: bool | None = None,
+            collapsible: bool = True,
+            on_toggle: Any = None,
+        ) -> None: ...
+
+
 class Collapsible(_Owned):
     type: ClassVar[str] = "Collapsible"
     payloads: ClassVar[dict[str, str]] = {
@@ -1672,6 +1703,7 @@ __all__ = [
     "Separator",
     "Sheet",
     "Sidebar",
+    "SidebarGroup",
     "SignIn",
     "Skeleton",
     "Slider",

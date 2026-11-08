@@ -1,6 +1,7 @@
 ---
 title: Inputs
 order: 2
+description: Every control, which side owns its value, and how changes reach Python.
 ---
 
 # Inputs
@@ -96,7 +97,7 @@ ui.Stack(
         wrap=True,
     ),
     ui.Row(
-        ui.Button("To the Layout chapter", href="/components/layout", icon="arrow-right", icon_position="end"),
+        ui.Button("To the Layout page", href="/components/layout", icon="arrow-right", icon_position="end"),
         ui.Button("Print this page", icon="printer", variant="outline", on_click=lambda s, _: s.print()),
         gap=2,
         wrap=True,

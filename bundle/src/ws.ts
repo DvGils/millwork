@@ -9,6 +9,9 @@ import { store, type Node, type PatchOp } from "./store";
 import { samePath, safeUrl, signOut, toApp, toBrowser } from "./lib";
 import { toast } from "@/components/ui/toast";
 import { invalidate, syncVersions } from "./custom";
+import { ensureTailwindRuntime, needsRuntime, runtimeLoaded } from "./tailwind-runtime";
+import { markdownLoaded, needsMarkdown, preloadMarkdown } from "./components/markdown";
+import { keepScrollInHistory, restoreScroll, scrollFromHistory, watchScroll } from "./scroll";
 
 interface Boot {
   path: string;
@@ -285,12 +288,28 @@ function forgetFiles() {
 }
 
 // A hash names a heading on the page being opened: the server never sees it,
-// the tab scrolls there once the page has mounted.
+// the tab scrolls there once the page has mounted. Without one, the page
+// opens at the top, or where the reader left it when the history brings it back.
 let pendingHash: string | null = null;
+let pendingScroll: number | null = null;
+let poppedScroll: number | null = null;
 export function navigate(path: string) {
   const [bare, hash] = path.split("#", 2);
   pendingHash = hash || null;
   send({ type: "navigate", path: bare });
+}
+
+// Settles when the promise does, or after the wait, whichever comes first,
+// and says which it was.
+function within(p: Promise<unknown>, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve(false), ms);
+    const done = () => {
+      window.clearTimeout(timer);
+      resolve(true);
+    };
+    p.then(done, done);
+  });
 }
 
 function scrollToHash(hash: string, tries = 20) {
@@ -311,6 +330,32 @@ function storeSession() {
   }
 }
 
+// Two things a page may need that arrive after the bundle: the runtime
+// compiler for a class the precompiled stylesheet lacks, and the Markdown
+// renderer's chunk. Drawn before they have loaded, the page would paint
+// without them and then jump, so the first page that needs one waits, parked
+// with everything about the page that follows it, while the page before stays
+// on screen. The wait is bounded, and after a wait that ran out the page is
+// drawn as it is from then on.
+let parked: ServerMessage[] | null = null;
+let gaveUp = false;
+
+function stillLoading(nodes: Record<string, Node>): Promise<unknown> | null {
+  const waits: Promise<unknown>[] = [];
+  if (!runtimeLoaded() && needsRuntime(nodes)) waits.push(ensureTailwindRuntime());
+  if (!markdownLoaded() && needsMarkdown(nodes)) waits.push(preloadMarkdown());
+  return waits.length ? Promise.all(waits) : null;
+}
+
+function park(m: ServerMessage): boolean {
+  if (parked === null) return false;
+  if (m.type === "mount" || m.type === "patch" || m.type === "stream" || m.type === "command") {
+    parked.push(m);
+    return true;
+  }
+  return false;
+}
+
 function handle(env: Envelope<ServerMessage>) {
   const m = env.msg;
   if (m.type !== "session") {
@@ -322,6 +367,11 @@ function handle(env: Envelope<ServerMessage>) {
       lastSeq = env.seq;
     }
   }
+  if (park(m)) return;
+  apply(m);
+}
+
+function apply(m: ServerMessage) {
   switch (m.type) {
     case "session": {
       // The same session: what was queued while disconnected goes now, in order.
@@ -342,10 +392,23 @@ function handle(env: Envelope<ServerMessage>) {
       break;
     }
     case "mount": {
+      const loading = gaveUp ? null : stillLoading(m.nodes);
+      if (loading) {
+        parked = [m];
+        void within(loading, 2000).then((inTime) => {
+          gaveUp = !inTime;
+          const queued = parked ?? [];
+          parked = null;
+          for (const q of queued) apply(q);
+        });
+        break;
+      }
       store.mount(m.root, m.nodes, m.title);
       const hash = pendingHash ?? (window.location.hash ? window.location.hash.slice(1) : null);
       pendingHash = null;
       if (hash) window.setTimeout(() => scrollToHash(hash), 50);
+      else if (pendingScroll !== null) restoreScroll(pendingScroll);
+      pendingScroll = null;
       break;
     }
     case "patch":
@@ -410,9 +473,14 @@ function command(name: string, args: Record<string, unknown>) {
       // Compared as app paths: the prefix with and without its slash is one page,
       // so a popped history entry is never pushed over.
       if (!samePath(toApp(window.location.pathname), path) || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
+        keepScrollInHistory();
         window.history.pushState({ mw: true }, "", target);
       }
       if (args.title) document.title = String(args.title);
+      // The mount that follows opens the page at the top, or where it was
+      // left when the back or forward button brought it back.
+      pendingScroll = poppedScroll ?? 0;
+      poppedScroll = null;
       break;
     }
     case "title":
@@ -469,8 +537,12 @@ function command(name: string, args: Record<string, unknown>) {
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     const path = toApp(window.location.pathname);
-    if (!samePath(path, boot.path)) navigate(path);
+    if (!samePath(path, boot.path)) {
+      poppedScroll = scrollFromHistory();
+      navigate(path + window.location.hash);
+    }
   });
+  watchScroll();
 }
 
 export function connect() {

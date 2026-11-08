@@ -1,6 +1,7 @@
 ---
 title: Feedback
 order: 3
+description: Toasts, alerts, dialogs, confirm and ask, progress and empty states.
 ---
 
 # Feedback
@@ -204,7 +205,7 @@ ui.Empty(
 ## Progress and Steps
 
 `ui.Progress` is a bar for a `value` from 0 to 1 with a `label` and a
-`description`, or for a running task, as the Tasks chapter shows.
+`description`, or for a running task, as the [Tasks](/components/tasks) page shows.
 `percent=False` leaves the value off the bar, for a plain meter.
 `ui.Steps` draws a list of `mw.Step` items with their status.
 

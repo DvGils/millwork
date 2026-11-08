@@ -13,6 +13,9 @@ import { icon } from "../icons";
 import {
   Sidebar as UiSidebar,
   SidebarContent,
+  SidebarGroup as UiSidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarProvider,
@@ -137,6 +140,49 @@ export const Sidebar: Renderer = ({ props, children }) => (
     <InSidebar.Provider value={true}>{children}</InSidebar.Provider>
   </div>
 );
+
+// A group of links under a label. Folded, only the label shows; the label
+// is the button that opens it. The look follows the sidebar's own links.
+const groupLabel = "h-8 px-2 text-xs font-medium tracking-wider text-sidebar-foreground/70 uppercase";
+// The links of a group stand in from the label, along a rail, so what
+// belongs to the group reads as one block.
+const groupLinks = "ml-3 flex flex-col gap-0.5 border-l border-sidebar-border pl-2";
+
+export const SidebarGroup: Renderer = ({ props, children, emit }) => {
+  const controlled = has(props, "open");
+  const [open, setOpen] = useDraft<boolean>(controlled, Boolean(props.open), props.default_open !== false);
+  const Chevron = icon("chevron-right");
+  const label = String(props.label ?? "");
+  if (props.collapsible === false) {
+    return (
+      <UiSidebarGroup className={cn("p-0", props.cls as string)}>
+        <SidebarGroupLabel className={groupLabel}>{label}</SidebarGroupLabel>
+        <SidebarGroupContent className={groupLinks}>{children}</SidebarGroupContent>
+      </UiSidebarGroup>
+    );
+  }
+  return (
+    <UiCollapsible
+      open={open}
+      onOpenChange={(next) => {
+        if (!controlled) setOpen(next);
+        if (props.on_toggle) emit("toggle", next);
+      }}
+      className={cn("flex flex-col", props.cls as string)}
+    >
+      <CollapsibleTrigger
+        className={cn(
+          groupLabel,
+          "flex w-full items-center rounded-md outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring [&[data-panel-open]>svg]:rotate-90",
+        )}
+      >
+        {label}
+        {Chevron ? <Chevron className="ml-auto size-3.5 transition-transform" /> : null}
+      </CollapsibleTrigger>
+      <CollapsibleContent className={cn(groupLinks, "mt-0.5")}>{children}</CollapsibleContent>
+    </UiCollapsible>
+  );
+};
 
 export const Accordion: Renderer = ({ node, props, emit }) => {
   const controlled = has(props, "value");

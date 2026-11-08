@@ -1,6 +1,8 @@
 ---
 title: Theming
 order: 3
+description: The theme file, tokens, fonts, logo, strings and a stylesheet of the app's own.
+related: /components/custom, /sign-in/login-page
 ---
 
 # Theming

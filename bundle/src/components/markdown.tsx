@@ -1,10 +1,12 @@
 // Markdown rendered as React elements (never as an HTML string). The renderer
 // is a lazy chunk: only pages with Markdown or a Chat load it.
 
-import { lazy, Suspense, type ComponentType } from "react";
+import { useEffect, useReducer, type ComponentType } from "react";
+import type { Node } from "../store";
 import { cn } from "cn";
-import { linkLook, safeUrl, slugify } from "../lib";
+import { isInternalPath, linkLook, safeUrl, slugify } from "../lib";
 import { CodeBlock } from "./copy";
+import { anchorProps } from "./anchor";
 
 type Props = { content: string; tight?: boolean };
 
@@ -17,18 +19,54 @@ function textOf(node: unknown): string {
   return "";
 }
 
+// A link's href is left as written, so that `linkProps` maps it once, to the
+// browser path under the app's prefix. Every other URL is checked here.
+export function transformUrl(url: string, tagName: string): string {
+  return tagName === "a" ? url : safeUrl(url, { image: true });
+}
+
+// A link to a page of the app opens it on the session, as `ui.Link` does,
+// and a link to a heading stays on the page. A link to anywhere else opens
+// a new tab.
+export function linkProps(href: unknown) {
+  const stays = isInternalPath(href) || (typeof href === "string" && href.startsWith("#"));
+  return anchorProps(href, stays ? undefined : "_blank");
+}
+
 // Two rhythms: `tight` for a chat turn or a caption, where a heading sits
 // close to its text; the default for a page, where a section breathes.
-const Inner = lazy(async () => {
-  const [{ default: ReactMarkdown }, { default: gfm }] = await Promise.all([import("react-markdown"), import("remark-gfm")]);
-  const Renderer: ComponentType<Props> = ({ content, tight }) => (
+// The renderer's chunk, fetched once. A page that mounts with Markdown on it
+// waits for it, so the text is drawn once, in place, and not first as its
+// source. The renderer is kept here rather than behind React's lazy boundary,
+// which would commit its fallback once even for a chunk already in.
+type Mods = [typeof import("react-markdown"), typeof import("remark-gfm")];
+let chunk: Promise<void> | null = null;
+let Renderer: ComponentType<Props> | null = null;
+const waiting = new Set<() => void>();
+
+export function preloadMarkdown(): Promise<void> {
+  chunk ??= Promise.all([import("react-markdown"), import("remark-gfm")]).then((mods: Mods) => {
+    Renderer = makeRenderer(mods[0].default, mods[1].default);
+    for (const wake of waiting) wake();
+  });
+  return chunk;
+}
+export function markdownLoaded(): boolean {
+  return Renderer !== null;
+}
+export function needsMarkdown(nodes: Record<string, Node>): boolean {
+  return Object.values(nodes).some((n) => n.type === "Markdown");
+}
+
+function makeRenderer(ReactMarkdown: Mods[0]["default"], gfm: Mods[1]["default"]): ComponentType<Props> {
+  const Rendered: ComponentType<Props> = ({ content, tight }) => (
     <div className={tight ? "mw-markdown mw-tight" : "mw-markdown"}>
       <ReactMarkdown
         remarkPlugins={[gfm]}
-        urlTransform={(url) => safeUrl(url, { image: true })}
+        urlTransform={(url, _key, node) => transformUrl(url, node.tagName)}
         components={{
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer" className={cn("text-primary", linkLook)}>
+            <a {...linkProps(href)} className={cn("text-primary", linkLook)}>
               {children}
             </a>
           ),
@@ -61,13 +99,21 @@ const Inner = lazy(async () => {
       </ReactMarkdown>
     </div>
   );
-  return { default: Renderer };
-});
+  return Rendered;
+}
 
+// Markdown that arrives before the chunk, through a patch or a chat turn,
+// shows as its text until the chunk is in, then renders in place.
 export function Markdown({ content, tight }: Props) {
-  return (
-    <Suspense fallback={<div className="whitespace-pre-wrap text-sm">{content}</div>}>
-      <Inner content={content} tight={tight} />
-    </Suspense>
-  );
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (Renderer) return;
+    waiting.add(rerender);
+    void preloadMarkdown();
+    return () => {
+      waiting.delete(rerender);
+    };
+  }, []);
+  if (Renderer) return <Renderer content={content} tight={tight} />;
+  return <div className="whitespace-pre-wrap text-sm">{content}</div>;
 }

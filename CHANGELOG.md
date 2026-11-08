@@ -3,6 +3,50 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.2.2
+
+### Features
+
+- `ui.SidebarGroup` folds a set of sidebar links under a label. It opens
+  and closes in the browser unless `open` is given, in which case
+  `on_toggle` reports the click. `collapsible=False` makes it a plain
+  heading over its links.
+- A link in `ui.Markdown` to a path of the app opens that page on the
+  session, as `ui.Link` does. A link to anywhere else opens a new tab, as
+  before.
+
+### The manual
+
+- The App chapters are gone, and in their place are short pages in
+  groups: Pages, State, Sign-in and Running, with Theming and Testing on
+  their own and a Quickstart next to the Welcome. Each page ends with the
+  next one in its group and cards to the pages that relate to it. The
+  sidebar folds each group to its label, with the one you are in open.
+  The old addresses redirect.
+
+### Bug fixes
+
+- A page that uses a class the precompiled stylesheet does not have, through
+  `cls` or a custom component, waited for nothing and painted before the
+  runtime compiler had styled it, then jumped into place. The first such
+  page now waits for the compiler, which is a moment on a fresh tab and
+  nothing after.
+- A page with Markdown on it painted the Markdown's source first, in a
+  monospace block, and then the rendered text once the renderer's chunk
+  had arrived, which moved everything below it. The first such page now
+  waits for the chunk, as it does for the runtime compiler, and draws
+  once. A theme's self-hosted fonts are preloaded from the page's head,
+  so the text is drawn in them from the first paint.
+- A page opened over the session kept the scroll position of the page
+  before it, so a reader halfway down one chapter landed halfway down the
+  next. A new page opens at the top. The back and forward buttons return to
+  where the reader was on that page.
+- Two examples in the manual, the navigation row and the chat buttons, ran
+  past their panel on a phone. They wrap now, and an example wider than its
+  panel scrolls inside it instead of floating over the border.
+- A chart example in the manual labeled its series after an app the reader
+  has never seen.
+
 ## 0.2.1
 
 - The `public` and `components` folders, and a theme given by path, are

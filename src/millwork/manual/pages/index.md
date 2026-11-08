@@ -1,38 +1,22 @@
 ---
 title: Welcome
 order: 0
+description: What millwork is and how this manual works.
 ---
 
 # millwork
 
-millwork is a Python framework for data tools and AI applications. The
-browser runs one prebuilt React bundle, and Python describes the page and
+millwork is UI framework  for Python to easily create web applications with a professional feel. 
+The browser runs one prebuilt React bundle, and Python describes the page and
 handles what happens on it. You write Python only. There is no JavaScript
 to build, and every piece of state lives on the server.
 
-## Install
-
-millwork is on PyPI and needs Python 3.12 or newer.
-
+```cards
+/quickstart
+/components/layout | Components | The catalog, one group at a time, from the frame of a page to charts and chat.
+/state/state-and-handlers
+/testing
 ```
-uv add millwork
-```
-
-`pip install millwork` works too. An app is one file:
-
-```python
-import millwork as mw
-from millwork import ui
-
-app = mw.App("hello")
-
-
-@app.page("/")
-def home(s: mw.Session) -> ui.Component:
-    return ui.Page(ui.Text("Hello."))
-```
-
-Run it with `uv run millwork run app.py` and open the address it prints.
 
 ## How this manual works
 
@@ -49,8 +33,8 @@ ui.Button("Say hello", icon="sparkles", on_click=lambda s, _: s.toast("Hello fro
 An example may hold state. An app declares one state model and reads
 `s.state`, and the manual composes its own from the models its examples
 define, one field per model named after the class, so `Clicks` is
-`s.state.clicks`. A handler changes it and the page renders again. The
-State chapter has the whole picture.
+`s.state.clicks`. A handler changes it and the page renders again.
+[State and handlers](/state/state-and-handlers) has the whole picture.
 
 ```python live
 from pydantic import BaseModel
@@ -72,12 +56,14 @@ A block either ends in an expression, which is the component, or defines
 `example(s)`, a page function over the session. `mw` and `ui` are already
 in scope. Everything else is imported, as in an app.
 
-## Where to go next
+## Finding your way
 
-The App chapters cover how an app is put together, from pages and routing
-through state, signing in, theming and testing to running it somewhere.
-The Components chapters walk through the catalog one group at a time,
-with each component in its states and the Python that makes it. For a
-lookup rather than a chapter, every component's props with their types
-and defaults are listed at [/llms.txt](/llms.txt), which `millwork
-reference` prints as well.
+The sidebar groups the pages. Pages, State and Sign-in each cover one
+part of an app in a handful of short pages that read in order, and each
+page ends with the next one and the pages that relate to it. Running,
+Theming and Testing follow. The Components pages walk through the catalog
+one group at a time, with each component in its states and the Python
+that makes it. For a lookup rather than a page, every component's props
+with their types and defaults are listed at [/llms.txt](/llms.txt), which
+`millwork reference` prints as well. The search box finds a section by
+its heading or its words.
