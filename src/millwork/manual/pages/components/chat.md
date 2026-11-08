@@ -97,6 +97,61 @@ ui.Row(
 )
 ```
 
+## A floating assistant
+
+`ui.Assistant` is a round button in a corner of the page that opens a
+panel beside it, for a chat that should be at hand wherever the reader is.
+It takes the chat as its child and gives it the panel's height. The
+reader can drag the button to where they want it, and the browser
+remembers where. On a phone the panel is a sheet from the bottom. `open`
+makes Python the owner of whether it is open, with `on_toggle` reporting
+the clicks; left alone, the browser holds that. The button below adds one
+to this page, and it goes away with the page. Its answers come from the
+manual's own search, with a link to each section it finds.
+
+```python live
+from pydantic import BaseModel
+
+from millwork.manual import search, sections
+
+
+class Helper(BaseModel):
+    shown: bool = False
+
+
+async def look_up(s, turn):
+    hits = search(sections(), turn.text, limit=3)
+    async with turn.reply() as reply:
+        if not hits:
+            await reply.text("Nothing in the manual matches that.")
+            return
+        await reply.text("The manual has these sections on it:\n\n")
+        for hit in hits:
+            sec = hit.section
+            await reply.text(f"- [{sec.heading}]({sec.page.slug}#{sec.anchor}) on {sec.page.title}\n")
+        await reply.suggestions([h.section.heading for h in hits[:2]])
+
+
+def example(s):
+    st = s.state.helper
+    return ui.Stack(
+        ui.Button(
+            "Take the assistant away" if st.shown else "Add an assistant to this page",
+            variant="outline",
+            on_click=lambda s, _: setattr(st, "shown", not st.shown),
+            cls="self-start",
+        ),
+        ui.Assistant(
+            ui.Chat(key="helper", welcome="Ask about anything in the manual.", placeholder="Ask the manual", on_message=look_up),
+            label="Ask the manual",
+            title="The manual",
+        )
+        if st.shown
+        else None,
+        gap=3,
+    )
+```
+
 ## Parts a reply can carry
 
 | Call | Shows as |

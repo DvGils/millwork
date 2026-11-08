@@ -453,6 +453,69 @@ class SidebarGroup(_Owned):
         ) -> None: ...
 
 
+class Floating(Component):
+    """Children pinned over the page in a bottom corner, for a status chip or
+    a button that should stay at hand while the page scrolls. ``draggable``
+    lets the reader move it where they want it, and the browser remembers
+    where, per ``key``."""
+
+    type: ClassVar[str] = "Floating"
+    side: Literal["left", "right"] = "right"
+    draggable: bool = False
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            side: Literal["left", "right"] = "right",
+            draggable: bool = False,
+        ) -> None: ...
+
+
+class Assistant(_Owned):
+    """A floating button in a corner of the page that opens a panel beside
+    it, for a chat or anything else that should be at hand wherever the
+    reader is. The button can be dragged to where they want it, and the
+    browser remembers where. On a phone the panel is a sheet. ``open`` makes
+    Python the owner of whether it is open, with ``on_toggle`` reporting the
+    clicks; otherwise the browser holds it, starting from ``default_open``."""
+
+    type: ClassVar[str] = "Assistant"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_toggle": "True when open",
+    }
+    label: str = "Assistant"
+    title: str | None = None
+    icon: str = "message-square"
+    side: Literal["left", "right"] = "right"
+    draggable: bool = True
+    open: bool | None = None
+    default_open: bool | None = None
+    on_toggle: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str = "Assistant",
+            title: str | None = None,
+            icon: str = "message-square",
+            side: Literal["left", "right"] = "right",
+            draggable: bool = True,
+            open: bool | None = None,
+            default_open: bool | None = None,
+            on_toggle: Any = None,
+        ) -> None: ...
+
+
 class Collapsible(_Owned):
     type: ClassVar[str] = "Collapsible"
     payloads: ClassVar[dict[str, str]] = {
@@ -1653,6 +1716,7 @@ __all__ = [
     "Accordion",
     "AccordionItem",
     "Alert",
+    "Assistant",
     "AreaChart",
     "BarChart",
     "PieChart",
@@ -1673,6 +1737,7 @@ __all__ = [
     "FileCard",
     "FileRef",
     "FileUpload",
+    "Floating",
     "Empty",
     "Form",
     "FormIssues",

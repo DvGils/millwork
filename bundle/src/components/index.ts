@@ -38,6 +38,8 @@ import { ButtonGroup, DatePicker, DropdownMenu, Field, MultiSelect } from "./cho
 import { Progress as TaskProgress, Steps } from "./tasks";
 import { Form } from "./form";
 import { Chat } from "./chat";
+import { Assistant } from "./assistant";
+import { Floating } from "./floating";
 import { SignIn } from "./sign-in";
 import { Download, FileCard, FileUpload, Image, Pdf } from "./files";
 import { AreaChart, BarChart, LineChart, PieChart } from "./charts";
@@ -96,6 +98,8 @@ export const registry: Record<string, Renderer> = {
   Table,
   Form,
   Chat,
+  Assistant,
+  Floating,
   SignIn,
   FileUpload,
   FileCard,

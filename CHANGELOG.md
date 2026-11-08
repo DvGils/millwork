@@ -3,6 +3,16 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.2.3
+
+### Features
+
+- `ui.Assistant` is a round button in a corner of the page that opens a
+  panel beside it, for a chat that should be at hand on every page. It
+  gives its child the panel's height, the reader can drag the button to
+  where they want it, and on a phone the panel is a sheet. `ui.Floating`
+  is the plain form: children pinned in a corner, draggable when asked.
+
 ## 0.2.2
 
 ### Features
