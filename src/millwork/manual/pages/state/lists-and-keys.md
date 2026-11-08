@@ -32,9 +32,15 @@ class Board(BaseModel):
     next_id: int = 1
 
 
+ROOM = 12
+
+
 def add(s, _):
-    s.state.board.notes[s.state.board.next_id] = Note()
-    s.state.board.next_id += 1
+    board = s.state.board
+    if len(board.notes) >= ROOM:
+        return
+    board.notes[board.next_id] = Note()
+    board.next_id += 1
 
 
 def edit(s, value, note_id, field):
@@ -48,23 +54,30 @@ def remove(s, _, note_id):
 def example(s):
     board = s.state.board
     return ui.Stack(
-        ui.Button("Add a note", variant="outline", on_click=add, cls="self-start"),
+        ui.Button("Add a note", variant="outline", on_click=add, disabled=len(board.notes) >= ROOM, cls="self-start"),
         *(
             ui.Card(
-                ui.Input(value=note.title, placeholder="Title", on_change=partial(edit, note_id=i, field="title")),
-                ui.Textarea(value=note.text, placeholder="Text", rows=2, on_change=partial(edit, note_id=i, field="text")),
+                ui.Input(value=note.title, placeholder="Title", max_length=80, on_change=partial(edit, note_id=i, field="title")),
+                ui.Textarea(value=note.text, placeholder="Text", rows=2, max_length=500, on_change=partial(edit, note_id=i, field="text")),
                 footer=ui.Button("Remove", size="sm", variant="ghost", on_click=partial(remove, note_id=i)),
                 key=str(i),
             )
             for i, note in board.notes.items()
         ),
-        ui.Text(f"{len(board.notes)} notes, {sum(1 for n in board.notes.values() if n.title)} with a title", variant="muted"),
+        ui.Text(
+            f"{len(board.notes)} notes, {sum(1 for n in board.notes.values() if n.title)} with a title"
+            + (", and that is the room there is here" if len(board.notes) >= ROOM else ""),
+            variant="muted",
+        ),
         gap=3,
     )
 ```
 
 `partial` binds the entry as a keyword, so the handler still takes the
-session and the payload first.
+session and the payload first. The example stops at a dozen notes, and
+each field caps what can be typed with `max_length`, which is the shape
+of any list a visitor can grow: a page that renders on every keystroke
+should not be asked to render a thousand cards.
 
 ## Keys
 

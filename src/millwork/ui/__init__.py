@@ -453,6 +453,77 @@ class SidebarGroup(_Owned):
         ) -> None: ...
 
 
+class Floating(Component):
+    """Children pinned over the page in a bottom corner, for a status chip or
+    a panel that should stay at hand while the page scrolls. ``draggable``
+    lets the reader move it where they want it and ``resizable`` lets them
+    pull its edges, down to a small floor, and the browser remembers both
+    for this component. It never leaves the browser window and shrinks to
+    fit when the window does."""
+
+    type: ClassVar[str] = "Floating"
+    side: Literal["left", "right"] = "right"
+    draggable: bool = False
+    resizable: bool = False
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            side: Literal["left", "right"] = "right",
+            draggable: bool = False,
+            resizable: bool = False,
+        ) -> None: ...
+
+
+class Assistant(_Owned):
+    """A floating button that becomes a window. Minimized, it is a round
+    button in a corner of the page that the reader can drag about. Opened,
+    it is a window that grows from the button's corner, holds a chat or
+    anything else that should be at hand wherever the reader is, and is
+    dragged by its header and resized from its edges, unless ``draggable``
+    is off, which fixes both. Minimized again, it folds back into the
+    button. The browser remembers where both are. On a phone the window is
+    a sheet. ``open`` makes Python the owner of whether
+    it is open, with ``on_toggle`` reporting the clicks; otherwise the
+    browser holds it, starting from ``default_open``."""
+
+    type: ClassVar[str] = "Assistant"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_toggle": "True when open",
+    }
+    label: str = "Assistant"
+    title: str | None = None
+    icon: str = "message-square"
+    side: Literal["left", "right"] = "right"
+    draggable: bool = True
+    open: bool | None = None
+    default_open: bool | None = None
+    on_toggle: Any = None
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            label: str = "Assistant",
+            title: str | None = None,
+            icon: str = "message-square",
+            side: Literal["left", "right"] = "right",
+            draggable: bool = True,
+            open: bool | None = None,
+            default_open: bool | None = None,
+            on_toggle: Any = None,
+        ) -> None: ...
+
+
 class Collapsible(_Owned):
     type: ClassVar[str] = "Collapsible"
     payloads: ClassVar[dict[str, str]] = {
@@ -987,6 +1058,7 @@ class Input(_Owned):
     disabled: bool = False
     readonly: bool = False
     clearable: bool = False
+    max_length: int | None = None
     debounce_ms: int = 250
     on_change: Any = None
     on_submit: Any = None
@@ -1008,6 +1080,7 @@ class Input(_Owned):
             disabled: bool = False,
             readonly: bool = False,
             clearable: bool = False,
+            max_length: int | None = None,
             debounce_ms: int = 250,
             on_change: Any = None,
             on_submit: Any = None,
@@ -1653,6 +1726,7 @@ __all__ = [
     "Accordion",
     "AccordionItem",
     "Alert",
+    "Assistant",
     "AreaChart",
     "BarChart",
     "PieChart",
@@ -1673,6 +1747,7 @@ __all__ = [
     "FileCard",
     "FileRef",
     "FileUpload",
+    "Floating",
     "Empty",
     "Form",
     "FormIssues",

@@ -3,6 +3,32 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.2.3
+
+### Bug fixes
+
+- Pasting a long text into an input or a textarea froze the tab for
+  seconds, or for good. The browser's spellchecker marks every word of a
+  change, and its cost grows faster than the text. A text field now turns
+  spellchecking off once it holds more than 5,000 characters and back on
+  when it shrinks below that, so a long paste lands at once. A `Textarea`
+  also no longer grows past the viewport: it follows `rows` unless
+  `autosize=True`, and then stops at most of the window's height and
+  scrolls inside.
+
+### Features
+
+- `ui.Input` takes `max_length`, as `ui.Textarea` does, to cap what can be
+  typed or pasted into it.
+- `ui.Assistant` is a round button in a corner of the page that becomes a
+  window, for a chat that should be at hand on every page. The window
+  grows from the button's corner, gives its child its height, is dragged
+  by its header and resized from any edge, and folds back into the button
+  when minimized. The browser remembers where both are, and on a phone the
+  window is a sheet. `ui.Floating` is the plain form: children pinned in a
+  corner, draggable and resizable when asked, never past the edge of the
+  browser window.
+
 ## 0.2.2
 
 ### Features

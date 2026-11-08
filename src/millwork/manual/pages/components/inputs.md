@@ -147,7 +147,8 @@ ui.Stack(
 ## Textarea
 
 `ui.Textarea` is several lines. `rows` sets the starting height,
-`autosize` grows it with the text, and `max_length` caps it. Ctrl+Enter
+`autosize` grows it with the text, up to most of the window, and
+`max_length` caps it, as it does on an `Input`. Ctrl+Enter
 submits.
 
 ```python live

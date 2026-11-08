@@ -160,6 +160,7 @@ STRINGS: dict[str, str] = {
     "select_row": "Select row",
     "dismiss": "Dismiss",
     "close": "Close",
+    "minimize": "Minimize",
     "toggle_sidebar": "Toggle sidebar",
     "previous": "Previous",
     "next": "Next",

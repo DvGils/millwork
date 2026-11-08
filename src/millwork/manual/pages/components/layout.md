@@ -62,6 +62,39 @@ ui.Sidebar(
 )
 ```
 
+## Floating
+
+`ui.Floating` pins its children over the page in a bottom corner, where
+they stay while the page scrolls, for a status chip or a small panel that
+should always be at hand. `side` picks the corner, `draggable=True` lets
+the reader move it, and `resizable=True` lets them pull its edges, with
+the browser remembering both. It never leaves the browser window, and
+shrinks to fit when the window does. The button below pins a badge to
+this page; it goes away with the page. A button that becomes a window with
+a chat in it is `ui.Assistant`, on the [Chat](/components/chat) page.
+
+```python live
+from pydantic import BaseModel
+
+
+class Pinned(BaseModel):
+    shown: bool = False
+
+
+def example(s):
+    st = s.state.pinned
+    return ui.Stack(
+        ui.Button(
+            "Unpin the badge" if st.shown else "Pin a badge to this page",
+            variant="outline",
+            on_click=lambda s, _: setattr(st, "shown", not st.shown),
+            cls="self-start",
+        ),
+        ui.Floating(ui.Badge("3 tasks running", tone="primary"), side="left", draggable=True) if st.shown else None,
+        gap=3,
+    )
+```
+
 ## Stack and Row
 
 `ui.Stack` lays children out vertically and `ui.Row` horizontally. Both

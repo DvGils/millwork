@@ -87,3 +87,15 @@ describe("samePath", () => {
     expect(samePath("/x/%E0%A4%A", "/x/%E0%A4%A")).toBe(true);
   });
 });
+
+describe("spellcheck on long text", () => {
+  it("is off above the bound and back on below it", async () => {
+    const { LONG_TEXT, spellcheckForLength } = await import("../lib");
+    const field = { value: "a".repeat(LONG_TEXT + 1), spellcheck: true };
+    spellcheckForLength(field);
+    expect(field.spellcheck).toBe(false);
+    field.value = "short";
+    spellcheckForLength(field);
+    expect(field.spellcheck).toBe(true);
+  });
+});

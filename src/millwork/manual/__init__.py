@@ -16,6 +16,7 @@ way an app holds it in a field of its own model.
 from __future__ import annotations
 
 import ast
+import functools
 import logging
 import re
 import sys
@@ -153,6 +154,12 @@ def index(pages: list[Page]) -> list[Section]:
             if current is not None:
                 current.text += "\n" + seg[pos:]
     return sections
+
+
+@functools.lru_cache(maxsize=1)
+def sections() -> list[Section]:
+    """The manual's sections, read once, for an example that searches them."""
+    return index(load())
 
 
 def search(sections: list[Section], query: str, limit: int = 10) -> list[Hit]:
@@ -513,6 +520,7 @@ def make_app(theme: Any = None) -> mw.App:
             prefix_icon="search",
             placeholder="Search the manual",
             clearable=True,
+            max_length=200,
             debounce_ms=200,
             on_change=lambda s, v: setattr(s.state, "query", v or ""),
             on_submit=first_hit,
@@ -610,6 +618,7 @@ __all__ = [
     "parse",
     "render_block",
     "search",
+    "sections",
     "state_model",
     "Section",
     "index",
