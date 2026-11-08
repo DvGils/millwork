@@ -6,8 +6,8 @@ description: What millwork is and how this manual works.
 
 # millwork
 
-millwork is a Python framework for data tools and AI applications. The
-browser runs one prebuilt React bundle, and Python describes the page and
+millwork is UI framework  for Python to easily create web applications with a professional feel. 
+The browser runs one prebuilt React bundle, and Python describes the page and
 handles what happens on it. You write Python only. There is no JavaScript
 to build, and every piece of state lives on the server.
 
@@ -60,8 +60,8 @@ in scope. Everything else is imported, as in an app.
 
 The sidebar groups the pages. Pages, State and Sign-in each cover one
 part of an app in a handful of short pages that read in order, and each
-page ends with the next one and the pages that relate to it. Theming,
-Testing and Running follow. The Components pages walk through the catalog
+page ends with the next one and the pages that relate to it. Running,
+Theming and Testing follow. The Components pages walk through the catalog
 one group at a time, with each component in its states and the Python
 that makes it. For a lookup rather than a page, every component's props
 with their types and defaults are listed at [/llms.txt](/llms.txt), which

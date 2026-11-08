@@ -53,9 +53,9 @@ NAV: list[tuple[str, str]] = [
     ("pages", "Pages"),
     ("state", "State"),
     ("sign-in", "Sign-in"),
+    ("running", "Running"),
     ("theming", ""),
     ("testing", ""),
-    ("running", "Running"),
     ("components", "Components"),
 ]
 GROUPS = {key: label for key, label in NAV if label}
