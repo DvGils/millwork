@@ -52,24 +52,6 @@ class Store {
   private snapshots = new Map<NodeId, Node>();
   private epochs = new Map<NodeId, number>();
 
-  // Held, the page is kept off the screen while something it needs to paint
-  // right is on its way; the store itself goes on taking mounts and patches.
-  held = false;
-
-  hold(until: Promise<unknown>) {
-    this.held = true;
-    for (const l of this.rootListeners) l();
-    const release = () => {
-      this.held = false;
-      for (const l of this.rootListeners) l();
-    };
-    until.then(release, release);
-  }
-
-  shown(): NodeId | null {
-    return this.held ? null : this.root;
-  }
-
   mount(root: NodeId, nodes: Record<NodeId, Node>, title: string | null) {
     const previous = [...this.nodes.keys()];
     this.nodes = new Map(Object.entries(nodes));
@@ -219,7 +201,7 @@ export function useResetEpoch(id: NodeId): number {
 export function useRoot(): NodeId | null {
   return useSyncExternalStore(
     (l) => store.subscribeRoot(l),
-    () => store.shown(),
-    () => store.shown(),
+    () => store.root,
+    () => store.root,
   );
 }

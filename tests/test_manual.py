@@ -26,6 +26,11 @@ def test_pages_parse_into_prose_and_live_blocks() -> None:
     assert sessions.description and "/state/state-and-handlers" in sessions.related
     with pytest.raises(ValueError, match="neither defines"):
         parse("```python live\nx = 1\n```\n", "/t")
+    # a card row before a live block leaves the block's id alone
+    _, segments = parse(
+        "```cards\n/other | Other\n```\n\n```python live\nui.Text('x')\n```\n", "/t"
+    )
+    assert isinstance(segments[1], Live) and segments[1].id == "/t#1"
 
 
 async def test_a_live_block_keeps_its_state_across_events(tmp_path: Path) -> None:
@@ -88,6 +93,10 @@ def test_old_chapter_addresses_redirect(tmp_path: Path) -> None:
     with TestClient(app.asgi) as client:
         r = client.get("/app/auth", follow_redirects=False)
         assert r.status_code == 301 and r.headers["location"] == "/sign-in/setup"
+    # under a path prefix the new address carries the prefix too
+    with TestClient(app.asgi, root_path="/manual") as client:
+        r = client.get("/manual/app/auth", follow_redirects=False)
+        assert r.status_code == 301 and r.headers["location"] == "/manual/sign-in/setup"
 
 
 def test_a_card_or_relation_to_a_page_that_is_not_there_is_refused(tmp_path: Path) -> None:

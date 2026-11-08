@@ -328,6 +328,23 @@ function storeSession() {
   }
 }
 
+// A class the precompiled stylesheet lacks is styled by the runtime compiler.
+// Drawn before it has loaded, the page would paint without those styles and
+// then jump, so the first page that needs it waits, parked with everything
+// about the page that follows it, while the page before stays on screen.
+// The wait is bounded; after it the page is drawn as it is.
+let parked: ServerMessage[] | null = null;
+let runtimeWaited = false;
+
+function park(m: ServerMessage): boolean {
+  if (parked === null) return false;
+  if (m.type === "mount" || m.type === "patch" || m.type === "stream" || m.type === "command") {
+    parked.push(m);
+    return true;
+  }
+  return false;
+}
+
 function handle(env: Envelope<ServerMessage>) {
   const m = env.msg;
   if (m.type !== "session") {
@@ -339,6 +356,11 @@ function handle(env: Envelope<ServerMessage>) {
       lastSeq = env.seq;
     }
   }
+  if (park(m)) return;
+  apply(m);
+}
+
+function apply(m: ServerMessage) {
   switch (m.type) {
     case "session": {
       // The same session: what was queued while disconnected goes now, in order.
@@ -359,10 +381,16 @@ function handle(env: Envelope<ServerMessage>) {
       break;
     }
     case "mount": {
-      // A class the precompiled stylesheet lacks is styled by the runtime
-      // compiler. Shown before it has loaded, the page would paint without
-      // those styles and then jump, so the first such page waits for it.
-      if (!runtimeLoaded() && needsRuntime(m.nodes)) store.hold(within(ensureTailwindRuntime(), 2000));
+      if (!runtimeLoaded() && !runtimeWaited && needsRuntime(m.nodes)) {
+        parked = [m];
+        void within(ensureTailwindRuntime(), 2000).then(() => {
+          runtimeWaited = !runtimeLoaded();
+          const queued = parked ?? [];
+          parked = null;
+          for (const q of queued) apply(q);
+        });
+        break;
+      }
       store.mount(m.root, m.nodes, m.title);
       const hash = pendingHash ?? (window.location.hash ? window.location.hash.slice(1) : null);
       pendingHash = null;
@@ -499,7 +527,7 @@ if (typeof window !== "undefined") {
     const path = toApp(window.location.pathname);
     if (!samePath(path, boot.path)) {
       poppedScroll = scrollFromHistory();
-      navigate(path);
+      navigate(path + window.location.hash);
     }
   });
   watchScroll();

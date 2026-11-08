@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../theme", () => ({ applyTheme: vi.fn(), t: (k: string) => k }));
-vi.mock("../store", () => ({ store: { mount: vi.fn(), patch: vi.fn(), reset: vi.fn(), hold: vi.fn() } }));
+vi.mock("../store", () => ({ store: { mount: vi.fn(), patch: vi.fn(), reset: vi.fn() } }));
 vi.mock("../custom", () => ({ invalidate: vi.fn() }));
 vi.mock("../tailwind-runtime", () => ({ ensureTailwindRuntime: vi.fn(() => Promise.resolve()), needsRuntime: () => false, runtimeLoaded: () => true }));
 vi.mock("../scroll", () => ({ keepScrollInHistory: vi.fn(), restoreScroll: vi.fn(), scrollFromHistory: () => 0, watchScroll: vi.fn() }));

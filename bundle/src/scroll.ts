@@ -37,23 +37,41 @@ function settle(el: HTMLElement, y: number) {
 }
 
 // A position is restored once the page is tall enough to hold it: a lazily
-// loaded part may still be on its way. The wait stops when the reader has
-// started scrolling in the meantime.
-export function restoreScroll(y: number, tries = 15) {
+// loaded part may still be on its way. The top needs no waiting and is taken
+// at once, on the element the new page reuses, so nothing is drawn below it
+// first. Any other position is tried after the new page has been drawn, and
+// the wait stops when the reader scrolls away from where the restore put
+// them, or when a newer restore has begun.
+let restoring = 0;
+export function restoreScroll(y: number) {
+  const mine = ++restoring;
+  if (y === 0) {
+    const el = scroller();
+    if (el) settle(el as HTMLElement, 0);
+    else window.scrollTo(0, 0);
+    return;
+  }
+  window.setTimeout(() => attempt(y, mine, null, 15), 0);
+}
+
+function attempt(y: number, mine: number, placed: number | null, tries: number) {
+  if (mine !== restoring) return;
   const el = scroller();
   if (!el) {
     window.scrollTo(0, y);
     return;
   }
+  if (placed !== null && el.scrollTop !== placed) return;
   if (el.scrollHeight >= y + el.clientHeight || tries === 0) {
     settle(el as HTMLElement, y);
     return;
   }
-  const was = el.scrollTop;
-  window.setTimeout(() => {
-    const now = scroller();
-    if (now && now.scrollTop === was) restoreScroll(y, tries - 1);
-  }, 100);
+  let now = placed;
+  if (placed === null) {
+    settle(el as HTMLElement, y);
+    now = el.scrollTop;
+  }
+  window.setTimeout(() => attempt(y, mine, now, tries - 1), 100);
 }
 
 // The position is saved a moment after each scroll, so a history entry

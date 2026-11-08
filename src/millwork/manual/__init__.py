@@ -212,12 +212,12 @@ def parse(text: str, slug: str) -> tuple[dict[str, str], list[Segment]]:
             for line in block.group(2).splitlines():
                 if not line.strip():
                     continue
-                slug, *given = [part.strip() for part in line.split("|")]
-                cards.slugs.append(slug)
+                target, *given = [part.strip() for part in line.split("|")]
+                cards.slugs.append(target)
                 if given and given[0]:
-                    cards.titles[slug] = given[0]
+                    cards.titles[target] = given[0]
                 if len(given) > 1 and given[1]:
-                    cards.texts[slug] = given[1]
+                    cards.texts[target] = given[1]
             segments.append(cards)
         else:
             segments.append(_compile(block.group(2), f"{slug}#{n}"))
@@ -428,8 +428,8 @@ def make_app(theme: Any = None) -> mw.App:
     app.route("/llms.txt", llms)
 
     def moved(request: Any) -> RedirectResponse:
-        path = request.url.path.removeprefix(request.scope.get("root_path", ""))
-        return RedirectResponse(MOVED[path], 301)
+        root = request.scope.get("root_path", "")
+        return RedirectResponse(root + MOVED[request.url.path.removeprefix(root)], 301)
 
     for old_slug in MOVED:
         app.route(old_slug, moved)

@@ -18,6 +18,20 @@ function textOf(node: unknown): string {
   return "";
 }
 
+// A link's href is left as written, so that `linkProps` maps it once, to the
+// browser path under the app's prefix. Every other URL is checked here.
+export function transformUrl(url: string, tagName: string): string {
+  return tagName === "a" ? url : safeUrl(url, { image: true });
+}
+
+// A link to a page of the app opens it on the session, as `ui.Link` does,
+// and a link to a heading stays on the page. A link to anywhere else opens
+// a new tab.
+export function linkProps(href: unknown) {
+  const stays = isInternalPath(href) || (typeof href === "string" && href.startsWith("#"));
+  return anchorProps(href, stays ? undefined : "_blank");
+}
+
 // Two rhythms: `tight` for a chat turn or a caption, where a heading sits
 // close to its text; the default for a page, where a section breathes.
 const Inner = lazy(async () => {
@@ -26,12 +40,10 @@ const Inner = lazy(async () => {
     <div className={tight ? "mw-markdown mw-tight" : "mw-markdown"}>
       <ReactMarkdown
         remarkPlugins={[gfm]}
-        urlTransform={(url) => safeUrl(url, { image: true })}
+        urlTransform={(url, _key, node) => transformUrl(url, node.tagName)}
         components={{
-          // A link to a page of the app opens it on the session, as `ui.Link`
-          // does; a link to anywhere else opens a new tab.
           a: ({ href, children }) => (
-            <a {...anchorProps(href, isInternalPath(href) ? undefined : "_blank")} className={cn("text-primary", linkLook)}>
+            <a {...linkProps(href)} className={cn("text-primary", linkLook)}>
               {children}
             </a>
           ),
