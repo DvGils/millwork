@@ -50,7 +50,7 @@ def example(s):
             ui.Text(f"{st.n} so far", variant="muted"),
             gap=3,
         ),
-        ui.Input(value=st.note, placeholder="Type, then look right", on_change=remember),
+        ui.Input(value=st.note, placeholder="Type, then look right", max_length=200, on_change=remember),
         ui.Text(f"Python holds {st.note!r}", variant="muted"),
         gap=3,
     )

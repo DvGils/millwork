@@ -520,6 +520,7 @@ def make_app(theme: Any = None) -> mw.App:
             prefix_icon="search",
             placeholder="Search the manual",
             clearable=True,
+            max_length=200,
             debounce_ms=200,
             on_change=lambda s, v: setattr(s.state, "query", v or ""),
             on_submit=first_hit,
