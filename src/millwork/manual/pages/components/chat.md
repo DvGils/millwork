@@ -99,15 +99,17 @@ ui.Row(
 
 ## A floating assistant
 
-`ui.Assistant` is a round button in a corner of the page that opens a
-panel beside it, for a chat that should be at hand wherever the reader is.
-It takes the chat as its child and gives it the panel's height. The
-reader can drag the button to where they want it, and the browser
-remembers where. On a phone the panel is a sheet from the bottom. `open`
-makes Python the owner of whether it is open, with `on_toggle` reporting
-the clicks; left alone, the browser holds that. The button below adds one
-to this page, and it goes away with the page. Its answers come from the
-manual's own search, with a link to each section it finds.
+`ui.Assistant` is a round button in a corner of the page that becomes a
+window, for a chat that should be at hand wherever the reader is. It
+takes the chat as its child and gives it the window's height. The reader
+can drag the button about, and once it is open, drag the window by its
+header and resize it from any edge. Minimized, it folds back into the
+button, and the browser remembers where both were. On a phone the window
+is a sheet from the bottom. `open` makes Python the owner of whether it is
+open, with `on_toggle` reporting the clicks; left alone, the browser holds
+that. The button below adds one to this page, and it goes away with the
+page. Its answers come from the manual's own search, with a link to each
+section it finds.
 
 ```python live
 from pydantic import BaseModel

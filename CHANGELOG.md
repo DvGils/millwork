@@ -7,11 +7,14 @@ versions; a release says so here when it does.
 
 ### Features
 
-- `ui.Assistant` is a round button in a corner of the page that opens a
-  panel beside it, for a chat that should be at hand on every page. It
-  gives its child the panel's height, the reader can drag the button to
-  where they want it, and on a phone the panel is a sheet. `ui.Floating`
-  is the plain form: children pinned in a corner, draggable when asked.
+- `ui.Assistant` is a round button in a corner of the page that becomes a
+  window, for a chat that should be at hand on every page. The window
+  grows from the button's corner, gives its child its height, is dragged
+  by its header and resized from any edge, and folds back into the button
+  when minimized. The browser remembers where both are, and on a phone the
+  window is a sheet. `ui.Floating` is the plain form: children pinned in a
+  corner, draggable and resizable when asked, never past the edge of the
+  browser window.
 
 ## 0.2.2
 

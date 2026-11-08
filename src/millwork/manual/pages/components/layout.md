@@ -65,12 +65,13 @@ ui.Sidebar(
 ## Floating
 
 `ui.Floating` pins its children over the page in a bottom corner, where
-they stay while the page scrolls, for a status chip or a button that
-should always be at hand. `side` picks the corner, and `draggable=True`
-lets the reader move it, with the browser remembering where. The button
-below pins a badge to this page; it goes away with the page. An assistant
-with a chat behind such a button is `ui.Assistant`, on the
-[Chat](/components/chat) page.
+they stay while the page scrolls, for a status chip or a small panel that
+should always be at hand. `side` picks the corner, `draggable=True` lets
+the reader move it, and `resizable=True` lets them pull its edges, with
+the browser remembering both. It never leaves the browser window, and
+shrinks to fit when the window does. The button below pins a badge to
+this page; it goes away with the page. A button that becomes a window with
+a chat in it is `ui.Assistant`, on the [Chat](/components/chat) page.
 
 ```python live
 from pydantic import BaseModel
