@@ -1,7 +1,7 @@
 ---
 title: Error pages
 order: 3
-description: What a visitor sees for a path no page matches or a page they may not open, and how an app replaces it.
+description: What a visitor sees for a path no page matches, a page they may not open or a page that fails, and how an app replaces the first two.
 related: /pages/sessions, /sign-in/access-rules, /theming
 ---
 
@@ -62,6 +62,21 @@ ui.Row(
     gap=4,
 )
 ```
+
+## A page that fails
+
+A page function that raises has nothing to show. When the tab already
+shows the page, it keeps what it had and a toast says the page failed to
+render. When there is nothing yet, on the first page of a session or
+after a navigation, the framework's failure page takes the page's place.
+It has the same frame as the pages above, a button that draws the page
+again, and a way home from any other page. A reload draws the page again
+as well. Once the page function works, its page replaces the failure
+page, whether that button, a reload or a change in the state drew it.
+While it still fails, the button answers with the toast.
+
+The exception goes to the log. In debug mode it is on the failure page as
+well.
 
 ## Before the bundle runs
 

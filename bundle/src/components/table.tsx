@@ -137,8 +137,15 @@ const cellTone: Record<string, string> = {
 };
 
 
+const DASH_WHEN_EMPTY = { number: 1, integer: 1, percent: 1, currency: 1, date: 1, datetime: 1, badge: 1, code: 1, link: 1 };
+
 function formatCell(value: unknown, format: string, tone?: string) {
-  if (value === null || value === undefined) return <span className="text-muted-foreground">–</span>;
+  // Nothing to show is a dash, and so is a text that is empty or only
+  // spaces in a format that would make something of it: a number, a date,
+  // a badge, a code pill or a link.
+  const empty = typeof value === "string" && value.trim() === "";
+  const blank = value === null || value === undefined || (empty && format in DASH_WHEN_EMPTY);
+  if (blank) return <span className="text-muted-foreground">–</span>;
   switch (format) {
     case "number":
     case "integer":
@@ -146,9 +153,12 @@ function formatCell(value: unknown, format: string, tone?: string) {
     case "currency":
       return formatNumber(value, format);
     case "date":
-      return dateFormat.format(new Date(String(value)));
-    case "datetime":
-      return dateTimeFormat.format(new Date(String(value)));
+    case "datetime": {
+      // What is not a date is shown as it came: formatting it would throw.
+      const when = new Date(String(value));
+      if (Number.isNaN(when.getTime())) return String(value);
+      return (format === "date" ? dateFormat : dateTimeFormat).format(when);
+    }
     case "bool": {
       const Icon = icon(value ? "check" : "minus");
       const own = value ? "text-success" : "text-muted-foreground";

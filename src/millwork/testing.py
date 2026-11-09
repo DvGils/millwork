@@ -83,7 +83,7 @@ class Page:
 
     def _raise_failures(self) -> None:
         """In a strict harness, what the app raised is raised in the test, where the
-        traceback points at the cause instead of at an empty page or a toast."""
+        traceback points at the cause instead of at a failure page or a toast."""
         if not self._strict or not self.failures:
             return
         where, exc = self.failures[0]

@@ -63,11 +63,24 @@ describe("the window", () => {
     expect(leftOut).toEqual({ x: 16, y: 200, width: 464, height: 600 });
   });
 
-  it("minimizes to the side the button came from, and a tiny thing has no edges", () => {
-    const panel = { x: 600, y: 200, width: 380, height: 600 };
+  it("minimizes to the corner on the window's half of the screen, and a tiny thing has no edges", () => {
     expect(onRightHalf({ x: 600, y: 0, ...button }, viewport)).toBe(false);
-    expect(minimizeTo(panel, button, viewport, false)).toEqual({ x: 600, y: 752 });
-    expect(minimizeTo(panel, button, viewport, true)).toEqual({ x: 932, y: 752 });
+    expect(minimizeTo({ x: 200, y: 200, width: 380, height: 600 }, button, viewport)).toEqual({ x: 200, y: 752 });
+    expect(minimizeTo({ x: 600, y: 200, width: 380, height: 600 }, button, viewport)).toEqual({ x: 932, y: 752 });
     expect(edgesAt({ x: 12, y: 12 }, { x: 10, y: 10, width: 12, height: 12 })).toEqual({ left: false, right: false, top: false, bottom: false });
+  });
+
+  it("opens again where it was minimized, wherever it was left and whatever its size", () => {
+    for (const screen of [viewport, { width: 1600, height: 900 }, { width: 700, height: 500 }]) {
+      for (const size of [{ width: 380, height: 600 }, { width: 280, height: 320 }, { width: 900, height: 420 }]) {
+        for (let x = -100; x <= screen.width; x += 37) {
+          for (let y = -100; y <= screen.height; y += 53) {
+            const left = clampRect({ x, y, ...size }, screen);
+            const back = openFrom({ ...minimizeTo(left, button, screen), ...button }, left, screen);
+            expect(back).toEqual(left);
+          }
+        }
+      }
+    }
   });
 });

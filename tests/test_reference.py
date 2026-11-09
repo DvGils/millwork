@@ -23,6 +23,8 @@ def test_the_reference_covers_every_component_and_the_tables(capsys) -> None:
     for section in ("## Tasks", "## Forms", "## Testing"):
         assert f"\n{section}\n" in text
     assert "- `p.step(label)`: ``with p.step(" in text and "- `task.ok`: Finished" in text
+    assert "- `p.log(line)`: A line of output." in text
+    assert "`ui.Tone` is the type of every `tone`: `default`, `muted`" in text
     assert "- `page.answer(payload=None)`" in text and "`{id:int}`" in text
     assert "also takes plain strings" in text
     assert "- `page.stream`: Every chunk the chats on the page streamed" in text

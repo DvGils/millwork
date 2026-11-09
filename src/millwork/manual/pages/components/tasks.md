@@ -75,9 +75,14 @@ def example(s):
 
 Inside the work, `mw.progress()` is the reporter. `set(value, message)`
 moves the bar, `plan([...])` declares steps up front, `step(label)` opens
-one as a context manager, `note(text)` leaves a short result on it,
-`log(line)` appends output, and `check()` raises `mw.Cancelled` when the
-user canceled, so a loop stops at its next check.
+one as a context manager, and `note(text)` leaves a short result on it.
+`log(line)` adds a line of output to the step that is open, or replaces
+the line under the bar when no step is.
+
+Canceling stops work that is a coroutine at once, at the `await` it is
+waiting on. Work in a thread cannot be stopped from outside. There,
+`check()` raises `mw.Cancelled` when the task was canceled, so a loop
+stops at its next check.
 
 ## Waiting for a result
 

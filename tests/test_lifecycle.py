@@ -600,3 +600,41 @@ async def test_a_page_closes_before_the_next_connects_and_only_once(tmp_path: Pa
         await page.session.gone
         await page.session.navigate_to("/p/3")
     assert calls == ["load 1", "release #1", "load 2", "release #2"]
+
+
+async def test_a_tab_that_comes_back_to_a_failure_page_tries_the_page_again() -> None:
+    class Flaky(BaseModel):
+        pass
+
+    wrong = {"now": "the first thing"}
+    app = mw.App("flaky", state=Flaky, public=None, components=None, debug=True)
+
+    @app.page("/")
+    def flaky(s: mw.Session[Flaky]) -> ui.Component:
+        if wrong["now"]:
+            raise RuntimeError(wrong["now"])
+        return ui.Page(ui.Text("fine", key="fine"))
+
+    def said(wire: Wire) -> str:
+        return json.dumps(wire.messages)
+
+    first = Wire()
+    session = await open_session(app, first)
+    assert "Something went wrong" in said(first) and "the first thing" in said(first)
+
+    # A reload while it still fails: the failure page as it stands, then the
+    # page function again, and what it raised this time is what the page says.
+    wrong["now"] = "the second thing"
+    second = Wire()
+    await attach(session, second)
+    assert second.types().count("mount") == 1
+    assert second.types()[-2:] == ["error", "patch"]
+    assert "the second thing" in said(second) and not session.over
+
+    # A reload once it works: the page.
+    wrong["now"] = ""
+    third = Wire()
+    await attach(session, third)
+    assert third.types().count("mount") == 2
+    assert third.messages[-1]["type"] == "mount" and "fine" in json.dumps(third.messages[-1])
+    session.dismiss()

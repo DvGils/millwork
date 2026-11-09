@@ -51,8 +51,11 @@ export function restingPlace(side: "left" | "right", button: Size, viewport: Siz
   return { x: side === "left" ? MARGIN + 8 : viewport.width - MARGIN - 8 - button.width, y };
 }
 
-// The window's size when it first opens: as big as it likes, within the viewport.
-export function panelSize(viewport: Size, wanted: Size = { width: 380, height: 600 }): Size {
+// How big an assistant's window likes to be until the reader resizes it.
+export const PANEL_SIZE: Size = { width: 380, height: 600 };
+
+// The window's size when it opens: as big as it likes, within the viewport.
+export function panelSize(viewport: Size, wanted: Size = PANEL_SIZE): Size {
   return fitSize(wanted, viewport);
 }
 
@@ -67,15 +70,17 @@ export function openFrom(button: Rect, panel: Size, viewport: Size): Rect {
 }
 
 // Whether a thing sits in the right half of the viewport, which decides the
-// side a window opens toward and the corner a button minimizes to.
+// side a window opens toward and the corner a button minimizes to. A window
+// in the right half puts its button in the right half and one in the left
+// half in the left, so opening from that button gives the same window.
 export function onRightHalf(rect: Rect, viewport: Size): boolean {
   return rect.x + rect.width / 2 > viewport.width / 2;
 }
 
 // Where the button lands when the window is minimized: the window's bottom
-// corner on the side the button came from, so the round trip returns it.
-export function minimizeTo(panel: Rect, button: Size, viewport: Size, onRight: boolean = onRightHalf(panel, viewport)): Point {
-  const x = onRight ? panel.x + panel.width - button.width : panel.x;
+// corner on the half of the screen the window is in.
+export function minimizeTo(panel: Rect, button: Size, viewport: Size): Point {
+  const x = onRightHalf(panel, viewport) ? panel.x + panel.width - button.width : panel.x;
   return clampPosition({ x, y: panel.y + panel.height - button.height }, button, viewport);
 }
 

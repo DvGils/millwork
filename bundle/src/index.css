@@ -199,6 +199,11 @@ body.mw-dragging * {
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+  /* Edge draws a reveal button of its own in a password field. The field
+     here brings one, so the browser's would stand beside it as a second. */
+  input::-ms-reveal {
+    display: none;
+  }
 }
 /* A Grid's columns. The count comes from the node as a variable per width,
    and each width takes the count of the one below until it has its own. */

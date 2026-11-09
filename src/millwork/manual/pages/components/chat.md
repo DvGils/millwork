@@ -103,13 +103,17 @@ ui.Row(
 window, for a chat that should be at hand wherever the reader is. It
 takes the chat as its child and gives it the window's height. The reader
 can drag the button about, and once it is open, drag the window by its
-header and resize it from any edge. Minimized, it folds back into the
-button, and the browser remembers where both were. On a phone the window
-is a sheet from the bottom. `open` makes Python the owner of whether it is
-open, with `on_toggle` reporting the clicks; left alone, the browser holds
-that. The button below adds one to this page, and it goes away with the
-page. Its answers come from the manual's own search, with a link to each
-section it finds.
+header and resize it from any edge. The window opens from where the
+button is. Minimized, it is the button again, in the place it had, or at
+the window's near corner once the window has been moved. The browser
+remembers where the button is and how big the window was. `pinned=True`
+keeps the button in its corner, where it cannot be dragged and where the
+window always folds back to. On a phone the window is a sheet from the
+bottom. `open` makes Python the owner of whether it is open, with
+`on_toggle` reporting the clicks. Left alone, the browser holds that. The
+button below adds one to this page, and it goes away with the page. Its
+answers come from the manual's own search, with a link to each section it
+finds.
 
 ```python live
 from pydantic import BaseModel

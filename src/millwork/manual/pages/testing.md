@@ -137,7 +137,7 @@ lists it in `page.failures` next to the toast a running app would show.
 
 What the app's own code raises, in a page function, a handler or a hook,
 is raised in the test, with a note saying where, so the traceback points
-at the cause rather than at an empty page or a toast. `TestApp(app,
+at the cause rather than at a failure page or a toast. `TestApp(app,
 strict=False)` leaves such failures in the log and in `page.failures`,
 which is how a running app treats them.
 

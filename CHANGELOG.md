@@ -3,6 +3,93 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.2.4
+
+### Bug fixes
+
+- The button of a `ui.Assistant` came back somewhere else after the window
+  was opened and minimized without being touched. The window kept a place
+  of its own, and it was pushed inside the screen when the button sat too
+  high for it, so minimizing put the button at a corner it had never been
+  in. The window now opens from where the button is every time and keeps
+  only its size. Minimized, the button is where it was, and it moves to
+  the window's near corner only once the window has been dragged or
+  resized.
+- A page function that raised before anything was shown left the tab on
+  "Loading…" for good, after a toast, and one that raised after a
+  navigation left the old page on screen under the new address with
+  buttons that did nothing. Both now get a failure page in the frame of
+  the not-found page, with a button that draws the page again. The page
+  takes its place as soon as it renders, a reload tries it again, and in
+  debug mode the exception is on the failure page. A test that opens such
+  a page with `strict=False` finds the failure page and no toast in
+  `page.errors`.
+- `ui.Floating` with both `draggable=True` and `resizable=True` could not
+  be resized, because a press on its edge did nothing. It resizes from
+  the edges and is dragged from anywhere else.
+- A `ui.Assistant` on a phone lost what was typed in it when its sheet was
+  closed. The sheet keeps what it holds.
+- The window of a `ui.Assistant` took its first size from the browser
+  window as it was when the page loaded, so a page opened in a small
+  window kept a small assistant after the browser was enlarged. The size
+  is fitted when the window opens.
+- Escape minimized every open `ui.Assistant` on the page, wherever the
+  focus was, and also when a search field in the window used the key to
+  clear itself. It minimizes the window that has the focus, when nothing
+  inside had a use for the key.
+- A `ui.Assistant` whose `open` is Python's, closed from Python after its
+  window was dragged, left the button behind. The button follows the
+  window however it is closed.
+- `ui.Code(wrap=True)` did not wrap a long text without spaces.
+- A clearable `ui.Input` lost the focus when its clear button was pressed.
+- A password field showed two reveal buttons in Edge, the browser's and
+  the field's. The browser's is hidden.
+- A search field with `clearable=True` showed two clear buttons in
+  Chromium browsers once it had focus. The browser's is hidden there.
+- A password that is shown is no longer spellchecked. Shown, it is a text
+  field to the browser, and a browser may send what it checks to a
+  service.
+- A text that is not a date in a table's `date` or `datetime` column, an
+  empty one included, replaced the whole table with an error. It is shown
+  as it came now, and an empty one is a dash.
+- An empty text in a table column with the `code`, `badge` or `link`
+  format drew an empty pill or nothing at all, and in a number format an
+  empty cell. It is a dash now, as a missing value is, and so is a text
+  of only spaces.
+- `ui.Stat(trend=)` is typed to take any numbers, so a type checker
+  accepts a `list[int]`.
+
+### Features
+
+- `ui.Assistant(pinned=True)` keeps the button in its corner. It cannot be
+  dragged, and the window always opens from there and folds back to it.
+  The window is still dragged and resized.
+- `ui.Input` and `ui.Textarea` take `spellcheck`. `False` turns the
+  browser's spellchecker off for text that is not prose, `True` keeps it
+  on however long the text gets, and left alone it is on until the field
+  holds more than 5,000 characters.
+- 45 more icons, for 144 in all: activity, award, book-open, box,
+  briefcase, bug, building-2, camera, cpu, credit-card, dollar-sign,
+  file-code, flag, flask-conical, gauge, git-branch, globe, hard-drive,
+  heart, layout-dashboard, layout-grid, lightbulb, line-chart,
+  list-checks, log-in, map-pin, monitor, package, phone, pie-chart,
+  rocket, rotate-ccw, server, shield, shield-check, shopping-cart,
+  sliders-horizontal, target, timer, trending-down, trending-up, truck,
+  undo-2, user-plus and wrench.
+- `ui.Tone` is part of `millwork.ui` by name, for an app that keeps a
+  table of tones. `millwork reference` lists it, and lists `p.log()`.
+- Bundle packages updated: lucide-react 1.61 and Vite 8.3.5.
+
+### The manual
+
+- Sessions says that a session is one tab, and that what another tab or
+  a later visit should find lives in storage the app brings.
+- Tasks says that canceling stops a coroutine at once, and that `check()`
+  is for work in a thread.
+- Sessions says that a sheet or a dialog whose `open` is in the state is
+  open again after a reload.
+- Error pages describes the failure page.
+
 ## 0.2.3
 
 ### Bug fixes

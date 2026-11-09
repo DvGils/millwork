@@ -70,7 +70,7 @@ APP_API = (
     "on_shutdown",
 )
 TASK_API = ("done", "ok", "cancelled", "result", "cancel")
-REPORTER_API = ("set", "plan", "step", "check")
+REPORTER_API = ("set", "plan", "step", "log", "check")
 PAGE_API = (
     "find",
     "find_all",
@@ -116,7 +116,14 @@ def reference() -> str:
         obj = getattr(ui, name)
         if isinstance(obj, type) and issubclass(obj, Component) and obj is not Component:
             out.extend(_component(name, obj))
-    out += ["## Models components take", ""]
+    out += [
+        "## Models components take",
+        "",
+        "`ui.Tone` is the type of every `tone`: "
+        + ", ".join(f"`{tone}`" for tone in get_args(ui.Tone))
+        + ". It annotates a table of tones an app keeps, as in `dict[str, ui.Tone]`.",
+        "",
+    ]
     for model in MODELS:
         out.extend(_model(f"ui.{model.__name__}", model))
     out += [
@@ -147,7 +154,9 @@ def reference() -> str:
     out += [
         "",
         "Inside the work, `mw.progress()` is the task's reporter, and does nothing",
-        "outside a task. `raise mw.Cancelled` or `p.check()` ends a cancelled task.",
+        "outside a task. `task.cancel()` stops a coroutine at the await it is",
+        "waiting on. Work in a thread cannot be stopped from outside, and ends at",
+        "its next `p.check()`, or when it raises `mw.Cancelled` itself.",
         "",
     ]
     for name in REPORTER_API:

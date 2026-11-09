@@ -12,7 +12,6 @@ import {
   clampRect,
   cursorFor,
   edgesAt,
-  fitSize,
   hasEdge,
   isClick,
   MIN_SIZE,
@@ -24,8 +23,11 @@ import {
   type Size,
 } from "../assistant-math";
 
+// The room a fixed thing has: the browser window without its scrollbars,
+// which is what `right` and `bottom` in CSS measure from as well.
 export function viewport(): Size {
-  return { width: window.innerWidth, height: window.innerHeight };
+  const el = document.documentElement;
+  return { width: el.clientWidth || window.innerWidth, height: el.clientHeight || window.innerHeight };
 }
 
 // The browser window's size as state, so a thing kept inside it follows it.
@@ -138,7 +140,9 @@ export function useFloating<T extends HTMLElement>({ storageKey, side, draggable
   // that is remembered.
   const [at, setAt] = useState<Point | null>(() => (draggable ? read(storageKey, isPoint) : null));
   const screen = useViewport();
-  const shown = useMemo(() => (at ? clampPosition(at, size, screen) : null), [at, size, screen]);
+  // A thing that cannot be dragged is in its corner, wherever it was put
+  // while it could be.
+  const shown = useMemo(() => (draggable && at ? clampPosition(at, size, screen) : null), [draggable, at, size, screen]);
 
   const measured = useCallback((): Size => {
     const el = ref.current;
@@ -189,13 +193,16 @@ export interface WindowOptions {
   min?: Size;
   // Where it goes when nothing is remembered yet.
   initial: (size: Size | null) => Point;
+  // Placed afresh by `initial` every time it opens, so that only its size is
+  // remembered: for a window that opens from something else.
+  anchored?: boolean;
 }
 
 type Geometry = { at: Point; size: Size | null };
 
 // A window: dragged by a handle, resized from any edge or corner, kept
 // inside the browser window and shrunk to fit it, remembered as a whole.
-export function useWindow<T extends HTMLElement>({ storageKey, draggable, resizable, defaultSize, min = MIN_SIZE, initial }: WindowOptions) {
+export function useWindow<T extends HTMLElement>({ storageKey, draggable, resizable, defaultSize, min = MIN_SIZE, initial, anchored = false }: WindowOptions) {
   const ref = useRef<T>(null);
   const nominal = useMemo(() => defaultSize ?? { width: 200, height: 48 }, [defaultSize]);
   // Where and how big the reader wants it. What is shown is that, brought
@@ -211,8 +218,10 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
   const shown = useMemo<Geometry | null>(() => {
     if (!geometry) return null;
     const r = clampRect({ ...geometry.at, ...(geometry.size ?? nominal) }, screen, min);
-    return { at: { x: r.x, y: r.y }, size: geometry.size ? { width: r.width, height: r.height } : null };
-  }, [geometry, nominal, min, screen]);
+    // A window with a default size has that size until the reader gives it
+    // another. One without is as big as what it holds.
+    return { at: { x: r.x, y: r.y }, size: geometry.size || defaultSize ? { width: r.width, height: r.height } : null };
+  }, [geometry, nominal, defaultSize, min, screen]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const resizing = useRef<{ edges: Edges; from: Rect; start: Point } | null>(null);
 
@@ -237,20 +246,29 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
     [storageKey],
   );
 
-  // Shown for the first time: a place of its own. After that it keeps the one it had.
+  // Whether the reader has dragged or resized it since it opened.
+  const moved = useRef(false);
+
+  // Shown for the first time: a place of its own. After that it keeps the
+  // one it had, unless it is anchored, which keeps only the size.
   const open = useCallback(() => {
+    moved.current = false;
     setGeometry((g) => {
-      if (g) return g;
-      const size = defaultSize ? fitSize(defaultSize, viewport(), min) : null;
-      return { at: initial(size), size };
+      if (g && !anchored) return g;
+      const size = g?.size ?? null;
+      const at = initial(size);
+      return { at: { x: at.x, y: at.y }, size };
     });
-  }, [defaultSize, min, initial]);
+  }, [initial, anchored]);
 
   const drag = useDrag<HTMLElement>(
     draggable,
     () => current(),
     // The first drag of a thing still in its corner gives it a place of its own.
-    (to) => setGeometry((g) => ({ at: clampPosition(to, current(), viewport()), size: g?.size ?? null })),
+    (to) => {
+      moved.current = true;
+      setGeometry((g) => ({ at: clampPosition(to, current(), viewport()), size: g?.size ?? null }));
+    },
     () => keep(current(), sized.current),
   );
 
@@ -277,6 +295,7 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
       const r = resizing.current;
       if (r) {
         const next = resizeRect(r.from, r.edges, e.clientX - r.start.x, e.clientY - r.start.y, viewport(), min);
+        moved.current = true;
         setGeometry({ at: { x: next.x, y: next.y }, size: { width: next.width, height: next.height } });
         return;
       }
@@ -314,7 +333,29 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
     [shown, cursor],
   );
 
-  return { ref, current, open, style, dragHandlers: drag.handlers, frameHandlers, reset, placed: shown !== null };
+  // Where it is and how big, from what is remembered and not from the
+  // element, which has no box while it is hidden.
+  const rect = useMemo<Rect | null>(() => (shown ? { ...shown.at, ...(shown.size ?? nominal) } : null), [shown, nominal]);
+
+  return { ref, current, rect, open, moved, style, dragHandlers: drag.handlers, frameHandlers, reset, placed: shown !== null };
+}
+
+// Two sets of handlers for one element: where both have one for an event,
+// both run. Spreading one after the other would drop the first one's.
+type Handlers = Record<string, ((e: never) => void) | undefined>;
+function both<A extends Handlers, B extends Handlers>(a: A, b: B): A & B {
+  const out: Handlers = { ...a, ...b };
+  for (const key of Object.keys(a)) {
+    const first = a[key];
+    const second = b[key];
+    if (first && second) {
+      out[key] = (e: never) => {
+        first(e);
+        second(e);
+      };
+    }
+  }
+  return out as A & B;
 }
 
 // The least a plain floating thing can be resized to.
@@ -337,8 +378,7 @@ export const Floating: Renderer = ({ node, props, children }) => {
     <div
       ref={win.ref}
       style={win.style}
-      {...win.frameHandlers}
-      {...(draggable ? win.dragHandlers : {})}
+      {...(draggable ? both(win.frameHandlers, win.dragHandlers) : win.frameHandlers)}
       className={cn(
         "fixed z-40 print:hidden",
         draggable && "cursor-grab touch-none select-none active:cursor-grabbing",

@@ -67,13 +67,14 @@ function grouped(items: Opt[]): Array<{ group: string | null; items: Opt[] }> {
 // starts at `initial` and is the component's own.
 // A password field with a button that shows what was typed, for whoever is
 // typing it. The same field serves ui.Input, a form's password widget and
-// the sign-in form.
+// the sign-in form. Shown, it is a text field to the browser, which would
+// spellcheck it and may send what it checks to a service: never a password.
 export function PasswordInput({ className, type: _type, ...props }: React.ComponentProps<"input">) {
   const [shown, setShown] = useState(false);
   const Eye = icon(shown ? "eye-off" : "eye");
   return (
     <div className="relative flex w-full items-center">
-      <UiInput type={shown ? "text" : "password"} className={cn("pr-8", className)} {...props} />
+      <UiInput type={shown ? "text" : "password"} className={cn("pr-8", className)} {...props} spellCheck={false} />
       {Eye ? (
         <button
           type="button"
@@ -254,6 +255,7 @@ export const Textarea: Renderer = ({ props, emit }) => {
       value={current}
       rows={typeof props.rows === "number" ? props.rows : 3}
       maxLength={typeof props.max_length === "number" ? props.max_length : undefined}
+      spellCheck={typeof props.spellcheck === "boolean" ? props.spellcheck : undefined}
       placeholder={props.placeholder ? String(props.placeholder) : undefined}
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}

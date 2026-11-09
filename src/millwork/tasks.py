@@ -395,6 +395,8 @@ class Reporter:
         self._touch(apply)
 
     def log(self, line: str) -> None:
+        """A line of output. It goes under the step that is open, which keeps
+        the last two hundred, or under the bar when no step is."""
         stack = _steps.get()
         current = stack[-1] if stack else None
 

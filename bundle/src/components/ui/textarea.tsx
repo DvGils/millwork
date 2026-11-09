@@ -5,16 +5,19 @@ import { LONG_TEXT, spellcheckForLength } from "../../lib"
 // The height follows `rows` unless a class asks for `field-sizing-content`,
 // and then it stops at most of the viewport, so a long paste scrolls inside
 // the field instead of stretching the page.
-function Textarea({ className, onInput, value, defaultValue, ...props }: React.ComponentProps<"textarea">) {
+function Textarea({ className, onInput, value, defaultValue, spellCheck, ...props }: React.ComponentProps<"textarea">) {
   const initial = typeof value === "string" ? value : typeof defaultValue === "string" ? defaultValue : ""
+  // Said outright, the choice stands. Left alone, the browser checks the
+  // spelling until the text gets long.
+  const automatic = spellCheck === undefined
   return (
     <textarea
       data-slot="textarea"
       value={value}
       defaultValue={defaultValue}
-      spellCheck={initial.length > LONG_TEXT ? false : props.spellCheck}
+      spellCheck={automatic ? (initial.length > LONG_TEXT ? false : undefined) : spellCheck}
       onInput={(e) => {
-        spellcheckForLength(e.currentTarget)
+        if (automatic) spellcheckForLength(e.currentTarget)
         onInput?.(e)
       }}
       className={cn(
