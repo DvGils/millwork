@@ -18,6 +18,8 @@ def test_the_assistant_and_floating_models() -> None:
         ui.Assistant(icon="no-such-icon")
     f = ui.Floating(ui.Badge("x"), draggable=True)
     assert f.draggable is True and f.side == "right"
+    assert a.pinned is False
+    assert ui.Assistant(pinned=True).pinned is True
 
 
 async def test_the_manual_adds_an_assistant_that_searches_it(tmp_path: Path) -> None:

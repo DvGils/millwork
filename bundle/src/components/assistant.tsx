@@ -1,8 +1,10 @@
 // A floating button that becomes a window. Minimized, it is a round button
 // in a corner that can be dragged about. Opened, the button gives way to a
-// window that grows from its corner, is dragged by its header and resized
-// from its edges, and minimizes back into the button at its near corner. On
-// a phone the window is a sheet from the bottom.
+// window that grows from where the button is, is dragged by its header and
+// resized from its edges. Minimized, it is the button again: where the
+// button was, or at the window's near corner once the window has been moved
+// or resized. A pinned button never leaves its corner. On a phone the window
+// is a sheet from the bottom.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { cn } from "cn";
@@ -26,6 +28,7 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
   const title = props.title ? String(props.title) : label;
   const side = props.side === "left" ? "left" : "right";
   const draggable = props.draggable !== false;
+  const pinned = props.pinned === true;
 
   const toggle = useCallback(
     (next: boolean) => {
@@ -38,7 +41,7 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
   const button = useFloating<HTMLButtonElement>({
     storageKey: `mw:floating:${node.id}:button`,
     side,
-    draggable,
+    draggable: draggable && !pinned,
     size: BUTTON,
     onPress: () => toggle(true),
   });
@@ -56,12 +59,17 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
     resizable: draggable,
     defaultSize,
     initial,
+    anchored: true,
   });
 
+  // A window left where it opened gives the button back its place. One that
+  // was dragged or resized takes the button along, to its near corner.
   const minimize = useCallback(() => {
-    if (win.ref.current) button.moveTo(minimizeTo(win.current(), BUTTON, viewport(), fromRight.current));
+    if (!pinned && win.moved.current && win.ref.current) {
+      button.moveTo(minimizeTo(win.current(), BUTTON, viewport(), fromRight.current));
+    }
     toggle(false);
-  }, [win, button, toggle]);
+  }, [win, button, toggle, pinned]);
   const minimizeNow = useRef(minimize);
   minimizeNow.current = minimize;
 
@@ -151,7 +159,7 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
         style={button.style}
         className={cn(
           "fixed z-40 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none print:hidden",
-          draggable && "cursor-grab touch-none select-none active:cursor-grabbing",
+          draggable && !pinned && "cursor-grab touch-none select-none active:cursor-grabbing",
           button.corner,
           props.cls as string,
         )}

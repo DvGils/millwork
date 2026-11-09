@@ -189,13 +189,16 @@ export interface WindowOptions {
   min?: Size;
   // Where it goes when nothing is remembered yet.
   initial: (size: Size | null) => Point;
+  // Placed afresh by `initial` every time it opens, so that only its size is
+  // remembered: for a window that opens from something else.
+  anchored?: boolean;
 }
 
 type Geometry = { at: Point; size: Size | null };
 
 // A window: dragged by a handle, resized from any edge or corner, kept
 // inside the browser window and shrunk to fit it, remembered as a whole.
-export function useWindow<T extends HTMLElement>({ storageKey, draggable, resizable, defaultSize, min = MIN_SIZE, initial }: WindowOptions) {
+export function useWindow<T extends HTMLElement>({ storageKey, draggable, resizable, defaultSize, min = MIN_SIZE, initial, anchored = false }: WindowOptions) {
   const ref = useRef<T>(null);
   const nominal = useMemo(() => defaultSize ?? { width: 200, height: 48 }, [defaultSize]);
   // Where and how big the reader wants it. What is shown is that, brought
@@ -237,20 +240,29 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
     [storageKey],
   );
 
-  // Shown for the first time: a place of its own. After that it keeps the one it had.
+  // Whether the reader has dragged or resized it since it opened.
+  const moved = useRef(false);
+
+  // Shown for the first time: a place of its own. After that it keeps the
+  // one it had, unless it is anchored, which keeps only the size.
   const open = useCallback(() => {
+    moved.current = false;
     setGeometry((g) => {
-      if (g) return g;
-      const size = defaultSize ? fitSize(defaultSize, viewport(), min) : null;
-      return { at: initial(size), size };
+      if (g && !anchored) return g;
+      const size = g?.size ?? (defaultSize ? fitSize(defaultSize, viewport(), min) : null);
+      const at = initial(size);
+      return { at: { x: at.x, y: at.y }, size };
     });
-  }, [defaultSize, min, initial]);
+  }, [defaultSize, min, initial, anchored]);
 
   const drag = useDrag<HTMLElement>(
     draggable,
     () => current(),
     // The first drag of a thing still in its corner gives it a place of its own.
-    (to) => setGeometry((g) => ({ at: clampPosition(to, current(), viewport()), size: g?.size ?? null })),
+    (to) => {
+      moved.current = true;
+      setGeometry((g) => ({ at: clampPosition(to, current(), viewport()), size: g?.size ?? null }));
+    },
     () => keep(current(), sized.current),
   );
 
@@ -277,6 +289,7 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
       const r = resizing.current;
       if (r) {
         const next = resizeRect(r.from, r.edges, e.clientX - r.start.x, e.clientY - r.start.y, viewport(), min);
+        moved.current = true;
         setGeometry({ at: { x: next.x, y: next.y }, size: { width: next.width, height: next.height } });
         return;
       }
@@ -314,7 +327,7 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
     [shown, cursor],
   );
 
-  return { ref, current, open, style, dragHandlers: drag.handlers, frameHandlers, reset, placed: shown !== null };
+  return { ref, current, open, moved, style, dragHandlers: drag.handlers, frameHandlers, reset, placed: shown !== null };
 }
 
 // The least a plain floating thing can be resized to.

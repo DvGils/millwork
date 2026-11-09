@@ -483,12 +483,15 @@ class Floating(Component):
 class Assistant(_Owned):
     """A floating button that becomes a window. Minimized, it is a round
     button in a corner of the page that the reader can drag about. Opened,
-    it is a window that grows from the button's corner, holds a chat or
+    it is a window that grows from where the button is, holds a chat or
     anything else that should be at hand wherever the reader is, and is
     dragged by its header and resized from its edges, unless ``draggable``
-    is off, which fixes both. Minimized again, it folds back into the
-    button. The browser remembers where both are. On a phone the window is
-    a sheet. ``open`` makes Python the owner of whether
+    is off, which fixes both. Minimized again, it is the button where the
+    button was, or at the window's near corner once the window has been
+    moved. ``pinned`` keeps the button in its corner: it cannot be dragged,
+    and the window always opens from there and folds back to it. The
+    browser remembers where the button is and how big the window was. On a
+    phone the window is a sheet. ``open`` makes Python the owner of whether
     it is open, with ``on_toggle`` reporting the clicks; otherwise the
     browser holds it, starting from ``default_open``."""
 
@@ -501,6 +504,7 @@ class Assistant(_Owned):
     icon: str = "message-square"
     side: Literal["left", "right"] = "right"
     draggable: bool = True
+    pinned: bool = False
     open: bool | None = None
     default_open: bool | None = None
     on_toggle: Any = None
@@ -518,6 +522,7 @@ class Assistant(_Owned):
             icon: str = "message-square",
             side: Literal["left", "right"] = "right",
             draggable: bool = True,
+            pinned: bool = False,
             open: bool | None = None,
             default_open: bool | None = None,
             on_toggle: Any = None,
