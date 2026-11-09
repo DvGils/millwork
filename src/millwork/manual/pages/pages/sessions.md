@@ -61,6 +61,17 @@ A close hook has thirty seconds. After that it is stopped and the log
 says so, which keeps a hook that never returns from holding up a server
 that is stopping.
 
+## One tab, one session
+
+A session belongs to one tab. A link opened in another tab starts a new
+session with a fresh state, and so does the same address opened after the
+first session has ended. Nothing in `s.state` or `s.files` can be read
+from another session, and both end with the session. A restart of the
+server ends every session.
+
+What has to be found again later, or from another tab, lives outside the
+session, in storage the app brings.
+
 ## When a tab goes away
 
 A session does not end when its tab closes. The server cannot tell a

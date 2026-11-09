@@ -82,8 +82,8 @@ versions; a release says so here when it does.
 
 ### The manual
 
-- A new page, Beyond the session, on where to keep what a second tab, a
-  saved link or tomorrow should still find.
+- Sessions says that a session is one tab, and that what another tab or
+  a later visit should find lives in storage the app brings.
 - Tasks says that canceling stops a coroutine at once, and that `check()`
   is for work in a thread.
 - Sessions says that a sheet or a dialog whose `open` is in the state is

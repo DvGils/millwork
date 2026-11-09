@@ -1,6 +1,6 @@
 ---
 title: Framework warnings
-order: 5
+order: 4
 description: Four mistakes millwork can see, and how it tells you.
 related: /running/development, /components/tasks
 ---
