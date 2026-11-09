@@ -179,6 +179,8 @@ class Session[S]:
         self._busy = False
         self._title_shown: str | None = None
         self.on_failure: Callable[[str, BaseException], None] | None = None
+        # What the page function last raised, until it renders again.
+        self._render_error: BaseException | None = None
         """Told of every exception the session caught from the app's code, after the
         log line: a page function, a handler, a hook. The test harness raises them."""
         # Development warnings: each is said once per session; counters tell a
@@ -1002,9 +1004,15 @@ class Session[S]:
 
     def _mount(self) -> None:
         self._render_due = self._render_late = False
-        tree = self._build()
+        tree = self._build(told=False)
         if tree is None:
-            return
+            # The tab has nothing of this page to keep, so the failure is
+            # said where the page would be. A later render that works
+            # takes its place.
+            tree = self._failure_tree()
+            if tree is None:
+                self.post(ServerError(message=self.text("render_failed"), fatal=False))
+                return
         self.tree = tree
         self._title_shown = self._title(tree)
         self.post(Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown))
@@ -1082,7 +1090,24 @@ class Session[S]:
             self._busy = busy
             self.command("activity", busy=busy)
 
-    def _build(self) -> Tree | None:
+    def _failure_tree(self) -> Tree | None:
+        """The framework's page for a page function that raised, or None when
+        that cannot be built either."""
+        from millwork.app import _failed_view
+
+        token = context.bind(self)
+        try:
+            return build(_failed_view(self, self._render_error))
+        except Exception:
+            log.exception("the failure page of %s failed to render", self.page.path)
+            return None
+        finally:
+            context.unbind(token)
+
+    def _build(self, told: bool = True) -> Tree | None:
+        """The page's tree, or None when the page function raised. ``told``
+        says the failure to the tab as a toast, for a tab that keeps the
+        page it had."""
         # Bound for the render and the build: wire values (a FileRef, a task)
         # read the current session while the tree is walked.
         token = context.bind(self)
@@ -1105,11 +1130,15 @@ class Session[S]:
                 )
             for request, ask in self._asks.items():
                 root.children.append(ask.component.model_copy(update={"key": f"@ask:{request}"}))
-            return build(root)
+            tree = build(root)
+            self._render_error = None
+            return tree
         except Exception as exc:
             log.exception("page %s failed to render", self.page.path)
+            self._render_error = exc
             self._failed(f"the page function of {self.page.path}", exc)
-            self.post(ServerError(message=self.text("render_failed"), fatal=False))
+            if told:
+                self.post(ServerError(message=self.text("render_failed"), fatal=False))
             return None
         finally:
             context.unbind(token)

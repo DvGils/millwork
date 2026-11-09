@@ -15,6 +15,13 @@ versions; a release says so here when it does.
   only its size. Minimized, the button is where it was, and it moves to
   the window's near corner only once the window has been dragged or
   resized.
+- A page function that raised before anything was shown left the tab on
+  "Loading…" for good, after a toast, and one that raised after a
+  navigation left the old page on screen under the new address with
+  buttons that did nothing. Both now get a failure page in the frame of
+  the not-found page, with a button that draws the page again. The page
+  takes its place as soon as it renders, and in debug mode the exception
+  is on the failure page.
 - A password field showed two reveal buttons in Edge, the browser's and
   the field's. The browser's is hidden.
 - A search field with `clearable=True` showed two clear buttons in
@@ -57,6 +64,7 @@ versions; a release says so here when it does.
   is for work in a thread.
 - Sessions says that a sheet or a dialog whose `open` is in the state is
   open again after a reload.
+- Error pages describes the failure page.
 
 ## 0.2.3
 

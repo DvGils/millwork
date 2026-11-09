@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 import millwork as mw
 from millwork import ui
@@ -64,3 +65,55 @@ def test_a_stat_takes_any_sequence_of_numbers_as_its_trend() -> None:
     whole: list[int] = [1, 2, 3]
     assert list(ui.Stat(label="Releases", value="3", trend=whole).trend or ()) == [1, 2, 3]
     assert list(ui.Stat(label="Releases", value="3", trend=(0.5, 1.5)).trend or ()) == [0.5, 1.5]
+
+
+class _Shaky(BaseModel):
+    broken: bool = True
+    opened: int = 0
+
+
+def _shaky_app(debug: bool = False) -> mw.App:
+    app = mw.App("shaky", state=_Shaky, public=None, components=None, debug=debug)
+
+    @app.page("/")
+    def home(s: mw.Session[_Shaky]) -> ui.Component:
+        return ui.Page(ui.Button("Open", key="open", on_click=lambda s, _: s.navigate("/shaky")))
+
+    @app.page("/shaky")
+    def shaky(s: mw.Session[_Shaky]) -> ui.Component:
+        s.state.opened += 1
+        if s.state.broken:
+            raise RuntimeError("the database is away")
+        return ui.Page(ui.Text("All is well", key="well"))
+
+    return app
+
+
+async def test_a_page_that_raises_before_anything_is_shown_gets_a_failure_page() -> None:
+    async with TestApp(_shaky_app(), strict=False).open("/shaky") as page:
+        assert [type(exc) for _, exc in page.failures] == [RuntimeError]
+        assert "Something went wrong" in page.text() and "could not be shown" in page.text()
+        # The exception is the author's to read, in debug mode only.
+        assert "database" not in page.text()
+        assert not any(getattr(m, "type", None) == "error" for m in page.messages)
+
+        # Trying again while it still fails says so, and the page stays.
+        await page.click("retry")
+        assert getattr(page.messages[-1], "type", None) == "error"
+        assert "Something went wrong" in page.text()
+
+        # Once the page function works, its page takes the failure page's place.
+        page.session.state.broken = False
+        await page.click("retry")
+        assert page.text() == "All is well"
+
+
+async def test_a_navigation_to_a_page_that_raises_lands_on_the_failure_page() -> None:
+    async with TestApp(_shaky_app(debug=True), strict=False).open("/") as page:
+        await page.click("open")
+        assert page.session.path == "/shaky"
+        text = page.text()
+        assert "Something went wrong" in text and "RuntimeError: the database is away" in text
+        # From anywhere but the home page there is a way home.
+        await page.click("home")
+        assert page.session.path == "/" and page.find(ui.Button).props["label"] == "Open"
