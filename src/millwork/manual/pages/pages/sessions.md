@@ -70,6 +70,10 @@ grace period. `App(session_grace=300)` sets that in seconds. A tab that
 reconnects within it, after a reload, a sleep or a dropped network, gets
 its session back with everything in it, and no hook runs.
 
+Everything includes what the page had open. A sheet or a dialog whose
+`open` is a field of the state is open again after a reload, because the
+state still says so.
+
 The `close` hook of a closed tab therefore runs minutes after the person
 left, which suits releasing what the page held and does not suit anything
 they are waiting to see.
