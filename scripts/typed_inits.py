@@ -35,6 +35,7 @@ BASE = "Component"
 ACCEPTS = {
     "options": "Sequence[Option | str | tuple[str, str] | Mapping[str, Any]]",
     "Table.columns": "Sequence[Column | str | Mapping[str, Any]] | None",
+    "Stat.trend": "Iterable[float] | None",
     "DatePicker.value": "str | dt.date | list[str | dt.date | None] | None",
     "DatePicker.default": "str | dt.date | list[str | dt.date | None] | None",
     "DatePicker.min": "str | dt.date | None",

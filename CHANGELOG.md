@@ -29,11 +29,14 @@ versions; a release says so here when it does.
 - A password that is shown is no longer spellchecked. Shown, it is a text
   field to the browser, and a browser may send what it checks to a
   service.
+- A text that is not a date in a table's `date` or `datetime` column, an
+  empty one included, replaced the whole table with an error. It is shown
+  as it came now, and an empty one is a dash.
 - An empty text in a table column with the `code`, `badge` or `link`
-  format drew an empty pill or nothing at all. It is a dash now, as a
-  missing value is.
-- `ui.Stat(trend=)` is typed as a sequence of numbers, so a type checker
-  takes a `list[int]`.
+  format drew an empty pill or nothing at all, and in a number format an
+  empty cell. It is a dash now, as a missing value is.
+- `ui.Stat(trend=)` is typed to take any numbers, so a type checker
+  accepts a `list[int]`.
 
 ### Features
 

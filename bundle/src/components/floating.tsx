@@ -24,8 +24,11 @@ import {
   type Size,
 } from "../assistant-math";
 
+// The room a fixed thing has: the browser window without its scrollbars,
+// which is what `right` and `bottom` in CSS measure from as well.
 export function viewport(): Size {
-  return { width: window.innerWidth, height: window.innerHeight };
+  const el = document.documentElement;
+  return { width: el.clientWidth || window.innerWidth, height: el.clientHeight || window.innerHeight };
 }
 
 // The browser window's size as state, so a thing kept inside it follows it.
@@ -138,7 +141,9 @@ export function useFloating<T extends HTMLElement>({ storageKey, side, draggable
   // that is remembered.
   const [at, setAt] = useState<Point | null>(() => (draggable ? read(storageKey, isPoint) : null));
   const screen = useViewport();
-  const shown = useMemo(() => (at ? clampPosition(at, size, screen) : null), [at, size, screen]);
+  // A thing that cannot be dragged is in its corner, wherever it was put
+  // while it could be.
+  const shown = useMemo(() => (draggable && at ? clampPosition(at, size, screen) : null), [draggable, at, size, screen]);
 
   const measured = useCallback((): Size => {
     const el = ref.current;

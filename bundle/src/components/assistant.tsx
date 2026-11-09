@@ -15,7 +15,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet as UiSheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useOwnedOpen } from "./surfaces";
 import { useFloating, useWindow, viewport } from "./floating";
-import { minimizeTo, onRightHalf, openFrom, panelSize, type Size } from "../assistant-math";
+import { minimizeTo, openFrom, panelSize, type Size } from "../assistant-math";
 
 const BUTTON = { width: 48, height: 48 };
 
@@ -47,9 +47,6 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
   });
   const last = useRef(button.place);
   last.current = button.place;
-  // The half of the screen the button was on when the window opened: the
-  // window minimizes back to that side.
-  const fromRight = useRef(side === "right");
 
   const defaultSize = useMemo(() => panelSize(viewport()), []);
   const initial = useCallback((size: Size | null) => openFrom(last.current(), size ?? defaultSize, viewport()), [defaultSize]);
@@ -63,26 +60,31 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
   });
 
   // A window left where it opened gives the button back its place. One that
-  // was dragged or resized takes the button along, to its near corner.
+  // was dragged or resized takes the button along, to the bottom corner on
+  // the half of the screen the window is in: the corner it opens from
+  // again, so it comes back where it was left.
   const minimize = useCallback(() => {
     if (!pinned && win.moved.current && win.ref.current) {
-      button.moveTo(minimizeTo(win.current(), BUTTON, viewport(), fromRight.current));
+      button.moveTo(minimizeTo(win.current(), BUTTON, viewport()));
     }
     toggle(false);
   }, [win, button, toggle, pinned]);
   const minimizeNow = useRef(minimize);
   minimizeNow.current = minimize;
 
-  // Opening: the window takes its place before anything is painted, and
-  // remembers which side the button was on. Closing: any gesture that was
-  // under way on the element that went away is forgotten.
+  // Opening: the window takes its place before anything is painted, once
+  // for each time it opens, so a screen that was narrow for a while does
+  // not put a moved window back. Closing: any gesture that was under way
+  // on the element that went away is forgotten.
   const { open: placeWindow, reset: resetWindow } = win;
   const { reset: resetButton } = button;
+  const placedThisTime = useRef(false);
   useLayoutEffect(() => {
     if (open && !mobile) {
-      fromRight.current = onRightHalf(last.current(), viewport());
-      placeWindow();
+      if (!placedThisTime.current) placeWindow();
+      placedThisTime.current = true;
     } else {
+      if (!open) placedThisTime.current = false;
       resetWindow();
     }
     resetButton();

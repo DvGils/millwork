@@ -14,10 +14,9 @@ someone saved, or the same person tomorrow.
 ## What a session does not cover
 
 A reload gets the same session back, as long as it happens within the
-grace period. A second tab does not. It is a new session with a fresh
-state, and it cannot read anything the first tab holds. The same goes for
-a link that is opened after the first tab has been gone longer than the
-grace period.
+grace period. Nothing else does. A link opened in another tab starts a new
+session with a fresh state, and it cannot read anything the first tab
+holds. The same address opened tomorrow starts a new one as well.
 
 So a page with an address of its own, say a report at
 `/report/{report_id}`, cannot keep the report in `s.state`. The session
@@ -48,12 +47,15 @@ def keep(report: Report) -> str:
 
 
 async def finished(s, task):
-    s.navigate(f"/report/{keep(task.result)}")
+    if task.ok:
+        s.navigate(f"/report/{keep(task.result)}")
 
 
 @app.page("/report/{report_id}")
 def show(s):
-    report = REPORTS[s.params["report_id"]]
+    report = REPORTS.get(s.params["report_id"])
+    if report is None:
+        return ui.Page(ui.Empty(title="This report is no longer kept."))
     return ui.Page(ui.Text(report.title, variant="heading"))
 
 
@@ -63,7 +65,7 @@ def find(s, report_id: str):
         raise mw.NotFound("That report is no longer kept.")
 ```
 
-Three things in it matter.
+Four things in it matter.
 
 - The dictionary has a bound. The end of a session clears its state, and
   nothing clears a module's data, so the app removes what it added.
@@ -71,7 +73,10 @@ Three things in it matter.
   report. In an app with sign-in, keep the owner beside the report and
   compare it with `s.user.id` in the connect hook.
 - The connect hook answers a missing id with the not-found page before
-  the page function runs.
+  the page function runs. The page function still checks, because the
+  report can leave the dictionary while a tab has it open.
+- `on_done` runs for a task that failed or was canceled too, so the
+  handler looks at `task.ok` before it reads the result.
 
 ## What the process does not cover
 
@@ -98,6 +103,7 @@ async def find(s, report_id: str):
 A session's files end with it as well, both uploads and what
 `s.files.add` made. A file that should be there later is kept by the app
 in the same store as the rest. A session that needs it calls
-`s.files.add(path, name="report.pdf")`, which makes a copy that belongs to
-that session and gives back the `FileRef` a `Download` or an `Image`
-takes.
+`s.files.add(Path("kept/report.pdf"), name="report.pdf")`, which makes a
+copy that belongs to that session and gives back the `FileRef` a
+`Download` or an `Image` takes. The `Path` matters, since a plain string
+is taken as the text of the file.

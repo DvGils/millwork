@@ -61,10 +61,13 @@ def test_a_text_field_says_whether_the_browser_checks_its_spelling() -> None:
     assert ui.Textarea(spellcheck=True).spellcheck is True
 
 
-def test_a_stat_takes_any_sequence_of_numbers_as_its_trend() -> None:
+def test_a_stat_takes_any_numbers_as_its_trend() -> None:
     whole: list[int] = [1, 2, 3]
-    assert list(ui.Stat(label="Releases", value="3", trend=whole).trend or ()) == [1, 2, 3]
-    assert list(ui.Stat(label="Releases", value="3", trend=(0.5, 1.5)).trend or ()) == [0.5, 1.5]
+    assert ui.Stat(label="Releases", value="3", trend=whole).trend == [1, 2, 3]
+    assert ui.Stat(label="Releases", value="3", trend=(0.5, 1.5)).trend == [0.5, 1.5]
+    # What is not a sequence is taken as well, and held as a list.
+    assert ui.Stat(label="Releases", value="3", trend=(n for n in whole)).trend == [1, 2, 3]
+    assert ui.Stat(label="Releases", value="3", trend={"a": 1, "b": 2}.values()).trend == [1, 2]
 
 
 class _Shaky(BaseModel):

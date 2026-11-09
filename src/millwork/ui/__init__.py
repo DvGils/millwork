@@ -8,7 +8,7 @@ Stateful components take ``value`` (server-owned) or ``default``
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -822,7 +822,7 @@ class Stat(Component):
     delta: float | None = None
     delta_format: Literal["percent", "number"] = "percent"
     good: Literal["up", "down"] = "up"
-    trend: Sequence[float] | None = None
+    trend: list[float] | None = None
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -840,7 +840,7 @@ class Stat(Component):
             delta: float | None = None,
             delta_format: Literal["percent", "number"] = "percent",
             good: Literal["up", "down"] = "up",
-            trend: Sequence[float] | None = None,
+            trend: Iterable[float] | None = None,
         ) -> None: ...
 
 

@@ -75,8 +75,9 @@ def example(s):
 
 Inside the work, `mw.progress()` is the reporter. `set(value, message)`
 moves the bar, `plan([...])` declares steps up front, `step(label)` opens
-one as a context manager, `note(text)` leaves a short result on it,
-and `log(line)` appends output.
+one as a context manager, and `note(text)` leaves a short result on it.
+`log(line)` adds a line of output to the step that is open, or replaces
+the line under the bar when no step is.
 
 Canceling stops work that is a coroutine at once, at the `await` it is
 waiting on. Work in a thread cannot be stopped from outside. There,
