@@ -108,6 +108,7 @@ export const Input: Renderer = ({ props, emit }) => {
       value={current}
       placeholder={props.placeholder ? String(props.placeholder) : undefined}
       maxLength={typeof props.max_length === "number" ? props.max_length : undefined}
+      spellCheck={typeof props.spellcheck === "boolean" ? props.spellcheck : undefined}
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}
       onChange={(e) => {
@@ -121,7 +122,14 @@ export const Input: Renderer = ({ props, emit }) => {
           emit("submit", current);
         }
       }}
-      className={cn(Prefix && "pl-8", props.clearable && (secret ? "pr-14" : "pr-8"), !wrapped && (props.cls as string))}
+      // A search field gets a clear button from the browser. With the one
+      // here it would be the second, so the browser's steps aside.
+      className={cn(
+        Prefix && "pl-8",
+        props.clearable && (secret ? "pr-14" : "pr-8"),
+        props.clearable && "[&::-webkit-search-cancel-button]:appearance-none",
+        !wrapped && (props.cls as string),
+      )}
     />
   );
   if (!wrapped) return field;

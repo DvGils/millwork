@@ -3,17 +3,20 @@ import { Input as InputPrimitive } from "@base-ui/react/input"
 import { cn } from "cn"
 import { LONG_TEXT, spellcheckForLength } from "../../lib"
 
-function Input({ className, type, onInput, value, defaultValue, ...props }: React.ComponentProps<"input">) {
+function Input({ className, type, onInput, value, defaultValue, spellCheck, ...props }: React.ComponentProps<"input">) {
   const initial = typeof value === "string" ? value : typeof defaultValue === "string" ? defaultValue : ""
+  // Said outright, the choice stands. Left alone, the browser checks the
+  // spelling until the text gets long.
+  const automatic = spellCheck === undefined
   return (
     <InputPrimitive
       type={type}
       data-slot="input"
       value={value}
       defaultValue={defaultValue}
-      spellCheck={initial.length > LONG_TEXT ? false : props.spellCheck}
+      spellCheck={automatic ? (initial.length > LONG_TEXT ? false : undefined) : spellCheck}
       onInput={(e) => {
-        spellcheckForLength(e.currentTarget)
+        if (automatic) spellcheckForLength(e.currentTarget)
         onInput?.(e)
       }}
       className={cn(

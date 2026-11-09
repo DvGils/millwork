@@ -1064,6 +1064,7 @@ class Input(_Owned):
     readonly: bool = False
     clearable: bool = False
     max_length: int | None = None
+    spellcheck: bool | None = None
     debounce_ms: int = 250
     on_change: Any = None
     on_submit: Any = None
@@ -1086,6 +1087,7 @@ class Input(_Owned):
             readonly: bool = False,
             clearable: bool = False,
             max_length: int | None = None,
+            spellcheck: bool | None = None,
             debounce_ms: int = 250,
             on_change: Any = None,
             on_submit: Any = None,
@@ -1104,6 +1106,7 @@ class Textarea(_Owned):
     rows: int = 3
     autosize: bool = False
     max_length: int | None = None
+    spellcheck: bool | None = None
     disabled: bool = False
     readonly: bool = False
     debounce_ms: int = 250
@@ -1124,6 +1127,7 @@ class Textarea(_Owned):
             rows: int = 3,
             autosize: bool = False,
             max_length: int | None = None,
+            spellcheck: bool | None = None,
             disabled: bool = False,
             readonly: bool = False,
             debounce_ms: int = 250,

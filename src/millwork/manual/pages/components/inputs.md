@@ -151,6 +151,12 @@ ui.Stack(
 `max_length` caps it, as it does on an `Input`. Ctrl+Enter
 submits.
 
+The browser checks the spelling of a text field until it holds more than
+5,000 characters, where checking would slow a paste down. `spellcheck`
+says it outright, on a `Textarea` and on an `Input`. `False` is for text
+that is not prose, such as code, an id or a list of names. `True` keeps
+the checking on however long the text gets.
+
 ```python live
 ui.Textarea(
     placeholder="Notes. Ctrl+Enter submits.",

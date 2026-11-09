@@ -52,3 +52,15 @@ def test_a_sidebar_group_has_one_owner_of_its_open_state() -> None:
     assert group.default_open is False and group.label == "Part"
     with pytest.raises(ValueError):
         ui.SidebarGroup(label="Part", open=True, default_open=True)
+
+
+def test_a_text_field_says_whether_the_browser_checks_its_spelling() -> None:
+    assert ui.Input().spellcheck is None and ui.Textarea().spellcheck is None
+    assert ui.Input(spellcheck=False).spellcheck is False
+    assert ui.Textarea(spellcheck=True).spellcheck is True
+
+
+def test_a_stat_takes_any_sequence_of_numbers_as_its_trend() -> None:
+    whole: list[int] = [1, 2, 3]
+    assert list(ui.Stat(label="Releases", value="3", trend=whole).trend or ()) == [1, 2, 3]
+    assert list(ui.Stat(label="Releases", value="3", trend=(0.5, 1.5)).trend or ()) == [0.5, 1.5]
