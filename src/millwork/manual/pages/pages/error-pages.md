@@ -69,9 +69,10 @@ A page function that raises has nothing to show. When the tab already
 shows the page, it keeps what it had and a toast says the page failed to
 render. When there is nothing yet, on the first page of a session or
 after a navigation, the framework's failure page takes the page's place.
-It has the same frame as the pages above and a button that draws the page
-again. Once the page function works, by that button or by a change in the
-state, its page replaces the failure page.
+It has the same frame as the pages above, a button that draws the page
+again, and a way home from any other page. Once the page function works,
+by that button or by a change in the state, its page replaces the failure
+page. While it still fails, the button answers with the toast.
 
 The exception goes to the log. In debug mode it is on the failure page as
 well.

@@ -120,3 +120,80 @@ async def test_a_navigation_to_a_page_that_raises_lands_on_the_failure_page() ->
         # From anywhere but the home page there is a way home.
         await page.click("home")
         assert page.session.path == "/" and page.find(ui.Button).props["label"] == "Open"
+
+
+async def test_a_page_that_works_again_is_mounted_over_the_failure_page() -> None:
+    app = mw.App("flat", state=_Shaky, public=None, components=None, debug=True)
+
+    @app.page("/")
+    def flat(s: mw.Session[_Shaky]) -> ui.Component:
+        if s.state.broken:
+            raise RuntimeError("away")
+        return ui.Page(ui.Text("a"), ui.Text("b"), ui.Text("c"), ui.Text("d"))
+
+    async with TestApp(app, strict=False).open("/") as page:
+        page.session.state.broken = False
+        seen = len(page.messages)
+        await page.click("retry")
+        kinds = [getattr(m, "type", None) for m in page.messages[seen:]]
+        # A mount, so the tab starts the page as it starts any page, and
+        # nothing is compared with the failure page's rows.
+        assert "mount" in kinds and "patch" not in kinds
+        assert not page.session._warned and not page.toasts
+
+
+class _Mute(Exception):
+    def __str__(self) -> str:
+        raise RuntimeError("cannot say")
+
+
+@pytest.mark.parametrize(
+    ("error", "shown"),
+    [
+        (ValueError("cannot read caf\udce9.txt"), "ValueError: cannot read caf\\udce9.txt"),
+        (_Mute(), "_Mute"),
+        (RuntimeError("x" * 5000), "RuntimeError: " + "x" * 1986),
+    ],
+)
+async def test_the_failure_page_shows_whatever_was_raised(error: Exception, shown: str) -> None:
+    app = mw.App("odd", public=None, components=None, debug=True)
+
+    @app.page("/")
+    def odd(s: mw.Session[Any]) -> ui.Component:
+        raise error
+
+    async with TestApp(app, strict=False).open("/") as page:
+        assert not page.session.over
+        assert page.find(ui.Code).props["content"] == shown
+
+
+async def test_a_failed_render_keeps_nothing_of_the_call_alive() -> None:
+    import gc
+    import logging
+    import weakref
+
+    class Rows:
+        pass
+
+    seen: list[weakref.ref[Rows]] = []
+    app = _shaky_app()
+
+    @app.page("/heavy")
+    def heavy(s: mw.Session[_Shaky]) -> ui.Component:
+        rows = Rows()
+        seen.append(weakref.ref(rows))
+        raise RuntimeError("away")
+
+    async with TestApp(app, strict=False).open("/") as page:
+        # The harness keeps what was raised, for the test to read, and the
+        # test runner keeps the log record of it. A running app keeps neither.
+        page.session.on_failure = None
+        logging.disable(logging.CRITICAL)
+        try:
+            page.session.navigate("/heavy")
+            await page.settle()
+        finally:
+            logging.disable(logging.NOTSET)
+        assert "Something went wrong" in page.text()
+        gc.collect()
+        assert seen and seen[-1]() is None

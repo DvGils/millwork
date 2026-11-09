@@ -21,7 +21,8 @@ versions; a release says so here when it does.
   buttons that did nothing. Both now get a failure page in the frame of
   the not-found page, with a button that draws the page again. The page
   takes its place as soon as it renders, and in debug mode the exception
-  is on the failure page.
+  is on the failure page. A test that opens such a page with
+  `strict=False` finds the failure page and no toast in `page.errors`.
 - A password field showed two reveal buttons in Edge, the browser's and
   the field's. The browser's is hidden.
 - A search field with `clearable=True` showed two clear buttons in

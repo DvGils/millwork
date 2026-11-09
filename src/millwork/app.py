@@ -1063,7 +1063,18 @@ def _not_found_view(s: Any) -> Component:
     return _error_view(s, "not_found")
 
 
-def _failed_view(s: Any, error: BaseException | None) -> Component:
+def _said(error: BaseException) -> str:
+    """An exception as text for a page: its type and what it says, cut to a
+    length and made of characters that can go over the wire, whatever the
+    exception holds and even when it cannot say anything."""
+    try:
+        text = f"{type(error).__name__}: {error}"
+    except Exception:
+        text = type(error).__name__
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")[:FAILURE_DETAIL_CHARS]
+
+
+def _failed_view(s: Any, error: BaseException) -> Component:
     """What a session sees where a page would be, when its page function raised
     before there was anything to show: the frame of the error pages, a button
     that draws the page again, and a way home from anywhere else. In debug
@@ -1084,10 +1095,7 @@ def _failed_view(s: Any, error: BaseException | None) -> Component:
         key="home",
         on_click=lambda s, _: s.navigate("/"),
     )
-    detail = None
-    if s.app.debug and error is not None:
-        said = f"{type(error).__name__}: {error}"
-        detail = ui.Code(said[:FAILURE_DETAIL_CHARS], language="text", wrap=True)
+    detail = ui.Code(_said(error), language="text", wrap=True) if s.app.debug else None
     card = ui.Stack(
         ui.Logo(cls="h-9 self-start"),
         ui.Text(s.text("failed_title"), variant="title"),

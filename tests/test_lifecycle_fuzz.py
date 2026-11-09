@@ -91,7 +91,9 @@ def test_the_oracle_notices_when_the_session_is_broken_on_purpose(
             self.render()
 
         broken.setattr(session.Session, "_render_tick", draws_whoever_holds_the_turn)
-        assert found("half drawn")
+        # Rare: a render has to fall inside a handler's turn. A few seeds in
+        # a hundred do it.
+        assert found("half drawn", seeds=100)
     with monkeypatch.context() as broken:
         broken.setattr(outbox.Outbox, "seal", lambda self: None)
         broken.setattr(connection.Connection, "close", lambda self, end=None, code=1000: None)

@@ -251,6 +251,7 @@ class World:
             "close_delay": 0.0,
             "close_does": None,
             "handler_delay": 0.1,
+            "render_fails": False,
         }
     )
     log: list[dict[str, Any]] = field(default_factory=list)
@@ -600,6 +601,8 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
             early=s.id in world.connecting,
             halfway=s.id in world.halfway,
         )
+        if knobs["render_fails"]:
+            raise RuntimeError("the page function fails")
         return ui.Page(
             ui.Text(f"{mark} n={s.state.n}", key="mark"),
             ui.Button("await_task", key="await_task", on_click=await_task),
@@ -1031,6 +1034,7 @@ KNOBS: dict[str, tuple[Any, ...]] = {
     "close_delay": (0.0, 0.0, 0.3, 3.0),
     "close_does": (None, None, None, "end", "boom"),
     "handler_delay": (0.1, 0.5, 3.0),
+    "render_fails": (False, False, False, True),
 }
 
 
@@ -1464,7 +1468,7 @@ EXPECTED = (
     "sign-in ended by recheck",
     "event ",
     "bad message",
-    "page / failed to render",
+    " failed to render",
     "identity lookup failed",
     "messages pending",
     "ended: recheck has not answered",
