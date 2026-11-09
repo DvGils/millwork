@@ -138,7 +138,10 @@ const cellTone: Record<string, string> = {
 
 
 function formatCell(value: unknown, format: string, tone?: string) {
-  if (value === null || value === undefined) return <span className="text-muted-foreground">–</span>;
+  // Nothing to show is a dash, and so is an empty text where the format
+  // would draw something around it: a badge, a code pill or a link.
+  const blank = value === null || value === undefined || (value === "" && (format === "badge" || format === "code" || format === "link"));
+  if (blank) return <span className="text-muted-foreground">–</span>;
   switch (format) {
     case "number":
     case "integer":

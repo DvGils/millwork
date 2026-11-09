@@ -822,7 +822,7 @@ class Stat(Component):
     delta: float | None = None
     delta_format: Literal["percent", "number"] = "percent"
     good: Literal["up", "down"] = "up"
-    trend: list[float] | None = None
+    trend: Sequence[float] | None = None
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -840,7 +840,7 @@ class Stat(Component):
             delta: float | None = None,
             delta_format: Literal["percent", "number"] = "percent",
             good: Literal["up", "down"] = "up",
-            trend: list[float] | None = None,
+            trend: Sequence[float] | None = None,
         ) -> None: ...
 
 
@@ -1804,6 +1804,7 @@ __all__ = [
     "Logo",
     "Textarea",
     "ToggleGroup",
+    "Tone",
     "Tooltip",
     "as_options",
 ]
