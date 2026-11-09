@@ -1,5 +1,6 @@
 // Catalogue components backed by shadcn: a thin wrapper each, props in, events out.
 
+import { useRef } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { cn } from "cn";
@@ -98,12 +99,16 @@ export const Input: Renderer = ({ props, emit }) => {
   // app's classes go on the box around both.
   const wrapped = Boolean(Prefix || props.suffix || props.clearable || secret);
   const clearable = Boolean(props.clearable) && current !== "" && !props.disabled && !props.readonly;
+  const fieldRef = useRef<HTMLInputElement>(null);
   const clear = () => {
     setDraft("");
     if (props.on_change) emit("change", "");
+    // The button goes away with the text, and the focus would go with it.
+    fieldRef.current?.focus();
   };
   const field = (
     <Field
+      ref={fieldRef}
       type={secret ? undefined : String(props.kind ?? "text")}
       value={current}
       placeholder={props.placeholder ? String(props.placeholder) : undefined}

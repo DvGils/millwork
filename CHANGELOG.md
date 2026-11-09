@@ -20,9 +20,28 @@ versions; a release says so here when it does.
   navigation left the old page on screen under the new address with
   buttons that did nothing. Both now get a failure page in the frame of
   the not-found page, with a button that draws the page again. The page
-  takes its place as soon as it renders, and in debug mode the exception
-  is on the failure page. A test that opens such a page with
-  `strict=False` finds the failure page and no toast in `page.errors`.
+  takes its place as soon as it renders, a reload tries it again, and in
+  debug mode the exception is on the failure page. A test that opens such
+  a page with `strict=False` finds the failure page and no toast in
+  `page.errors`.
+- `ui.Floating` with both `draggable=True` and `resizable=True` could not
+  be resized, because a press on its edge did nothing. It resizes from
+  the edges and is dragged from anywhere else.
+- A `ui.Assistant` on a phone lost what was typed in it when its sheet was
+  closed. The sheet keeps what it holds.
+- The window of a `ui.Assistant` took its first size from the browser
+  window as it was when the page loaded, so a page opened in a small
+  window kept a small assistant after the browser was enlarged. The size
+  is fitted when the window opens.
+- Escape minimized every open `ui.Assistant` on the page, wherever the
+  focus was, and also when a search field in the window used the key to
+  clear itself. It minimizes the window that has the focus, when nothing
+  inside had a use for the key.
+- A `ui.Assistant` whose `open` is Python's, closed from Python after its
+  window was dragged, left the button behind. The button follows the
+  window however it is closed.
+- `ui.Code(wrap=True)` did not wrap a long text without spaces.
+- A clearable `ui.Input` lost the focus when its clear button was pressed.
 - A password field showed two reveal buttons in Edge, the browser's and
   the field's. The browser's is hidden.
 - A search field with `clearable=True` showed two clear buttons in
@@ -35,7 +54,8 @@ versions; a release says so here when it does.
   as it came now, and an empty one is a dash.
 - An empty text in a table column with the `code`, `badge` or `link`
   format drew an empty pill or nothing at all, and in a number format an
-  empty cell. It is a dash now, as a missing value is.
+  empty cell. It is a dash now, as a missing value is, and so is a text
+  of only spaces.
 - `ui.Stat(trend=)` is typed to take any numbers, so a type checker
   accepts a `list[int]`.
 

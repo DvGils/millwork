@@ -140,10 +140,11 @@ const cellTone: Record<string, string> = {
 const DASH_WHEN_EMPTY = { number: 1, integer: 1, percent: 1, currency: 1, date: 1, datetime: 1, badge: 1, code: 1, link: 1 };
 
 function formatCell(value: unknown, format: string, tone?: string) {
-  // Nothing to show is a dash, and so is an empty text in a format that
-  // would make something of it: a number, a date, a badge, a code pill or
-  // a link.
-  const blank = value === null || value === undefined || (value === "" && format in DASH_WHEN_EMPTY);
+  // Nothing to show is a dash, and so is a text that is empty or only
+  // spaces in a format that would make something of it: a number, a date,
+  // a badge, a code pill or a link.
+  const empty = typeof value === "string" && value.trim() === "";
+  const blank = value === null || value === undefined || (empty && format in DASH_WHEN_EMPTY);
   if (blank) return <span className="text-muted-foreground">–</span>;
   switch (format) {
     case "number":

@@ -340,6 +340,9 @@ class Session[S]:
         if last_seq <= 0:
             last_seq = 0 if self.outbox.seq == 0 else -1
         conn.bind(self, last_seq)
+        if self.tree is not None and self.tree is self._failure:
+            # A reload is how a person tries a page that failed again.
+            self.refresh()
 
     def detached(self, conn: Connection) -> None:
         """A connection is gone. Only the session's current one counts."""
@@ -1015,6 +1018,13 @@ class Session[S]:
             # toast, as a page that fails under itself does.
             self._render_failed(exc, told=failed_before)
             if failed_before:
+                # What the failure page says follows what was raised this time.
+                again = self._failure_tree(exc)
+                if again is not None and self.tree is not None:
+                    ops = diff(self.tree, again)
+                    self.tree = self._failure = again
+                    if ops:
+                        self.post(Patch(ops=ops))
                 return
             # The tab has nothing of this page to keep, so the failure is
             # said where the page would be. A later render that works is

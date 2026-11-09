@@ -133,7 +133,7 @@ export const Code: Renderer = ({ props }) => (
     {props.title ? <div className="text-xs text-muted-foreground">{String(props.title)}</div> : null}
     <CodeBlock
       copyable={props.copyable !== false}
-      className={cn(props.wrap && "whitespace-pre-wrap")}
+      className={cn(props.wrap && "whitespace-pre-wrap [overflow-wrap:anywhere]")}
       style={props.max_height ? { maxHeight: String(props.max_height) } : undefined}
     >
       <code>{String(props.content ?? "")}</code>

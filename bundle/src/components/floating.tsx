@@ -12,7 +12,6 @@ import {
   clampRect,
   cursorFor,
   edgesAt,
-  fitSize,
   hasEdge,
   isClick,
   MIN_SIZE,
@@ -219,8 +218,10 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
   const shown = useMemo<Geometry | null>(() => {
     if (!geometry) return null;
     const r = clampRect({ ...geometry.at, ...(geometry.size ?? nominal) }, screen, min);
-    return { at: { x: r.x, y: r.y }, size: geometry.size ? { width: r.width, height: r.height } : null };
-  }, [geometry, nominal, min, screen]);
+    // A window with a default size has that size until the reader gives it
+    // another. One without is as big as what it holds.
+    return { at: { x: r.x, y: r.y }, size: geometry.size || defaultSize ? { width: r.width, height: r.height } : null };
+  }, [geometry, nominal, defaultSize, min, screen]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const resizing = useRef<{ edges: Edges; from: Rect; start: Point } | null>(null);
 
@@ -254,11 +255,11 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
     moved.current = false;
     setGeometry((g) => {
       if (g && !anchored) return g;
-      const size = g?.size ?? (defaultSize ? fitSize(defaultSize, viewport(), min) : null);
+      const size = g?.size ?? null;
       const at = initial(size);
       return { at: { x: at.x, y: at.y }, size };
     });
-  }, [defaultSize, min, initial, anchored]);
+  }, [initial, anchored]);
 
   const drag = useDrag<HTMLElement>(
     draggable,
@@ -332,7 +333,29 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
     [shown, cursor],
   );
 
-  return { ref, current, open, moved, style, dragHandlers: drag.handlers, frameHandlers, reset, placed: shown !== null };
+  // Where it is and how big, from what is remembered and not from the
+  // element, which has no box while it is hidden.
+  const rect = useMemo<Rect | null>(() => (shown ? { ...shown.at, ...(shown.size ?? nominal) } : null), [shown, nominal]);
+
+  return { ref, current, rect, open, moved, style, dragHandlers: drag.handlers, frameHandlers, reset, placed: shown !== null };
+}
+
+// Two sets of handlers for one element: where both have one for an event,
+// both run. Spreading one after the other would drop the first one's.
+type Handlers = Record<string, ((e: never) => void) | undefined>;
+function both<A extends Handlers, B extends Handlers>(a: A, b: B): A & B {
+  const out: Handlers = { ...a, ...b };
+  for (const key of Object.keys(a)) {
+    const first = a[key];
+    const second = b[key];
+    if (first && second) {
+      out[key] = (e: never) => {
+        first(e);
+        second(e);
+      };
+    }
+  }
+  return out as A & B;
 }
 
 // The least a plain floating thing can be resized to.
@@ -355,8 +378,7 @@ export const Floating: Renderer = ({ node, props, children }) => {
     <div
       ref={win.ref}
       style={win.style}
-      {...win.frameHandlers}
-      {...(draggable ? win.dragHandlers : {})}
+      {...(draggable ? both(win.frameHandlers, win.dragHandlers) : win.frameHandlers)}
       className={cn(
         "fixed z-40 print:hidden",
         draggable && "cursor-grab touch-none select-none active:cursor-grabbing",

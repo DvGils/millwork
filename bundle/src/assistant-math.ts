@@ -51,8 +51,11 @@ export function restingPlace(side: "left" | "right", button: Size, viewport: Siz
   return { x: side === "left" ? MARGIN + 8 : viewport.width - MARGIN - 8 - button.width, y };
 }
 
-// The window's size when it first opens: as big as it likes, within the viewport.
-export function panelSize(viewport: Size, wanted: Size = { width: 380, height: 600 }): Size {
+// How big an assistant's window likes to be until the reader resizes it.
+export const PANEL_SIZE: Size = { width: 380, height: 600 };
+
+// The window's size when it opens: as big as it likes, within the viewport.
+export function panelSize(viewport: Size, wanted: Size = PANEL_SIZE): Size {
   return fitSize(wanted, viewport);
 }
 
