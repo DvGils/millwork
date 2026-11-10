@@ -243,6 +243,13 @@ class App:
             raise ValueError(
                 "auth needs a secret of at least 32 characters; `millwork secret` makes one"
             )
+        if identify_visitors and secret is not None and len(secret) < 32:
+            # It signs the cookie that names a visitor, and a short one can
+            # be found from a single cookie.
+            raise ValueError(
+                "identify_visitors needs a secret of at least 32 characters, or none "
+                "for one made at every start; `millwork secret` makes one"
+            )
         if secret is None:
             secret = secrets.token_urlsafe(32)
             log.info("no secret configured; using a per-process secret")
@@ -882,9 +889,10 @@ class App:
 
         next_path = _safe_next(request.query_params.get("next"))
         base = root_of(request.scope)
-        if await self.user_for(request) is not None:
+        user = await self.user_for(request)
+        if user is not None:
             # Already signed in, by a cookie or by the proxy: nothing to show.
-            return RedirectResponse(f"{base}{next_path}", status_code=302)
+            return self._greeted(request, RedirectResponse(f"{base}{next_path}", 302), user)
         error = request.query_params.get("error")
         revoked = bool(request.scope.get("millwork.revoked"))
         if error is None and revoked:
@@ -912,7 +920,11 @@ class App:
         )
         if revoked:
             self.auth.clear_cookie(request, response)
-        return response
+        return self._greeted(request, response, None)
+
+    def _greeted(self, request: Request, response: Any, user: Any) -> Any:
+        """A page's answer, naming the browser when the app identifies visitors."""
+        return response if self.visitors is None else self.visitors.greet(request, response, user)
 
     async def _logout(self, request: Request) -> Any:
         assert self.auth is not None
@@ -924,10 +936,7 @@ class App:
 
     async def _serve_page(self, request: Request) -> Any:
         user = await self.user_for(request)
-        response = self._page_response(request, user)
-        if self.visitors is not None:
-            self.visitors.greet(request, response, user)
-        return response
+        return self._greeted(request, self._page_response(request, user), user)
 
     def _page_response(self, request: Request, user: Any) -> Any:
         path = "/" + request.path_params.get("path", "")

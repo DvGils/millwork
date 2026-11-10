@@ -13,9 +13,10 @@ versions; a release says so here when it does.
   once it was kept outside the session, where another tab can find it.
   It now saves the id with what it keeps and checks it when loading. The
   id comes from a signed, `HttpOnly` cookie named `mw_visitor` that the
-  first page load sets and the browser drops when it closes. millwork
-  keeps nothing under the id, and an app that does not ask sets no
-  cookie.
+  first page load sets and that lasts for the browser's session.
+  millwork keeps nothing under the id, and an app that does not ask sets
+  no cookie. A `secret` given to an app that asks is 32 characters or
+  more, as with sign-in.
 - The visitor and the user are separate. `s.user` is the person and
   `s.visitor` the browser, so an app with sign-in can log both. An id is
   good for one sign-in. The browser gets a new one when someone signs in,

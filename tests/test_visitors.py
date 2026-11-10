@@ -16,9 +16,12 @@ from millwork.testing import TestApp
 SECRET = "s3cret-s3cret-s3cret-s3cret-s3cret"
 
 
-def make_app(tmp_path: Path, name: str = "v", **kw: Any) -> mw.App:
+def make_app(tmp_path: Path | None, name: str = "v", **kw: Any) -> mw.App:
+    """An app that shows the visitor. Without a folder it serves the real bundle."""
     kw.setdefault("identify_visitors", True)
-    app = mw.App(name, public=None, bundle_dir=tmp_path, **kw)
+    if tmp_path is not None:
+        kw["bundle_dir"] = tmp_path
+    app = mw.App(name, public=None, **kw)
 
     @app.page("/", public=True)
     def home(s: mw.Session) -> ui.Component:
@@ -31,7 +34,7 @@ def make_app(tmp_path: Path, name: str = "v", **kw: Any) -> mw.App:
     return app
 
 
-def with_sign_in(tmp_path: Path, **kw: Any) -> mw.App:
+def with_sign_in(tmp_path: Path | None, **kw: Any) -> mw.App:
     def verify(username: str, password: str) -> bool:
         return password == "pw"
 
@@ -95,7 +98,8 @@ def test_the_first_page_load_gives_the_browser_its_cookie(tmp_path: Path) -> Non
         line = cookie_set(first)
         assert line is not None
         said = line.lower()
-        assert "httponly" in said and "samesite=lax" in said and "path=/" in said
+        assert "httponly" in said and "samesite=lax" in said
+        assert "path=/" in said.split("; ")
         # No lifetime: the browser drops it when it closes.
         assert "max-age" not in said and "expires" not in said and "secure" not in said
         # The answer names one browser, so a shared cache keeps out of it.
@@ -188,7 +192,70 @@ def test_the_cookie_carries_the_app_prefix(tmp_path: Path) -> None:
     app = make_app(tmp_path)
     with TestClient(app.asgi, root_path="/sales") as client:
         line = cookie_set(client.get("/"), "mw_visitor_sales")
-        assert line is not None and "path=/sales" in line.lower()
+        assert line is not None and "path=/sales" in line.lower().split("; ")
+        # It is read back under that name, by a socket and by a page load.
+        mine = payload(client.cookies["mw_visitor_sales"])["id"]
+        for _ in range(2):
+            with client.websocket_connect("/sales/_mw/ws") as ws:
+                ws.send_text(json.dumps({"seq": 1, "msg": {"type": "hello", "path": "/"}}))
+                ws.receive_text()
+                mount = json.loads(ws.receive_text())["msg"]
+                assert mount["nodes"]["root/t"]["props"]["content"] == mine
+        # The jar sends the cookie where its path says, as a browser does.
+        assert cookie_set(client.get("/sales/"), "mw_visitor_sales") is None
+
+
+def test_an_id_that_is_not_text_names_no_visitor(tmp_path: Path) -> None:
+    app = make_app(tmp_path, secret=SECRET)
+    with TestClient(app.asgi) as client:
+        for odd in (5, "", None, ["a"], {"a": 1}):
+            token = auth.sign(SECRET, "visitor:v", {"id": odd, "user": None, "exp": 2**40})
+            client.cookies.clear()
+            client.cookies.set("mw_visitor", token, domain="testserver.local")
+            shown = visitor_of(client)
+            assert shown and shown != str(odd)
+            assert cookie_set(client.get("/")) is not None
+
+
+def test_a_secret_that_signs_visitors_is_long_or_left_out(tmp_path: Path) -> None:
+    for short in ("", "a", "x" * 31):
+        with pytest.raises(ValueError, match="32 characters"):
+            make_app(tmp_path, secret=short)
+    make_app(tmp_path, secret="x" * 32)
+    # Nothing is signed for an app that identifies nobody.
+    make_app(tmp_path, secret="a", identify_visitors=False)
+
+
+def test_what_remembers_the_user_is_no_visitor_of_another_app(tmp_path: Path) -> None:
+    # Two apps share a secret, and the name of one is the other's with a
+    # suffix. Someone who picks their own user id on the first reads what
+    # their cookie remembers them by, and offers it to the second as the
+    # signature of a visitor they made up.
+    first = with_sign_in(tmp_path, name="x")
+    second = make_app(tmp_path, name="x:user", secret=SECRET)
+    made_up = (
+        base64.urlsafe_b64encode(
+            json.dumps({"id": "anyone", "user": None, "exp": 2**40}, separators=(",", ":")).encode()
+        )
+        .decode()
+        .rstrip("=")
+    )
+    with TestClient(first.asgi) as client:
+        sign_in(client, made_up)
+        client.get("/desk")
+        remembered = payload(client.cookies["mw_visitor"])["user"]
+    assert second.visitors.read(f"{made_up}.{remembered}", None) is None
+
+
+def test_two_browsers_of_one_person_are_not_told_apart_by_their_cookies(tmp_path: Path) -> None:
+    app = with_sign_in(tmp_path)
+    remembered = []
+    for _ in range(2):
+        with TestClient(app.asgi) as client:
+            sign_in(client, "ada")
+            client.get("/desk")
+            remembered.append(payload(client.cookies["mw_visitor"])["user"])
+    assert remembered[0] != remembered[1]
 
 
 def test_a_sign_in_has_a_visitor_of_its_own(tmp_path: Path) -> None:
@@ -233,6 +300,35 @@ def test_a_tab_from_before_the_sign_in_keeps_its_own_visitor(tmp_path: Path) -> 
         # Every session that holds Ada's visitor is one of Ada's.
         holders = [s for s in app.sessions.values() if s.visitor.id == adas]
         assert holders and all(s.user is not None and s.user.id == "ada" for s in holders)
+
+
+def test_a_page_that_sends_to_the_login_names_the_browser_too(tmp_path: Path) -> None:
+    app = with_sign_in(tmp_path)
+    with TestClient(app.asgi) as client:
+        sent = client.get("/desk", follow_redirects=False)
+        assert sent.status_code == 302 and cookie_set(sent) is not None
+        assert sent.headers["cache-control"] == "private"
+
+
+def test_a_sign_in_that_ran_out_takes_its_visitor_along_at_the_login_page() -> None:
+    app = with_sign_in(None)
+    with TestClient(app.asgi) as client:
+        sign_in(client, "ada")
+        client.get("/desk")
+        adas = payload(client.cookies["mw_visitor"])["id"]
+        # The sign-in is gone, and the tab is sent to the login page.
+        client.cookies.delete("mw_auth")
+        login = client.get("/_mw/login?next=/desk")
+        assert login.status_code == 200 and cookie_set(login) is not None
+        between = payload(client.cookies["mw_visitor"])["id"]
+        # The same person again is a new visitor, as after a sign-out.
+        sign_in(client, "ada")
+        client.get("/desk")
+        again = payload(client.cookies["mw_visitor"])["id"]
+        assert len({adas, between, again}) == 3
+        # Someone who is signed in is sent on from the login page as they are.
+        on = client.get("/_mw/login?next=/desk", follow_redirects=False)
+        assert on.status_code == 302 and cookie_set(on) is None
 
 
 def test_a_sign_out_asked_from_another_site_changes_nothing(tmp_path: Path) -> None:

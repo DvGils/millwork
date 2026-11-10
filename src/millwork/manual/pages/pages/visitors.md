@@ -55,6 +55,9 @@ The store is the app's, and so is how long it keeps things. millwork does
 not say when a visitor has left for good, so what is kept for one gets an
 age of its own.
 
+Without sign-in a browser is one visitor, whoever sits at it. What people
+who share a browser should not see of each other needs sign-in.
+
 ## The user and the visitor
 
 In an app with sign-in a session has both. `s.user` is the person and
@@ -75,9 +78,10 @@ afterwards, in an app that pins to the visitor alone.
 ## What the id is good for
 
 The id comes from a cookie the first page load sets. The cookie is signed,
-`HttpOnly`, `SameSite=Lax` and `Secure` over HTTPS, and it has no lifetime
-of its own, so the browser drops it when it closes. Its name and path
-carry the app's prefix, `mw_visitor_sales` under `/sales`.
+`HttpOnly`, `SameSite=Lax` and `Secure` over HTTPS. It has no lifetime of
+its own, so it lasts for the browser's session, which a browser set to
+bring its tabs back carries over a restart. Its name and path carry the
+app's prefix, `mw_visitor_sales` under `/sales`.
 
 - The id cannot be made up or changed, and one read from a log is not
   enough to become that visitor, since the cookie holds a signature too.
@@ -87,12 +91,15 @@ carry the app's prefix, `mw_visitor_sales` under `/sales`.
 - A browser that refuses the cookie is a visitor of its own in every tab.
   What is pinned there stays private to the tab.
 - A session keeps the visitor it was opened with for as long as it lives.
+- Tabs that load at the same moment in a browser that has no cookie yet
+  can each get an id, and a tab keeps its own until its session ends.
 
 The cookie is signed with the app's `secret`. An app that sets none gets
 a new one at every start, and every browser a new id with it. That suits
 an app that keeps things in memory, where they are gone as well. An app
-that keeps them longer, or runs on more than one replica, sets a secret,
-as the [Hosting checklist](/running/hosting-checklist) says.
+that keeps them longer, or runs on more than one replica, sets a secret
+of 32 characters or more, as the
+[Hosting checklist](/running/hosting-checklist) says.
 
 ## In a test
 

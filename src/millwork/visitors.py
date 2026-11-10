@@ -17,6 +17,7 @@ whoever uses the browser next.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import secrets
 from dataclasses import dataclass
 from typing import Any
@@ -49,19 +50,27 @@ class Visitors:
     def __init__(self, secret: str, app: str) -> None:
         self.secret = secret
         # Signed for this app by name, as a sign-in is, so apps that share a
-        # secret each hand out ids of their own.
+        # secret each hand out ids of their own. What remembers the user is
+        # keyed apart from the cookie, under a purpose no app's name can
+        # turn into the cookie's, so neither is ever read as the other.
         self.purpose = f"visitor:{app}"
+        self._user_purpose = f"visitor-user:{app}"
 
-    def _mark(self, user: Any) -> str | None:
-        """Who is signed in, as the cookie remembers them: a keyed hash, so
-        the cookie tells nobody who used the browser last."""
+    def _mark(self, visitor_id: str, user: Any) -> str | None:
+        """Who is signed in, as the cookie remembers them: a keyed hash of
+        the user with the id. It tells nobody who used the browser last, and
+        the cookies of one person's two browsers have nothing in common."""
         if user is None:
             return None
-        return _mac(self.secret, f"{self.purpose}:user", str(user.id))
+        return _mac(self.secret, self._user_purpose, json.dumps([visitor_id, str(user.id)]))
 
     def issue(self, visitor_id: str, user: Any) -> str:
         expires = dt.datetime.now(dt.UTC) + TOKEN_LIFE
-        payload = {"id": visitor_id, "user": self._mark(user), "exp": int(expires.timestamp())}
+        payload = {
+            "id": visitor_id,
+            "user": self._mark(visitor_id, user),
+            "exp": int(expires.timestamp()),
+        }
         return sign(self.secret, self.purpose, payload)
 
     def read(self, token: str | None, user: Any) -> str | None:
@@ -73,18 +82,19 @@ class Visitors:
         visitor_id = data.get("id")
         if not isinstance(visitor_id, str) or not visitor_id:
             return None
-        return visitor_id if data.get("user") == self._mark(user) else None
+        return visitor_id if data.get("user") == self._mark(visitor_id, user) else None
 
     def of(self, conn: HTTPConnection, user: Any) -> str | None:
         """The id the browser behind a request or a socket brought, if it
         brought one that is this person's to use."""
         return self.read(conn.cookies.get(cookie_name(conn.scope, VISITOR_COOKIE)), user)
 
-    def greet(self, request: Request, response: Response, user: Any) -> None:
-        """A page load: a browser that brought no id of this person's leaves
-        with a new one."""
+    def greet(self, request: Request, response: Response, user: Any) -> Response:
+        """A page load, the login page included: a browser that brought no id
+        of this person's leaves with a new one."""
         if self.of(request, user) is None:
             self._set(request, response, new_id(), user)
+        return response
 
     def renew(self, request: Request, response: Response) -> None:
         """A sign-out: the browser has a new id, issued to nobody, before
