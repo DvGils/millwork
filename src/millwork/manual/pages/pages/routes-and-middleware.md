@@ -1,6 +1,6 @@
 ---
 title: Routes and middleware
-order: 5
+order: 6
 description: Routes, mounts and middleware on the Starlette application, and hooks around the process.
 related: /sign-in/access-rules, /running/deployment
 ---

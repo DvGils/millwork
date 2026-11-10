@@ -3,6 +3,34 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.3.0
+
+### Features
+
+- `App(identify_visitors=True)` gives every browser an id, and
+  `s.visitor.id` is that id in every session the browser opens, signed in
+  or not. An app without sign-in had nothing to say whose a thing was
+  once it was kept outside the session, where another tab can find it.
+  It now saves the id with what it keeps and checks it when loading. The
+  id comes from a signed, `HttpOnly` cookie named `mw_visitor` that the
+  first page load sets and the browser drops when it closes. millwork
+  keeps nothing under the id, and an app that does not ask sets no
+  cookie.
+- The visitor and the user are separate. `s.user` is the person and
+  `s.visitor` the browser, so an app with sign-in can log both. An id is
+  good for one sign-in. The browser gets a new one when someone signs in,
+  and again when they sign out or their sign-in ends, so nobody is the
+  visitor the last person on that browser was.
+- `TestApp.open(path, visitor="a")` opens a page from a browser with that
+  visitor id. Two pages opened with the same one are two tabs of it.
+- `mw.Visitor` is the type of `s.visitor`.
+
+### The manual
+
+- A new page, Visitors, on what the id is, how to pin what an app keeps
+  to it, and what it is no good for. Sessions, App options, the Hosting
+  checklist, Sign-out and cookies and Testing point to it.
+
 ## 0.2.4
 
 ### Bug fixes

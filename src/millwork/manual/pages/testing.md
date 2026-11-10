@@ -38,6 +38,8 @@ user=User(...))` signs a person in. Without one, a gated page raises
 `connect` that raises `NotFound` or `Forbidden` raises it from `open`
 too, which makes a test of its own. `open(path,
 state=State(...))` starts from a prepared state and skips `connect`.
+`open(path, visitor="a")` opens the page from a browser with that visitor
+id, in an app that [identifies its visitors](/pages/visitors).
 
 ## Finding things
 

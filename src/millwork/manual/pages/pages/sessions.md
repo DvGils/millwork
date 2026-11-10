@@ -2,7 +2,7 @@
 title: Sessions
 order: 4
 description: A page's connect and close hooks, and when a session begins, waits and ends.
-related: /state/state-and-handlers, /components/tasks, /running/app-options
+related: /pages/visitors, /state/state-and-handlers, /components/tasks, /running/app-options
 ---
 
 # Sessions
@@ -70,7 +70,9 @@ from another session, and both end with the session. A restart of the
 server ends every session.
 
 What has to be found again later, or from another tab, lives outside the
-session, in storage the app brings.
+session, in storage the app brings. There it needs an owner, which is the
+user in an app with sign-in, and the browser that [Visitors](/pages/visitors)
+describes in an app without.
 
 ## When a tab goes away
 

@@ -19,7 +19,9 @@ millwork app. It provides:
 - A files directory with room, named with `Files(...)`, when uploads are
   larger than the temporary directory should hold.
 - The `secret` and the provider's credentials from the environment or the
-  platform's secret store.
+  platform's secret store. An app without sign-in that identifies its
+  visitors wants a secret too, or every browser is a new visitor after a
+  restart.
 - `keep_alive=True` when the host stops an idle container, since
   platforms differ on whether an open websocket counts as activity and
   the health pings count everywhere.
@@ -50,7 +52,7 @@ travels over the socket to the process that holds it. Replicas need no
 sticky routing and no shared storage. When a replica goes away, its
 sessions go with it, and their tabs start fresh sessions elsewhere, as
 they would on a reload. The cookie is valid on every replica that has the
-same `secret`.
+same `secret`, and so is the one that names a [visitor](/pages/visitors).
 
 ## The page's security headers
 
