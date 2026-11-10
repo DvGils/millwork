@@ -253,7 +253,8 @@ export const Icon: Renderer = ({ props }) => {
   const Drawn = icon(props.name);
   if (!Drawn) return null;
   const size = props.size === "lg" ? "size-6" : props.size === "sm" ? "size-3" : "size-4";
-  const drawn = <Drawn className={cn("shrink-0", size, props.tone ? toneText[String(props.tone)] : undefined, props.cls as string)} />;
+  const tone = props.tone === "accent" ? "text-accent-foreground" : props.tone ? toneText[String(props.tone)] : undefined;
+  const drawn = <Drawn className={cn("shrink-0", size, tone, props.cls as string)} />;
   if (!props.label) return drawn;
   return (
     <span role="img" aria-label={String(props.label)} className="inline-flex">

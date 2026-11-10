@@ -81,7 +81,9 @@ async def export(request):
 app.route("/reports/{report_id}.pdf", export)
 ```
 
-What is mounted with `app.mount` finds it the same way.
+What is mounted with `app.mount` finds it the same way. A request that
+changes something, or a socket, that comes from another site's page has no
+visitor, since the browser would send the cookie along with it.
 
 ## The user and the visitor
 

@@ -4,10 +4,10 @@ import { useId, useRef } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { cn } from "cn";
-import { has } from "../lib";
+import { has, placed } from "../lib";
 import { icon } from "../icons";
 import { t } from "../theme";
-import { Count, PasswordInput, useDebounced, useOwned } from "./inputs";
+import { Count, limitOf, PasswordInput, useDebounced, useOwned } from "./inputs";
 import { Button as UiButton, buttonVariants } from "@/components/ui/button";
 import { anchorProps } from "./anchor";
 import { Input as UiInput } from "@/components/ui/input";
@@ -98,13 +98,16 @@ export const Input: Renderer = ({ props, emit }) => {
   // A password is wrapped as well: its eye sits at the field's end, and the
   // app's classes go on the box around both.
   const wrapped = Boolean(Prefix || props.suffix || props.clearable || secret);
-  const max = typeof props.max_length === "number" ? props.max_length : undefined;
+  const max = limitOf(props.max_length);
   const countId = useId();
   const counted = Boolean(props.counter);
-  // The app's classes (a margin, a width) go on the outermost box there is:
-  // the one around the field and its count, else the one around the field
-  // and what decorates it, else the field.
+  // The app's classes go on the field, or on the box around the field and
+  // what decorates it. A count under it puts one more box around that,
+  // which takes over the classes that place the field among its
+  // neighbours, so a class does with a count what it does without one.
   const cls = props.cls as string;
+  const { box, rest } = placed(counted ? cls : "");
+  const own = counted ? rest : cls;
   const clearable = Boolean(props.clearable) && current !== "" && !props.disabled && !props.readonly;
   const fieldRef = useRef<HTMLInputElement>(null);
   const clear = () => {
@@ -141,15 +144,16 @@ export const Input: Renderer = ({ props, emit }) => {
         Prefix && "pl-8",
         props.clearable && (secret ? "pr-14" : "pr-8"),
         props.clearable && "[&::-webkit-search-cancel-button]:appearance-none",
-        !wrapped && !counted && cls,
+        !wrapped && own,
       )}
     />
   );
   const count = counted ? <Count id={countId} length={current.length} max={max} /> : null;
   if (!wrapped) {
     if (!counted) return field;
+    // As wide as the field alone would be, and as ready to give way.
     return (
-      <div className={cn("flex w-full flex-col gap-1", cls)}>
+      <div className={cn("flex w-full min-w-0 flex-col", box)}>
         {field}
         {count}
       </div>
@@ -160,7 +164,7 @@ export const Input: Renderer = ({ props, emit }) => {
   // The icon and the clear button stay centred on the input itself, in a row
   // of their own.
   const row = (
-    <div className={cn("relative flex items-center gap-2", !counted && cls)}>
+    <div className={cn("relative flex items-center gap-2", own)}>
       {Prefix ? <Prefix className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" /> : null}
       {field}
       {clearable && Clear ? (
@@ -178,7 +182,7 @@ export const Input: Renderer = ({ props, emit }) => {
   );
   if (!counted) return row;
   return (
-    <div className={cn("flex w-full flex-col gap-1", cls)}>
+    <div className={cn("flex flex-col", box)}>
       {row}
       {count}
     </div>

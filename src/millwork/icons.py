@@ -28,17 +28,28 @@ _ACCEPTED: frozenset[str] = frozenset(
 
 
 # An icon of the app's own: a file under ``public/``, by the path it is served
-# at. Every segment starts with a letter, a digit, ``_`` or ``-``, so none is
-# ``..`` or hidden, and the name ends in a kind of image the tab can draw.
-# Nothing in a path of this shape can lead out of the folder, to another
-# route of the app or to another site.
-_FILE = re.compile(r"/public(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)+\.(?:svg|png|webp|jpg|jpeg)", re.I)
+# at. The folder is spelled as it is served, and every segment after it
+# starts with a letter, a digit, ``_`` or ``-``, so none is ``..`` or hidden.
+# The name ends in a kind of image the tab can draw, in either case. Only
+# letters and digits of ASCII count, the same ones the tab accepts. Nothing
+# in a path of this shape can lead out of ``/public/`` or to another site.
+_FILE = re.compile(
+    r"/public(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)+\.(?i:svg|png|webp|jpg|jpeg)", re.ASCII
+)
 _FILE_LIMIT = 200
+# No icon's name comes near this. What is longer is refused as it stands,
+# without being weighed against every name there is.
+_NAME_LIMIT = 64
 
 
 def is_icon_file(name: str) -> bool:
     """Whether ``name`` is the path of an icon file under ``public/``."""
     return len(name) <= _FILE_LIMIT and _FILE.fullmatch(name) is not None
+
+
+def _shown(name: str) -> str:
+    """A value as an error quotes it: whole when it is short."""
+    return repr(name) if len(name) <= _NAME_LIMIT else repr(name[:_NAME_LIMIT]) + "…"
 
 
 def check_icon(name: str | None) -> str | None:
@@ -53,11 +64,15 @@ def check_icon(name: str | None) -> str | None:
             return name
         raise ValueError(
             f"an icon file is a path under /public/ that ends in .svg, .png, .webp or .jpg, "
-            f"such as /public/icons/rocket.svg, got {name!r}"
+            f"such as /public/icons/rocket.svg, got {_shown(name)}"
         )
-    close = difflib.get_close_matches(name.lower(), ICONS, n=3, cutoff=0.5)
+    close = (
+        difflib.get_close_matches(name.lower(), ICONS, n=3, cutoff=0.5)
+        if len(name) <= _NAME_LIMIT
+        else []
+    )
     hint = f"; the closest are {', '.join(close)}" if close else ""
     raise ValueError(
-        f"no icon named {name!r} in the bundle{hint}; see millwork.ICONS, "
+        f"no icon named {_shown(name)} in the bundle{hint}; see millwork.ICONS, "
         "or give the path of a file under /public/"
     )

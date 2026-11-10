@@ -131,7 +131,11 @@ a password field in a form and on the sign-in page. `on_change` fires after a pa
 
 `max_length` caps what the field takes, and `counter=True` shows under the
 field how much it holds, against the limit when there is one. The count
-takes the destructive color once the field is full.
+takes the destructive color once the field is full. A field of the kind
+`number` is the exception, since a browser puts no limit on its length.
+The count makes the field taller, so in a `ui.Row` what stands next to it
+is centered on the two together, and `align="start"` on the row lines
+them up at the top.
 
 ```python live
 ui.Stack(

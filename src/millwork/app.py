@@ -485,9 +485,10 @@ class App:
         route = Route(path, endpoint, methods=methods or ["GET"])
         rule = rule_for(allow, route.param_convertors, f"the route {path}") if allow else None
         self._extra.append(_Extra("route", path, public, rule))
+        guarded = self.auth is not None and not public
         if self.visitors is not None:
-            route.app = _Visited(self, route.app)
-        if self.auth is not None and not public:
+            route.app = _Visited(self, route.app, guarded)
+        if guarded:
             route.app = _Guarded(self, route.app, rule, f"the route {path}")
         self._routes.append(route)
 
@@ -506,9 +507,10 @@ class App:
         self._check_access(f"the mount {path}", public, allow)
         rule = rule_for(allow, (), f"the mount {path}") if allow else None
         self._extra.append(_Extra("mount", path, public, rule))
+        guarded = self.auth is not None and not public
         if self.visitors is not None:
-            asgi_app = _Visited(self, asgi_app)
-        if self.auth is not None and not public:
+            asgi_app = _Visited(self, asgi_app, guarded)
+        if guarded:
             asgi_app = _Guarded(self, asgi_app, rule, f"the mount {path}")
         self._routes.append(Mount(path, app=asgi_app))
 
@@ -1082,10 +1084,13 @@ class _Visited:
     ``request.state.visitor`` is the visitor a session opened from that
     browser would have, or None when the browser brought no id that is this
     person's to use. Nothing is issued here: a browser gets its id from a
-    page."""
+    page. A socket, or a request that changes something, from another
+    site's page has no visitor either, since the cookie rides along on it.
+    ``guarded`` says the sign-in was asked for on the way in, and the user
+    it found is the one the id is checked against."""
 
-    def __init__(self, app: App, inner: Any) -> None:
-        self.app, self.inner = app, inner
+    def __init__(self, app: App, inner: Any, guarded: bool) -> None:
+        self.app, self.inner, self.guarded = app, inner, guarded
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope["type"] in ("http", "websocket"):
@@ -1100,9 +1105,13 @@ class _Visited:
             # Most of what calls a public route, a webhook say, brings no
             # cookie, and nobody needs identifying to say so.
             return None
-        if "user" in state:
-            user = state["user"]
-        else:
+        changes = scope["type"] == "websocket" or scope["method"] not in _SAFE_METHODS
+        if changes and not _same_origin(conn, self.app.origins):  # type: ignore[arg-type]
+            return None
+        user: Any = None
+        if self.guarded:
+            user = state.get("user")
+        elif self.app.auth is not None:
             try:
                 user = await self.app.user_for(conn)
             except Exception:

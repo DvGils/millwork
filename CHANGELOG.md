@@ -25,7 +25,8 @@ versions; a release says so here when it does.
 - A route or a mount of the app's own finds the visitor in
   `request.state.visitor`, next to `request.state.user`, so a download
   link can check an owner the way a page does. It is `None` for a browser
-  that brought no id.
+  that brought no id, and for a request from another site's page that
+  changes something.
 - `TestApp.open(path, visitor="a")` opens a page from a browser with that
   visitor id. Two pages opened with the same one are two tabs of it.
 - `mw.Visitor` is the type of `s.visitor`.
@@ -37,7 +38,7 @@ versions; a release says so here when it does.
   tone and dark mode, and a PNG, WebP or JPEG is drawn as it is. The path
   is checked when the component is made. It starts with `/public/`, holds
   no segment that starts with a dot, and ends in a kind of image, so one
-  that comes from data cannot lead anywhere else. The file is the
+  that comes from data cannot lead out of `/public/`. The file is the
   browser's to fetch, and is never read by the server or put into the
   page as markup.
 - `ui.Icon(name)` places an icon on its own, with a `size`, a `tone` and

@@ -318,7 +318,9 @@ for (const [name, icon] of Object.entries(byPascal)) {
 // file of the app's own by its path under public/.
 export function icon(name: unknown): IconType | null {
   if (typeof name !== "string" || !name) return null;
-  const found = name.startsWith("/") ? fileIcon(name) : (byKebab[name] ?? byPascal[name]);
+  // Only a name the table itself holds: every object has a `constructor`.
+  const named = (table: Record<string, LucideIcon>) => (Object.hasOwn(table, name) ? table[name] : undefined);
+  const found = name.startsWith("/") ? fileIcon(name) : (named(byKebab) ?? named(byPascal));
   if (!found) console.warn(`millwork: unknown icon "${name}"`);
   return found ?? null;
 }

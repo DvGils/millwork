@@ -8,7 +8,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type React from "react";
 import type { Renderer } from "../render";
 import { cn } from "cn";
-import { has } from "../lib";
+import { has, placed } from "../lib";
 import { icon } from "../icons";
 import { t } from "../theme";
 import {
@@ -244,13 +244,18 @@ export const Switch: Renderer = ({ node, props, emit }) => {
   );
 };
 
+// The limit a field was given, when it is one a field can have.
+export function limitOf(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
 // How much a text field holds, against its limit when it has one. The length
 // is counted the way the browser counts it for `maxlength`, so the two agree
 // on when the field is full.
 export function Count({ id, length, max }: { id?: string; length: number; max?: number }) {
   const full = max !== undefined && length >= max;
   return (
-    <p id={id} data-slot="count" data-full={full || undefined} className={cn("text-right text-xs tabular-nums", full ? "text-destructive" : "text-muted-foreground")}>
+    <p id={id} data-slot="count" data-full={full || undefined} className={cn("mt-1 text-right text-xs whitespace-nowrap tabular-nums", full ? "text-destructive" : "text-muted-foreground")}>
       {max !== undefined ? `${length} / ${max}` : length}
     </p>
   );
@@ -262,9 +267,13 @@ export const Textarea: Renderer = ({ props, emit }) => {
   const controlled = has(props, "value");
   const [current, setDraft] = useOwned<string>(controlled, String(props.value ?? ""), String(props.default ?? ""));
   const later = useDebounced(typeof props.debounce_ms === "number" ? props.debounce_ms : 250);
-  const max = typeof props.max_length === "number" ? props.max_length : undefined;
+  const max = limitOf(props.max_length);
   const countId = useId();
   const counted = Boolean(props.counter);
+  // With a count under it the field is in a box. The box takes over the
+  // classes that place the field among its neighbours, and the field keeps
+  // the rest, so a class does with a count what it does without one.
+  const { box, rest } = placed(props.cls);
   const field = (
     <UiTextarea
       value={current}
@@ -275,9 +284,9 @@ export const Textarea: Renderer = ({ props, emit }) => {
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}
       aria-describedby={counted ? countId : undefined}
-      // With a count under it the field fills the box the app's classes
-      // shape, so a height or a width asked for is still the field's.
-      className={cn(props.autosize ? "field-sizing-content" : "resize-y", counted ? "grow" : (props.cls as string))}
+      // In the box the field takes the height there is, for a box that was
+      // given more than the field asks for.
+      className={cn(props.autosize ? "field-sizing-content" : "resize-y", counted ? cn("grow", rest) : (props.cls as string))}
       onChange={(e) => {
         const next = e.target.value;
         setDraft(next);
@@ -293,7 +302,7 @@ export const Textarea: Renderer = ({ props, emit }) => {
   );
   if (!counted) return field;
   return (
-    <div className={cn("flex w-full flex-col gap-1", props.cls as string)}>
+    <div className={cn("flex w-full flex-col", box)}>
       {field}
       <Count id={countId} length={current.length} max={max} />
     </div>

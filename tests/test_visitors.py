@@ -535,3 +535,98 @@ def test_a_public_route_answers_when_nobody_can_say_who_is_signed_in(
             answer = client.get("/hook")
         assert answer.status_code == 200 and answer.json()["visitor"] is None
         assert any("has no visitor" in r.getMessage() for r in caplog.records)
+
+
+def test_a_user_the_app_put_on_the_request_itself_is_not_taken_for_a_sign_in(
+    tmp_path: Path,
+) -> None:
+    class Own:
+        """Middleware of the app's own that names a user its own way."""
+
+        def __init__(self, inner: Any) -> None:
+            self.inner = inner
+
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            if scope["type"] == "http":
+                scope.setdefault("state", {})["user"] = "someone the app knows"
+            await self.inner(scope, receive, send)
+
+    from starlette.responses import JSONResponse
+
+    app = make_app(tmp_path)
+    app.middleware(Own)
+    app.route(
+        "/api/me",
+        lambda request: JSONResponse(request.state.visitor and request.state.visitor.id),
+    )
+    with TestClient(app.asgi) as client:
+        client.get("/")
+        assert client.get("/api/me").json() == visitor_of(client)
+
+
+def test_a_request_from_another_site_that_changes_something_has_no_visitor(
+    tmp_path: Path,
+) -> None:
+    app = with_sign_in(tmp_path)
+    app.route("/api/open", said_by_a_route, methods=["GET", "POST"], public=True)
+    with TestClient(app.asgi) as client:
+        client.get("/")
+        mine = visitor_of(client)
+        elsewhere = {"origin": "https://evil.example"}
+        here = {"origin": "http://testserver"}
+        assert client.post("/api/open", headers=here).json()["visitor"] == mine
+        assert client.post("/api/open").json()["visitor"] == mine
+        assert client.post("/api/open", headers=elsewhere).json()["visitor"] is None
+        # Reading changes nothing, and the answer goes to the visitor's own browser.
+        assert client.get("/api/open", headers=elsewhere).json()["visitor"] == mine
+
+
+def test_a_socket_of_the_apps_own_finds_the_visitor(tmp_path: Path) -> None:
+    from starlette.applications import Starlette
+    from starlette.routing import WebSocketRoute
+    from starlette.websockets import WebSocket
+
+    async def feed(ws: WebSocket) -> None:
+        await ws.accept()
+        visitor = ws.state.visitor
+        await ws.send_json(visitor.id if visitor else None)
+        await ws.close()
+
+    app = make_app(tmp_path)
+    app.mount("/live", Starlette(routes=[WebSocketRoute("/feed", feed)]), public=True)
+    with TestClient(app.asgi) as client:
+        client.get("/")
+        mine = visitor_of(client)
+        with client.websocket_connect("/live/feed") as ws:
+            assert ws.receive_json() == mine
+        with client.websocket_connect(
+            "/live/feed", headers={"origin": "https://evil.example"}
+        ) as ws:
+            assert ws.receive_json() is None
+
+
+def test_a_public_route_asks_about_nobody_who_brought_no_visitor(tmp_path: Path) -> None:
+    asked = []
+
+    def admit(identity: auth.Identity) -> auth.User:
+        return auth.User(id=identity.subject, name=identity.subject)
+
+    def recheck(user: auth.User) -> auth.User:
+        asked.append(user.id)
+        return user
+
+    sign_ins = auth.Auth(
+        [auth.Password(lambda u, p: p == "pw")],
+        on_login=admit,
+        recheck=recheck,
+        recheck_every=dt.timedelta(microseconds=1),
+    )
+    app = make_app(tmp_path, secret=SECRET, auth=sign_ins)
+    app.route("/hook", said_by_a_route, public=True)
+    with TestClient(app.asgi) as client:
+        sign_in(client, "ada")
+        before = len(asked)
+        # Signed in, and no visitor cookie yet: nobody is looked up.
+        assert "mw_visitor" not in client.cookies
+        assert client.get("/hook").json()["visitor"] is None
+        assert len(asked) == before

@@ -128,9 +128,14 @@ PNG, WebP or JPEG is drawn as it is.
 The path starts with `/public/`, no folder or file in it starts with a
 dot, and it ends in `.svg`, `.png`, `.webp` or `.jpg`. Anything else is
 refused when the component is made, so a path that comes from data cannot
-lead out of the folder, to another address of the app or to another site.
+lead out of `/public/` or to another site.
 The browser fetches the file, and a file that is not there draws nothing
 and is named in the browser's console.
+
+As an icon a file is only looked at, and nothing in it is run. The same
+SVG opened at its own address is a document, and a script in it does run
+there. `public/` is for the app's own files, and nothing a visitor
+uploaded belongs in it.
 
 ## Kbd
 
