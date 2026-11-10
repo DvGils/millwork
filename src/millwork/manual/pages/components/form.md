@@ -60,7 +60,8 @@ def example(s):
 `labels` maps a field's pointer, or its name, to a `label`, `help`,
 `placeholder` and `choices`, so the model stays free of interface copy.
 `overrides` maps a pointer to any spec key, such as a `widget`, `min`,
-`max`, `step` or `rows`. `fields` picks a subset in order.
+`max`, `step` or `rows`. `counter` shows under a text field how much it
+holds, against its `max_length`. `fields` picks a subset in order.
 
 The widgets are `input`, `textarea`, `password`, `number`, `slider`,
 `switch`, `checkbox`, `select`, `radio`, `toggle`, `multiselect`,

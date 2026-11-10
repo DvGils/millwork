@@ -30,6 +30,12 @@ versions; a release says so here when it does.
   visitor id. Two pages opened with the same one are two tabs of it.
 - `mw.Visitor` is the type of `s.visitor`.
 
+- `ui.Input` and `ui.Textarea` take `counter=True`, which shows under the
+  field how many characters it holds, against `max_length` when there is
+  one, and in the destructive color once the field is full. A text field
+  of a `ui.Form` gets the same with `overrides={"/notes": {"counter":
+  True}}`.
+
 ### The manual
 
 - A new page, Visitors, on what the id is, how to pin what an app keeps

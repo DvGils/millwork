@@ -5,10 +5,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import millwork as mw
 from millwork import ui
+from millwork.nodes import build
 from millwork.testing import Notice, TestApp
 
 
@@ -59,6 +60,29 @@ def test_a_text_field_says_whether_the_browser_checks_its_spelling() -> None:
     assert ui.Input().spellcheck is None and ui.Textarea().spellcheck is None
     assert ui.Input(spellcheck=False).spellcheck is False
     assert ui.Textarea(spellcheck=True).spellcheck is True
+
+
+def test_a_text_field_can_show_its_count() -> None:
+    assert ui.Input().counter is False and ui.Textarea().counter is False
+    counted = build(ui.Page(ui.Input(max_length=20, counter=True, key="title")), "root")
+    props = counted.nodes["root/title"].props
+    assert props["counter"] is True and props["max_length"] == 20
+    assert (
+        build(ui.Page(ui.Textarea(counter=True, key="notes")), "root")
+        .nodes["root/notes"]
+        .props["counter"]
+    )
+
+
+def test_a_form_field_shows_its_count_by_an_override() -> None:
+    class Note(BaseModel):
+        title: str = Field("", max_length=20)
+        notes: str = Field("", max_length=300)
+
+    form = ui.Form(Note, overrides={"/notes": {"counter": True}}, on_submit=lambda s, v: None)
+    fields = {f["name"]: f for f in build(form).nodes["root"].props["schema"]["fields"]}
+    assert fields["notes"]["counter"] is True and fields["notes"]["max_length"] == 300
+    assert "counter" not in fields["title"]
 
 
 def test_a_stat_takes_any_numbers_as_its_trend() -> None:

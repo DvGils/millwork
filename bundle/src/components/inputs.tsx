@@ -4,7 +4,7 @@
 // the state and the control shows exactly that; the draft lives here only
 // when the key is absent.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type React from "react";
 import type { Renderer } from "../render";
 import { cn } from "cn";
@@ -244,22 +244,40 @@ export const Switch: Renderer = ({ node, props, emit }) => {
   );
 };
 
+// How much a text field holds, against its limit when it has one. The length
+// is counted the way the browser counts it for `maxlength`, so the two agree
+// on when the field is full.
+export function Count({ id, length, max }: { id?: string; length: number; max?: number }) {
+  const full = max !== undefined && length >= max;
+  return (
+    <p id={id} data-slot="count" data-full={full || undefined} className={cn("text-right text-xs tabular-nums", full ? "text-destructive" : "text-muted-foreground")}>
+      {max !== undefined ? `${length} / ${max}` : length}
+    </p>
+  );
+}
+
 // Text controls: a controlled one shows the server's value and emits each change
 // (debounced); an uncontrolled one keeps its draft and emits the same way.
 export const Textarea: Renderer = ({ props, emit }) => {
   const controlled = has(props, "value");
   const [current, setDraft] = useOwned<string>(controlled, String(props.value ?? ""), String(props.default ?? ""));
   const later = useDebounced(typeof props.debounce_ms === "number" ? props.debounce_ms : 250);
-  return (
+  const max = typeof props.max_length === "number" ? props.max_length : undefined;
+  const countId = useId();
+  const counted = Boolean(props.counter);
+  const field = (
     <UiTextarea
       value={current}
       rows={typeof props.rows === "number" ? props.rows : 3}
-      maxLength={typeof props.max_length === "number" ? props.max_length : undefined}
+      maxLength={max}
       spellCheck={typeof props.spellcheck === "boolean" ? props.spellcheck : undefined}
       placeholder={props.placeholder ? String(props.placeholder) : undefined}
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}
-      className={cn(props.autosize ? "field-sizing-content" : "resize-y", props.cls as string)}
+      aria-describedby={counted ? countId : undefined}
+      // With a count under it the field fills the box the app's classes
+      // shape, so a height or a width asked for is still the field's.
+      className={cn(props.autosize ? "field-sizing-content" : "resize-y", counted ? "grow" : (props.cls as string))}
       onChange={(e) => {
         const next = e.target.value;
         setDraft(next);
@@ -272,6 +290,13 @@ export const Textarea: Renderer = ({ props, emit }) => {
         }
       }}
     />
+  );
+  if (!counted) return field;
+  return (
+    <div className={cn("flex w-full flex-col gap-1", props.cls as string)}>
+      {field}
+      <Count id={countId} length={current.length} max={max} />
+    </div>
   );
 };
 

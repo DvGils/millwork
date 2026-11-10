@@ -1,10 +1,10 @@
 // The Form: a field spec from Python, a draft kept here, issues by JSON pointer.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { Renderer } from "../render";
 import { cn } from "cn";
 import { icon } from "../icons";
-import { PasswordInput } from "./inputs";
+import { Count, PasswordInput } from "./inputs";
 import { t } from "../theme";
 import { onStatus } from "../ws";
 import { formatSize, upload, type FileRef } from "./files";
@@ -53,6 +53,7 @@ interface FieldSpec {
   options?: Opt[];
   clearable?: boolean;
   max_length?: number;
+  counter?: boolean;
   integer?: boolean;
   min?: number;
   max?: number;
@@ -489,7 +490,7 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
     case "files":
       return <FileControl f={f} id={id} value={value} set={set} ctx={ctx} pointer={pointer} multiple={f.widget === "files"} />;
     case "textarea":
-      return <Textarea {...common} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />;
+      return counted(f, id, str, <Textarea {...common} {...described(f, id)} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
     case "password":
       return <PasswordInput {...common} value={str} placeholder={f.placeholder ?? undefined} onChange={(e) => set(e.target.value || null)} />;
     case "number":
@@ -619,8 +620,23 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
     case "datetime":
       return <Input {...common} type="datetime-local" value={str.slice(0, 16)} onChange={(e) => set(e.target.value || null)} />;
     default:
-      return <Input {...common} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />;
+      return counted(f, id, str, <Input {...common} {...described(f, id)} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
   }
+}
+
+// A text field that was asked to show its count, with the count under it.
+function counted(f: FieldSpec, id: string, text: string, field: ReactElement) {
+  if (!f.counter) return field;
+  return (
+    <div className="flex w-full flex-col gap-1">
+      {field}
+      <Count id={`${id}-count`} length={text.length} max={f.max_length} />
+    </div>
+  );
+}
+
+function described(f: FieldSpec, id: string) {
+  return f.counter ? { "aria-describedby": `${id}-count` } : {};
 }
 
 export function labelFor(f: FieldSpec): ReactNode {
