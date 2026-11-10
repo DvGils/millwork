@@ -219,14 +219,43 @@ async def close_page(s: Session[Any]) -> None:
 # ------------------------------------------------------------------ children
 
 
-async def event(s: Session[Any], event: Event) -> None:
+async def event(s: Session[Any], event: Event, visit: int) -> None:
     """Something happened on a node of the page. What needs no turn is done
-    in a step. A handler is run in a turn."""
-    if not await stay_current(s):
-        return
-    plan = s.sort(event)
-    if plan is not None:
-        await turn(s, plan)
+    in a step. A handler is run in a turn. ``visit`` is the visit of a page
+    the session was on when the event came in.
+
+    Events are dealt with in the order they came in. Each waits at the
+    session's door for the one before it to have been looked at and to
+    stand in line for the turn, so one that has to wait on the way, for
+    the user to be checked again or for a part of the page to be built,
+    is not passed by one that does not.
+    """
+    async with s.door:
+        if not await stay_current(s):
+            return
+        if event.name == "show":
+            s.shown(event)
+            return
+        if s.kept_part(event.node) is not None:
+            # A lazy part that does not show stays in the tab as it was last
+            # drawn, and something in it can still speak: an upload that was
+            # on its way, a change a field was holding. What may be called
+            # is what the page offers now, so the part is built again first.
+            # That takes the turn, which is kept for the handler.
+            await s.turn.take(asyncio.current_task())
+            if visit != s.visit or not s.bring_up(event.node):
+                log.debug("event %s for %s dropped: its part is gone", event.name, event.node)
+                return
+        if visit != s.visit:
+            # It was sent from a page the session has left since. The page
+            # it is on now can have a node by the same id.
+            return
+        plan = s.sort(event)
+        if plan is None:
+            return
+    # Out of the door and into the line for the turn in one step, so the
+    # next event cannot get there first.
+    await turn(s, plan)
 
 
 async def turn(s: Session[Any], plan: Plan) -> None:
@@ -293,7 +322,9 @@ async def recheck(s: Session[Any]) -> None:
         s.watch_user(s._identified)
 
 
-async def request(s: Session[Any], conn: Connection, msg: Request, pipe: Pipe | None) -> None:
+async def request(
+    s: Session[Any], conn: Connection, msg: Request, pipe: Pipe | None, visit: int
+) -> None:
     """Answer a ``request`` with a ``reply``, over the connection it came in
     on, without a render.
 
@@ -301,6 +332,12 @@ async def request(s: Session[Any], conn: Connection, msg: Request, pipe: Pipe | 
     the bytes that follow the message; any other name is a handler on the
     node, run outside the turn (a search never waits on a click), whose
     return value is the payload.
+
+    A handler on a node in a lazy part that does not show is the one
+    exception to not waiting: the part is built again first, which takes a
+    turn. An upload for such a node does not wait, since its bytes are on
+    their way. It goes by what the part allowed when it was last drawn, and
+    the event that hands the file to the app is checked like any event.
     """
     if not await stay_current(s):
         conn.say(Reply(request=msg.request, error=s.text("sign_in_hint")))
@@ -309,8 +346,22 @@ async def request(s: Session[Any], conn: Connection, msg: Request, pipe: Pipe | 
         await _serve_file(s, conn, msg)
     elif msg.name == "upload":
         await _receive_upload(s, conn, msg, pipe)
+    elif s.kept_part(msg.node) is not None and not await _brought_up(s, msg.node, visit):
+        conn.say(Reply(request=msg.request, error="unknown request"))
     else:
         await _ask_handler(s, conn, msg)
+
+
+async def _brought_up(s: Session[Any], node: str, visit: int) -> bool:
+    """Build the kept part a node is in, in a turn taken for it and given
+    back. False when the node cannot be answered for."""
+    me = asyncio.current_task()
+    try:
+        await s.turn.take(me)
+        return visit == s.visit and s.bring_up(node)
+    finally:
+        # Also for one that was cancelled as the turn came to it.
+        s.turn.give_back(me)
 
 
 async def _ask_handler(s: Session[Any], conn: Connection, msg: Request) -> None:

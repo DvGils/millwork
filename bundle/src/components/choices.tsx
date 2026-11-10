@@ -10,6 +10,7 @@ import { has } from "../lib";
 import { icon } from "../icons";
 import { t, locale } from "../theme";
 import { useOwned } from "./inputs";
+import { optionLabel } from "./option-label";
 import { SortableChips } from "./sortable-chips";
 import { Button as UiButton } from "@/components/ui/button";
 import {
@@ -39,6 +40,7 @@ import { Field as UiField, FieldContent, FieldDescription, FieldError, FieldLabe
 interface Opt {
   value: string;
   label?: string | null;
+  icon?: string | null;
   disabled?: boolean;
 }
 
@@ -100,10 +102,10 @@ export function MultiSelectControl({
           {(chosen: Opt[]) => (
             <>
               {sortable ? (
-                <SortableChips chips={chosen.map((o) => ({ value: o.value, label: o.label ?? o.value }))} onReorder={onChange} disabled={disabled} />
+                <SortableChips chips={chosen.map((o) => ({ value: o.value, label: o.label ?? o.value, icon: o.icon }))} onReorder={onChange} disabled={disabled} />
               ) : (
                 chosen.map((o) => (
-                  <ComboboxChip key={o.value}>{o.label ?? o.value}</ComboboxChip>
+                  <ComboboxChip key={o.value}>{optionLabel(o, "size-3")}</ComboboxChip>
                 ))
               )}
               <ComboboxChipsInput
@@ -127,7 +129,7 @@ export function MultiSelectControl({
         <ComboboxList>
           {(item: Opt) => (
             <ComboboxItem key={item.value} value={item} disabled={Boolean(item.disabled)}>
-              {item.label ?? item.value}
+              {optionLabel(item)}
             </ComboboxItem>
           )}
         </ComboboxList>

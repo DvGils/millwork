@@ -5,12 +5,13 @@ import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
 import { t } from "../theme";
-import { store, useNode } from "../store";
+import { store, useMounts, useNode } from "../store";
 import { has, linkLook } from "../lib";
 import { anchorProps, InSidebar } from "./anchor";
 import { ScrollArea as UiScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "cn";
 import { icon } from "../icons";
+import { toneText } from "./layout";
 import { Tabs as UiTabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog as UiDialog,
@@ -36,11 +37,33 @@ import { Badge as UiBadge } from "@/components/ui/badge";
 export const Tabs: Renderer = ({ node, props, emit }) => {
   const controlled = has(props, "value");
   const tabs = node.children;
+  const first = String(props.default ?? firstTabId(tabs));
+  // The open tab, for tabs that keep their own choice. The server asks for
+  // it with `track` when parts of the page under these tabs are only kept up
+  // to date while their tab is open. It is said when the tabs appear and
+  // when the choice changes. It is said again when the socket opens and
+  // when a whole page is put here, since these tabs live on under the same
+  // id while the session behind them may be a new one, or may have been on
+  // a page without them in between and have forgotten.
+  const [open, setOpen] = useState(first);
+  const status = useStatus();
+  const mounts = useMounts();
+  const track = Boolean(props.track) && !controlled;
+  useEffect(() => {
+    if (track && status === "open") emit("show", open);
+    // `emit` is made anew at every render and always speaks for this node.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track, open, status, mounts]);
   return (
     <UiTabs
       value={controlled ? String(props.value ?? "") : undefined}
-      defaultValue={!controlled ? String(props.default ?? firstTabId(tabs)) : undefined}
-      onValueChange={(v) => props.on_change && emit("change", v)}
+      defaultValue={!controlled ? first : undefined}
+      onValueChange={(v) => {
+        // Also when the tabs move on by themselves, from a tab that was
+        // removed or disabled to the first one that can be chosen.
+        setOpen(String(v));
+        if (props.on_change) emit("change", v);
+      }}
       className={cn("flex flex-col gap-3", props.cls as string)}
     >
       <TabsList variant={props.variant === "pill" ? "default" : "line"}>
@@ -246,6 +269,22 @@ export const Skeleton: Renderer = ({ props }) => {
   );
 };
 
+// Icon: one of the bundle's or a file of the app's, on its own. With a
+// label it is an image with a name, and without one it is decoration.
+export const Icon: Renderer = ({ props }) => {
+  const Drawn = icon(props.name);
+  if (!Drawn) return null;
+  const size = props.size === "lg" ? "size-6" : props.size === "sm" ? "size-3" : "size-4";
+  const tone = props.tone === "accent" ? "text-accent-foreground" : props.tone ? toneText[String(props.tone)] : undefined;
+  const drawn = <Drawn className={cn("shrink-0", size, tone, props.cls as string)} />;
+  if (!props.label) return drawn;
+  return (
+    <span role="img" aria-label={String(props.label)} className="inline-flex">
+      {drawn}
+    </span>
+  );
+};
+
 export const Spinner: Renderer = ({ props }) => (
   <span className={cn("inline-flex items-center gap-2 text-sm text-muted-foreground", props.cls as string)}>
     <UiSpinner className={props.size === "lg" ? "size-6" : props.size === "sm" ? "size-3" : "size-4"} />
@@ -292,13 +331,23 @@ function PaneAndHandle({ id, index, last, size, min, collapsible }: { id: string
 
 // The column counts go to the stylesheet as variables, which has the widths at
 // which each takes over, so any count works and none needs a class of its own.
-export const Grid: Renderer = ({ props, children }) => {
-  const cols = props.cols;
+// A grid says all four, a width it has no count for as one that is not set.
+// A variable left out would be the one a grid around this one set, since
+// variables are handed down.
+export function gridColumns(cols: unknown): Record<string, number | string> {
   const by = typeof cols === "number" ? { sm: cols } : cols && typeof cols === "object" ? (cols as Record<string, number>) : { sm: 2 };
-  const style = { "--mw-cols": by.sm ?? 1, "--mw-cols-md": by.md, "--mw-cols-lg": by.lg, "--mw-cols-xl": by.xl } as CSSProperties;
+  return {
+    "--mw-cols": by.sm ?? 1,
+    "--mw-cols-md": by.md ?? "initial",
+    "--mw-cols-lg": by.lg ?? "initial",
+    "--mw-cols-xl": by.xl ?? "initial",
+  };
+}
+
+export const Grid: Renderer = ({ props, children }) => {
   const gap = typeof props.gap === "number" ? props.gap : 4;
   return (
-    <div className={cn("mw-grid grid", `gap-${gap}`, props.cls as string)} style={style}>
+    <div className={cn("mw-grid grid", `gap-${gap}`, props.cls as string)} style={gridColumns(props.cols) as CSSProperties}>
       {children}
     </div>
   );

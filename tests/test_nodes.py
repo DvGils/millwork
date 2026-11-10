@@ -319,3 +319,108 @@ def test_a_button_with_an_href_is_a_link_and_takes_no_handler() -> None:
     # A menu's trigger opens the menu: it cannot also be a link.
     with pytest.raises(ValueError, match="takes no href"):
         ui.DropdownMenu(trigger=ui.Button("More", href="/a"), items=[])
+
+
+class Shelf(Component):
+    type: ClassVar[str] = "Shelf"
+    size: str = "md"
+    note: str | None = None
+    tags: list[str] = []
+
+
+def test_a_component_given_nothing_sends_its_class_defaults() -> None:
+    props = build(Shelf()).nodes["root"].props
+    assert props == {"size": "md", "tags": []}
+
+
+def test_what_a_component_was_given_goes_over_its_defaults() -> None:
+    props = build(Shelf(size="lg", note=None, hidden=True)).nodes["root"].props
+    # An explicit None is sent as null, where an unset one is left out.
+    assert props == {"size": "lg", "note": None, "tags": [], "hidden": True}
+
+    class Wide(Shelf):
+        size: str = "xl"
+
+    assert build(Wide()).nodes["root"].props["size"] == "xl"
+    assert build(Shelf()).nodes["root"].props["size"] == "md"
+
+
+def test_a_prop_changed_after_the_component_was_made_is_the_one_sent() -> None:
+    shelf = Shelf()
+    shelf.tags.append("new")
+    shelf.size = "sm"
+    assert build(shelf).nodes["root"].props == {"size": "sm", "tags": ["new"]}
+    # The next one starts from the class again.
+    assert build(Shelf()).nodes["root"].props == {"size": "md", "tags": []}
+
+
+def test_two_nodes_do_not_share_a_props_table() -> None:
+    tree = build(Box(Shelf(), Shelf()))
+    first, second = tree.nodes["root/0:Shelf"], tree.nodes["root/1:Shelf"]
+    first.props["size"] = "changed"
+    assert second.props["size"] == "md"
+    assert build(Shelf()).nodes["root"].props["size"] == "md"
+
+
+def test_a_field_filled_in_behind_the_instances_back_is_still_sent() -> None:
+    from pydantic import ConfigDict, Field, field_validator, model_validator
+
+    class Loud(Component):
+        type: ClassVar[str] = "Loud"
+        tone: str = Field(default="quiet", validate_default=True)
+        px: int = 16
+        stamp: str = ""
+
+        @field_validator("tone")
+        @classmethod
+        def _upper(cls, value: str) -> str:
+            return value.upper()
+
+        @model_validator(mode="after")
+        def _size(self) -> "Loud":
+            self.__dict__["px"] = 24
+            return self
+
+        def model_post_init(self, _: Any) -> None:
+            object.__setattr__(self, "stamp", "v1")
+
+    props = build(Loud()).nodes["root"].props
+    assert props == {"tone": "QUIET", "px": 24, "stamp": "v1"}
+
+    made = Shelf.model_construct(_fields_set=set(), size="xs", note=None, tags=["a"])
+    assert build(made).nodes["root"].props == {"size": "xs", "tags": ["a"]}
+    assert build(Shelf.model_construct()).nodes["root"].props == {"size": "md", "tags": []}
+
+    class Open(Component):
+        model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+        type: ClassVar[str] = "Open"
+        label: str = "x"
+
+    assert build(Open(anything=3)).nodes["root"].props == {"label": "x", "anything": 3}
+
+    class Rings(Component):
+        type: ClassVar[str] = "Rings"
+
+        @property
+        def events(self) -> dict[str, Any]:
+            return {"ping": lambda s, p: None}
+
+    tree = build(Rings())
+    assert tree.nodes["root"].props == {"on_ping": True}
+    assert tree.handler("root", "ping") is not None
+
+
+def test_props_go_out_in_the_order_the_class_declares_them() -> None:
+    class Many(Component):
+        type: ClassVar[str] = "Many"
+        zeta: str = "z"
+        alpha: str | None = None
+        mid: list[int] = []
+        beta: int = 1
+
+    assert list(build(Many(beta=2, alpha="a")).nodes["root"].props) == [
+        "zeta",
+        "alpha",
+        "mid",
+        "beta",
+    ]

@@ -92,7 +92,7 @@ const textVariant: Record<string, string> = {
   mono: "font-mono text-sm",
 };
 
-const toneText: Record<string, string> = {
+export const toneText: Record<string, string> = {
   muted: "text-muted-foreground",
   primary: "text-primary",
   destructive: "text-destructive",

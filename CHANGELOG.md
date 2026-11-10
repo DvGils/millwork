@@ -3,6 +3,124 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.3.0
+
+### Bug fixes
+
+- A click right after typing could reach Python before the text. A field
+  holds a change for a moment so that typing is not a message per key,
+  and a button pressed within that moment sent its click first, so the
+  handler read what the field held before. What a field is holding now
+  goes out ahead of anything else the tab sends: a click, a move to
+  another page, an answer or an upload.
+- Two events sent one right behind the other could be handled in the
+  wrong order in an app with `Auth(recheck=)`. When the user was due to
+  be checked again, the first event asked and waited for the answer, and
+  the second found the answer there and went ahead of it. A click sent
+  behind a change to a field then ran before the change. Events now pass
+  one at a time, in the order they came in, on their way to their turn.
+- On Windows with Python 3.12 a session in an app with `Auth(recheck=)`
+  could keep the server busy for up to 16 ms each time its user was due
+  to be checked again. The clock there moves in steps of that length, and
+  the timer that asks was called a step before the answer in hand ran
+  out. It found the answer good and set itself again, round and round
+  until the clock moved on. An answer now counts as run out when less
+  than a step of the clock is left of it.
+- A `ui.Grid` inside a `ui.Grid` took the outer one's column counts for
+  the widths it gave none for. A grid asking for four columns from `md`
+  showed three on a wide screen, inside a grid that set three at `lg`.
+- A chart with `format="integer"` repeated labels on its value axis for
+  small counts, reading 0, 0, 0, 1, 1, 1. An axis whose labels show no
+  decimals, counts and money, now steps by one at the least.
+- `ui.Form` ignored `rows` in `overrides`, so a textarea in a form kept
+  its default height.
+- A handler made with `functools.partial` had its shape checked again on
+  every render, where a function or a lambda is checked once. A page of
+  three hundred such handlers took twice as long to build.
+- The `icon` of a `ui.Option` was drawn by `ui.ToggleGroup` alone. A
+  Select, a Combobox, a MultiSelect, a RadioGroup and a CheckboxGroup
+  took it and showed nothing. It now stands in front of the option's
+  label in each of them: in the list, in the closed field of a Select for
+  the option that was chosen, and in the chips of a MultiSelect.
+
+### Features
+
+- `App(identify_visitors=True)` gives every browser an id, and
+  `s.visitor.id` is that id in every session the browser opens, signed in
+  or not. An app without sign-in had nothing to say whose a thing was
+  once it was kept outside the session, where another tab can find it.
+  It now saves the id with what it keeps and checks it when loading. The
+  id comes from a signed, `HttpOnly` cookie named `mw_visitor` that the
+  first page load sets and that lasts for the browser's session.
+  millwork keeps nothing under the id, and an app that does not ask sets
+  no cookie. A `secret` given to an app that asks is 32 characters or
+  more, as with sign-in.
+- The visitor and the user are separate. `s.user` is the person and
+  `s.visitor` the browser, so an app with sign-in can log both. An id is
+  good for one sign-in. The browser gets a new one when someone signs in,
+  and again when they sign out or their sign-in ends, so nobody is the
+  visitor the last person on that browser was.
+- A route or a mount of the app's own finds the visitor in
+  `request.state.visitor`, next to `request.state.user`, so a download
+  link can check an owner the way a page does. It is `None` for a browser
+  that brought no id, and for a request from another site's page that
+  changes something.
+- `TestApp.open(path, visitor="a")` opens a page from a browser with that
+  visitor id. Two pages opened with the same one are two tabs of it.
+- `mw.Visitor` is the type of `s.visitor`.
+
+- An icon can be a file of the app's own. Every `icon` takes the path of
+  a file under `public/`, such as `icon="/public/icons/rocket.svg"`, next
+  to the names of the bundle's icons. An SVG is drawn in the color of the
+  text around it, like the bundle's icons, so it follows the theme, a
+  tone and dark mode, and a PNG, WebP or JPEG is drawn as it is. The path
+  is checked when the component is made. It starts with `/public/`, holds
+  no segment that starts with a dot, and ends in a kind of image, so one
+  that comes from data cannot lead out of `/public/`. The file is the
+  browser's to fetch, and is never read by the server or put into the
+  page as markup.
+- `ui.Icon(name)` places an icon on its own, with a `size`, a `tone` and
+  a `label` for someone who cannot see it.
+- `ui.Input` and `ui.Textarea` take `counter=True`, which shows under the
+  field how many characters it holds, against `max_length` when there is
+  one, and in the destructive color once the field is full. A text field
+  of a `ui.Form` gets the same with `overrides={"/notes": {"counter":
+  True}}`.
+- `ui.lazy` makes a part of a page lazy, so that it is kept up to date
+  only while its tab is open. It goes on a function that returns a
+  component, and a call of it goes into a `ui.Tab`, as in
+  `ui.Tab(history(s), id="history", label="History")`. The function runs
+  when the page is first drawn and then at every render in which its tab
+  is the open one. While another tab is open the part stays in the
+  browser as it was when the tab was left, with what was typed into it,
+  and a render skips it.
+  A page of five tabs with sixty cards each renders in 1.9 ms that way,
+  against 8.7 ms with every tab built. Before a handler in a closed
+  tab's part is called the part is drawn again, so what is called is
+  the page as it is now.
+- In a test, `page.change(tabs, "history")` opens a tab of `ui.Tabs` by
+  its id, whether the tabs keep their own choice or the page does. An id
+  that is no tab, or a tab that is disabled, is refused.
+- Drawing a page takes less of the server's time. Turning the components
+  of a page into what is sent looked at every prop of every component,
+  the ones nobody gave included, at full length. A prop that still holds
+  what its class gives it is now passed on at a glance. A page of nine
+  hundred components went from 9.3 ms to 4.5 ms for that part of a
+  render, with the same result.
+
+### The manual
+
+- A new page, Visitors, on what the id is, how to pin what an app keeps
+  to it, and what it is no good for. Sessions, App options, the Hosting
+  checklist, Sign-out and cookies and Testing point to it.
+- Layout has a section on lazy parts, with what they are for, what a
+  lazy function may do and what does not belong in one.
+- Sessions says what `s.connected` is, which was there and written down
+  nowhere, and the reference lists it.
+- Testing and Custom components say how a custom component is tested:
+  its props are found as they were given, and its events are sent by
+  name with `page.event`.
+
 ## 0.2.4
 
 ### Bug fixes

@@ -38,6 +38,8 @@ user=User(...))` signs a person in. Without one, a gated page raises
 `connect` that raises `NotFound` or `Forbidden` raises it from `open`
 too, which makes a test of its own. `open(path,
 state=State(...))` starts from a prepared state and skips `connect`.
+`open(path, visitor="a")` opens the page from a browser with that visitor
+id, in an app that [identifies its visitors](/pages/visitors).
 
 ## Finding things
 
@@ -48,10 +50,17 @@ button of the card with the key `orders` when every card has one.
 Any other keyword is a prop the node has to have, so
 `page.find(ui.Button, label="Delete")` is the button that says Delete.
 `page.find_all(ui.Custom)` finds the app's own components, and the `type`
-of each is the name it goes by. A found node has `id`, `type`, `props` as
+of each is the name it goes by. Its `props` are the ones the component
+was given in `props=`, side by side with the catalogue's own, so
+`page.find(ui.Custom, chosen="5")` finds it by one of them, and each of
+its events shows as `on_<name>: True`. A found node has `id`, `type`, `props` as
 they would go to the tab, `children` and, on a table, `rows`. `page.text()` is every string on the page, for a quick "is
 it there". `page.state` is the live state and `page.session` the session
 itself.
+
+A [lazy part](/components/layout#lazy-parts) in a tab that is not open is
+found as it was last drawn, which is what a browser holds. A test opens
+the tab first, with `change`.
 
 ## Acting
 
@@ -64,6 +73,18 @@ field=)`, which runs every check an upload gets and returns the `FileRef`,
 `send(chat, text, files=)`, `stop(chat)`, `navigate(path)`, and `event(node,
 name, payload)` for anything else. A draft that fails validation produces
 the same `form_issues` command the tab would get, at the same pointers.
+On `ui.Tabs`, `change(tabs, "history")` opens the tab with that id.
+
+An event of a custom component is sent by its name, with the payload the
+component would emit.
+
+```python
+async def test_picking_a_card_keeps_it(app):
+    async with TestApp(app).open("/") as page:
+        await page.event("deck", "pick", "5")
+        assert page.state.picked == "5"
+        assert page.find("deck").props["chosen"] == "5"
+```
 
 ```python
 async def test_the_form_rejects_a_short_name(app):

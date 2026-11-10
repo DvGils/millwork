@@ -8,6 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { cn } from "cn";
 import { icon } from "../icons";
+import { optionLabel } from "./option-label";
 import { moved, slotAt } from "../sortable";
 import { ComboboxChip } from "@/components/ui/combobox";
 
@@ -28,6 +29,7 @@ const stopHere = (e: React.MouseEvent) => e.stopPropagation();
 export interface Chip {
   value: string;
   label: string;
+  icon?: string | null;
 }
 
 interface Drag {
@@ -271,6 +273,9 @@ export function SortableChips({
   // Unmounting mid-drag ends it without a commit.
   useEffect(() => () => endDrag.current?.(), []);
 
+  // The chip under the pointer, as the copy that follows it shows it.
+  const held = drag ? shown.find((c) => c.value === drag.value) : undefined;
+
   return (
     <>
       {shown.map((c) => (
@@ -284,7 +289,7 @@ export function SortableChips({
           className={cn("touch-none", !disabled && "cursor-grab", drag?.value === c.value && "opacity-30")}
         >
           {Grip ? <Grip className="-ml-0.5 size-3 shrink-0 text-muted-foreground" /> : null}
-          {c.label}
+          {optionLabel(c, "size-3")}
         </ComboboxChip>
       ))}
       <span aria-live="polite" className="sr-only">
@@ -298,7 +303,7 @@ export function SortableChips({
               style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.width }}
             >
               {Grip ? <Grip className="-ml-0.5 size-3 shrink-0 text-muted-foreground" /> : null}
-              {shown.find((c) => c.value === drag.value)?.label}
+              {held ? optionLabel(held, "size-3") : null}
             </div>,
             document.body,
           )

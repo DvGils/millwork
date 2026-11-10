@@ -10,6 +10,7 @@ import { has } from "../lib";
 import { PageBody, pageBodyClass } from "./page-body";
 import { InSidebar } from "./anchor";
 import { icon } from "../icons";
+import { optionLabel } from "./option-label";
 import {
   Sidebar as UiSidebar,
   SidebarContent,
@@ -271,7 +272,7 @@ export const RadioGroup: Renderer = ({ node, props, emit }) => {
             <div key={o.value} className="flex items-start gap-2">
               <RadioGroupItem id={id} value={o.value} disabled={Boolean(o.disabled)} />
               <div className="grid gap-0.5 leading-none">
-                <Label htmlFor={id}>{o.label ?? o.value}</Label>
+                <Label htmlFor={id}>{optionLabel(o)}</Label>
                 {o.description ? <p className="text-xs text-muted-foreground">{o.description}</p> : null}
               </div>
             </div>
@@ -305,7 +306,7 @@ export const CheckboxGroup: Renderer = ({ node, props, emit }) => {
               onCheckedChange={(checked) => toggle(o.value, Boolean(checked))}
             />
             <div className="grid gap-0.5 leading-none">
-              <Label htmlFor={id}>{o.label ?? o.value}</Label>
+              <Label htmlFor={id}>{optionLabel(o)}</Label>
               {o.description ? <p className="text-xs text-muted-foreground">{o.description}</p> : null}
             </div>
           </div>

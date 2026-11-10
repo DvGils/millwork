@@ -1,10 +1,10 @@
 // The Form: a field spec from Python, a draft kept here, issues by JSON pointer.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { Renderer } from "../render";
 import { cn } from "cn";
 import { icon } from "../icons";
-import { PasswordInput } from "./inputs";
+import { Count, limitOf, PasswordInput } from "./inputs";
 import { t } from "../theme";
 import { onStatus } from "../ws";
 import { formatSize, upload, type FileRef } from "./files";
@@ -53,6 +53,8 @@ interface FieldSpec {
   options?: Opt[];
   clearable?: boolean;
   max_length?: number;
+  counter?: boolean;
+  rows?: number;
   integer?: boolean;
   min?: number;
   max?: number;
@@ -359,7 +361,11 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
   const inline = f.widget === "switch" || f.widget === "checkbox";
 
   return (
-    <Field orientation={inline ? "horizontal" : ctx.orientation} data-invalid={invalid || undefined}>
+    <Field
+      orientation={inline ? "horizontal" : ctx.orientation}
+      data-invalid={invalid || undefined}
+      className={counts(f) && ctx.orientation === "horizontal" ? "pb-5" : undefined}
+    >
       {inline ? (
         <>
           {control}
@@ -489,7 +495,7 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
     case "files":
       return <FileControl f={f} id={id} value={value} set={set} ctx={ctx} pointer={pointer} multiple={f.widget === "files"} />;
     case "textarea":
-      return <Textarea {...common} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />;
+      return counted(f, id, str, ctx, <Textarea {...common} {...described(f, id)} value={str} rows={typeof f.rows === "number" ? f.rows : undefined} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
     case "password":
       return <PasswordInput {...common} value={str} placeholder={f.placeholder ?? undefined} onChange={(e) => set(e.target.value || null)} />;
     case "number":
@@ -619,8 +625,30 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
     case "datetime":
       return <Input {...common} type="datetime-local" value={str.slice(0, 16)} onChange={(e) => set(e.target.value || null)} />;
     default:
-      return <Input {...common} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />;
+      return counted(f, id, str, ctx, <Input {...common} {...described(f, id)} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
   }
+}
+
+// Whether a field shows its count: one that was asked to, and holds text.
+function counts(f: FieldSpec): boolean {
+  return Boolean(f.counter) && (f.widget === "textarea" || f.widget === "input");
+}
+
+// A text field that was asked to show its count, with the count under it.
+// Next to its label the count hangs below the row, in room the row keeps
+// for it, so the label stays level with the field.
+function counted(f: FieldSpec, id: string, text: string, ctx: Ctx, field: ReactElement) {
+  if (!counts(f)) return field;
+  return (
+    <div className={cn("flex w-full min-w-0 flex-col", ctx.orientation === "horizontal" && "-mb-5")}>
+      {field}
+      <Count id={`${id}-count`} length={text.length} max={limitOf(f.max_length)} />
+    </div>
+  );
+}
+
+function described(f: FieldSpec, id: string) {
+  return counts(f) ? { "aria-describedby": `${id}-count` } : {};
 }
 
 export function labelFor(f: FieldSpec): ReactNode {

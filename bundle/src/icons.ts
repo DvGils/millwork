@@ -151,6 +151,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { fileIcon, type IconType } from "./file-icon";
+
 const byPascal: Record<string, LucideIcon> = {
   Activity,
   AlertCircle,
@@ -312,9 +314,13 @@ for (const [name, icon] of Object.entries(byPascal)) {
   byKebab[kebab.replace(/-([0-9])/g, "$1")] = icon;
 }
 
-export function icon(name: unknown): LucideIcon | null {
+// An icon by what a component was given: one of the bundle's by name, or a
+// file of the app's own by its path under public/.
+export function icon(name: unknown): IconType | null {
   if (typeof name !== "string" || !name) return null;
-  const found = byKebab[name] ?? byPascal[name];
+  // Only a name the table itself holds: every object has a `constructor`.
+  const named = (table: Record<string, LucideIcon>) => (Object.hasOwn(table, name) ? table[name] : undefined);
+  const found = name.startsWith("/") ? fileIcon(name) : (named(byKebab) ?? named(byPascal));
   if (!found) console.warn(`millwork: unknown icon "${name}"`);
   return found ?? null;
 }

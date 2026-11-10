@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from millwork.files import FileRef
 from millwork.forms import FormIssues, Issue
 from millwork.icons import check_icon
-from millwork.nodes import Component, Text, Tone
+from millwork.nodes import Component, Lazy, Showing, Text, Tone, lazy
 from millwork.ui.charts import AreaChart, BarChart, LineChart, PieChart
 from millwork.ui.chat import Accept, Action, Chat, Command
 from millwork.ui.files import Download, FileCard, FileUpload, Image, Pdf
@@ -339,6 +339,47 @@ class Tabs(_Owned):
     default: str | None = None
     variant: Literal["line", "pill"] = "line"
     on_change: Any = None
+
+    shows_some: ClassVar[bool] = True
+
+    @model_validator(mode="after")
+    def _tabs_are_not_lazy(self) -> Tabs:
+        if any(isinstance(child, Lazy) for child in self.children):
+            raise ValueError(
+                "a lazy part goes inside a ui.Tab, not in its place: the tabs are "
+                "needed to tell which one is open"
+            )
+        return self
+
+    def tab_ids(self) -> list[str]:
+        return [c.id for c in self.children if isinstance(c, Tab)]
+
+    def open_tabs(self) -> list[str]:
+        """The ids of the tabs that can be chosen."""
+        return [c.id for c in self.children if isinstance(c, Tab) and not c.disabled]
+
+    def shown(self, told: str | None) -> str | None:
+        """The id of the open tab. With ``value`` the page says which it is.
+        Otherwise the browser does, and ``told`` is what it last said. Until
+        it has spoken this is the tab it opens on: ``default``, or the
+        first tab, and the first that can be chosen when that one is not
+        among the tabs."""
+        if "value" in self.model_fields_set:
+            return self.value
+        tabs = self.tab_ids()
+        if told in tabs:
+            return told
+        first = self.default if self.default is not None else (tabs[0] if tabs else None)
+        if first in tabs:
+            return first
+        return next(iter(self.open_tabs()), None)
+
+    def showing(self, told: str | None) -> Showing:
+        which = self.shown(told)
+        return Showing(
+            shows=lambda child: not isinstance(child, Tab) or child.id == which,
+            asks="value" not in self.model_fields_set,
+        )
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -752,6 +793,44 @@ class Badge(Component):
             super().__init__(label=label, **props)
 
 
+class Icon(Component):
+    """An icon on its own: one of the bundle's by name, or a file under
+    ``public/`` by its path. ``label`` says what it means to someone who
+    cannot see it. Without one it is decoration."""
+
+    type: ClassVar[str] = "Icon"
+    name: str
+    size: Size = "md"
+    tone: Tone = "default"
+    label: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _an_icon(cls, name: str) -> str:
+        if not name:
+            raise ValueError("an icon needs a name, or the path of a file under /public/")
+        check_icon(name)
+        return name
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            name: str,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            size: Size = "md",
+            tone: Tone = "default",
+            label: str | None = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, name: str, **props: Any) -> None:
+            super().__init__(name=name, **props)
+
+
 class Kbd(Component):
     type: ClassVar[str] = "Kbd"
     keys: list[str]
@@ -1064,6 +1143,7 @@ class Input(_Owned):
     readonly: bool = False
     clearable: bool = False
     max_length: int | None = None
+    counter: bool = False
     spellcheck: bool | None = None
     debounce_ms: int = 250
     on_change: Any = None
@@ -1087,6 +1167,7 @@ class Input(_Owned):
             readonly: bool = False,
             clearable: bool = False,
             max_length: int | None = None,
+            counter: bool = False,
             spellcheck: bool | None = None,
             debounce_ms: int = 250,
             on_change: Any = None,
@@ -1106,6 +1187,7 @@ class Textarea(_Owned):
     rows: int = 3
     autosize: bool = False
     max_length: int | None = None
+    counter: bool = False
     spellcheck: bool | None = None
     disabled: bool = False
     readonly: bool = False
@@ -1127,6 +1209,7 @@ class Textarea(_Owned):
             rows: int = 3,
             autosize: bool = False,
             max_length: int | None = None,
+            counter: bool = False,
             spellcheck: bool | None = None,
             disabled: bool = False,
             readonly: bool = False,
@@ -1762,6 +1845,7 @@ __all__ = [
     "FormIssues",
     "Grid",
     "Header",
+    "Icon",
     "Image",
     "Input",
     "Issue",
@@ -1807,4 +1891,5 @@ __all__ = [
     "Tone",
     "Tooltip",
     "as_options",
+    "lazy",
 ]

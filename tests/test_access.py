@@ -673,6 +673,41 @@ def test_an_open_session_outlasts_a_moment_without_an_answer_and_not_an_outage(
         assert client.get("/api/mine").text == "for ada"
 
 
+async def test_a_recheck_timer_called_early_finds_its_answer_run_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A loop calls a timer once it is due within a step of its clock, so on a
+    # coarse clock a timer is called before its time. Very coarse here.
+    step = 0.2
+    monkeypatch.setattr(asyncio.get_running_loop(), "_clock_resolution", step)
+    monkeypatch.setattr(auth, "TICK", step)
+    world = World()
+    app = make_app(tmp_path, world, recheck=True)
+    app.auth.recheck_every = 0.5
+    ada = auth.User(id="ada", name="ada", claims={"role": "admin"})
+    calls = 0
+    due = Session._recheck_due
+
+    def counted(self: Session) -> None:
+        nonlocal calls
+        calls += 1
+        due(self)
+
+    monkeypatch.setattr(Session, "_recheck_due", counted)
+    async with TestApp(app).open("/", user=ada) as page:
+        assert await app.auth.current("ada's sign-in", ada) == ada
+        page.session.watch_user(("ada's sign-in", ada))
+        # Something else wakes the loop a little before the answer runs out,
+        # which is when the loop looks at its timers and calls this one too.
+        await asyncio.sleep(0.35)
+        await asyncio.to_thread(time.sleep, 0.1)
+        # It asked then and there, and set itself for the answer that gave.
+        # It did not find the old answer good and call itself again at once,
+        # round and round until the clock caught up.
+        assert world.asked == ["ada", "ada"]
+        assert calls < 5
+
+
 def test_a_proxys_user_is_put_to_recheck_like_any_other(tmp_path: Path) -> None:
     world = World()
     app = make_app(

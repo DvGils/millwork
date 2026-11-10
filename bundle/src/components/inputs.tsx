@@ -4,12 +4,13 @@
 // the state and the control shows exactly that; the draft lives here only
 // when the key is absent.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type React from "react";
 import type { Renderer } from "../render";
 import { cn } from "cn";
-import { has } from "../lib";
+import { has, placed } from "../lib";
 import { icon } from "../icons";
+import { optionLabel } from "./option-label";
 import { t } from "../theme";
 import {
   Select as UiSelect,
@@ -32,13 +33,14 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
-import { request, type Ongoing } from "../ws";
+import { holdBack, request, type Ongoing } from "../ws";
 import { Label } from "@/components/ui/label";
 
 interface Opt {
   value: string;
   label?: string | null;
   description?: string | null;
+  icon?: string | null;
   disabled?: boolean;
   group?: string | null;
 }
@@ -110,14 +112,18 @@ export interface Debounced {
   flush(): void;
 }
 
-// A debounce timer. `flush` runs what is pending now (before a submit, and when
-// the component goes away, so the last change is never lost).
+// A debounce timer. `flush` runs what is pending now: before a submit, when
+// the component goes away, and before anything else the tab sends, so the
+// last change is never lost and never arrives after what followed it.
 export function useDebounced(ms: number): Debounced {
   const timer = useRef<number | null>(null);
   const pending = useRef<(() => void) | null>(null);
+  const release = useRef<(() => void) | null>(null);
   const flush = useCallback(() => {
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = null;
+    release.current?.();
+    release.current = null;
     const fn = pending.current;
     pending.current = null;
     if (fn) fn();
@@ -127,6 +133,7 @@ export function useDebounced(ms: number): Debounced {
     (fn: () => void) => {
       if (timer.current) window.clearTimeout(timer.current);
       pending.current = fn;
+      release.current ??= holdBack(flush);
       timer.current = window.setTimeout(flush, ms);
     },
     [flush, ms],
@@ -139,7 +146,8 @@ export const Select: Renderer = ({ props, emit }) => {
   const items = opts(props.options);
   const controlled = has(props, "value");
   const [current, setDraft] = useOwned<string | null>(controlled, (props.value as string | null) ?? null, (props.default as string | null) ?? null);
-  const labels = items.map((o) => ({ value: o.value, label: o.label ?? o.value }));
+  // What the closed field shows for the chosen option, icon included.
+  const labels = items.map((o) => ({ value: o.value, label: optionLabel(o) }));
   const Clear = icon("x");
   const clearable = Boolean(props.clearable) && current !== null && !props.disabled;
   const clear = () => {
@@ -166,7 +174,7 @@ export const Select: Renderer = ({ props, emit }) => {
             {bucket.group ? <SelectLabel>{bucket.group}</SelectLabel> : null}
             {bucket.items.map((o) => (
               <SelectItem key={o.value} value={o.value} disabled={Boolean(o.disabled)}>
-                {o.label ?? o.value}
+                {optionLabel(o)}
               </SelectItem>
             ))}
           </SelectGroup>
@@ -244,22 +252,49 @@ export const Switch: Renderer = ({ node, props, emit }) => {
   );
 };
 
+// The limit a field was given, when it is one a field can have.
+export function limitOf(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+// How much a text field holds, against its limit when it has one. The length
+// is counted the way the browser counts it for `maxlength`, so the two agree
+// on when the field is full.
+export function Count({ id, length, max }: { id?: string; length: number; max?: number }) {
+  const full = max !== undefined && length >= max;
+  return (
+    <p id={id} data-slot="count" data-full={full || undefined} className={cn("mt-1 text-right text-xs whitespace-nowrap tabular-nums", full ? "text-destructive" : "text-muted-foreground")}>
+      {max !== undefined ? `${length} / ${max}` : length}
+    </p>
+  );
+}
+
 // Text controls: a controlled one shows the server's value and emits each change
 // (debounced); an uncontrolled one keeps its draft and emits the same way.
 export const Textarea: Renderer = ({ props, emit }) => {
   const controlled = has(props, "value");
   const [current, setDraft] = useOwned<string>(controlled, String(props.value ?? ""), String(props.default ?? ""));
   const later = useDebounced(typeof props.debounce_ms === "number" ? props.debounce_ms : 250);
-  return (
+  const max = limitOf(props.max_length);
+  const countId = useId();
+  const counted = Boolean(props.counter);
+  // With a count under it the field is in a box. The box takes over the
+  // classes that place the field among its neighbours, and the field keeps
+  // the rest, so a class does with a count what it does without one.
+  const { box, rest } = placed(props.cls);
+  const field = (
     <UiTextarea
       value={current}
       rows={typeof props.rows === "number" ? props.rows : 3}
-      maxLength={typeof props.max_length === "number" ? props.max_length : undefined}
+      maxLength={max}
       spellCheck={typeof props.spellcheck === "boolean" ? props.spellcheck : undefined}
       placeholder={props.placeholder ? String(props.placeholder) : undefined}
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}
-      className={cn(props.autosize ? "field-sizing-content" : "resize-y", props.cls as string)}
+      aria-describedby={counted ? countId : undefined}
+      // In the box the field takes the height there is, for a box that was
+      // given more than the field asks for.
+      className={cn(props.autosize ? "field-sizing-content" : "resize-y", counted ? cn("grow", rest) : (props.cls as string))}
       onChange={(e) => {
         const next = e.target.value;
         setDraft(next);
@@ -272,6 +307,13 @@ export const Textarea: Renderer = ({ props, emit }) => {
         }
       }}
     />
+  );
+  if (!counted) return field;
+  return (
+    <div className={cn("flex w-full flex-col", box)}>
+      {field}
+      <Count id={countId} length={current.length} max={max} />
+    </div>
   );
 };
 
@@ -407,7 +449,7 @@ export const Combobox: Renderer = ({ node, props, emit }) => {
         <ComboboxList>
           {(item: Opt) => (
             <ComboboxItem key={item.value} value={item} disabled={Boolean(item.disabled)}>
-              {item.label ?? item.value}
+              {optionLabel(item)}
             </ComboboxItem>
           )}
         </ComboboxList>

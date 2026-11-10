@@ -60,7 +60,9 @@ opens on the session like a `ui.Link` does, any other address is the
 browser's, and `target="_blank"` opens a new tab. Such a button is a real
 link, so a middle click opens it in a new tab. An `icon` is one
 of lucide's names, the set in `mw.ICONS`, and a name outside it is refused
-when the component is made, with the closest names in the error.
+when the component is made, with the closest names in the error. It can
+also be a file of the app's own, as [Icon](/components/text#icon)
+describes.
 
 ```python live
 ui.Stack(
@@ -127,6 +129,14 @@ clear button. A password has a button that shows what was typed, as does
 a password field in a form and on the sign-in page. `on_change` fires after a pause in typing, set by
 `debounce_ms` and 250 ms by default, and `on_submit` fires on Enter.
 
+`max_length` caps what the field takes, and `counter=True` shows under the
+field how much it holds, against the limit when there is one. The count
+takes the destructive color once the field is full. A field of the kind
+`number` is the exception, since a browser puts no limit on its length.
+The count makes the field taller, so in a `ui.Row` what stands next to it
+is centered on the two together, and `align="start"` on the row lines
+them up at the top.
+
 ```python live
 ui.Stack(
     ui.Input(
@@ -138,6 +148,7 @@ ui.Stack(
     ),
     ui.Input(placeholder="Distance", suffix="km", kind="number"),
     ui.Input(placeholder="Password", kind="password"),
+    ui.Input(placeholder="A short title", max_length=20, counter=True),
     ui.Input(value="Read only", readonly=True),
     ui.Input(value="Disabled", disabled=True),
     gap=3,
@@ -148,8 +159,9 @@ ui.Stack(
 
 `ui.Textarea` is several lines. `rows` sets the starting height,
 `autosize` grows it with the text, up to most of the window, and
-`max_length` caps it, as it does on an `Input`. Ctrl+Enter
-submits.
+`max_length` caps it and `counter=True` shows the count under it, as on
+an `Input`. The count is the browser's own, the one `max_length` stops at,
+in which most emoji are two characters. Ctrl+Enter submits.
 
 The browser checks the spelling of a text field until it holds more than
 5,000 characters, where checking would slow a paste down. `spellcheck`
@@ -163,6 +175,7 @@ ui.Textarea(
     rows=3,
     autosize=True,
     max_length=200,
+    counter=True,
     on_submit=lambda s, v: s.toast(f"{len(v)} characters"),
 )
 ```
@@ -215,12 +228,26 @@ ui.Stack(
 ## Select
 
 `ui.Select` picks one from `options`. Options are strings, `(value, label)`
-pairs, or `ui.Option` objects with a `description`, an `icon`, `disabled` and a
-`group`. `clearable` allows no choice.
+pairs, or `ui.Option` objects with an `icon`, `disabled` and a `group`.
+`clearable` allows no choice.
+
+An option's `icon` stands in front of its label wherever options are
+listed, here and in a Combobox, a MultiSelect and the three groups below,
+and in the closed field for the one that was chosen. It is a name from
+the bundle or a file of the app's own, as [Icon](/components/text#icon)
+describes.
 
 ```python live
 ui.Row(
     ui.Select(options=["Fast", "Balanced", "Thorough"], default="Balanced"),
+    ui.Select(
+        options=[
+            ui.Option(value="open", label="Open", icon="clock"),
+            ui.Option(value="done", label="Done", icon="check"),
+            ui.Option(value="kept", label="Archived", icon="archive"),
+        ],
+        default="done",
+    ),
     ui.Select(
         options=[
             ui.Option(value="nl", label="Dutch", group="Europe"),
@@ -308,14 +335,15 @@ def example(s):
 
 Three ways to choose from a short list. Radios pick one, checkboxes pick
 several, and pressed buttons do either, with `multiple=True` for several.
+A radio and a checkbox show an option's `description` under its label.
 
 ```python live
 ui.Stack(
     ui.RadioGroup(options=["Small", "Medium", "Large"], default="Medium", orientation="horizontal"),
     ui.CheckboxGroup(
         options=[
-            ui.Option(value="a", label="Alerts", description="Only the important ones"),
-            ui.Option(value="d", label="Digest"),
+            ui.Option(value="a", label="Alerts", icon="bell", description="Only the important ones"),
+            ui.Option(value="d", label="Digest", icon="mail"),
         ],
         default=["a"],
     ),

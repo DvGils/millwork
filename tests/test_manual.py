@@ -60,7 +60,7 @@ async def test_the_sidebar_folds_groups_and_the_pages_lead_on(tmp_path: Path) ->
         assert by_label["Pages"].props["open"] is True
         assert by_label["State"].props["open"] is False
         titles = [page.tree[c].props["label"] for c in by_label["Pages"].children]
-        assert titles[0] == "Pages and routes" and "Sessions" in titles and len(titles) == 6
+        assert titles[0] == "Pages and routes" and "Sessions" in titles and len(titles) == 7
         # the reader folds Pages and opens State; the choice is kept in the session
         await page.event(by_label["Pages"], "toggle", False)
         await page.event(page.find_all(ui.SidebarGroup)[1], "toggle", True)

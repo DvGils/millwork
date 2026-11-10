@@ -23,10 +23,11 @@ from millwork.nodes import Component
 from millwork.protocol import Command, Event, Patch, ServerError, Stream, server_message
 from millwork.scope import Scope
 from millwork.session import Session
-from millwork.ui import Button, Link
+from millwork.ui import Button, Link, Tabs
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
+from millwork.visitors import Visitor
 
 if TYPE_CHECKING:
     from millwork.app import App
@@ -254,8 +255,22 @@ class Page:
         await self.settle()
 
     async def change(self, node: Found | str, value: Any) -> None:
-        """An input's new value, as the tab would send it."""
-        await self.event(node, "change", value)
+        """An input's new value, as the tab would send it. On ``Tabs`` it is
+        the tab to open, by its id: the tab's ``on_change`` runs, and the
+        lazy parts under it go by the new choice as they do in a browser."""
+        found = node if isinstance(node, Found) else self.find(node)
+        tabs = found.component
+        if not isinstance(tabs, Tabs):
+            await self.event(found, "change", value)
+            return
+        if value not in tabs.open_tabs():
+            raise LookupError(f"{found!r} has no tab {value!r} that can be chosen")
+        if tabs.on_change is not None or "value" in tabs.model_fields_set:
+            self.session.event(Event(node=found.id, name="change", payload=value))
+        if "value" not in tabs.model_fields_set:
+            # Tabs that own their choice say which one is open.
+            self.session.event(Event(node=found.id, name="show", payload=value))
+        await self.settle()
 
     async def submit(self, form: Found | str, draft: Any) -> None:
         """Submit a draft (a dict or a model instance) as the tab would."""
@@ -527,9 +542,21 @@ class TestApp:
 
     @contextlib.asynccontextmanager
     async def open(
-        self, path: str = "/", *, user: Any = None, state: Any = None
+        self,
+        path: str = "/",
+        *,
+        user: Any = None,
+        state: Any = None,
+        visitor: str | None = None,
     ) -> AsyncIterator[Page]:
-        """Open a page as a new session: connect (unless ``state`` is given), mount, yield."""
+        """Open a page as a new session: connect (unless ``state`` is given), mount, yield.
+
+        ``visitor`` is the id of the browser the page is opened from, in an
+        app that identifies visitors. Two pages opened with the same one are
+        two tabs of one browser, and a page opened without is a browser of
+        its own."""
+        if visitor is not None and self.app.visitors is None:
+            raise ValueError("visitor= needs App(identify_visitors=True)")
         await self.startup()
         resolved = self.app.locate(path)
         if resolved is None:
@@ -542,6 +569,8 @@ class TestApp:
             raise Forbidden(verdict.message or self.app.theme.text("forbidden_text"))
         session: Session[Any] = Session(self.app, page_def, params, path)
         session.user = user
+        if visitor is not None:
+            session.visitor = Visitor(visitor)
         # What a page refuses with is raised in the test, where a running app
         # would land on its page for that.
         session.falls_back = False

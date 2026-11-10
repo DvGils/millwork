@@ -49,6 +49,7 @@ SESSION_API = (
     "logout",
     "reset",
     "refresh",
+    "connected",
     "task",
     "thread",
     "later",
@@ -117,6 +118,19 @@ def reference() -> str:
         if isinstance(obj, type) and issubclass(obj, Component) and obj is not Component:
             out.extend(_component(name, obj))
     out += [
+        "## Lazy parts",
+        "",
+        "`@ui.lazy` on a function that returns a component makes its part of the",
+        "page lazy. A call, `history(s)`, goes where a child goes. The function runs",
+        "when the page is first drawn and then at every render in which the `ui.Tab`",
+        "it sits in is the open one. While another tab is open the part stays in the",
+        "browser as it was when the tab was left and a render skips it. Outside a `ui.Tab` it",
+        "is built at every render. The function builds from the state and does no",
+        "I/O, like a page function, and its arguments are worked out at every",
+        "render. A `ui.Tab` itself is not lazy.",
+        "",
+    ]
+    out += [
         "## Models components take",
         "",
         "`ui.Tone` is the type of every `tone`: "
@@ -133,7 +147,12 @@ def reference() -> str:
         "it. `s.state` is the session's instance of the model the app declares,",
         "kept across pages. `s.user` is the signed-in user or `None`, `s.path` the",
         "page's path, `s.params` the URL's parameters, `s.files` the session's",
-        "files, `s.tasks` the list of its tasks.",
+        "files, `s.tasks` the list of its tasks. With `App(identify_visitors=True)`",
+        "`s.visitor.id` names the browser the session was opened from, the same",
+        "in every tab of it, signed in or not. The id comes from a signed cookie,",
+        "and an app without sign-in pins what it keeps outside the session to it.",
+        "A route of the app's own finds the same visitor in",
+        "`request.state.visitor`, or `None` for a browser that brought no id.",
         "",
     ]
     for name in SESSION_API:
@@ -226,7 +245,9 @@ def reference() -> str:
         "`page.failures`. `page.find(key or type, within=, **props)` gives a node with",
         "`.props`, and `.rows` on a table. `page.state`, `page.toasts`, `page.commands` and",
         "`page.stream` are what the tab would have seen. A handler that calls",
-        "`s.confirm` or `s.ask` waits for `page.answer(value)`.",
+        "`s.confirm` or `s.ask` waits for `page.answer(value)`. `open(path,",
+        "visitor=)` opens the page from a browser with that visitor id, and two",
+        "pages opened with the same one are two tabs of it.",
         "",
     ]
     for name in PAGE_API:
@@ -250,7 +271,11 @@ def reference() -> str:
         "## Icons",
         "",
         "The `icon` of a button, link, tab, badge, stat, alert, menu item or option,",
-        "by lucide's name. Any other name is refused.",
+        "and the name of a `ui.Icon`, by lucide's name. Any other name is refused.",
+        "An icon is also a file of the app's own under `public/`, by its path, such",
+        "as `/public/icons/rocket.svg`. The path starts with `/public/`, holds no",
+        "segment that starts with a dot, and ends in `.svg`, `.png`, `.webp` or",
+        "`.jpg`. An SVG is drawn in the text's color and any other image as it is.",
         "",
         ", ".join(ICONS),
         "",

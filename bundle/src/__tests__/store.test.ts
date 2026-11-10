@@ -93,3 +93,18 @@ describe("store splice", () => {
     unsub();
   });
 });
+
+describe("store mounts", () => {
+  it("counts whole pages, and a patch is not one", () => {
+    const told: number[] = [];
+    const unsub = store.subscribeRoot(() => told.push(store.mounts));
+    const before = store.mounts;
+    store.mount("root", { root: node("root", "Page") }, null);
+    store.patch([{ op: "set", id: "root", props: { title: "t" } }]);
+    store.mount("root", { root: node("root", "Page") }, null);
+    expect(store.mounts).toBe(before + 2);
+    // Whoever listens for a new page hears of it with the count already up.
+    expect(told).toEqual([before + 1, before + 2]);
+    unsub();
+  });
+});

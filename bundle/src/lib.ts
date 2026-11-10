@@ -147,3 +147,42 @@ export function spellcheckForLength(field: { value: string; spellcheck: boolean 
   const wanted = field.value.length <= LONG_TEXT;
   if (field.spellcheck !== wanted) field.spellcheck = wanted;
 }
+
+// The classes of a component that gets a box put around it, in two parts:
+// those that place it among its neighbours, which the box takes over, and
+// the rest, which stay on the component. Its width, its margins, how it
+// grows and shrinks, where it sits in a grid or on the page, and whether it
+// shows at all are the box's. A height, a color, a font and anything not
+// known here stay where they were.
+const PLACES =
+  /^-?(?:w|min-w|max-w|m[trblxyse]?|grow|shrink|basis|self|justify-self|place-self|order|col-span|col-start|col-end|row-span|row-start|row-end|inset|inset-x|inset-y|top|right|bottom|left|start|end|z)(?:-.+)?$/;
+const PLACES_WHOLE = new Set([
+  "hidden", "block", "inline-block", "inline", "flex", "inline-flex", "grid", "inline-grid", "contents",
+  "absolute", "relative", "fixed", "sticky", "static",
+  "flex-1", "flex-auto", "flex-initial", "flex-none", "col-auto", "row-auto",
+  "visible", "invisible", "collapse",
+]);
+
+// A class without the conditions in front of it ("md:hover:w-64" is "w-64"),
+// where a colon inside brackets belongs to a value and not to a condition.
+function utility(name: string): string {
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < name.length; i++) {
+    const c = name[i];
+    if (c === "[" || c === "(") depth++;
+    else if (c === "]" || c === ")") depth--;
+    else if (c === ":" && depth === 0) from = i + 1;
+  }
+  return name.slice(from).replace(/^!|!$/g, "");
+}
+
+export function placed(cls: unknown): { box: string; rest: string } {
+  const box: string[] = [];
+  const rest: string[] = [];
+  for (const name of typeof cls === "string" ? cls.split(/\s+/).filter(Boolean) : []) {
+    const base = utility(name);
+    (PLACES_WHOLE.has(base) || PLACES.test(base) ? box : rest).push(name);
+  }
+  return { box: box.join(" "), rest: rest.join(" ") };
+}

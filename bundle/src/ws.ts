@@ -120,7 +120,32 @@ function sendNow(msg: Record<string, unknown>) {
   socket!.send(JSON.stringify({ seq: outSeq, msg }));
 }
 
+// What a field has yet to say: a change it is holding for a moment, so that
+// typing is not a message per key. Whatever the tab sends next goes after
+// it, never before, or a click right after a paste would reach Python
+// ahead of the text and its handler would read what was there before.
+const unsaid = new Set<() => void>();
+
+// Hold a change back, by the function that sends it. The answer takes it
+// off the list again, for a field that sent it on its own time.
+export function holdBack(say: () => void): () => void {
+  unsaid.add(say);
+  return () => {
+    unsaid.delete(say);
+  };
+}
+
+function sayFirst() {
+  if (unsaid.size === 0) return;
+  const due = [...unsaid];
+  // Emptied before any of it is said, since saying it sends, and sending
+  // comes back here.
+  unsaid.clear();
+  for (const say of due) say();
+}
+
 function send(msg: Record<string, unknown>) {
+  sayFirst();
   if (socket && socket.readyState === WebSocket.OPEN && status === "open") sendNow(msg);
   else if (!closedForGood) queue.push(msg);
 }
@@ -211,6 +236,7 @@ export function request(node: string, name: string, payload: unknown = null, opt
       reject(new Error("not connected"));
       return;
     }
+    sayFirst();
     sendNow(msg);
     if (opts.body) void stream(id, opts.body, opts.onProgress, () => settled);
   }) as Ongoing<unknown>;

@@ -28,6 +28,7 @@ from millwork.protocol import (
 )
 from millwork.session import Session
 from millwork.shell import root_of
+from millwork.visitors import Visitor
 
 log = logging.getLogger("millwork.ws")
 
@@ -111,6 +112,12 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             return
         session = Session(app, page, params, first.path)
         session.user = user
+        if app.visitors is not None:
+            # The browser's id when it brought one. Without it the session
+            # keeps the id it was made with, which no other session has.
+            known = app.visitors.of(ws, user)
+            if known is not None:
+                session.visitor = Visitor(known)
         session.base = root_of(ws.scope)
         session.client = (
             f"user:{user.id}"

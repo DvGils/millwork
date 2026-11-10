@@ -56,7 +56,7 @@ export function valueExtent(rows: Row[], n: number, stacked: boolean): [number, 
 // Ticks at a round step (1, 2 or 5 times a power of ten), about `count` of
 // them, from the first at or below `lo` to the first at or above `hi`.
 // Which reads 10, 20, 30 where an even split would read 13, 26, 39.
-export function niceTicks(lo: number, hi: number, count = 5): number[] {
+export function niceTicks(lo: number, hi: number, count = 5, whole = false): number[] {
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [];
   if (hi < lo) [lo, hi] = [hi, lo];
   if (hi === lo) {
@@ -68,7 +68,10 @@ export function niceTicks(lo: number, hi: number, count = 5): number[] {
   const rough = (hi - lo) / Math.max(1, count - 1);
   const power = 10 ** Math.floor(Math.log10(rough));
   const unit = rough / power;
-  const step = (unit < 1.5 ? 1 : unit < 3 ? 2 : unit < 7 ? 5 : 10) * power;
+  const round = (unit < 1.5 ? 1 : unit < 3 ? 2 : unit < 7 ? 5 : 10) * power;
+  // Labels that show no decimals step by one at the least, or a few small
+  // counts would read 0, 0, 0, 1, 1, 1 up the axis.
+  const step = whole ? Math.max(1, round) : round;
   const first = Math.floor(lo / step + 1e-9) * step;
   const last = Math.ceil(hi / step - 1e-9) * step;
   const ticks: number[] = [];
@@ -82,6 +85,7 @@ export function valueAxis(
   extent: [number, number] | null,
   range: [number | null, number | null] | null,
   fromZero: boolean,
+  whole = false,
 ): { domain: [number, number]; ticks: number[] } {
   let [lo, hi] = extent ?? [0, 1];
   if (fromZero) {
@@ -97,7 +101,7 @@ export function valueAxis(
   // end past it: the axis still runs from low to high.
   if (!fixedHi) hi = Math.max(hi, lo);
   if (!fixedLo) lo = Math.min(lo, hi);
-  const ticks = niceTicks(lo, hi);
+  const ticks = niceTicks(lo, hi, 5, whole);
   // A bound the app set is kept as it is; one the data gave is rounded out.
   const domain: [number, number] = [
     fixedLo ? lo : Math.min(ticks[0] ?? lo, lo),

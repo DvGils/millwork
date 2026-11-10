@@ -228,15 +228,17 @@ export function Chart({ kind, props, emit }: ChartProps) {
   // Where the value axis runs and where its ticks are: round steps, a
   // baseline at zero for bars, the app's own range on a line or an area.
   const yRange = (props.y_range as [number | null, number | null] | null | undefined) ?? null;
+  // Counts, and money on an axis, are labeled without decimals.
+  const whole = valueFormat === "integer" || valueFormat === "currency";
   const axis = useMemo(() => {
     if (stacked === "percent") return { domain: [0, 1] as [number, number], ticks: [0, 0.25, 0.5, 0.75, 1] };
     if (diverging) {
       const extent = valueExtent(rows, n, true);
       const reach = Math.max(Math.abs(extent?.[0] ?? 0), Math.abs(extent?.[1] ?? 0));
-      return valueAxis([-reach, reach], null, true);
+      return valueAxis([-reach, reach], null, true, whole);
     }
-    return valueAxis(valueExtent(rows, n, Boolean(stacked)), yRange, kind === "bar");
-  }, [rows, n, stacked, diverging, kind, yRange]);
+    return valueAxis(valueExtent(rows, n, Boolean(stacked)), yRange, kind === "bar", whole);
+  }, [rows, n, stacked, diverging, kind, yRange, whole]);
 
   const click = props.on_click
     ? (row: Row, index: number | null) =>

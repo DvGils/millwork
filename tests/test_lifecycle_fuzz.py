@@ -98,3 +98,56 @@ def test_the_oracle_notices_when_the_session_is_broken_on_purpose(
         broken.setattr(outbox.Outbox, "seal", lambda self: None)
         broken.setattr(connection.Connection, "close", lambda self, end=None, code=1000: None)
         assert found("sent after the end")
+
+
+def test_the_oracle_notices_a_page_with_lazy_parts_broken_on_purpose(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The promises of a page at rest, each broken in the one place that
+    # keeps it.
+    session = importlib.import_module("millwork.session")
+    nodes = importlib.import_module("millwork.nodes")
+
+    def found(kind: str, seeds: int = 40) -> bool:
+        return any(kind in fuzz.run(seed=seed, steps=60).kinds for seed in range(seeds))
+
+    with monkeypatch.context() as broken:
+        # A part that was kept is called as it was, without being built.
+        broken.setattr(session.Session, "bring_up", lambda self, node: True)
+        assert found("kept part called")
+    with monkeypatch.context() as broken:
+        # What the tab says about its tabs is noted and nothing is drawn.
+        refresh = session.Session.refresh
+
+        def notes_and_leaves_it(self: Any, event: Any) -> None:
+            broken.setattr(session.Session, "refresh", lambda self: None)
+            try:
+                shown(self, event)
+            finally:
+                broken.setattr(session.Session, "refresh", refresh)
+
+        shown = session.Session.shown
+        broken.setattr(session.Session, "shown", notes_and_leaves_it)
+        assert found("tab not drawn")
+    with monkeypatch.context() as broken:
+        # The session takes no notice of what the tab says about its tabs.
+        broken.setattr(session.Session, "shown", lambda self, event: None)
+        assert found("tabs parted")
+    with monkeypatch.context() as broken:
+        # A patch that leaves out what changed in a node.
+        diff = nodes.diff
+
+        def forgets_changes(old: Any, new: Any) -> list[Any]:
+            return [op for op in diff(old, new) if op.op != "set"]
+
+        broken.setattr(session, "diff", forgets_changes)
+        assert found("page differs")
+    with monkeypatch.context() as broken:
+        # A lazy part is taken as it was though its tab is the open one.
+        part = nodes._part
+
+        def never_shows(lazy: Any, node_id: str, index: int, tree: Any, how: Any, _: bool) -> Any:
+            return part(lazy, node_id, index, tree, how, False)
+
+        broken.setattr(nodes, "_part", never_shows)
+        assert found("open part kept")

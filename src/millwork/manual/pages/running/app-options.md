@@ -29,6 +29,7 @@ app = mw.App(
     threads=8,                        # the pool s.thread, uploads and file reads run on
     keep_alive=False,
     proxied=False,                    # True behind a reverse proxy; see Deployment
+    identify_visitors=False,          # True gives every browser an id; see Visitors
 )
 ```
 
@@ -59,6 +60,9 @@ app = mw.App(
   only does so while a task or a reply runs.
 - `proxied=True` says a reverse proxy is in front. [Deployment](/running/deployment)
   has the rest.
+- `identify_visitors=True` sets a cookie that names the browser, and
+  `s.visitor.id` is then the same in every tab of it.
+  [Visitors](/pages/visitors) says what the id is good for.
 
 ## This manual's settings
 
@@ -76,6 +80,7 @@ def example(s):
             {"option": "threads", "value": app.threads or "Python's default"},
             {"option": "keep_alive", "value": app.keep_alive},
             {"option": "proxied", "value": app.proxied},
+            {"option": "identify_visitors", "value": app.visitors is not None},
             {"option": "debug", "value": app.debug},
             {"option": "auth", "value": "on" if app.auth else "off"},
         ],

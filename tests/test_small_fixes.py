@@ -5,10 +5,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import millwork as mw
 from millwork import ui
+from millwork.nodes import build
 from millwork.testing import Notice, TestApp
 
 
@@ -59,6 +60,29 @@ def test_a_text_field_says_whether_the_browser_checks_its_spelling() -> None:
     assert ui.Input().spellcheck is None and ui.Textarea().spellcheck is None
     assert ui.Input(spellcheck=False).spellcheck is False
     assert ui.Textarea(spellcheck=True).spellcheck is True
+
+
+def test_a_text_field_can_show_its_count() -> None:
+    assert ui.Input().counter is False and ui.Textarea().counter is False
+    counted = build(ui.Page(ui.Input(max_length=20, counter=True, key="title")), "root")
+    props = counted.nodes["root/title"].props
+    assert props["counter"] is True and props["max_length"] == 20
+    assert (
+        build(ui.Page(ui.Textarea(counter=True, key="notes")), "root")
+        .nodes["root/notes"]
+        .props["counter"]
+    )
+
+
+def test_a_form_field_shows_its_count_by_an_override() -> None:
+    class Note(BaseModel):
+        title: str = Field("", max_length=20)
+        notes: str = Field("", max_length=300)
+
+    form = ui.Form(Note, overrides={"/notes": {"counter": True}}, on_submit=lambda s, v: None)
+    fields = {f["name"]: f for f in build(form).nodes["root"].props["schema"]["fields"]}
+    assert fields["notes"]["counter"] is True and fields["notes"]["max_length"] == 300
+    assert "counter" not in fields["title"]
 
 
 def test_a_stat_takes_any_numbers_as_its_trend() -> None:
@@ -197,3 +221,102 @@ async def test_a_failed_render_keeps_nothing_of_the_call_alive() -> None:
         assert "Something went wrong" in page.text()
         gc.collect()
         assert seen and seen[-1]() is None
+
+
+def test_a_handler_made_with_partial_is_checked_once_per_shape(monkeypatch) -> None:
+    from functools import partial
+
+    from millwork import nodes
+
+    def act(s: object, payload: object, who: int = 0) -> None: ...
+
+    asked = []
+    real = nodes._handler_problem
+    monkeypatch.setattr(
+        nodes, "_handler_problem", lambda fn, count: asked.append(fn) or real(fn, count)
+    )
+    nodes._HANDLER_SHAPES.clear()
+
+    def made(handler: object) -> None:
+        build(ui.Page(ui.Button("Go", on_click=handler)))
+
+    for who in range(50):
+        made(partial(act, who=who))
+    assert len(asked) == 1
+    # Another shape of the same function is another question, asked once.
+    for _ in range(2):
+        with pytest.raises(TypeError, match="on_click takes a handler of"):
+            made(partial(act, None, None))
+    assert len(asked) == 2
+    # A partial of a partial, and one around something that has no code.
+    made(partial(partial(act, who=1), who=2))
+
+    class Callable_:
+        def __call__(self, s: object, payload: object) -> None: ...
+
+    made(partial(Callable_()))
+    with pytest.raises(TypeError, match="on_click takes a handler of"):
+        made(partial(lambda: None))
+
+
+def test_a_form_passes_the_rows_of_a_textarea_on() -> None:
+    class Notes(BaseModel):
+        text: str = ""
+
+    form = ui.Form(Notes, overrides={"/text": {"widget": "textarea", "rows": 10}})
+    field = build(form).nodes["root"].props["schema"]["fields"][0]
+    assert field["widget"] == "textarea" and field["rows"] == 10
+
+
+async def test_events_are_handled_in_the_order_they_came_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two events sent one behind the other while the user is due to be
+    checked again: the first asks, the answer comes at once, and the second
+    finds it there without having waited. It must not get ahead for that."""
+    import asyncio
+
+    from millwork import work
+    from millwork.protocol import Event
+
+    asked = 0
+
+    async def stay_current(s: mw.Session) -> bool:
+        nonlocal asked
+        asked += 1
+        if asked == 1:
+            # The one who asks waits for the answer, however soon it comes.
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+        return True
+
+    app = mw.App("t", public=None, bundle_dir=tmp_path)
+    order: list[str] = []
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Input(key="name", on_change=lambda s, v: order.append(f"typed {v}")),
+            ui.Button("save", key="save", on_click=lambda s, _: order.append("save")),
+            ui.Tabs(
+                ui.Tab(ui.lazy(lambda: ui.Text("a"))(), id="a", label="A"),
+                ui.Tab("b", id="b", label="B"),
+                ui.Tab("c", id="c", label="C"),
+                key="tabs",
+            ),
+        )
+
+    async with TestApp(app).open("/") as page:
+        s = page.session
+        name, save, tabs = page.find("name").id, page.find("save").id, page.find("tabs").id
+        monkeypatch.setattr(work, "stay_current", stay_current)
+        s.event(Event(node=name, name="change", payload="new"))
+        s.event(Event(node=save, name="click"))
+        await page.settle()
+        assert order == ["typed new", "save"]
+        # The same for what a tab says about its tabs: the last word stands.
+        asked = 0
+        s.event(Event(node=tabs, name="show", payload="c"))
+        s.event(Event(node=tabs, name="show", payload="b"))
+        await page.settle()
+        assert s._showing == {tabs: "b"}

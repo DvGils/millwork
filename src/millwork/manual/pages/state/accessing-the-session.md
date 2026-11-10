@@ -38,7 +38,12 @@ started in the page's `connect` hook, which [Sessions](/pages/sessions)
 describes, and dies with the session.
 
 ```python
-@board.connect
+@app.page("/notices")
+def notices(s: mw.Session[State]) -> ui.Component:
+    return ui.Page(*(ui.Text(notice.text, key=notice.id) for notice in s.state.notices))
+
+
+@notices.connect
 async def follow(s: mw.Session[State]) -> None:
     s.state.notices = await db.notices()
     s.task(watch_notices(s), label="Following notices", quiet=True)

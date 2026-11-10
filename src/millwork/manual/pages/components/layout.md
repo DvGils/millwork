@@ -204,6 +204,89 @@ ui.Tabs(
 )
 ```
 
+## Lazy parts
+
+A page function builds the whole page at every render, the tabs nobody is
+looking at included. `ui.lazy` marks a function whose part of the page is
+kept up to date only while its tab is open.
+
+```python
+@ui.lazy
+def history(s: mw.Session[State]) -> ui.Component:
+    return ui.Table(s.state.history, columns=COLUMNS)
+
+
+@app.page("/")
+def home(s: mw.Session[State]) -> ui.Component:
+    return ui.Page(
+        ui.Tabs(
+            ui.Tab(overview(s), id="overview", label="Overview"),
+            ui.Tab(history(s), id="history", label="History"),
+        )
+    )
+```
+
+`history(s)` puts the function and its arguments in the page. The
+function runs when the page is first drawn, after that at every render in
+which its tab is the open one, and once more as the tab is left. While
+another tab is open the part stays in the browser as it was when it was
+left, with what was typed into it, and a render does not look at it.
+Opening the tab draws it again.
+
+In this example each part counts how often it was drawn, which a real one
+would not do. Tick a few times, then open the other tab.
+
+```python live
+from pydantic import BaseModel
+
+
+class Ticks(BaseModel):
+    n: int = 0
+    drawn: dict[str, int] = {}
+
+
+@ui.lazy
+def part(s, name):
+    st = s.state.ticks
+    st.drawn[name] = st.drawn.get(name, 0) + 1
+    return ui.Text(f"{name}: tick {st.n}, drawn {st.drawn[name]} times.")
+
+
+def example(s):
+    st = s.state.ticks
+    return ui.Stack(
+        ui.Row(ui.Button("Tick", on_click=lambda s, _: setattr(st, "n", st.n + 1))),
+        ui.Tabs(
+            ui.Tab(part(s, "First"), id="first", label="First"),
+            ui.Tab(part(s, "Second"), id="second", label="Second"),
+        ),
+    )
+```
+
+It pays on a page with heavy tabs that renders often, where every render
+then costs what the open tab costs. The first draw holds every tab, as it
+does without `ui.lazy`.
+
+- The arguments are worked out at every render, like those of any call.
+  Only the body of the function waits.
+- A lazy function follows the rule of a page function. It builds its part
+  from the state and does nothing else. What a tab needs loaded is loaded
+  by a handler, the `on_change` of the `ui.Tabs` for one, or by the
+  page's `connect`.
+- A lazy part goes where a child goes, directly in a `ui.Tab` or deeper,
+  as in `ui.Tab(ui.Stack(intro, history(s)), ...)`. A lazy part can hold
+  lazy parts, and tabs of its own. A `ui.Tab` itself is not lazy.
+- Anywhere but inside a `ui.Tab` a lazy part is built at every render,
+  so one function serves a tab on one page and a plain page elsewhere.
+- Nothing is wired for it. With `value` the page says which tab is open,
+  and with `default` the browser says so by itself.
+- What has to change while its tab is closed does not belong in a lazy
+  part. A `ui.Dialog` that a button in another tab opens is one.
+- What is still going on in a closed tab goes on. A reply keeps
+  streaming and an upload finishes. Before a handler in a closed tab's
+  part is called the part is drawn again, so what is called is always
+  the page as it is now.
+
 ## Accordion and Collapsible
 
 `ui.Accordion` opens one `ui.AccordionItem` at a time, or several with

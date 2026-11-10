@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { isInternalPath, isSameOriginPath, safeUrl, samePath, slugify, toApp, toBrowser, signOutUrl } from "../lib";
+import { isInternalPath, isSameOriginPath, safeUrl, samePath, slugify, toApp, toBrowser, signOutUrl, placed } from "../lib";
 
 describe("slugify", () => {
   it("matches the server's anchor for a heading", () => {
@@ -97,5 +97,27 @@ describe("spellcheck on long text", () => {
     field.value = "short";
     spellcheckForLength(field);
     expect(field.spellcheck).toBe(true);
+  });
+});
+
+describe("placed", () => {
+  it("gives the box what places a component among its neighbours", () => {
+    const box = [
+      "w-64", "min-w-0", "max-w-sm", "w-[13rem]", "grow", "grow-0", "shrink-0", "basis-1/2", "flex-1", "self-start",
+      "justify-self-end", "order-2", "col-span-2", "row-start-1", "m-2", "mx-auto", "mt-8", "-mb-2", "ms-1", "me-1",
+      "hidden", "md:block", "md:flex", "absolute", "top-0", "inset-x-0", "z-10", "md:hover:w-64", "!w-64", "w-64!",
+      "[&:hover]:mt-2",
+    ];
+    const rest = [
+      "h-40", "min-h-60", "max-h-80", "size-10", "text-lg", "font-mono", "bg-muted", "resize-none", "rounded-xl",
+      "border-2", "p-4", "px-2", "gap-2", "flex-col", "items-center", "justify-end", "md:text-xl", "hover:bg-accent",
+      "bg-[url(/public/a:b.png)]", "mine", "marker:text-red-500",
+    ];
+    expect(placed([...box, ...rest].join(" "))).toEqual({ box: box.join(" "), rest: rest.join(" ") });
+  });
+
+  it("takes anything that is not a string as no classes", () => {
+    expect(placed(undefined)).toEqual({ box: "", rest: "" });
+    expect(placed("  ")).toEqual({ box: "", rest: "" });
   });
 });

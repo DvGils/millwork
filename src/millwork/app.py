@@ -45,6 +45,7 @@ from millwork.proxy import ASGIApp, Proxied
 from millwork.scope import Scope
 from millwork.shell import Shell, plain, root_of
 from millwork.theme import Theme, find_theme, under
+from millwork.visitors import Visitor, Visitors
 from millwork.work import live
 
 # The policy for every HTML page; ``{scripts}`` becomes the page's script sources
@@ -220,6 +221,7 @@ class App:
         max_sessions: int = 1000,
         max_sessions_per_client: int = 20,
         proxied: bool = False,
+        identify_visitors: bool = False,
     ) -> None:
         self.name = name
         # Behind a reverse proxy: its forwarded address and scheme, and the
@@ -241,10 +243,25 @@ class App:
             raise ValueError(
                 "auth needs a secret of at least 32 characters; `millwork secret` makes one"
             )
+        if identify_visitors and secret is not None and len(secret) < 32:
+            # It signs the cookie that names a visitor, and a short one can
+            # be found from a single cookie.
+            raise ValueError(
+                "identify_visitors needs a secret of at least 32 characters, or none "
+                "for one made at every start; `millwork secret` makes one"
+            )
         if secret is None:
             secret = secrets.token_urlsafe(32)
             log.info("no secret configured; using a per-process secret")
+            if identify_visitors:
+                log.info(
+                    "visitors get a new id every time the app starts; "
+                    "App(secret=...) lets them keep it"
+                )
         self.secret = secret
+        # A name for each browser, in a cookie of its own. Off unless the app
+        # asks, so no app sets a cookie it has no use for.
+        self.visitors = Visitors(secret, name) if identify_visitors else None
         self.csp = csp
         # The thread pool `s.thread`, uploads and file reads run on: the loop's
         # default executor, sized here. None keeps asyncio's default.
@@ -461,12 +478,17 @@ class App:
         With auth it needs a sign-in like a page does, and ``allow`` narrows it
         like a page's. The endpoint finds the user in ``request.state.user``.
         ``public=True`` opens it to anyone, which is what a webhook or a
-        health check needs."""
+        health check needs. In an app that identifies visitors the endpoint
+        finds the browser that asks in ``request.state.visitor``, or None
+        there when the browser brought no id."""
         self._check_access(f"the route {path}", public, allow)
         route = Route(path, endpoint, methods=methods or ["GET"])
         rule = rule_for(allow, route.param_convertors, f"the route {path}") if allow else None
         self._extra.append(_Extra("route", path, public, rule))
-        if self.auth is not None and not public:
+        guarded = self.auth is not None and not public
+        if self.visitors is not None:
+            route.app = _Visited(self, route.app, guarded)
+        if guarded:
             route.app = _Guarded(self, route.app, rule, f"the route {path}")
         self._routes.append(route)
 
@@ -480,11 +502,15 @@ class App:
     ) -> None:
         """Serve another ASGI app under a path. With auth, everything under it
         needs a sign-in unless ``public=True``, and ``allow`` narrows it by the
-        user alone."""
+        user alone. What is mounted finds the user and the visitor where a
+        route does."""
         self._check_access(f"the mount {path}", public, allow)
         rule = rule_for(allow, (), f"the mount {path}") if allow else None
         self._extra.append(_Extra("mount", path, public, rule))
-        if self.auth is not None and not public:
+        guarded = self.auth is not None and not public
+        if self.visitors is not None:
+            asgi_app = _Visited(self, asgi_app, guarded)
+        if guarded:
             asgi_app = _Guarded(self, asgi_app, rule, f"the mount {path}")
         self._routes.append(Mount(path, app=asgi_app))
 
@@ -601,7 +627,7 @@ class App:
         if self.auth is not None:
             routes += [
                 Route(f"{PREFIX}/auth/login", self.auth.route_login, methods=["POST"]),
-                Route(f"{PREFIX}/auth/logout", self.auth.route_logout, methods=["POST"]),
+                Route(f"{PREFIX}/auth/logout", self._logout, methods=["POST"]),
                 Route(f"{PREFIX}/auth/oauth/{{provider}}", self.auth.route_oauth_start),
                 Route(f"{PREFIX}/auth/oauth/{{provider}}/callback", self.auth.route_oauth_callback),
             ]
@@ -872,9 +898,10 @@ class App:
 
         next_path = _safe_next(request.query_params.get("next"))
         base = root_of(request.scope)
-        if await self.user_for(request) is not None:
+        user = await self.user_for(request)
+        if user is not None:
             # Already signed in, by a cookie or by the proxy: nothing to show.
-            return RedirectResponse(f"{base}{next_path}", status_code=302)
+            return self._greeted(request, RedirectResponse(f"{base}{next_path}", 302), user)
         error = request.query_params.get("error")
         revoked = bool(request.scope.get("millwork.revoked"))
         if error is None and revoked:
@@ -902,9 +929,25 @@ class App:
         )
         if revoked:
             self.auth.clear_cookie(request, response)
+        return self._greeted(request, response, None)
+
+    def _greeted(self, request: Request, response: Any, user: Any) -> Any:
+        """A page's answer, naming the browser when the app identifies visitors."""
+        return response if self.visitors is None else self.visitors.greet(request, response, user)
+
+    async def _logout(self, request: Request) -> Any:
+        assert self.auth is not None
+        response = await self.auth.route_logout(request)
+        if self.visitors is not None and response.status_code == 200:
+            # Whoever uses the browser next is not the visitor who just left.
+            self.visitors.renew(request, response)
         return response
 
     async def _serve_page(self, request: Request) -> Any:
+        user = await self.user_for(request)
+        return self._greeted(request, self._page_response(request, user), user)
+
+    def _page_response(self, request: Request, user: Any) -> Any:
         path = "/" + request.path_params.get("path", "")
         self._check_stripped(request.scope, path)
         # The path as the browser spelled it. The tab says hello with it, and
@@ -919,7 +962,6 @@ class App:
             status = 404
         page, params = resolved
         base = root_of(request.scope)
-        user = await self.user_for(request)
         if self.auth is not None and not page.public and user is None:
             if request.scope.get("millwork.revoked"):
                 # Signed in, and no longer welcome: the cookie goes, and the
@@ -1034,6 +1076,51 @@ class _Guarded:
             login = f"{base}{PREFIX}/login?{urlencode({'next': path})}"
             response = RedirectResponse(login, status_code=302)
         await response(scope, receive, send)
+
+
+class _Visited:
+    """An app's own route or mount, told which browser is asking.
+
+    ``request.state.visitor`` is the visitor a session opened from that
+    browser would have, or None when the browser brought no id that is this
+    person's to use. Nothing is issued here: a browser gets its id from a
+    page. A socket, or a request that changes something, from another
+    site's page has no visitor either, since the cookie rides along on it.
+    ``guarded`` says the sign-in was asked for on the way in, and the user
+    it found is the one the id is checked against."""
+
+    def __init__(self, app: App, inner: Any, guarded: bool) -> None:
+        self.app, self.inner, self.guarded = app, inner, guarded
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] in ("http", "websocket"):
+            state = scope.setdefault("state", {})
+            state["visitor"] = await self._asking(scope, state)
+        await self.inner(scope, receive, send)
+
+    async def _asking(self, scope: Any, state: dict[str, Any]) -> Visitor | None:
+        visitors = self.app.visitors
+        conn = HTTPConnection(scope)
+        if visitors is None or not visitors.named(conn):
+            # Most of what calls a public route, a webhook say, brings no
+            # cookie, and nobody needs identifying to say so.
+            return None
+        changes = scope["type"] == "websocket" or scope["method"] not in _SAFE_METHODS
+        if changes and not _same_origin(conn, self.app.origins):  # type: ignore[arg-type]
+            return None
+        user: Any = None
+        if self.guarded:
+            user = state.get("user")
+        elif self.app.auth is not None:
+            try:
+                user = await self.app.user_for(conn)
+            except Exception:
+                # A route open to anyone answers whether or not the app can
+                # say who is signed in. Without that the id is nobody's.
+                log.exception("identity lookup failed; the request has no visitor")
+                return None
+        known = visitors.of(conn, user)
+        return Visitor(known) if known is not None else None
 
 
 def _error_view(s: Any, kind: str) -> Component:

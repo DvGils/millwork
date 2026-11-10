@@ -61,3 +61,7 @@ lifetime is the real bound, and an app with sensitive data sets `session`
 to a working day. The socket is bound to the cookie, which means a session
 is only ever resumed by its own user. Logins and refusals are logged with
 the identifier, or with a hash of it when `log_identity="hashed"`.
+
+An app that [identifies its visitors](/pages/visitors) has a second cookie,
+which names the browser. Signing in and signing out each replace it, so
+the browser is a new visitor for whoever uses it next.
