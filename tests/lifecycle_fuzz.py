@@ -10,7 +10,9 @@ nothing to wait for, and a scenario runs the same way every time.
 The app under test has one of most things a page can hold: buttons, an input,
 a form, a table with row actions, a chat that streams its reply, an upload, a
 download, a custom component, questions, and tasks that are async, delayed,
-failing or run in a thread. In some scenarios its sign-in hooks are plain
+failing or run in a thread. Most of it sits in lazy parts under tabs, with
+tabs inside one of them, so a scenario spends much of its time talking to
+parts of the page that are kept as they were. In some scenarios its sign-in hooks are plain
 functions, so they run in threads too. A thread takes turns with the loop
 (see ``_Turns``), which keeps such a scenario repeatable.
 
@@ -20,6 +22,13 @@ writes down what it was sent. From that record the checks in ``examine`` ask
 whether promises the manual makes were kept: nothing runs on a session that
 is over, a page is closed exactly once, a tab is never left on a session it
 was not told has ended, nothing is left running at the end.
+
+A tab keeps the page it was sent, node for node, and chooses among its tabs
+the way the bundle does. That gives the promises of a page at rest: the tab
+holds exactly the page the session has, the session goes by the tab the
+browser is on and has drawn by it, nothing is ever looked up in a part of
+the page that was kept from an earlier render, and nobody who is done holds
+the turn.
 
 Run it from the command line for many seeds, or see ``test_lifecycle_fuzz``:
 
@@ -255,6 +264,10 @@ class World:
         }
     )
     log: list[dict[str, Any]] = field(default_factory=list)
+    # Promises the hooks on the session saw broken, and how often things
+    # happened that a run should have had some of.
+    broken: list[tuple[str, str]] = field(default_factory=list)
+    counts: Counter[str] = field(default_factory=Counter)
     names: dict[str, str] = field(default_factory=dict)
     sessions: list[Any] = field(default_factory=list)
     # What was said about a person, in order: (index in the log, time, who, role, active).
@@ -603,6 +616,63 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
         )
         if knobs["render_fails"]:
             raise RuntimeError("the page function fails")
+
+        @ui.lazy
+        def work_part(s: mw.Session[State], rows: list[dict[str, Any]]) -> ui.Component:
+            world.note("part", sid=world.name(s.id), part="work")
+            return ui.Stack(
+                ui.Input(key="input", on_change=typed),
+                ui.Form(Person, key="form", on_submit=submitted),
+                ui.Table(
+                    rows=rows,
+                    key="table",
+                    selection="rows",
+                    row_actions=[
+                        ui.MenuItem(id="open", label="Open"),
+                        ui.MenuItem(id="remove", label="Remove", confirm="Remove it?"),
+                    ],
+                    on_select=on_table,
+                    on_row_click=on_table,
+                    on_action=on_table,
+                    on_sort=on_table,
+                    on_filter=on_table,
+                ),
+                ui.FileUpload(key="upload", max_size_mb=1, on_upload=uploaded, on_reject=rejected),
+                ui.Download(filename="page.txt", content="what the page holds", key="download"),
+                ui.Custom("Widget", key="custom", events={"wave": waved}),
+                ui.Combobox(key="combo", on_search=search),
+                ui.Button("slow", key="slow2", on_click=slow),
+                ui.Button("confirm", key="confirm2", on_click=confirm),
+                ui.Button("admin", key="admin2", on_click=to("/admin")),
+                key="work",
+            )
+
+        @ui.lazy
+        def talk_part(s: mw.Session[State]) -> ui.Component:
+            world.note("part", sid=world.name(s.id), part="talk")
+            return ui.Stack(
+                ui.Chat(key="chat", on_message=chat),
+                ui.Button("bump", key="bump2", on_click=bump),
+                ui.Button("end", key="end2", on_click=end),
+                ui.Button("ask_form", key="ask_form2", on_click=ask_form),
+                ui.Button("task", key="task2", on_click=start_task),
+                ui.Button("home", key="home2", on_click=to("/")),
+                ui.Tabs(
+                    ui.Tab(inner_part(s, "x"), id="x", label="X"),
+                    ui.Tab(inner_part(s, "y"), id="y", label="Y"),
+                    key="inner",
+                ),
+                key="talk",
+            )
+
+        @ui.lazy
+        def inner_part(s: mw.Session[State], name: str) -> ui.Component:
+            return ui.Stack(
+                ui.Button("bump", key=f"bump-{name}", on_click=bump),
+                ui.Button("open", key=f"open-{name}", on_click=to("/open")),
+                ui.Button("grow", key=f"grow-{name}", on_click=grow) if s.state.n % 2 else None,
+            )
+
         return ui.Page(
             ui.Text(f"{mark} n={s.state.n}", key="mark"),
             ui.Button("await_task", key="await_task", on_click=await_task),
@@ -616,26 +686,6 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
             ui.Button("print", key="print", on_click=print_page),
             ui.Button("send_file", key="send_file", on_click=send_file),
             ui.Button("grow", key="grow", on_click=grow),
-            ui.Input(key="input", on_change=typed),
-            ui.Form(Person, key="form", on_submit=submitted),
-            ui.Table(
-                rows=rows,
-                key="table",
-                selection="rows",
-                row_actions=[
-                    ui.MenuItem(id="open", label="Open"),
-                    ui.MenuItem(id="remove", label="Remove", confirm="Remove it?"),
-                ],
-                on_select=on_table,
-                on_row_click=on_table,
-                on_action=on_table,
-                on_sort=on_table,
-                on_filter=on_table,
-            ),
-            ui.FileUpload(key="upload", max_size_mb=1, on_upload=uploaded, on_reject=rejected),
-            ui.Download(filename="page.txt", content="what the page holds", key="download"),
-            ui.Custom("Widget", key="custom", events={"wave": waved}),
-            ui.Chat(key="chat", on_message=chat),
             ui.Button("bump", key="bump", on_click=bump),
             ui.Button("slow", key="slow", on_click=slow),
             ui.Button("end", key="end", on_click=end),
@@ -647,7 +697,12 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
             ui.Button("home", key="home", on_click=to("/")),
             ui.Button("admin", key="admin", on_click=to("/admin")),
             ui.Button("open", key="open", on_click=to("/open")),
-            ui.Combobox(key="combo", on_search=search),
+            ui.Tabs(
+                ui.Tab(ui.Text("plain"), id="a", label="A"),
+                ui.Tab(work_part(s, rows), id="b", label="B"),
+                ui.Tab(talk_part(s), id="c", label="C"),
+                key="tabs",
+            ),
         )
 
     def is_admin(user: auth.User) -> bool:
@@ -726,6 +781,15 @@ class Tab:
         # What the tab wants to say before it has a session. The bundle keeps
         # it until the server has said which session this is.
         self.unsent: list[dict[str, Any]] = []
+        # The page as the tab holds it: every node it was sent, with the
+        # patches since applied.
+        self.nodes: dict[str, dict[str, Any]] = {}
+        # Which tab each ``Tabs`` that keeps its own choice is on, and what
+        # the tab last told the server about it.
+        self.on: dict[str, str] = {}
+        self.told: dict[str, str] = {}
+        # True once it has said something about its tabs that is not so.
+        self.lied = False
 
     @property
     def label(self) -> str:
@@ -762,6 +826,84 @@ class Tab:
         self.task = asyncio.get_running_loop().create_task(
             self.sim.asgi(scope, self._receive, self._send), name=f"tab {self.number}"
         )
+
+    def carry(self, old: Tab) -> None:
+        """Go on with the page another connection of this tab had: the page
+        in the browser outlives its socket."""
+        self.nodes = {i: json.loads(json.dumps(n)) for i, n in old.nodes.items()}
+        self.on = dict(old.on)
+
+    def patch(self, ops: list[dict[str, Any]]) -> None:
+        nodes = self.nodes
+        for op in ops:
+            kind = op["op"]
+            if kind == "add":
+                nodes[op["node"]["id"]] = op["node"]
+            elif kind == "remove":
+                nodes.pop(op["id"], None)
+            elif kind == "set":
+                nodes[op["id"]]["props"].update(op["props"])
+            elif kind == "unset":
+                for key in op["keys"]:
+                    nodes[op["id"]]["props"].pop(key, None)
+            elif kind == "children":
+                nodes[op["id"]]["children"] = list(op["children"])
+            elif kind == "splice":
+                old = nodes[op["id"]]["props"][op["prop"]]
+                new: list[Any] = []
+                at = 0
+                for start, delete, items in op["edits"]:
+                    new += old[at:start]
+                    new += items
+                    at = start + delete
+                nodes[op["id"]]["props"][op["prop"]] = new + old[at:]
+
+    def own_tabs(self) -> dict[str, list[str]]:
+        """The ``Tabs`` on the page that keep their own choice, each with the
+        ids of its tabs."""
+        out: dict[str, list[str]] = {}
+        for node_id, node in self.nodes.items():
+            if node["type"] == "Tabs" and "value" not in node["props"]:
+                tabs = [self.nodes[c] for c in node["children"] if c in self.nodes]
+                out[node_id] = [c["props"]["id"] for c in tabs if c["type"] == "Tab"]
+        return out
+
+    def look(self) -> None:
+        """What the bundle does when the page changed under it. ``Tabs`` that
+        are new open on their default, or their first tab. One whose tab is
+        gone moves to the first. And what the server asked to be told, with
+        ``track``, is said when it is new or other than what was said last."""
+        tabs = self.own_tabs()
+        for gone in [i for i in self.on if i not in tabs]:
+            del self.on[gone]
+            self.told.pop(gone, None)
+        for node_id, ids in tabs.items():
+            props = self.nodes[node_id]["props"]
+            if node_id not in self.on:
+                self.on[node_id] = str(props.get("default") or (ids[0] if ids else ""))
+            if self.on[node_id] not in ids and ids:
+                self.on[node_id] = ids[0]
+            if not props.get("track"):
+                self.told.pop(node_id, None)
+            elif self.told.get(node_id) != self.on[node_id]:
+                self.told[node_id] = self.on[node_id]
+                self.say(
+                    {"type": "event", "node": node_id, "name": "show", "payload": self.on[node_id]}
+                )
+
+    def in_view(self, node_id: str) -> bool:
+        """Whether a person could get at a node: every tab it sits under is
+        the open one of its ``Tabs``."""
+        above = {c: i for i, n in self.nodes.items() for c in n["children"]}
+        while node_id in above:
+            parent = above[node_id]
+            if self.nodes[node_id]["type"] == "Tab" and self.nodes[parent]["type"] == "Tabs":
+                props = self.nodes[parent]["props"]
+                on = props["value"] if "value" in props else self.on.get(parent)
+                if on != self.nodes[node_id]["props"]["id"]:
+                    return False
+            node_id = parent
+        return True
 
     def say(self, message: dict[str, Any]) -> None:
         text = json.dumps({"seq": self.sent, "msg": message})
@@ -836,10 +978,18 @@ class Tab:
             unsent, self.unsent = self.unsent, []
             for item in unsent:
                 self.inbox.put_nowait(item)
+            # The socket is open: the session behind it may be a new one, or
+            # may have missed what was said, so the tabs are said again.
+            self.told.clear()
+            self.look()
         elif kind == "mount":
             fact["marked"] = ADMIN_MARK in event["text"]
+            self.nodes = msg["nodes"]
+            self.look()
         elif kind == "patch":
             fact["marked"] = ADMIN_MARK in event["text"]
+            self.patch(msg["ops"])
+            self.look()
         elif kind == "command":
             fact["name"] = msg["name"]
             if msg["name"] == "navigate":
@@ -987,6 +1137,8 @@ class Sim:
         tab = Tab(self, len(self.tabs) + 1, old.browser, old.path)
         self.tabs.append(tab)
         self.world.note(f"act:{how}", tab=tab.label, was=old.label)
+        if how != "reload":
+            tab.carry(old)
         tab.open(resume_from=old, seq=seq)
         return tab
 
@@ -1055,7 +1207,8 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
     if live:
         kinds += ["click"] * 14 + ["navigate"] * 2 + ["drop"] * 2 + ["deafen", "hear"]
         kinds += ["request", "stale", "answer", "chat", "chat", "upload", "upload", "fetch"]
-        kinds += ["request", "reload", "duplicate"]
+        kinds += ["request", "reload", "duplicate"] + ["show"] * 8 + ["request"] * 3 + ["lie"]
+        kinds += ["rest"] * 6
     if sim.app.sessions:
         kinds += ["push"]
     if any(t.gone or t.server_closed for t in sim.tabs):
@@ -1080,10 +1233,17 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
         return ("wait", 0.0)
     if kind == "push":
         return ("push",)
+    if kind == "rest":
+        return ("rest",)
     tab = rng.choice(live).number if live else 0
     if kind == "stale" and rng.random() < 0.5:
         open_still = [t.number for t in sim.tabs if not t.gone and not t.server_closed]
         tab = rng.choice(open_still) if open_still else tab
+    if kind == "show":
+        return ("show", tab, rng.randrange(4), rng.randrange(6))
+    if kind == "lie":
+        said = rng.choice(["a", "b", "c", "x", "y", "zz", "", 7, None, ["b"]])
+        return ("lie", tab, rng.randrange(4), said)
     if kind == "click":
         return ("click", tab, rng.randrange(60), rng.randrange(3))
     if kind == "navigate":
@@ -1146,6 +1306,15 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
             "restore": {"active": True},
         }[what]
         world.change(who, **change)
+        return True
+    if kind == "rest":
+        # A pause in which nobody does anything, and then a look at every
+        # page that has come to rest in it.
+        await asyncio.sleep(5.0)
+        world.note("act:rest")
+        for session in list(sim.app.sessions.values()):
+            if session.tree is not None:
+                at_rest(sim, session, str(world.name(session.id)))
         return True
     if kind == "push":
         # The app says something to every session at once, as it does when a
@@ -1214,12 +1383,38 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
             return False
         world.note("act:fetch", tab=tab.label)
         tab.ask("file", "root", name="file", payload={"id": tab.files[action[2] % len(tab.files)]})
+    elif kind == "show":
+        # A person opens a tab, of the tabs they can get at. The bundle
+        # switches at once, tells a handler of the app's if there is one,
+        # and tells the server where it asked to be told.
+        within = sorted((i, ids) for i, ids in tab.own_tabs().items() if ids and tab.in_view(i))
+        if not within:
+            return False
+        node, ids = within[action[2] % len(within)]
+        chosen = ids[action[3] % len(ids)]
+        world.note("act:show", tab=tab.label, node=node, open=chosen)
+        world.counts["tabs opened"] += 1
+        tab.on[node] = chosen
+        if tab.nodes[node]["props"].get("on_change"):
+            tab.say({"type": "event", "node": node, "name": "change", "payload": chosen})
+        tab.look()
+    elif kind == "lie":
+        # Something about a tab that the bundle would not say: any of the
+        # tabs on the page, in view or not, and any word for the open one.
+        tabs = sorted(i for i, n in tab.nodes.items() if n["type"] == "Tabs")
+        if not tabs:
+            return False
+        node = tabs[action[2] % len(tabs)]
+        world.note("act:lie", tab=tab.label, node=node, open=action[3])
+        tab.lied = True
+        tab.say({"type": "event", "node": node, "name": "show", "payload": action[3]})
     elif kind == "navigate":
         world.note("act:navigate", tab=tab.label, path=action[2])
         tab.say({"type": "navigate", "path": action[2]})
     elif kind == "request":
         world.note("act:request", tab=tab.label)
-        request = tab.ask("search", "root/combo", name="search", payload="a")
+        combo = next((n for n, name in sim.handlers(tab) if name == "search"), "root/combo")
+        request = tab.ask("search", combo, name="search", payload="a")
         if len(action) > 2 and action[2] == "cancel":
             tab.say({"type": "cancel", "request": request})
     elif kind == "reload":
@@ -1296,6 +1491,7 @@ class Outcome:
     log: list[dict[str, Any]]
     # For each action, the number of the tab it opened, if it opened one.
     made: list[int | None] = field(default_factory=list)
+    counts: Counter[str] = field(default_factory=Counter)
 
     @property
     def kinds(self) -> list[str]:
@@ -1332,8 +1528,48 @@ def run(
     noisy.propagate = False
     noisy.setLevel(logging.WARNING)
 
-    Session = importlib.import_module("millwork.session").Session
+    session_module = importlib.import_module("millwork.session")
+    work_module = importlib.import_module("millwork.work")
+    Session = session_module.Session
     original_init, original_end = Session.__init__, Session.dismiss
+    original_sort, original_bring_up = Session.sort, Session.bring_up
+    original_failed = Session._render_failed
+    original_build, original_ask = session_module.build, work_module._ask_handler
+
+    def kept(session: Any, node: str, what: str) -> None:
+        """Nothing is looked up in a part of the page that was kept from an
+        earlier render: what may be called is what the page offers now."""
+        part = session.kept_part(node)
+        if part is not None:
+            sid = world.name(session.id)
+            world.broken.append(("kept part called", f"{what} for {node} of {sid}, kept in {part}"))
+
+    def sort(self: Any, event: Any) -> Any:
+        kept(self, event.node, f"the event {event.name}")
+        return original_sort(self, event)
+
+    async def ask_handler(s: Any, conn: Any, msg: Any) -> None:
+        kept(s, msg.node, f"the request {msg.name}")
+        await original_ask(s, conn, msg)
+
+    def bring_up(self: Any, node: str) -> bool:
+        world.counts["messages for a node in a kept part"] += 1
+        built = original_bring_up(self, node)
+        world.counts["... whose part could not be built"] += not built
+        return bool(built)
+
+    def build(root: Any, *args: Any, **kwargs: Any) -> Any:
+        tree = original_build(root, *args, **kwargs)
+        # What the page was drawn by, for the check that it was drawn by
+        # what the tab said last.
+        tree.drawn_by = dict(kwargs.get("showing") or {})
+        world.counts["renders"] += 1
+        world.counts["... with a part kept as it was"] += bool(tree.kept)
+        return tree
+
+    def render_failed(self: Any, *args: Any, **kwargs: Any) -> None:
+        self.fuzz_failed = True
+        original_failed(self, *args, **kwargs)
 
     def init(self: Any, *args: Any, **kwargs: Any) -> None:
         original_init(self, *args, **kwargs)
@@ -1419,6 +1655,9 @@ def run(
 
     loop.set_exception_handler(dropped)
     Session.__init__, Session.dismiss = init, end  # type: ignore[method-assign]
+    Session.sort, Session.bring_up = sort, bring_up  # type: ignore[method-assign]
+    Session._render_failed = render_failed  # type: ignore[method-assign]
+    session_module.build, work_module._ask_handler = build, ask_handler
     violations: list[tuple[str, str]] = []
     try:
         with virtual_time(clock), warnings.catch_warnings(record=True) as warned:
@@ -1431,6 +1670,7 @@ def run(
             if sim is not None:
                 violations += sim.problems
                 violations += examine(world, sim, loop)
+            violations += world.broken
             violations += [("lost", message) for message in lost]
             violations += [
                 ("warned", str(w.message)) for w in warned if "never awaited" in str(w.message)
@@ -1438,6 +1678,9 @@ def run(
             violations += unexpected(logged.records)
     finally:
         Session.__init__, Session.dismiss = original_init, original_end  # type: ignore[method-assign]
+        Session.sort, Session.bring_up = original_sort, original_bring_up  # type: ignore[method-assign]
+        Session._render_failed = original_failed  # type: ignore[method-assign]
+        session_module.build, work_module._ask_handler = original_build, original_ask
         noisy.removeHandler(logged)
         noisy.propagate = propagate
         noisy.setLevel(level)
@@ -1448,7 +1691,7 @@ def run(
         with contextlib.suppress(Exception):
             loop.run_until_complete(asyncio.sleep(0))
         loop.close()
-    return Outcome(seed, done, violations, world.log, made)
+    return Outcome(seed, done, violations, world.log, made, world.counts)
 
 
 # ------------------------------------------------------------------ the oracle
@@ -1494,6 +1737,37 @@ def unexpected(records: list[logging.LogRecord]) -> list[tuple[str, str]]:
     return out
 
 
+def check_tree(session: Any) -> None:
+    tree = session.tree
+    seen: set[str] = set()
+    todo = [tree.root]
+    while todo:
+        node_id = todo.pop()
+        assert node_id in tree.nodes, f"dangling id {node_id}"
+        assert node_id not in seen, f"{node_id} reached twice"
+        seen.add(node_id)
+        node = tree.nodes[node_id]
+        todo += node.children
+        stack = [node.props]
+        while stack:
+            value = stack.pop()
+            if isinstance(value, dict):
+                if set(value) == {"$node"}:
+                    todo.append(value["$node"])
+                else:
+                    stack += list(value.values())
+            elif isinstance(value, list):
+                stack += value
+    assert seen == set(tree.nodes), f"leftover nodes {sorted(set(tree.nodes) - seen)[:4]}"
+    assert set(tree.components) == set(tree.nodes)
+    for node_id, _ in tree.handlers:
+        assert node_id in tree.nodes, f"a handler for {node_id}, which is no node"
+    # What the tab said about its tabs is kept for the nodes of the page, and
+    # for a bounded number that were said while the session had no page.
+    extra = [key for key in session._showing if key not in tree.nodes]
+    assert len(extra) <= 64, f"{len(extra)} open tabs kept for nodes that are not there"
+
+
 def kept_requests(session: Any) -> list[str]:
     """Requests a session still holds though nothing is working on them."""
     return [rid for rid, (child, _) in session._requests.items() if child is None or child.done()]
@@ -1516,6 +1790,18 @@ def settled(sim: Sim) -> None:
         sid = sim.world.name(session.id)
         if kept_requests(session):
             sim.problems.append(("request kept", f"{sid} still holds a request that is done"))
+        holder = session.turn.holder
+        if holder is not None and hasattr(holder, "done") and holder.done():
+            name = holder.get_name()
+            sim.problems.append(
+                ("turn kept", f"the turn of {sid} is held by {name}, which is done")
+            )
+        if session.tree is not None:
+            try:
+                check_tree(session)
+            except AssertionError as exc:
+                sim.problems.append(("tree broken", f"{sid}: {exc}"))
+            at_rest(sim, session, sid)
         if stuck_chats(session):
             sim.problems.append(("chat stuck", f"a chat of {sid} is busy with no reply under way"))
     for tab in sim.tabs:
@@ -1527,6 +1813,99 @@ def settled(sim: Sim) -> None:
         sim.problems.append(
             ("stranded", f"{tab.label} is still connected to a session that is over, {told}")
         )
+
+
+def above(tree: Any) -> dict[str, str]:
+    """The node each node of a page sits in, as a child or in a slot."""
+    up: dict[str, str] = {}
+    for node_id, node in tree.nodes.items():
+        for child in node.children:
+            up[child] = node_id
+        stack = [node.props]
+        while stack:
+            value = stack.pop()
+            if isinstance(value, dict):
+                if set(value) == {"$node"}:
+                    up[value["$node"]] = node_id
+                else:
+                    stack += list(value.values())
+            elif isinstance(value, list):
+                stack += value
+    return up
+
+
+def at_rest(sim: Sim, session: Any, sid: str) -> None:
+    """A page that has come to rest, and the tab that is on it. The session
+    has drawn the page by the tab of each ``Tabs`` it was last told, and no
+    part of it that shows was kept from an earlier render. The tab holds
+    exactly the page the session has, and the session goes by the tab of
+    each ``Tabs`` that the browser is on."""
+    tree = session.tree
+    resting = (
+        not session.over
+        and session.stage == "ready"
+        and session.turn.free
+        and session._inflight == 0
+        and not session._render_due
+        and session._render_timer is None
+        and tree is not session._failure
+        and not getattr(session, "fuzz_failed", False)
+    )
+    if not resting:
+        return
+    sim.world.counts["pages looked at, at rest"] += 1
+    tabs = {
+        node_id: component
+        for node_id, component in tree.components.items()
+        if isinstance(component, ui.Tabs) and "value" not in component.model_fields_set
+    }
+    for node_id, component in tabs.items():
+        was = component.shown(getattr(tree, "drawn_by", {}).get(node_id))
+        now = component.shown(session._showing.get(node_id))
+        if was != now:
+            said = f"{node_id} of {sid} was drawn on {was!r} and the session has {now!r}"
+            sim.problems.append(("tab not drawn", said))
+    up = above(tree)
+    for part in tree.kept:
+        # Up from where the part sits: it shows when every tab on the way
+        # is the open one of its tabs.
+        node_id, shows = part.key.rsplit("/", 1)[0], True
+        while shows and node_id in up:
+            tab_of, tabs_of = tree.components[node_id], tree.components[up[node_id]]
+            if isinstance(tabs_of, ui.Tabs) and isinstance(tab_of, ui.Tab):
+                shows = tab_of.id == tabs_of.shown(session._showing.get(up[node_id]))
+            node_id = up[node_id]
+        if shows:
+            sim.problems.append(("open part kept", f"{part.key} of {sid} shows and was not built"))
+    ours = [
+        t
+        for t in sim.tabs
+        if t.session == session.id and not t.gone and not t.server_closed and t.fatal is None
+    ]
+    if not ours:
+        return
+    tab = ours[-1]
+    heard = tab.last_seq == session.outbox.seq and tab.hearing.is_set()
+    if not heard or not tab.inbox.empty() or tab.unsent:
+        # The tab has not been sent all of it, or has more to say.
+        return
+    sim.world.counts["... with the tab that is on them"] += 1
+    page = {node_id: json.loads(node.model_dump_json()) for node_id, node in tree.nodes.items()}
+    if tab.nodes != page:
+        ids = set(tab.nodes) ^ set(page)
+        other = sorted(ids or (i for i in page if tab.nodes[i] != page[i]))
+        what = "nodes on one side only" if ids else "nodes that differ"
+        sim.problems.append(("page differs", f"{tab.label} and {sid}: {what}, {other[:3]}"))
+    if tab.lied:
+        return
+    for node_id, component in tabs.items():
+        if not tree.nodes[node_id].props.get("track"):
+            continue
+        sim.world.counts["tabs compared with the browser's"] += 1
+        server, browser = component.shown(session._showing.get(node_id)), tab.on.get(node_id)
+        if server != browser:
+            said = f"{node_id}: {tab.label} is on {browser!r} and {sid} goes by {server!r}"
+            sim.problems.append(("tabs parted", said))
 
 
 def emptied(sim: Sim) -> None:
@@ -1553,7 +1932,14 @@ def examine(world: World, sim: Sim, loop: asyncio.AbstractEventLoop) -> list[tup
 
     # Nothing of the app's runs on a session once it is over.
     for e in log:
-        starts = e["kind"] in ("handler:begin", "connect:begin", "request:begin", "tick", "draw")
+        starts = e["kind"] in (
+            "handler:begin",
+            "connect:begin",
+            "request:begin",
+            "tick",
+            "draw",
+            "part",
+        )
         if starts and e["sid"] in over and e["i"] > over[e["sid"]]:
             what = e.get("name") or e.get("after") or e["kind"].split(":")[0]
             found.append(("ran after the end", f"{what} on {e['sid']} at {e['t']} s"))
@@ -1790,16 +2176,20 @@ def main(argv: list[str] | None = None) -> int:
         print(describe(outcome, args.verbose))
         return 1 if outcome.violations else 0
     tally: Counter[str] = Counter()
+    seen: Counter[str] = Counter()
     example: dict[str, int] = {}
     failed = 0
     for seed in range(args.start, args.start + args.seeds):
         outcome = run(seed=seed, steps=args.steps, avoid=avoid)
+        seen += outcome.counts
         if outcome.violations:
             failed += 1
         for kind in outcome.kinds:
             tally[kind] += 1
             example.setdefault(kind, seed)
     print(f"{args.seeds} scenarios of {args.steps} actions, {failed} broke a promise")
+    for what, count in sorted(seen.items()):
+        print(f"  ({what}: {count})")
     for kind, count in tally.most_common():
         print(f"  {kind:<22} {count:>5} scenarios, first at seed {example[kind]}")
     return 1 if failed else 0
