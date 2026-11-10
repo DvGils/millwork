@@ -54,6 +54,7 @@ interface FieldSpec {
   clearable?: boolean;
   max_length?: number;
   counter?: boolean;
+  rows?: number;
   integer?: boolean;
   min?: number;
   max?: number;
@@ -494,7 +495,7 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
     case "files":
       return <FileControl f={f} id={id} value={value} set={set} ctx={ctx} pointer={pointer} multiple={f.widget === "files"} />;
     case "textarea":
-      return counted(f, id, str, ctx, <Textarea {...common} {...described(f, id)} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
+      return counted(f, id, str, ctx, <Textarea {...common} {...described(f, id)} value={str} rows={typeof f.rows === "number" ? f.rows : undefined} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
     case "password":
       return <PasswordInput {...common} value={str} placeholder={f.placeholder ?? undefined} onChange={(e) => set(e.target.value || null)} />;
     case "number":

@@ -7,6 +7,23 @@ versions; a release says so here when it does.
 
 ### Bug fixes
 
+- A click right after typing could reach Python before the text. A field
+  holds a change for a moment so that typing is not a message per key,
+  and a button pressed within that moment sent its click first, so the
+  handler read what the field held before. What a field is holding now
+  goes out ahead of anything else the tab sends: a click, a move to
+  another page, an answer or an upload.
+- A `ui.Grid` inside a `ui.Grid` took the outer one's column counts for
+  the widths it gave none for. A grid asking for four columns from `md`
+  showed three on a wide screen, inside a grid that set three at `lg`.
+- A chart with `format="integer"` repeated labels on its value axis for
+  small counts, reading 0, 0, 0, 1, 1, 1. An axis whose labels show no
+  decimals, counts and money, now steps by one at the least.
+- `ui.Form` ignored `rows` in `overrides`, so a textarea in a form kept
+  its default height.
+- A handler made with `functools.partial` had its shape checked again on
+  every render, where a function or a lambda is checked once. A page of
+  three hundred such handlers took twice as long to build.
 - The `icon` of a `ui.Option` was drawn by `ui.ToggleGroup` alone. A
   Select, a Combobox, a MultiSelect, a RadioGroup and a CheckboxGroup
   took it and showed nothing. It now stands in front of the option's

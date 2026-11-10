@@ -221,3 +221,48 @@ async def test_a_failed_render_keeps_nothing_of_the_call_alive() -> None:
         assert "Something went wrong" in page.text()
         gc.collect()
         assert seen and seen[-1]() is None
+
+
+def test_a_handler_made_with_partial_is_checked_once_per_shape(monkeypatch) -> None:
+    from functools import partial
+
+    from millwork import nodes
+
+    def act(s: object, payload: object, who: int = 0) -> None: ...
+
+    asked = []
+    real = nodes._handler_problem
+    monkeypatch.setattr(
+        nodes, "_handler_problem", lambda fn, count: asked.append(fn) or real(fn, count)
+    )
+    nodes._HANDLER_SHAPES.clear()
+
+    def made(handler: object) -> None:
+        build(ui.Page(ui.Button("Go", on_click=handler)))
+
+    for who in range(50):
+        made(partial(act, who=who))
+    assert len(asked) == 1
+    # Another shape of the same function is another question, asked once.
+    for _ in range(2):
+        with pytest.raises(TypeError, match="on_click takes a handler of"):
+            made(partial(act, None, None))
+    assert len(asked) == 2
+    # A partial of a partial, and one around something that has no code.
+    made(partial(partial(act, who=1), who=2))
+
+    class Callable_:
+        def __call__(self, s: object, payload: object) -> None: ...
+
+    made(partial(Callable_()))
+    with pytest.raises(TypeError, match="on_click takes a handler of"):
+        made(partial(lambda: None))
+
+
+def test_a_form_passes_the_rows_of_a_textarea_on() -> None:
+    class Notes(BaseModel):
+        text: str = ""
+
+    form = ui.Form(Notes, overrides={"/text": {"widget": "textarea", "rows": 10}})
+    field = build(form).nodes["root"].props["schema"]["fields"][0]
+    assert field["widget"] == "textarea" and field["rows"] == 10

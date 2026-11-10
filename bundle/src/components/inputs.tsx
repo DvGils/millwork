@@ -33,7 +33,7 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
-import { request, type Ongoing } from "../ws";
+import { holdBack, request, type Ongoing } from "../ws";
 import { Label } from "@/components/ui/label";
 
 interface Opt {
@@ -112,14 +112,18 @@ export interface Debounced {
   flush(): void;
 }
 
-// A debounce timer. `flush` runs what is pending now (before a submit, and when
-// the component goes away, so the last change is never lost).
+// A debounce timer. `flush` runs what is pending now: before a submit, when
+// the component goes away, and before anything else the tab sends, so the
+// last change is never lost and never arrives after what followed it.
 export function useDebounced(ms: number): Debounced {
   const timer = useRef<number | null>(null);
   const pending = useRef<(() => void) | null>(null);
+  const release = useRef<(() => void) | null>(null);
   const flush = useCallback(() => {
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = null;
+    release.current?.();
+    release.current = null;
     const fn = pending.current;
     pending.current = null;
     if (fn) fn();
@@ -129,6 +133,7 @@ export function useDebounced(ms: number): Debounced {
     (fn: () => void) => {
       if (timer.current) window.clearTimeout(timer.current);
       pending.current = fn;
+      release.current ??= holdBack(flush);
       timer.current = window.setTimeout(flush, ms);
     },
     [flush, ms],

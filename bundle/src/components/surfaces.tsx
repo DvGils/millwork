@@ -309,13 +309,23 @@ function PaneAndHandle({ id, index, last, size, min, collapsible }: { id: string
 
 // The column counts go to the stylesheet as variables, which has the widths at
 // which each takes over, so any count works and none needs a class of its own.
-export const Grid: Renderer = ({ props, children }) => {
-  const cols = props.cols;
+// A grid says all four, a width it has no count for as one that is not set.
+// A variable left out would be the one a grid around this one set, since
+// variables are handed down.
+export function gridColumns(cols: unknown): Record<string, number | string> {
   const by = typeof cols === "number" ? { sm: cols } : cols && typeof cols === "object" ? (cols as Record<string, number>) : { sm: 2 };
-  const style = { "--mw-cols": by.sm ?? 1, "--mw-cols-md": by.md, "--mw-cols-lg": by.lg, "--mw-cols-xl": by.xl } as CSSProperties;
+  return {
+    "--mw-cols": by.sm ?? 1,
+    "--mw-cols-md": by.md ?? "initial",
+    "--mw-cols-lg": by.lg ?? "initial",
+    "--mw-cols-xl": by.xl ?? "initial",
+  };
+}
+
+export const Grid: Renderer = ({ props, children }) => {
   const gap = typeof props.gap === "number" ? props.gap : 4;
   return (
-    <div className={cn("mw-grid grid", `gap-${gap}`, props.cls as string)} style={style}>
+    <div className={cn("mw-grid grid", `gap-${gap}`, props.cls as string)} style={gridColumns(props.cols) as CSSProperties}>
       {children}
     </div>
   );

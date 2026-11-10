@@ -80,6 +80,20 @@ describe("the value axis", () => {
     expect(niceTicks(5, 5)).toEqual([4.4, 4.6, 4.8, 5, 5.2, 5.4, 5.6]);
   });
 
+  it("steps by whole numbers where the labels are whole", () => {
+    // Three bars of one vote each: an axis of 0 and 1, not 0, 0, 0, 1, 1, 1.
+    expect(niceTicks(0, 1, 5, true)).toEqual([0, 1]);
+    expect(niceTicks(0, 2, 5, true)).toEqual([0, 1, 2]);
+    expect(niceTicks(0, 3, 5, true)).toEqual([0, 1, 2, 3]);
+    expect(niceTicks(1, 1, 5, true)).toEqual([0, 1, 2]);
+    expect(niceTicks(0, 0.4, 5, true)).toEqual([0, 1]);
+    // Where the steps are whole anyway, nothing changes.
+    expect(niceTicks(0, 39, 5, true)).toEqual(niceTicks(0, 39));
+    expect(niceTicks(0, 7, 5, true)).toEqual(niceTicks(0, 7));
+    expect(valueAxis([1, 1], null, true, true)).toEqual({ domain: [0, 1], ticks: [0, 1] });
+    expect(valueAxis([1, 1], null, true).ticks.length).toBeGreaterThan(2);
+  });
+
   it("reads the data's reach, stacked or not", () => {
     const rows = [
       { x: "a", s0: 3, s1: -1 },

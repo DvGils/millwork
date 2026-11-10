@@ -133,6 +133,48 @@ describe("ws request layer", () => {
     expect(s2.json().some((m) => m.msg.type === "event")).toBe(true);
   });
 
+  it("a change a field is still holding goes out before whatever is sent next", async () => {
+    ws.connect();
+    const s = last();
+    s.open();
+    session(s);
+    const sent = () => s.json().map((m) => `${m.msg.type}:${m.msg.name ?? m.msg.path ?? ""}`).slice(1);
+    // A field holds its change for a moment, and the person clicks at once.
+    let held: string | null = "pasted text";
+    const say = () => {
+      if (held === null) return;
+      const text = held;
+      held = null;
+      ws.emit("field", "change", text);
+    };
+    ws.holdBack(say);
+    ws.emit("save", "click");
+    expect(sent()).toEqual(["event:change", "event:click"]);
+    // Said once: the next thing sent does not bring it out again.
+    ws.emit("save", "click");
+    expect(sent()).toEqual(["event:change", "event:click", "event:click"]);
+    // The same before a move to another page, an answer and a request.
+    for (const [next, kind] of [
+      [() => ws.navigate("/other"), "navigate:/other"],
+      [() => ws.answer("r1", true), "answer:"],
+      [() => void ws.request("n", "search", "q").catch(() => {}), "request:search"],
+    ] as const) {
+      held = "more";
+      ws.holdBack(say);
+      const before = sent().length;
+      next();
+      expect(sent().slice(before)).toEqual(["event:change", kind]);
+    }
+    // A field that said it on its own time is not asked again.
+    held = "typed";
+    const release = ws.holdBack(say);
+    say();
+    release();
+    const before = sent().length;
+    ws.emit("save", "click");
+    expect(sent().slice(before)).toEqual(["event:click"]);
+  });
+
   it("request() during the hello/session window rejects", async () => {
     const s2 = await reconnect();
     const p = ws.request("n", "search", "q");

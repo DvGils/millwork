@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import datetime as dt
 import enum
+import functools
 import inspect
+import types
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, runtime_checkable
@@ -296,22 +298,40 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
     tree.components[node_id] = component
 
 
-# Handler shapes already checked, by code object: a lambda is a new object each
-# render and the same code every time, so the check is one per source line.
-_HANDLER_SHAPES: dict[tuple[Any, int], str | None] = {}
+# Handler shapes already checked. A lambda is a new object each render and
+# the same code every time, and so is a ``functools.partial`` around one
+# function, so the check is one per source line and per way of filling a
+# function in, not one per render.
+_HANDLER_SHAPES: dict[tuple[Any, ...], str | None] = {}
+
+
+def _shape_of(fn: Callable[..., Any]) -> tuple[Any, ...] | None:
+    """What a handler's shape hangs on, or None for one that has to be asked
+    each time: its code, whether it is bound to an object, and for a partial
+    how many arguments are filled in already and which by name."""
+    filled = 0
+    named: frozenset[str] = frozenset()
+    while isinstance(fn, functools.partial):
+        filled += len(fn.args)
+        named |= frozenset(fn.keywords)
+        fn = fn.func
+    code = getattr(fn, "__code__", None)
+    if code is None:
+        return None
+    return (code, isinstance(fn, types.MethodType), filled, named)
 
 
 def check_handler(prop: str, fn: Callable[..., Any], args: tuple[str, ...]) -> None:
     """A handler takes the session and then ``args``, one payload for most
     props. One that cannot fails here, when the tree is built, with the shape
     in the message, instead of at the click with a toast."""
-    code = getattr(fn, "__code__", None)
-    key = (code, len(args))
-    if code is not None and key in _HANDLER_SHAPES:
+    shape = _shape_of(fn)
+    key = (shape, len(args))
+    if shape is not None and key in _HANDLER_SHAPES:
         problem = _HANDLER_SHAPES[key]
     else:
         problem = _handler_problem(fn, 1 + len(args))
-        if code is not None:
+        if shape is not None:
             _HANDLER_SHAPES[key] = problem
     if problem:
         raise TypeError(f"{prop} takes a handler of (session, {', '.join(args)}); {problem}")
