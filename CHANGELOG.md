@@ -73,6 +73,21 @@ versions; a release says so here when it does.
   one, and in the destructive color once the field is full. A text field
   of a `ui.Form` gets the same with `overrides={"/notes": {"counter":
   True}}`.
+- `ui.lazy` makes a part of a page lazy, so that it is kept up to date
+  only while its tab is open. It goes on a function that returns a
+  component, and a call of it goes into a `ui.Tab`, as in
+  `ui.Tab(history(s), id="history", label="History")`. The function runs
+  when the page is first drawn and then at every render in which its tab
+  is the open one. While another tab is open the part stays in the
+  browser as it was when the tab was left, with what was typed into it,
+  and a render skips it.
+  A page of five tabs with sixty cards each renders in 1.7 ms that way,
+  against 7.8 ms with every tab built. Before a handler in a closed
+  tab's part is called the part is drawn again, so what is called is
+  the page as it is now.
+- In a test, `page.change(tabs, "history")` opens a tab of `ui.Tabs` by
+  its id, whether the tabs keep their own choice or the page does. An id
+  that is no tab, or a tab that is disabled, is refused.
 - Drawing a page takes less of the server's time. Turning the components
   of a page into what is sent looked at every prop of every component,
   the ones nobody gave included. What a component was not given now comes
@@ -84,6 +99,13 @@ versions; a release says so here when it does.
 - A new page, Visitors, on what the id is, how to pin what an app keeps
   to it, and what it is no good for. Sessions, App options, the Hosting
   checklist, Sign-out and cookies and Testing point to it.
+- Layout has a section on lazy parts, with what they are for, what a
+  lazy function may do and what does not belong in one.
+- Sessions says what `s.connected` is, which was there and written down
+  nowhere, and the reference lists it.
+- Testing and Custom components say how a custom component is tested:
+  its props are found as they were given, and its events are sent by
+  name with `page.event`.
 
 ## 0.2.4
 

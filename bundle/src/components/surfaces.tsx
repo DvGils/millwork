@@ -37,11 +37,30 @@ import { Badge as UiBadge } from "@/components/ui/badge";
 export const Tabs: Renderer = ({ node, props, emit }) => {
   const controlled = has(props, "value");
   const tabs = node.children;
+  const first = String(props.default ?? firstTabId(tabs));
+  // The open tab, for tabs that keep their own choice. The server asks for
+  // it with `track` when parts of the page under these tabs are only kept up
+  // to date while their tab is open. It is said when the tabs appear, when
+  // the choice changes and when the socket opens again, since the session
+  // behind a new socket may not have heard it.
+  const [open, setOpen] = useState(first);
+  const status = useStatus();
+  const track = Boolean(props.track) && !controlled;
+  useEffect(() => {
+    if (track && status === "open") emit("show", open);
+    // `emit` is made anew at every render and always speaks for this node.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track, open, status]);
   return (
     <UiTabs
       value={controlled ? String(props.value ?? "") : undefined}
-      defaultValue={!controlled ? String(props.default ?? firstTabId(tabs)) : undefined}
-      onValueChange={(v) => props.on_change && emit("change", v)}
+      defaultValue={!controlled ? first : undefined}
+      onValueChange={(v) => {
+        // Also when the tabs move on by themselves, from a tab that was
+        // removed or disabled to the first one that can be chosen.
+        setOpen(String(v));
+        if (props.on_change) emit("change", v);
+      }}
       className={cn("flex flex-col gap-3", props.cls as string)}
     >
       <TabsList variant={props.variant === "pill" ? "default" : "line"}>

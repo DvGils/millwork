@@ -45,6 +45,9 @@ class Turn:
         return future
 
     async def take(self, who: Any) -> None:
+        """Wait in line for the turn. Whoever holds it already has it."""
+        if self.holder is who:
+            return
         if self.holder is None and not self.waiting:
             self.holder = who
             return

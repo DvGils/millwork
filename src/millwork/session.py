@@ -30,7 +30,7 @@ from millwork.chat import ChatTurn, Thread, UIMessage
 from millwork.connection import REPLACED, Connection, End, Pipe
 from millwork.files import FileRef, Reject, SessionFiles, content_to_file
 from millwork.forms import resolve_files, validate
-from millwork.nodes import Component, Tree, build, diff
+from millwork.nodes import Component, Lazy, Tree, build, diff
 from millwork.outbox import Outbox
 from millwork.protocol import (
     Answer,
@@ -47,7 +47,7 @@ from millwork.protocol import (
 from millwork.scope import Scope, Timer
 from millwork.tasks import Task
 from millwork.turn import Turn
-from millwork.ui import Button, Dialog, DropdownMenu, Text
+from millwork.ui import Button, Dialog, DropdownMenu, Tabs, Text
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -163,6 +163,14 @@ class Session[S]:
 
         self.state: S = app.make_state()
         self.tree: Tree | None = None
+        # Which tab of a ``Tabs`` the browser said it shows, by node id, for
+        # the ones whose lazy parts go by it. The browser is the only word
+        # on this. It keeps its choice for a node from one page to the next
+        # and says it again whenever the ``Tabs`` are new to it, so what it
+        # said is kept until the node is gone from the page.
+        self._showing: dict[str, str] = {}
+        # Lazy parts to build at the next render whether they show or not.
+        self._parts_due: set[str] = set()
         self.files = SessionFiles(self)
         self.tasks: list[Task[Any]] = []
         self._tasks_started = 0
@@ -239,6 +247,9 @@ class Session[S]:
 
     @property
     def connected(self) -> bool:
+        """Whether a tab is on the session right now. False while the tab is
+        gone, for a reload, a sleep or a dropped network, and the session
+        waits for it to come back."""
         return self.conn is not None
 
     @property
@@ -557,6 +568,9 @@ class Session[S]:
             assert self._previous is not None
             self.page, self.params, self.path, self.tree = self._previous
             self.stage = READY
+            if self._showing:
+                # A tab that was opened while the page was away is drawn now.
+                self.refresh()
             self.post(ServerError(message=self.text("page_failed"), fatal=False))
         self._previous = None
 
@@ -919,6 +933,9 @@ class Session[S]:
     def open_ask(self, component: Component) -> _Ask:
         """Put a question on the page. Its future gets the answer."""
         request = secrets.token_urlsafe(8)
+        component = _unlazy(component)
+        if not isinstance(component, Component):
+            raise TypeError("a question is a component, and this lazy function returned none")
         ask = _Ask(
             request=request, component=_askable(component), future=self._loop.create_future()
         )
@@ -1094,7 +1111,9 @@ class Session[S]:
             self._title_shown = title
             self.command("title", title=title)
         watch, self._noop_watch = self._noop_watch, None
-        quiet = watch is not None and not ops and self._effects == watch[1]
+        # With a lazy part kept as it was, what the handler changed may be
+        # drawn there, to show when its tab is opened.
+        quiet = watch is not None and not ops and self._effects == watch[1] and not tree.kept
         self._signal_activity()
         if watch is not None and quiet:
             self.warn(
@@ -1171,24 +1190,34 @@ class Session[S]:
         token = context.bind(self)
         try:
             started = time.perf_counter()
-            root = self.page.render(self)
-            took = (time.perf_counter() - started) * 1000
-            # Two slow builds in a row: a page that does I/O is slow every time,
-            # while one wall-clock hiccup (a collection, a busy process) is not.
-            self._slow_builds = self._slow_builds + 1 if took > SLOW_PAGE_MS else 0
-            if self._slow_builds >= 2:
-                self.warn(
-                    "slow-page",
-                    f"the page function took {took:.0f} ms; it should build the tree and "
-                    "nothing else, so move I/O to connect or a task",
-                )
+            root: Any = self.page.render(self)
+            if isinstance(root, Lazy):
+                # Nothing above it could say that it does not show.
+                root = root.result()
+            took = time.perf_counter() - started
             if not isinstance(root, Component):
                 raise TypeError(
                     f"page {self.page.path} returned {type(root).__name__}, not a component"
                 )
             for request, ask in self._asks.items():
                 root.children.append(ask.component.model_copy(update={"key": f"@ask:{request}"}))
-            return build(root)
+            last = self.tree if self.tree is not self._failure else None
+            tree = build(root, last=last, showing=self._showing, wanted=self._parts_due)
+            # The lazy functions are the page function in parts, so their
+            # time is its time.
+            ms = (took + tree.spent) * 1000
+            # Two slow builds in a row: a page that does I/O is slow every time,
+            # while one wall-clock hiccup (a collection, a busy process) is not.
+            self._slow_builds = self._slow_builds + 1 if ms > SLOW_PAGE_MS else 0
+            if self._slow_builds >= 2:
+                self.warn(
+                    "slow-page",
+                    f"the page function took {ms:.0f} ms; it should build the tree and "
+                    "nothing else, so move I/O to connect or a task",
+                )
+            if self._showing:
+                self._showing = {k: v for k, v in self._showing.items() if k in tree.nodes}
+            return tree
         finally:
             context.unbind(token)
 
@@ -1211,8 +1240,63 @@ class Session[S]:
         self._overflowed = False
         self._inflight += 1
         self.scope.start(
-            work.event(self, event), f"event {event.name} on {event.node}", done=self._turn_done
+            work.event(self, event, self.visit),
+            f"event {event.name} on {event.node}",
+            done=self._turn_done,
         )
+
+    def shown(self, event: Event) -> None:
+        """The tab says which tab of a ``Tabs`` is open. It says so when the
+        ``Tabs`` appear, when the choice changes and when the socket opens,
+        so saying it twice changes nothing. The lazy parts under the ``Tabs``
+        go by it. No handler of the app's hears of it."""
+        if self.over or not isinstance(event.payload, str):
+            return
+        if self.tree is None or self.stage != READY:
+            # On its way to a page. What is said now is for the page that
+            # comes, or for the one gone back to, and is read when either is
+            # drawn. The tab's word is not checked against a page here, so
+            # there is a bound on how much of it is kept.
+            if event.node in self._showing or len(self._showing) < SHOWING_KEPT:
+                self._showing[event.node] = event.payload
+            return
+        component = self.tree.components.get(event.node)
+        if (
+            not isinstance(component, Tabs)
+            or "value" in component.model_fields_set
+            or event.payload not in component.tab_ids()
+        ):
+            log.debug("tab %r of %s is not one to show", event.payload, event.node)
+            return
+        before = component.shown(self._showing.get(event.node))
+        self._showing[event.node] = event.payload
+        if before != event.payload:
+            # Other than what the page was drawn by, so it is drawn again.
+            self.refresh()
+
+    def kept_part(self, node_id: str) -> str | None:
+        """The lazy part that holds this node as it was at an earlier render."""
+        return self.tree.kept_part(node_id) if self.tree is not None else None
+
+    def bring_up(self, node_id: str) -> bool:
+        """Draw the page now with the kept part a node is in built again, so
+        the node is as the page has it. For whoever holds the turn. False
+        when the part cannot be built, and then nothing in it is to be
+        called."""
+        tried: set[str] = set()
+        while (part := self.kept_part(node_id)) is not None:
+            if part in tried or self.over or self.stage != READY:
+                return False
+            # A part inside the one just built can be kept in its turn, so
+            # the ones on the way down are all asked for.
+            tried.add(part)
+            self._parts_due = set(tried)
+            try:
+                self._render_due = True
+                self.render()
+            finally:
+                self._parts_due = set()
+        return True
 
     def answer(self, msg: Answer) -> None:
         """The tab answered an ``ask``. Asks arrive with tasks; until then, log."""
@@ -1350,7 +1434,7 @@ class Session[S]:
         key = (msg.node, msg.name) if msg.name not in ("file", "upload") else None
         self._requests[msg.request] = (None, conn)
         child = self.scope.start(
-            work.request(self, conn, msg, pipe),
+            work.request(self, conn, msg, pipe, self.visit),
             f"request {msg.name} on {msg.node}",
             done=lambda done: self._request_done(conn, msg.request, key, done),
         )
@@ -1375,6 +1459,11 @@ class Session[S]:
     ) -> None:
         self._requests.pop(request, None)
         conn.forget(request)
+        if child is not None:
+            # A request takes the turn only to have a kept part built, and
+            # gives it back itself. This is for one that ended before it
+            # could.
+            self.turn.give_back(child)
         if key is not None and self._queries.get(key) is child:
             del self._queries[key]
         if child is None or child.cancelled():
@@ -1478,16 +1567,25 @@ def _askable(component: Component) -> Component:
     if isinstance(component, Form) and component.on_submit is None:
         update["on_submit"] = _noop
     for name in ("footer", "action"):
-        slot = getattr(component, name, None)
+        slot = _unlazy(getattr(component, name, None))
         if isinstance(slot, Component):
             update[name] = _askable(slot)
-    children = [_askable(c) if isinstance(c, Component) else c for c in component.children]
-    update["children"] = children
+    children = [_unlazy(c) for c in component.children]
+    update["children"] = [_askable(c) if isinstance(c, Component) else c for c in children]
     return component.model_copy(update=update)
+
+
+def _unlazy(part: Any) -> Any:
+    """A lazy part as what it comes to. A question is on the page until it
+    is answered, so its parts are built when it is asked."""
+    return part.result() if isinstance(part, Lazy) else part
 
 
 # A page function slower than this is doing more than building a tree.
 SLOW_PAGE_MS = 20
+# How many open tabs the session keeps on a tab's word while it has no page
+# to check them against.
+SHOWING_KEPT = 64
 # Requests in flight per session, of any kind, and files streaming out at once.
 MAX_REQUESTS = 32
 FILE_SLOTS = 4

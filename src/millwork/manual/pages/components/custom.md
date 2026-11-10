@@ -77,6 +77,10 @@ A custom component can import React, lucide icons, and every
 `@/components/ui/*` module the catalog uses. Tailwind classes work, and
 ones the bundle never saw are compiled in the browser on first use.
 
+A test does not run the JSX. It sees the component as a node with the
+props it was given and sends its events by name, as
+[Testing](/testing) shows.
+
 ## In a chat's composer
 
 `ui.Chat(tools=[...])` puts components in the composer, left of Send.

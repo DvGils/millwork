@@ -9,6 +9,11 @@ its position among the parent's children, counting ``None`` children so a
 conditional sibling does not shift the ones after it. The position carries
 the component type, so a different component in the same place is a
 remove and an add, never a prop update on the wrong kind of node.
+
+A lazy part (``ui.lazy``) is a function that is called when the walk gets to
+it. Where the part does not show, in a tab that is not the open one, the
+walk leaves the function alone and takes the part's nodes from the tree
+before, as they were when it last showed.
 """
 
 from __future__ import annotations
@@ -17,10 +22,19 @@ import datetime as dt
 import enum
 import functools
 import inspect
+import time
 import types
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from pathlib import PurePath
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Literal,
+    NamedTuple,
+    Protocol,
+    runtime_checkable,
+)
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
@@ -102,6 +116,14 @@ class Component(BaseModel):
     # talks to Python over the socket whatever its handlers are. A page drawn
     # before anyone has signed in cannot hold one.
     needs_session: ClassVar[bool] = False
+    # True for a component that shows some of its children at a time, and
+    # says which through ``showing``.
+    shows_some: ClassVar[bool] = False
+
+    def showing(self, told: str | None) -> Showing | None:
+        """Which children show now, for a component that shows some of them
+        at a time. ``told`` is what the tab last said it shows."""
+        return None
 
     def wire_extra(self) -> dict[str, Any]:
         """Extra props computed at render time. Override in components that need it."""
@@ -173,6 +195,130 @@ class Text(Component):
             super().__init__(content=content, **props)
 
 
+class Showing(NamedTuple):
+    """What a component that shows some of its children at a time shows now."""
+
+    shows: Callable[[Any], bool]
+    """Whether a child of it shows."""
+    asks: bool
+    """Whether the tab has to say what it shows, since the page does not."""
+
+
+class Lazy(Component):
+    """What a call of a ``ui.lazy`` function leaves in the page: the function
+    and what it was called with. The walk calls it and puts what it returns
+    in this place, so no node is ever a ``Lazy``."""
+
+    type: ClassVar[str] = "Lazy"
+    fn: Any = None
+    args: tuple[Any, ...] = ()
+    kwargs: dict[str, Any] = {}
+
+    @property
+    def code(self) -> Any:
+        """What tells one lazy function from another across renders. A
+        function defined inside the page function is a new object at every
+        render and the same code."""
+        return getattr(self.fn, "__code__", self.fn)
+
+    def result(self) -> Component | None:
+        """Call the function: the component it returns, or None for nothing."""
+        out = self.fn(*self.args, **self.kwargs)
+        name = getattr(self.fn, "__qualname__", "a lazy function")
+        if inspect.isawaitable(out):
+            if inspect.iscoroutine(out):
+                out.close()
+            raise TypeError(f"{name} is async, and a lazy part is built in one go like a page")
+        if isinstance(out, Lazy):
+            return out.result()
+        if isinstance(out, str):
+            return Text(out)
+        if out is None or isinstance(out, Component):
+            return out
+        raise TypeError(f"{name} returned {type(out).__name__}, not a component")
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            fn: Any = None,
+            args: tuple[Any, ...] = ...,
+            kwargs: dict[str, Any] = ...,
+        ) -> None: ...
+
+
+def lazy[**P](fn: Callable[P, Component | None]) -> Callable[P, Component]:
+    """Make a function that returns a part of a page lazy: the part is kept
+    up to date only while it shows.
+
+        @ui.lazy
+        def history(s: mw.Session[State]) -> ui.Component:
+            return ui.Table(s.state.history, columns=COLUMNS)
+
+        ui.Tabs(
+            ui.Tab(overview(s), id="overview", label="Overview"),
+            ui.Tab(history(s), id="history", label="History"),
+        )
+
+    A call puts the function and its arguments in the page. The function
+    runs when the page is first drawn, after that at every render in which
+    its tab is the open one, and once more as the tab is left. While
+    another tab is open the part stays in the browser as it was when it
+    was left, and costs the render nothing. Anywhere but inside a
+    ``ui.Tab`` the part is built at every render, like the rest of the
+    page.
+
+    The arguments are worked out at the call, like those of any call. The
+    function follows the rule of a page function: it builds its part from
+    the state, and does nothing else.
+    """
+    if inspect.iscoroutinefunction(fn):
+        raise TypeError(
+            f"{fn.__qualname__} is async, and a lazy part is built in one go like a page"
+        )
+
+    @functools.wraps(fn)
+    def placed(*args: P.args, **kwargs: P.kwargs) -> Component:
+        return Lazy.model_construct(fn=fn, args=args, kwargs=kwargs)
+
+    return placed
+
+
+def _built(value: Component) -> Component | None:
+    """A component as it is, and a lazy one as what it comes to: for a place
+    that is not among the children, where a part is built every time."""
+    return value.result() if isinstance(value, Lazy) else value
+
+
+class Part:
+    """A lazy part of a built page: where it sits, whose result it is, and
+    everything it came to, the lazy parts inside it included."""
+
+    __slots__ = ("child", "code", "key", "kind", "shown", "tree")
+
+    def __init__(
+        self,
+        key: str,
+        code: Any,
+        tree: Tree,
+        child: str | None,
+        kind: tuple[type, str] | None,
+        shown: bool,
+    ) -> None:
+        self.key = key
+        self.code = code
+        self.tree = tree
+        self.child = child
+        # The class and wire type of what it came to, when that has no key.
+        self.kind = kind
+        # Whether its place showed when it was built.
+        self.shown = shown
+
+
 class Tree:
     """A built page: flat nodes, the handlers they bound, and the root id."""
 
@@ -187,9 +333,33 @@ class Tree:
         # Nodes whose children include a run of keyless siblings of one type, and
         # that type: a list built from data, if the run grows or shrinks later.
         self.keyless_runs: dict[str, str] = {}
+        # The lazy parts in it, by where they sit, and the ones among them
+        # that were not built this time but taken from the tree before.
+        self.parts: dict[str, Part] = {}
+        self.kept: list[Part] = []
+        # Seconds spent in lazy functions while it was built.
+        self.spent = 0.0
 
     def handler(self, node_id: str, event: str) -> Handler | None:
         return self.handlers.get((node_id, event))
+
+    def take(self, other: Tree) -> None:
+        """Everything of another tree becomes part of this one."""
+        self.nodes.update(other.nodes)
+        self.handlers.update(other.handlers)
+        self.callables.update(other.callables)
+        self.components.update(other.components)
+        self.session_bound.extend(other.session_bound)
+        self.keyless_runs.update(other.keyless_runs)
+        self.parts.update(other.parts)
+
+    def kept_part(self, node_id: str) -> str | None:
+        """Where the lazy part sits that holds this node as it was at an
+        earlier render, or None for a node that was built this time."""
+        for part in self.kept:
+            if node_id in part.tree.nodes:
+                return part.key
+        return None
 
 
 def _flatten(children: Any) -> list[Any]:
@@ -203,11 +373,110 @@ def _flatten(children: Any) -> list[Any]:
     return out
 
 
-def build(root: Component, root_id: str = ROOT_ID) -> Tree:
+class _Duplicate(ValueError):
+    """Two children of one parent came to the same id."""
+
+
+class _Build:
+    """What one walk of a page goes by, and what it counts on the way."""
+
+    __slots__ = ("met", "parts", "showing", "spent", "wanted")
+
+    def __init__(
+        self, parts: Mapping[str, Part], showing: Mapping[str, str], wanted: Collection[str]
+    ) -> None:
+        self.parts = parts
+        self.showing = showing
+        self.wanted = wanted
+        self.met = 0
+        self.spent = 0.0
+
+
+def build(
+    root: Component,
+    root_id: str = ROOT_ID,
+    *,
+    last: Tree | None = None,
+    showing: Mapping[str, str] | None = None,
+    wanted: Collection[str] = (),
+) -> Tree:
+    """Walk a page into a tree.
+
+    ``last`` is the tree the page was before. A lazy part that does not
+    show now is taken from it as it stands, where it has one. ``showing``
+    is what the tab said it shows, by node id, and ``wanted`` names lazy
+    parts to build whether they show or not.
+    """
+    found = _built(root)
+    if found is None:
+        raise TypeError("a lazy function that is the whole page returned nothing")
+    parts = last.parts if last is not None else {}
+    try:
+        return _build(found, root_id, _Build(parts, showing or {}, wanted))
+    except _Duplicate:
+        if not parts:
+            raise
+        # A part as it was drawn earlier can hold a key that a sibling built
+        # now has taken. Built from nothing, the page is whatever it is.
+        return _build(found, root_id, _Build({}, showing or {}, wanted))
+
+
+def _build(root: Component, root_id: str, how: _Build) -> Tree:
     tree = Tree()
     tree.root = root_id
-    _walk(root, root_id, tree)
+    _walk(root, root_id, tree, how, True)
+    tree.spent = how.spent
     return tree
+
+
+def _part(
+    lazy: Lazy, node_id: str, index: int, tree: Tree, how: _Build, shows: bool
+) -> tuple[str | None, tuple[type, str] | None]:
+    """Put a lazy child of ``node_id`` into the tree, and return the id of
+    what it came to, or None for nothing, with its kind for the count of
+    keyless siblings.
+
+    A part is built where it shows, where it is wanted, and where the tree
+    before has nothing to take. It is built once more in the render in
+    which its place stops showing, so that what is kept is the part as it
+    was when it was left, with whatever the handler that left it changed.
+    From the render after that it is taken as it was.
+    """
+    key = f"{node_id}/{index}"
+    how.met += 1
+    before = how.parts.get(key)
+    if (
+        before is not None
+        and not shows
+        and not before.shown
+        and key not in how.wanted
+        and before.code is lazy.code
+        and before.tree.nodes.keys().isdisjoint(tree.nodes)
+    ):
+        tree.take(before.tree)
+        tree.parts[key] = before
+        tree.kept.append(before)
+        return before.child, before.kind
+    started = time.perf_counter()
+    result = lazy.result()
+    how.spent += time.perf_counter() - started
+    # Walked into a tree of its own, which is what a later render takes over.
+    inside = Tree()
+    child: str | None = None
+    kind: tuple[type, str] | None = None
+    if result is not None:
+        if result.key:
+            child = f"{node_id}/{result.key}"
+        else:
+            kind = (type(result), result.wire_type())
+            child = f"{node_id}/{index}:{kind[1]}"
+        _walk(result, child, inside, how, shows)
+        if not inside.nodes.keys().isdisjoint(tree.nodes):
+            raise _Duplicate(f"duplicate key {result.key!r} under {node_id}")
+    tree.take(inside)
+    tree.kept.extend(inside.kept)
+    tree.parts[key] = Part(key, lazy.code, inside, child, kind, shows)
+    return child, kind
 
 
 class _Shape:
@@ -245,7 +514,7 @@ _SCALARS = frozenset({str, int, float, bool, type(None)})
 _SHAPES: dict[type[Component], _Shape] = {}
 
 
-def _walk(component: Component, node_id: str, tree: Tree) -> None:
+def _walk(component: Component, node_id: str, tree: Tree, how: _Build, shows: bool) -> None:
     cls = type(component)
     shape = _SHAPES.get(cls)
     if shape is None:
@@ -274,17 +543,22 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
                 props[name] = {"$callable": True}
             continue
         if isinstance(value, Component):
-            slot_id = f"{node_id}/@{name}"
-            _walk(value, slot_id, tree)
-            props[name] = {"$node": slot_id}
+            value = _built(value)
+            if value is not None:
+                slot_id = f"{node_id}/@{name}"
+                _walk(value, slot_id, tree, how, shows)
+                props[name] = {"$node": slot_id}
             continue
         if isinstance(value, list) and value and all(isinstance(v, Component) for v in value):
             items: list[Any] = []
             for index, item in enumerate(value):
+                item = _built(item)
+                if item is None:
+                    continue
                 slot_id = f"{node_id}/@{name}.{item.key or index}"
                 if slot_id in tree.nodes:
                     raise ValueError(f"duplicate key {item.key!r} in {name} of {node_id}")
-                _walk(item, slot_id, tree)
+                _walk(item, slot_id, tree, how, shows)
                 items.append({"$node": slot_id})
             props[name] = items
             continue
@@ -298,9 +572,11 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
         if isinstance(value, Wired):
             props[name] = value.value
         elif isinstance(value, Component):
-            slot_id = f"{node_id}/@{name}"
-            _walk(value, slot_id, tree)
-            props[name] = {"$node": slot_id}
+            value = _built(value)
+            if value is not None:
+                slot_id = f"{node_id}/@{name}"
+                _walk(value, slot_id, tree, how, shows)
+                props[name] = {"$node": slot_id}
         elif (
             isinstance(value, dict)
             and value
@@ -308,8 +584,11 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
         ):
             slots: dict[str, Any] = {}
             for key, child in value.items():
+                child = _built(child)
+                if child is None:
+                    continue
                 slot_id = f"{node_id}/@{name}.{key}"
-                _walk(child, slot_id, tree)
+                _walk(child, slot_id, tree, how, shows)
                 slots[str(key)] = {"$node": slot_id}
             props[name] = slots
         else:
@@ -321,24 +600,55 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
     if props.get("hidden") is False:
         del props["hidden"]
     children_ids: list[str] = []
+    view = component.showing(how.showing.get(node_id)) if cls.shows_some else None
+    met = how.met
+    # A run of keyless siblings of one class may be a list built from data,
+    # where a change redraws every row instead of moving them. It is one
+    # only when its length changes between renders, which the session sees.
+    run_of: type | None = None
+    run = 0
     for index, child in enumerate(component.children):
+        kind: tuple[type, str] | None = None
         if child is None:
+            run = 0
             continue
-        if isinstance(child, str):
-            child = Text(child)
-        if not isinstance(child, Component):
-            raise TypeError(
-                f"{type(component).__name__} child {index} is {type(child).__name__}, "
-                "not a component or a string"
-            )
-        child_id = (
-            f"{node_id}/{child.key}" if child.key else f"{node_id}/{index}:{child.wire_type()}"
-        )
-        if child_id in tree.nodes:
-            raise ValueError(f"duplicate key {child.key!r} under {node_id}")
-        children_ids.append(child_id)
-        _walk(child, child_id, tree)
-    _check_keys(component, node_id, tree)
+        inner = shows and (view is None or view.shows(child))
+        if isinstance(child, Lazy):
+            child_id, kind = _part(child, node_id, index, tree, how, inner)
+            if child_id is not None:
+                children_ids.append(child_id)
+        else:
+            words = isinstance(child, str)
+            if words:
+                child = Text(child)
+            if not isinstance(child, Component):
+                raise TypeError(
+                    f"{type(component).__name__} child {index} is {type(child).__name__}, "
+                    "not a component or a string"
+                )
+            if child.key:
+                child_id = f"{node_id}/{child.key}"
+            else:
+                child_id = f"{node_id}/{index}:{child.wire_type()}"
+                if not words:
+                    # A bare string can take no key, so it is no row of a list.
+                    kind = (type(child), child.wire_type())
+            if child_id in tree.nodes:
+                raise _Duplicate(f"duplicate key {child.key!r} under {node_id}")
+            children_ids.append(child_id)
+            _walk(child, child_id, tree, how, inner)
+        if kind is None:
+            run = 0
+        else:
+            if kind[0] is not run_of:
+                run_of, run = kind[0], 0
+            run += 1
+            if run == KEYLESS_RUN:
+                tree.keyless_runs.setdefault(node_id, kind[1])
+    if view is not None and view.asks and how.met > met:
+        # A lazy part below goes by what shows here, and the page does not
+        # say what that is, so the tab does.
+        props["track"] = True
     tree.nodes[node_id] = Node(
         id=node_id, type=component.wire_type(), props=props, children=children_ids
     )
@@ -446,7 +756,9 @@ def diff(old: Tree | None, new: Tree) -> list[PatchOp]:
             ops.append(AddOp(node=node))
     for node_id, node in new.nodes.items():
         before = old.nodes.get(node_id)
-        if before is None:
+        if before is None or before is node:
+            # New, which was said above, or the very node of the tree before:
+            # a lazy part that was taken over as it was.
             continue
         if before.type != node.type:
             ops.append(RemoveOp(id=node_id))
@@ -543,21 +855,6 @@ def apply(nodes: dict[str, Node], ops: list[PatchOp]) -> dict[str, Node]:
 _MISSING = object()
 
 
-# A run of this many keyless siblings of one type may be a list built from data,
-# where a reorder would re-render every row instead of moving them. It is one
-# only when its length changes between renders; a static layout never does.
+# A run of this many keyless siblings of one class is taken for a list that may
+# have been built from data.
 KEYLESS_RUN = 4
-
-
-def _check_keys(component: Component, node_id: str, tree: Tree) -> None:
-    run: list[Component] = []
-    for child in component.children:
-        if isinstance(child, Component) and child.key is None:
-            if run and type(child) is not type(run[-1]):
-                run = []
-            run.append(child)
-            if len(run) == KEYLESS_RUN:
-                tree.keyless_runs[node_id] = child.wire_type()
-                return
-        else:
-            run = []

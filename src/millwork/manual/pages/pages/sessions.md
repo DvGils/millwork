@@ -91,6 +91,12 @@ The `close` hook of a closed tab therefore runs minutes after the person
 left, which suits releasing what the page held and does not suit anything
 they are waiting to see.
 
+`s.connected` says whether a tab is on the session right now. It is
+`False` from the moment the tab goes away until it comes back or the
+session ends. An app that shows other people who is around, the members
+of a room, reads it for each session it knows when it draws the list. No
+hook runs when it changes, so such a list is as fresh as the last render.
+
 ## Ending a session
 
 A session also ends when the app calls `s.end(message)`, when a sign-out

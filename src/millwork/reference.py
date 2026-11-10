@@ -49,6 +49,7 @@ SESSION_API = (
     "logout",
     "reset",
     "refresh",
+    "connected",
     "task",
     "thread",
     "later",
@@ -116,6 +117,19 @@ def reference() -> str:
         obj = getattr(ui, name)
         if isinstance(obj, type) and issubclass(obj, Component) and obj is not Component:
             out.extend(_component(name, obj))
+    out += [
+        "## Lazy parts",
+        "",
+        "`@ui.lazy` on a function that returns a component makes its part of the",
+        "page lazy. A call, `history(s)`, goes where a child goes. The function runs",
+        "when the page is first drawn and then at every render in which the `ui.Tab`",
+        "it sits in is the open one. While another tab is open the part stays in the",
+        "browser as it was when the tab was left and a render skips it. Outside a `ui.Tab` it",
+        "is built at every render. The function builds from the state and does no",
+        "I/O, like a page function, and its arguments are worked out at every",
+        "render. A `ui.Tab` itself is not lazy.",
+        "",
+    ]
     out += [
         "## Models components take",
         "",

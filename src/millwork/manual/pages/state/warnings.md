@@ -10,8 +10,9 @@ related: /running/development, /components/tasks
 Some mistakes the framework can see, and it says so once per session, as a
 log line with the page's path, and in debug mode as a toast as well.
 
-- **A slow page function**, over 20 ms. The page function builds the tree,
-  and I/O belongs in the page's `connect` hook or a task.
+- **A slow page function**, over 20 ms, the time in its
+  [lazy parts](/components/layout#lazy-parts) included. The page function
+  builds the tree, and I/O belongs in the page's `connect` hook or a task.
 - **A list without keys**, meaning four or more siblings of one type
   without a key whose number changed between renders.
 - **A handler that changed nothing**, no state, no command, no task.
