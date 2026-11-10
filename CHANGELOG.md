@@ -19,6 +19,13 @@ versions; a release says so here when it does.
   the second found the answer there and went ahead of it. A click sent
   behind a change to a field then ran before the change. Events now pass
   one at a time, in the order they came in, on their way to their turn.
+- On Windows with Python 3.12 a session in an app with `Auth(recheck=)`
+  could keep the server busy for up to 16 ms each time its user was due
+  to be checked again. The clock there moves in steps of that length, and
+  the timer that asks was called a step before the answer in hand ran
+  out. It found the answer good and set itself again, round and round
+  until the clock moved on. An answer now counts as run out when less
+  than a step of the clock is left of it.
 - A `ui.Grid` inside a `ui.Grid` took the outer one's column counts for
   the widths it gave none for. A grid asking for four columns from `md`
   showed three on a wide screen, inside a grid that set three at `lg`.

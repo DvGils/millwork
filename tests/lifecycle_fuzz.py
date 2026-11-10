@@ -78,9 +78,20 @@ PATIENCE = 180.0
 # ------------------------------------------------------------------ virtual time
 
 
+# The step of the clock a scenario runs on. A loop calls a timer as soon as it
+# is due within one step, so on a coarse clock, the one Windows has before
+# Python 3.13, a timer can be called before its time whenever something else
+# wakes the loop just ahead of it.
+FINE, COARSE = 1e-9, 1 / 64
+# How often the loop may go round with the clock standing still. Nothing in a
+# scenario comes near it, so a loop that does is going round for good.
+SPIN = 100_000
+
+
 class Clock:
-    def __init__(self) -> None:
+    def __init__(self, step: float = FINE) -> None:
         self.now = 0.0
+        self.step = step
 
 
 class _Selector:
@@ -90,8 +101,17 @@ class _Selector:
     def __init__(self, clock: Clock) -> None:
         self._real = selectors.DefaultSelector()
         self._clock = clock
+        self._stood, self._rounds = 0.0, 0
 
     def select(self, timeout: float | None = None) -> Any:
+        if self._clock.now != self._stood:
+            self._stood, self._rounds = self._clock.now, 0
+        self._rounds += 1
+        if self._rounds > SPIN:
+            self._rounds = 0
+            raise RuntimeError(
+                f"the loop went round {SPIN} times at {self._clock.now:.3f} s and time stood still"
+            )
         ready = self._real.select(0)
         if ready:
             return ready
@@ -169,6 +189,7 @@ class VirtualLoop(asyncio.SelectorEventLoop):
         self._turns: list[_Turns] = []
         self.over = False
         super().__init__(selector=_Selector(clock))  # type: ignore[arg-type]
+        self._clock_resolution = clock.step
 
     def time(self) -> float:
         return self._clock.now
@@ -217,6 +238,7 @@ def virtual_time(clock: Clock) -> Any:
     )
     patched = [(module, "time", times) for module in modules.values()]
     patched.append((modules["auth"], "dt", dates))
+    patched.append((modules["auth"], "TICK", clock.step))
     saved = [(module, name, getattr(module, name)) for module, name, _ in patched]
     for module, name, value in patched:
         setattr(module, name, value)
@@ -1525,7 +1547,13 @@ def run(
 ) -> Outcome:
     """Run one scenario: ``steps`` actions chosen from ``seed``, or the given
     actions replayed. Returns what was done and every promise it broke."""
-    clock = Clock()
+    # Every other scenario runs on a coarse clock. A replay has the clock of
+    # the original, which its actions say.
+    if actions is not None:
+        coarse = ("setup", "coarse clock") in actions
+    else:
+        coarse = seed is not None and seed % 2 == 1
+    clock = Clock(COARSE if coarse else FINE)
     world = World(clock)
     rng = random.Random(seed)
     done: list[tuple[Any, ...]] = []
@@ -1602,6 +1630,9 @@ def run(
         threads = "threads" not in avoid and rng.random() < 0.3
     if threads:
         done.append(("setup", "threads"))
+        made.append(None)
+    if coarse:
+        done.append(("setup", "coarse clock"))
         made.append(None)
     files_root = Path(tempfile.mkdtemp(prefix="mw-fuzz-files-"))
 

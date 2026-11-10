@@ -522,6 +522,18 @@ Recheck = Callable[[User], User | None | Awaitable[User | None]]
 LOGOUT_HOOK_TIMEOUT = 10.0
 # How long ``recheck`` may take before the question counts as unanswered.
 RECHECK_HOOK_TIMEOUT = 10.0
+# The loop calls a timer as soon as it is due within one step of its clock,
+# which is 16 ms early at most on Windows before Python 3.13. Whoever waits
+# an answer out with a timer has to find it run out when the timer calls.
+TICK = time.get_clock_info("monotonic").resolution
+
+
+def _left(span: float, since: float, now: float) -> float:
+    """How much of ``span`` seconds is left ``now``, counted from ``since``,
+    and nothing once less than a step of the clock is left. So a timer set
+    for what is left finds none of it when it calls, early or not."""
+    left = span - (now - since)
+    return left if left > TICK else 0.0
 
 
 class Unanswered(Exception):
@@ -816,10 +828,10 @@ class Auth:
         slot = self._slot(key, user)
         now = time.monotonic()
         kept = self._answers.get(slot)
-        if kept is not None and now - kept.at < self.recheck_every:
+        if kept is not None and _left(self.recheck_every, kept.at, now) > 0:
             return kept.user
         failed = self._failed.get(slot)
-        if failed is not None and now - failed < self._retry_after:
+        if failed is not None and _left(self._retry_after, failed, now) > 0:
             raise Unanswered("recheck gave no answer a moment ago")
         asking = self._asking.get(slot)
         if asking is None:
@@ -947,10 +959,11 @@ class Auth:
         slot = self._slot(key, user)
         now = time.monotonic()
         failed = self._failed.get(slot)
-        if failed is not None and now - failed < self._retry_after:
-            return self._retry_after - (now - failed)
+        wait = 0.0 if failed is None else _left(self._retry_after, failed, now)
+        if wait > 0:
+            return wait
         kept = self._answers.get(slot)
-        return 0.0 if kept is None else max(0.0, self.recheck_every - (now - kept.at))
+        return 0.0 if kept is None else _left(self.recheck_every, kept.at, now)
 
     def _log_id(self, value: str) -> str:
         if self.log_identity == "hashed":

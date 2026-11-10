@@ -450,7 +450,9 @@ class Session[S]:
         auth = self.app.auth
         if auth is None or auth.recheck is None or identified is None or self.over:
             return
-        # A little past the moment the answer runs out, so the ask finds it stale.
+        # A little past the moment the answer runs out. The ask finds it run
+        # out even when the loop calls the timer early, since what is left by
+        # then is less than a step of the clock, which counts as nothing.
         self._recheck = self.scope.later(auth.ask_again_in(*identified) + 0.01, self._recheck_due)
 
     def _recheck_due(self) -> None:
