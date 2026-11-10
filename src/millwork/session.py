@@ -171,6 +171,9 @@ class Session[S]:
         self._showing: dict[str, str] = {}
         # Lazy parts to build at the next render whether they show or not.
         self._parts_due: set[str] = set()
+        # What events pass through one at a time, in the order they came in,
+        # on their way to the turn.
+        self.door = asyncio.Lock()
         self.files = SessionFiles(self)
         self.tasks: list[Task[Any]] = []
         self._tasks_started = 0

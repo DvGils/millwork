@@ -222,30 +222,40 @@ async def close_page(s: Session[Any]) -> None:
 async def event(s: Session[Any], event: Event, visit: int) -> None:
     """Something happened on a node of the page. What needs no turn is done
     in a step. A handler is run in a turn. ``visit`` is the visit of a page
-    the session was on when the event came in."""
-    if not await stay_current(s):
-        return
-    if event.name == "show":
-        s.shown(event)
-        return
-    if s.kept_part(event.node) is not None:
-        # A lazy part that does not show stays in the tab as it was last
-        # drawn, and something in it can still speak: an upload that was on
-        # its way, a change a field was holding. What may be called is what
-        # the page offers now, so the part is built again first. That takes
-        # the turn, which is kept for the handler, so the event stands in
-        # line where it came in and nothing sent after it runs before it.
-        await s.turn.take(asyncio.current_task())
-        if visit != s.visit or not s.bring_up(event.node):
-            log.debug("event %s for %s dropped: its part is not there now", event.name, event.node)
+    the session was on when the event came in.
+
+    Events are dealt with in the order they came in. Each waits at the
+    session's door for the one before it to have been looked at and to
+    stand in line for the turn, so one that has to wait on the way, for
+    the user to be checked again or for a part of the page to be built,
+    is not passed by one that does not.
+    """
+    async with s.door:
+        if not await stay_current(s):
             return
-    if visit != s.visit:
-        # It was sent from a page the session has left since. The page it
-        # is on now can have a node by the same id.
-        return
-    plan = s.sort(event)
-    if plan is not None:
-        await turn(s, plan)
+        if event.name == "show":
+            s.shown(event)
+            return
+        if s.kept_part(event.node) is not None:
+            # A lazy part that does not show stays in the tab as it was last
+            # drawn, and something in it can still speak: an upload that was
+            # on its way, a change a field was holding. What may be called
+            # is what the page offers now, so the part is built again first.
+            # That takes the turn, which is kept for the handler.
+            await s.turn.take(asyncio.current_task())
+            if visit != s.visit or not s.bring_up(event.node):
+                log.debug("event %s for %s dropped: its part is gone", event.name, event.node)
+                return
+        if visit != s.visit:
+            # It was sent from a page the session has left since. The page
+            # it is on now can have a node by the same id.
+            return
+        plan = s.sort(event)
+        if plan is None:
+            return
+    # Out of the door and into the line for the turn in one step, so the
+    # next event cannot get there first.
+    await turn(s, plan)
 
 
 async def turn(s: Session[Any], plan: Plan) -> None:

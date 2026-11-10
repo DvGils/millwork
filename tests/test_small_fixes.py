@@ -266,3 +266,57 @@ def test_a_form_passes_the_rows_of_a_textarea_on() -> None:
     form = ui.Form(Notes, overrides={"/text": {"widget": "textarea", "rows": 10}})
     field = build(form).nodes["root"].props["schema"]["fields"][0]
     assert field["widget"] == "textarea" and field["rows"] == 10
+
+
+async def test_events_are_handled_in_the_order_they_came_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two events sent one behind the other while the user is due to be
+    checked again: the first asks, the answer comes at once, and the second
+    finds it there without having waited. It must not get ahead for that."""
+    import asyncio
+
+    from millwork import work
+    from millwork.protocol import Event
+
+    asked = 0
+
+    async def stay_current(s: mw.Session) -> bool:
+        nonlocal asked
+        asked += 1
+        if asked == 1:
+            # The one who asks waits for the answer, however soon it comes.
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+        return True
+
+    app = mw.App("t", public=None, bundle_dir=tmp_path)
+    order: list[str] = []
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Input(key="name", on_change=lambda s, v: order.append(f"typed {v}")),
+            ui.Button("save", key="save", on_click=lambda s, _: order.append("save")),
+            ui.Tabs(
+                ui.Tab(ui.lazy(lambda: ui.Text("a"))(), id="a", label="A"),
+                ui.Tab("b", id="b", label="B"),
+                ui.Tab("c", id="c", label="C"),
+                key="tabs",
+            ),
+        )
+
+    async with TestApp(app).open("/") as page:
+        s = page.session
+        name, save, tabs = page.find("name").id, page.find("save").id, page.find("tabs").id
+        monkeypatch.setattr(work, "stay_current", stay_current)
+        s.event(Event(node=name, name="change", payload="new"))
+        s.event(Event(node=save, name="click"))
+        await page.settle()
+        assert order == ["typed new", "save"]
+        # The same for what a tab says about its tabs: the last word stands.
+        asked = 0
+        s.event(Event(node=tabs, name="show", payload="c"))
+        s.event(Event(node=tabs, name="show", payload="b"))
+        await page.settle()
+        assert s._showing == {tabs: "b"}

@@ -13,6 +13,12 @@ versions; a release says so here when it does.
   handler read what the field held before. What a field is holding now
   goes out ahead of anything else the tab sends: a click, a move to
   another page, an answer or an upload.
+- Two events sent one right behind the other could be handled in the
+  wrong order in an app with `Auth(recheck=)`. When the user was due to
+  be checked again, the first event asked and waited for the answer, and
+  the second found the answer there and went ahead of it. A click sent
+  behind a change to a field then ran before the change. Events now pass
+  one at a time, in the order they came in, on their way to their turn.
 - A `ui.Grid` inside a `ui.Grid` took the outer one's column counts for
   the widths it gave none for. A grid asking for four columns from `md`
   showed three on a wide screen, inside a grid that set three at `lg`.
