@@ -94,6 +94,44 @@ ui.Row(
 )
 ```
 
+## Icon
+
+`ui.Icon` places an icon on its own, in a row next to text or anywhere a
+component goes. `size` is `sm`, `md` or `lg`, and `tone` colors it. `label`
+says what the icon means to someone who cannot see it. Without one it is
+decoration.
+
+`ui.Icon`, and every `icon` in the catalogue, takes one of two things. A
+name is one of lucide's that the bundle carries, the set in `mw.ICONS`. A
+path is a file of the app's own under `public/`, such as
+`/public/icons/rocket.svg`.
+
+```python live
+ui.Row(
+    ui.Icon("search"),
+    ui.Icon("check", tone="success", label="Done"),
+    ui.Icon("/public/mark.svg", size="lg"),
+    ui.Icon("/public/mark.svg", size="lg", tone="primary"),
+    ui.Button("From a file", icon="/public/mark.svg", variant="outline"),
+    ui.Badge("From a file", icon="/public/mark.svg", tone="muted"),
+    gap=3,
+    wrap=True,
+)
+```
+
+An SVG file is drawn in the color of the text around it, as the bundle's
+icons are, so it follows the theme, a tone and dark mode. Only its shape
+counts, which means an SVG in several colors comes out as one flat shape.
+The file above is this manual's mark, which has a gradient of its own. A
+PNG, WebP or JPEG is drawn as it is.
+
+The path starts with `/public/`, no folder or file in it starts with a
+dot, and it ends in `.svg`, `.png`, `.webp` or `.jpg`. Anything else is
+refused when the component is made, so a path that comes from data cannot
+lead out of the folder, to another address of the app or to another site.
+The browser fetches the file, and a file that is not there draws nothing
+and is named in the browser's console.
+
 ## Kbd
 
 `ui.Kbd` shows keys as keycaps.

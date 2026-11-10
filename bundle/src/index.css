@@ -205,6 +205,13 @@ body.mw-dragging * {
     display: none;
   }
 }
+/* An icon from a file of the app's own: the file is the shape, and the color
+   is the text's, as it is for the icons the bundle brings. */
+.mw-file-icon {
+  background-color: currentColor;
+  -webkit-mask: var(--mw-icon) center / contain no-repeat;
+  mask: var(--mw-icon) center / contain no-repeat;
+}
 /* A Grid's columns. The count comes from the node as a variable per width,
    and each width takes the count of the one below until it has its own. */
 @layer components {

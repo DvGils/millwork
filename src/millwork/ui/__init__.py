@@ -752,6 +752,44 @@ class Badge(Component):
             super().__init__(label=label, **props)
 
 
+class Icon(Component):
+    """An icon on its own: one of the bundle's by name, or a file under
+    ``public/`` by its path. ``label`` says what it means to someone who
+    cannot see it. Without one it is decoration."""
+
+    type: ClassVar[str] = "Icon"
+    name: str
+    size: Size = "md"
+    tone: Tone = "default"
+    label: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _an_icon(cls, name: str) -> str:
+        if not name:
+            raise ValueError("an icon needs a name, or the path of a file under /public/")
+        check_icon(name)
+        return name
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            name: str,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            size: Size = "md",
+            tone: Tone = "default",
+            label: str | None = None,
+        ) -> None: ...
+    else:
+
+        def __init__(self, name: str, **props: Any) -> None:
+            super().__init__(name=name, **props)
+
+
 class Kbd(Component):
     type: ClassVar[str] = "Kbd"
     keys: list[str]
@@ -1766,6 +1804,7 @@ __all__ = [
     "FormIssues",
     "Grid",
     "Header",
+    "Icon",
     "Image",
     "Input",
     "Issue",

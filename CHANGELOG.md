@@ -30,6 +30,18 @@ versions; a release says so here when it does.
   visitor id. Two pages opened with the same one are two tabs of it.
 - `mw.Visitor` is the type of `s.visitor`.
 
+- An icon can be a file of the app's own. Every `icon` takes the path of
+  a file under `public/`, such as `icon="/public/icons/rocket.svg"`, next
+  to the names of the bundle's icons. An SVG is drawn in the color of the
+  text around it, like the bundle's icons, so it follows the theme, a
+  tone and dark mode, and a PNG, WebP or JPEG is drawn as it is. The path
+  is checked when the component is made. It starts with `/public/`, holds
+  no segment that starts with a dot, and ends in a kind of image, so one
+  that comes from data cannot lead anywhere else. The file is the
+  browser's to fetch, and is never read by the server or put into the
+  page as markup.
+- `ui.Icon(name)` places an icon on its own, with a `size`, a `tone` and
+  a `label` for someone who cannot see it.
 - `ui.Input` and `ui.Textarea` take `counter=True`, which shows under the
   field how many characters it holds, against `max_length` when there is
   one, and in the destructive color once the field is full. A text field

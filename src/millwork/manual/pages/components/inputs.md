@@ -60,7 +60,9 @@ opens on the session like a `ui.Link` does, any other address is the
 browser's, and `target="_blank"` opens a new tab. Such a button is a real
 link, so a middle click opens it in a new tab. An `icon` is one
 of lucide's names, the set in `mw.ICONS`, and a name outside it is refused
-when the component is made, with the closest names in the error.
+when the component is made, with the closest names in the error. It can
+also be a file of the app's own, as [Icon](/components/text#icon)
+describes.
 
 ```python live
 ui.Stack(

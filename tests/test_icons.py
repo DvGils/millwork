@@ -54,3 +54,77 @@ def test_an_apps_own_component_keeps_its_icon_meaning() -> None:
 
     assert Avatar(icon="https://example.com/a.png").icon == "https://example.com/a.png"
     assert ui.Button("x", icon="").icon == ""
+
+
+def test_an_icon_is_a_name_or_a_file_under_public() -> None:
+    for path in (
+        "/public/rocket.svg",
+        "/public/icons/rocket.svg",
+        "/public/icons/brand/Logo-2_x.1.PNG",
+        "/public/a.webp",
+        "/public/a.jpg",
+        "/public/a.jpeg",
+    ):
+        assert check_icon(path) == path
+    assert ui.Button("Launch", icon="/public/icons/rocket.svg").icon == "/public/icons/rocket.svg"
+    assert ui.Input(prefix_icon="/public/icons/rocket.svg").prefix_icon
+    assert ui.MenuItem(id="x", label="X", icon="/public/icons/rocket.svg").icon
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/public/../secret.svg",
+        "/public/a/../b.svg",
+        "/public/./a.svg",
+        "/public/.hidden.svg",
+        "/public/a/.b/c.svg",
+        "/elsewhere/x.svg",
+        "/x.svg",
+        "/public",
+        "/public/",
+        "/public/.svg",
+        "//evil.example/x.svg",
+        "/public//x.svg",
+        "/public/x.svg?v=1",
+        "/public/x.svg#a",
+        "/public/x%2e%2e/y.svg",
+        "/public\\x.svg",
+        "/public/x .svg",
+        '/public/x").svg',
+        "/public/x.svg\n",
+        "/public/x\x00.svg",
+        "/public/notes.txt",
+        "/public/x.svg.html",
+        "/public/x",
+        "/public/" + "a" * 200 + ".svg",
+    ],
+)
+def test_a_path_that_could_lead_anywhere_else_is_no_icon(path: str) -> None:
+    with pytest.raises(ValueError, match="an icon file is a path under /public/"):
+        check_icon(path)
+    with pytest.raises(ValidationError, match="an icon file is a path under /public/"):
+        ui.Button("x", icon=path)
+    with pytest.raises(ValidationError, match="an icon file is a path under /public/"):
+        ui.Icon(path)
+
+
+def test_an_address_elsewhere_is_no_icon() -> None:
+    for address in ("https://example.com/x.svg", "javascript:alert(1)", "data:image/svg+xml,x"):
+        with pytest.raises(ValueError, match="no icon named"):
+            check_icon(address)
+
+
+def test_an_icon_stands_on_its_own() -> None:
+    from millwork.nodes import build
+
+    icon = ui.Icon("check", size="lg", tone="success", label="Done", key="done")
+    props = build(ui.Page(icon), "root").nodes["root/done"].props
+    assert props == {"name": "check", "size": "lg", "tone": "success", "label": "Done"}
+    assert ui.Icon("/public/icons/rocket.svg").name == "/public/icons/rocket.svg"
+    with pytest.raises(ValidationError, match="no icon named 'rocket-ship'"):
+        ui.Icon("rocket-ship")
+    with pytest.raises(ValidationError, match="an icon needs a name"):
+        ui.Icon("")
+    with pytest.raises(TypeError):
+        ui.Icon()  # type: ignore[call-arg]

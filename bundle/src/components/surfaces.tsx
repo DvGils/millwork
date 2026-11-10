@@ -11,6 +11,7 @@ import { anchorProps, InSidebar } from "./anchor";
 import { ScrollArea as UiScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "cn";
 import { icon } from "../icons";
+import { toneText } from "./layout";
 import { Tabs as UiTabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog as UiDialog,
@@ -243,6 +244,21 @@ export const Skeleton: Renderer = ({ props }) => {
         <UiSkeleton key={i} className={cn("h-4", shape === "table" ? "w-full" : i === rows - 1 ? "w-2/3" : "w-full")} />
       ))}
     </div>
+  );
+};
+
+// Icon: one of the bundle's or a file of the app's, on its own. With a
+// label it is an image with a name, and without one it is decoration.
+export const Icon: Renderer = ({ props }) => {
+  const Drawn = icon(props.name);
+  if (!Drawn) return null;
+  const size = props.size === "lg" ? "size-6" : props.size === "sm" ? "size-3" : "size-4";
+  const drawn = <Drawn className={cn("shrink-0", size, props.tone ? toneText[String(props.tone)] : undefined, props.cls as string)} />;
+  if (!props.label) return drawn;
+  return (
+    <span role="img" aria-label={String(props.label)} className="inline-flex">
+      {drawn}
+    </span>
   );
 };
 
