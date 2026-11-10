@@ -228,12 +228,26 @@ ui.Stack(
 ## Select
 
 `ui.Select` picks one from `options`. Options are strings, `(value, label)`
-pairs, or `ui.Option` objects with a `description`, an `icon`, `disabled` and a
-`group`. `clearable` allows no choice.
+pairs, or `ui.Option` objects with an `icon`, `disabled` and a `group`.
+`clearable` allows no choice.
+
+An option's `icon` stands in front of its label wherever options are
+listed, here and in a Combobox, a MultiSelect and the three groups below,
+and in the closed field for the one that was chosen. It is a name from
+the bundle or a file of the app's own, as [Icon](/components/text#icon)
+describes.
 
 ```python live
 ui.Row(
     ui.Select(options=["Fast", "Balanced", "Thorough"], default="Balanced"),
+    ui.Select(
+        options=[
+            ui.Option(value="open", label="Open", icon="clock"),
+            ui.Option(value="done", label="Done", icon="check"),
+            ui.Option(value="kept", label="Archived", icon="archive"),
+        ],
+        default="done",
+    ),
     ui.Select(
         options=[
             ui.Option(value="nl", label="Dutch", group="Europe"),
@@ -321,14 +335,15 @@ def example(s):
 
 Three ways to choose from a short list. Radios pick one, checkboxes pick
 several, and pressed buttons do either, with `multiple=True` for several.
+A radio and a checkbox show an option's `description` under its label.
 
 ```python live
 ui.Stack(
     ui.RadioGroup(options=["Small", "Medium", "Large"], default="Medium", orientation="horizontal"),
     ui.CheckboxGroup(
         options=[
-            ui.Option(value="a", label="Alerts", description="Only the important ones"),
-            ui.Option(value="d", label="Digest"),
+            ui.Option(value="a", label="Alerts", icon="bell", description="Only the important ones"),
+            ui.Option(value="d", label="Digest", icon="mail"),
         ],
         default=["a"],
     ),

@@ -10,6 +10,7 @@ import type { Renderer } from "../render";
 import { cn } from "cn";
 import { has, placed } from "../lib";
 import { icon } from "../icons";
+import { optionLabel } from "./option-label";
 import { t } from "../theme";
 import {
   Select as UiSelect,
@@ -39,6 +40,7 @@ interface Opt {
   value: string;
   label?: string | null;
   description?: string | null;
+  icon?: string | null;
   disabled?: boolean;
   group?: string | null;
 }
@@ -139,7 +141,8 @@ export const Select: Renderer = ({ props, emit }) => {
   const items = opts(props.options);
   const controlled = has(props, "value");
   const [current, setDraft] = useOwned<string | null>(controlled, (props.value as string | null) ?? null, (props.default as string | null) ?? null);
-  const labels = items.map((o) => ({ value: o.value, label: o.label ?? o.value }));
+  // What the closed field shows for the chosen option, icon included.
+  const labels = items.map((o) => ({ value: o.value, label: optionLabel(o) }));
   const Clear = icon("x");
   const clearable = Boolean(props.clearable) && current !== null && !props.disabled;
   const clear = () => {
@@ -166,7 +169,7 @@ export const Select: Renderer = ({ props, emit }) => {
             {bucket.group ? <SelectLabel>{bucket.group}</SelectLabel> : null}
             {bucket.items.map((o) => (
               <SelectItem key={o.value} value={o.value} disabled={Boolean(o.disabled)}>
-                {o.label ?? o.value}
+                {optionLabel(o)}
               </SelectItem>
             ))}
           </SelectGroup>
@@ -441,7 +444,7 @@ export const Combobox: Renderer = ({ node, props, emit }) => {
         <ComboboxList>
           {(item: Opt) => (
             <ComboboxItem key={item.value} value={item} disabled={Boolean(item.disabled)}>
-              {item.label ?? item.value}
+              {optionLabel(item)}
             </ComboboxItem>
           )}
         </ComboboxList>

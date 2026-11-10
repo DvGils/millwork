@@ -5,6 +5,14 @@ versions; a release says so here when it does.
 
 ## 0.3.0
 
+### Bug fixes
+
+- The `icon` of a `ui.Option` was drawn by `ui.ToggleGroup` alone. A
+  Select, a Combobox, a MultiSelect, a RadioGroup and a CheckboxGroup
+  took it and showed nothing. It now stands in front of the option's
+  label in each of them: in the list, in the closed field of a Select for
+  the option that was chosen, and in the chips of a MultiSelect.
+
 ### Features
 
 - `App(identify_visitors=True)` gives every browser an id, and
