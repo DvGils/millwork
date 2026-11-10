@@ -360,3 +360,67 @@ def test_two_nodes_do_not_share_a_props_table() -> None:
     first.props["size"] = "changed"
     assert second.props["size"] == "md"
     assert build(Shelf()).nodes["root"].props["size"] == "md"
+
+
+def test_a_field_filled_in_behind_the_instances_back_is_still_sent() -> None:
+    from pydantic import ConfigDict, Field, field_validator, model_validator
+
+    class Loud(Component):
+        type: ClassVar[str] = "Loud"
+        tone: str = Field(default="quiet", validate_default=True)
+        px: int = 16
+        stamp: str = ""
+
+        @field_validator("tone")
+        @classmethod
+        def _upper(cls, value: str) -> str:
+            return value.upper()
+
+        @model_validator(mode="after")
+        def _size(self) -> "Loud":
+            self.__dict__["px"] = 24
+            return self
+
+        def model_post_init(self, _: Any) -> None:
+            object.__setattr__(self, "stamp", "v1")
+
+    props = build(Loud()).nodes["root"].props
+    assert props == {"tone": "QUIET", "px": 24, "stamp": "v1"}
+
+    made = Shelf.model_construct(_fields_set=set(), size="xs", note=None, tags=["a"])
+    assert build(made).nodes["root"].props == {"size": "xs", "tags": ["a"]}
+    assert build(Shelf.model_construct()).nodes["root"].props == {"size": "md", "tags": []}
+
+    class Open(Component):
+        model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+        type: ClassVar[str] = "Open"
+        label: str = "x"
+
+    assert build(Open(anything=3)).nodes["root"].props == {"label": "x", "anything": 3}
+
+    class Rings(Component):
+        type: ClassVar[str] = "Rings"
+
+        @property
+        def events(self) -> dict[str, Any]:
+            return {"ping": lambda s, p: None}
+
+    tree = build(Rings())
+    assert tree.nodes["root"].props == {"on_ping": True}
+    assert tree.handler("root", "ping") is not None
+
+
+def test_props_go_out_in_the_order_the_class_declares_them() -> None:
+    class Many(Component):
+        type: ClassVar[str] = "Many"
+        zeta: str = "z"
+        alpha: str | None = None
+        mid: list[int] = []
+        beta: int = 1
+
+    assert list(build(Many(beta=2, alpha="a")).nodes["root"].props) == [
+        "zeta",
+        "alpha",
+        "mid",
+        "beta",
+    ]

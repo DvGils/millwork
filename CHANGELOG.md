@@ -81,8 +81,8 @@ versions; a release says so here when it does.
   is the open one. While another tab is open the part stays in the
   browser as it was when the tab was left, with what was typed into it,
   and a render skips it.
-  A page of five tabs with sixty cards each renders in 1.7 ms that way,
-  against 7.8 ms with every tab built. Before a handler in a closed
+  A page of five tabs with sixty cards each renders in 1.9 ms that way,
+  against 8.7 ms with every tab built. Before a handler in a closed
   tab's part is called the part is drawn again, so what is called is
   the page as it is now.
 - In a test, `page.change(tabs, "history")` opens a tab of `ui.Tabs` by
@@ -90,9 +90,10 @@ versions; a release says so here when it does.
   that is no tab, or a tab that is disabled, is refused.
 - Drawing a page takes less of the server's time. Turning the components
   of a page into what is sent looked at every prop of every component,
-  the ones nobody gave included. What a component was not given now comes
-  from its class in one step. A page of nine hundred components went from
-  9.3 ms to 3.7 ms for that part of a render, with the same result.
+  the ones nobody gave included, at full length. A prop that still holds
+  what its class gives it is now passed on at a glance. A page of nine
+  hundred components went from 9.3 ms to 4.5 ms for that part of a
+  render, with the same result.
 
 ### The manual
 

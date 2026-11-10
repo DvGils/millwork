@@ -481,33 +481,35 @@ def _part(
 
 class _Shape:
     """What the walk knows of a component class before it meets one of them:
-    the props an instance that was given nothing sends, and the fields it has
-    to look at whether they were given or not."""
+    its fields in the order they go out, each with the default an instance
+    holds when it was given nothing for it."""
 
-    __slots__ = ("always", "events", "extra", "plain", "skip")
+    __slots__ = ("events", "extra", "extras", "fields")
 
     def __init__(self, cls: type[Component]) -> None:
-        self.skip = frozenset({"children", "key"}) | cls.wire_exclude
-        self.plain: dict[str, Any] = {}
-        always: set[str] = set()
+        skip = frozenset({"children", "key"}) | cls.wire_exclude
+        checked = bool(cls.model_config.get("validate_default"))
+        fields: list[tuple[str, Any]] = []
         for name, field in cls.model_fields.items():
-            if name in self.skip:
+            if name in skip:
                 continue
             default = field.default
             if (
                 name in cls.theme_words
                 or field.default_factory is not None
                 or type(default) not in _SCALARS
+                or checked
+                or field.validate_default
             ):
-                # A word of the theme's is looked up per session. A list or
-                # a dict can be changed in place, which leaves no trace in
-                # what the instance says it was given.
-                always.add(name)
-            elif default is not None and not (name == "hidden" and default is False):
-                self.plain[name] = default
-        self.always = frozenset(always)
+                # Nothing to know ahead: a word of the theme's is looked up
+                # per session, a list or a dict is the instance's own copy,
+                # and a default that is validated can come out as anything.
+                default = _MISSING
+            fields.append((name, default))
+        self.fields = tuple(fields)
         self.extra = cls.wire_extra is not Component.wire_extra
-        self.events = "events" in cls.model_fields
+        self.events = "events" in cls.model_fields or hasattr(cls, "events")
+        self.extras = cls.model_config.get("extra") == "allow"
 
 
 _SCALARS = frozenset({str, int, float, bool, type(None)})
@@ -519,18 +521,31 @@ def _walk(component: Component, node_id: str, tree: Tree, how: _Build, shows: bo
     shape = _SHAPES.get(cls)
     if shape is None:
         shape = _SHAPES[cls] = _Shape(cls)
-    # Most props of most components are the class's own defaults. Those come
-    # from the class in one step, and only what this instance was given is
-    # looked at prop by prop.
-    props: dict[str, Any] = dict(shape.plain)
+    props: dict[str, Any] = {}
     if component.needs_session:
         tree.session_bound.append(node_id)
     given = component.model_fields_set
     values = component.__dict__
-    for name in given | shape.always if shape.always else given:
-        if name in shape.skip:
+    fields = shape.fields
+    if shape.extras and component.__pydantic_extra__:
+        # A class of an app's own that takes props it does not declare.
+        values = {**values, **component.__pydantic_extra__}
+        fields += tuple((name, _MISSING) for name in component.__pydantic_extra__)
+    for name, default in fields:
+        value = values.get(name, _MISSING)
+        if value is _MISSING:
+            # An instance put together without it.
             continue
-        value = values[name]
+        if value is default:
+            # Most props of most components are what the class gives them.
+            # The very object of the default needs no looking at. That is
+            # asked of the value and not of what the instance says it was
+            # given, since a field can be filled in behind its back.
+            if value is not None:
+                props[name] = value
+            elif name in given:
+                props[name] = None
+            continue
         if name in component.theme_words:
             value = component.in_theme_words(name)
         if callable(value) and not isinstance(value, type):
@@ -565,7 +580,6 @@ def _walk(component: Component, node_id: str, tree: Tree, how: _Build, shows: bo
         if value is None and name not in given:
             # Absent on the wire: a prop the page never set. An explicit ``value=None``
             # is sent as null and means "controlled, and empty".
-            props.pop(name, None)
             continue
         props[name] = wire_value(value)
     for name, value in (component.wire_extra() if shape.extra else {}).items():
@@ -594,7 +608,7 @@ def _walk(component: Component, node_id: str, tree: Tree, how: _Build, shows: bo
         else:
             props[name] = wire_value(value)
     if shape.events:
-        for event, handler in values["events"].items():
+        for event, handler in getattr(component, "events", {}).items():
             tree.handlers[(node_id, event)] = handler
             props[f"on_{event}"] = True
     if props.get("hidden") is False:
