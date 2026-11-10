@@ -51,6 +51,7 @@ from millwork.ui import Button, Dialog, DropdownMenu, Text
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
+from millwork.visitors import Visitor, new_id
 
 if TYPE_CHECKING:
     from millwork.app import App, PageDef
@@ -102,6 +103,10 @@ class Session[S]:
         self.params = params
         self.path = path
         self.user: Any = None
+        # The browser it was opened from, when the app identifies visitors.
+        # An id of its own until the socket says which browser it is, and for
+        # good when the browser brought no cookie.
+        self._visitor = Visitor(new_id()) if app.visitors is not None else None
         # The path prefix the app runs under, as the tab's socket arrived under it,
         # for anything the session renders into a browser URL.
         self.base = ""
@@ -215,6 +220,22 @@ class Session[S]:
         """Whether the session has a page that is there to be used: its
         connect has returned and it is mounted."""
         return not self.over and self.stage == READY
+
+    @property
+    def visitor(self) -> Visitor:
+        """The browser this session was opened from, with ``App(identify_visitors=True)``.
+
+        ``s.visitor.id`` is the same in every tab of one browser, signed in
+        or not, and it is what an app without sign-in pins what it keeps to.
+        A browser that refuses the cookie is a visitor of its own in every
+        tab."""
+        if self._visitor is None:
+            raise RuntimeError("s.visitor needs App(identify_visitors=True)")
+        return self._visitor
+
+    @visitor.setter
+    def visitor(self, visitor: Visitor) -> None:
+        self._visitor = visitor
 
     @property
     def connected(self) -> bool:

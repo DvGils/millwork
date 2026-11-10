@@ -17,6 +17,7 @@ from millwork.icons import ICONS
 from millwork.nodes import Component
 from millwork.session import Session
 from millwork.tasks import Cancelled, Step, Task, progress
+from millwork.visitors import Visitor
 
 # Importing the ``millwork.session`` submodule bound its name here; ``mw.session()``
 # is the function that returns the current session.
@@ -39,6 +40,7 @@ __all__ = [
     "Task",
     "UIMessage",
     "User",
+    "Visitor",
     "__version__",
     "auth",
     "theme",

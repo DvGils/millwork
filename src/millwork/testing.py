@@ -27,6 +27,7 @@ from millwork.ui import Button, Link
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
+from millwork.visitors import Visitor
 
 if TYPE_CHECKING:
     from millwork.app import App
@@ -527,9 +528,21 @@ class TestApp:
 
     @contextlib.asynccontextmanager
     async def open(
-        self, path: str = "/", *, user: Any = None, state: Any = None
+        self,
+        path: str = "/",
+        *,
+        user: Any = None,
+        state: Any = None,
+        visitor: str | None = None,
     ) -> AsyncIterator[Page]:
-        """Open a page as a new session: connect (unless ``state`` is given), mount, yield."""
+        """Open a page as a new session: connect (unless ``state`` is given), mount, yield.
+
+        ``visitor`` is the id of the browser the page is opened from, in an
+        app that identifies visitors. Two pages opened with the same one are
+        two tabs of one browser, and a page opened without is a browser of
+        its own."""
+        if visitor is not None and self.app.visitors is None:
+            raise ValueError("visitor= needs App(identify_visitors=True)")
         await self.startup()
         resolved = self.app.locate(path)
         if resolved is None:
@@ -542,6 +555,8 @@ class TestApp:
             raise Forbidden(verdict.message or self.app.theme.text("forbidden_text"))
         session: Session[Any] = Session(self.app, page_def, params, path)
         session.user = user
+        if visitor is not None:
+            session.visitor = Visitor(visitor)
         # What a page refuses with is raised in the test, where a running app
         # would land on its page for that.
         session.falls_back = False

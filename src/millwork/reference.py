@@ -133,7 +133,10 @@ def reference() -> str:
         "it. `s.state` is the session's instance of the model the app declares,",
         "kept across pages. `s.user` is the signed-in user or `None`, `s.path` the",
         "page's path, `s.params` the URL's parameters, `s.files` the session's",
-        "files, `s.tasks` the list of its tasks.",
+        "files, `s.tasks` the list of its tasks. With `App(identify_visitors=True)`",
+        "`s.visitor.id` names the browser the session was opened from, the same",
+        "in every tab of it, signed in or not. The id comes from a signed cookie,",
+        "and an app without sign-in pins what it keeps outside the session to it.",
         "",
     ]
     for name in SESSION_API:
@@ -226,7 +229,9 @@ def reference() -> str:
         "`page.failures`. `page.find(key or type, within=, **props)` gives a node with",
         "`.props`, and `.rows` on a table. `page.state`, `page.toasts`, `page.commands` and",
         "`page.stream` are what the tab would have seen. A handler that calls",
-        "`s.confirm` or `s.ask` waits for `page.answer(value)`.",
+        "`s.confirm` or `s.ask` waits for `page.answer(value)`. `open(path,",
+        "visitor=)` opens the page from a browser with that visitor id, and two",
+        "pages opened with the same one are two tabs of it.",
         "",
     ]
     for name in PAGE_API:

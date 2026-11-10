@@ -64,7 +64,16 @@ def test_what_waits_does_not_write_a_sessions_fields() -> None:
 
 def test_a_session_is_only_set_up_from_outside_never_changed() -> None:
     # Who it is for and how it is to behave, said before its life begins.
-    set_up = {"user", "base", "client", "falls_back", "runs_connect", "state", "on_failure"}
+    set_up = {
+        "user",
+        "visitor",
+        "base",
+        "client",
+        "falls_back",
+        "runs_connect",
+        "state",
+        "on_failure",
+    }
     names = {"session", "candidate", "newcomer", "oldest"}
     written = set()
     for name, tree in FILES.items():

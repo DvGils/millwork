@@ -45,6 +45,7 @@ from millwork.proxy import ASGIApp, Proxied
 from millwork.scope import Scope
 from millwork.shell import Shell, plain, root_of
 from millwork.theme import Theme, find_theme, under
+from millwork.visitors import Visitors
 from millwork.work import live
 
 # The policy for every HTML page; ``{scripts}`` becomes the page's script sources
@@ -220,6 +221,7 @@ class App:
         max_sessions: int = 1000,
         max_sessions_per_client: int = 20,
         proxied: bool = False,
+        identify_visitors: bool = False,
     ) -> None:
         self.name = name
         # Behind a reverse proxy: its forwarded address and scheme, and the
@@ -244,7 +246,15 @@ class App:
         if secret is None:
             secret = secrets.token_urlsafe(32)
             log.info("no secret configured; using a per-process secret")
+            if identify_visitors:
+                log.info(
+                    "visitors get a new id every time the app starts; "
+                    "App(secret=...) lets them keep it"
+                )
         self.secret = secret
+        # A name for each browser, in a cookie of its own. Off unless the app
+        # asks, so no app sets a cookie it has no use for.
+        self.visitors = Visitors(secret, name) if identify_visitors else None
         self.csp = csp
         # The thread pool `s.thread`, uploads and file reads run on: the loop's
         # default executor, sized here. None keeps asyncio's default.
@@ -601,7 +611,7 @@ class App:
         if self.auth is not None:
             routes += [
                 Route(f"{PREFIX}/auth/login", self.auth.route_login, methods=["POST"]),
-                Route(f"{PREFIX}/auth/logout", self.auth.route_logout, methods=["POST"]),
+                Route(f"{PREFIX}/auth/logout", self._logout, methods=["POST"]),
                 Route(f"{PREFIX}/auth/oauth/{{provider}}", self.auth.route_oauth_start),
                 Route(f"{PREFIX}/auth/oauth/{{provider}}/callback", self.auth.route_oauth_callback),
             ]
@@ -904,7 +914,22 @@ class App:
             self.auth.clear_cookie(request, response)
         return response
 
+    async def _logout(self, request: Request) -> Any:
+        assert self.auth is not None
+        response = await self.auth.route_logout(request)
+        if self.visitors is not None and response.status_code == 200:
+            # Whoever uses the browser next is not the visitor who just left.
+            self.visitors.renew(request, response)
+        return response
+
     async def _serve_page(self, request: Request) -> Any:
+        user = await self.user_for(request)
+        response = self._page_response(request, user)
+        if self.visitors is not None:
+            self.visitors.greet(request, response, user)
+        return response
+
+    def _page_response(self, request: Request, user: Any) -> Any:
         path = "/" + request.path_params.get("path", "")
         self._check_stripped(request.scope, path)
         # The path as the browser spelled it. The tab says hello with it, and
@@ -919,7 +944,6 @@ class App:
             status = 404
         page, params = resolved
         base = root_of(request.scope)
-        user = await self.user_for(request)
         if self.auth is not None and not page.public and user is None:
             if request.scope.get("millwork.revoked"):
                 # Signed in, and no longer welcome: the cookie goes, and the
