@@ -22,6 +22,10 @@ versions; a release says so here when it does.
   good for one sign-in. The browser gets a new one when someone signs in,
   and again when they sign out or their sign-in ends, so nobody is the
   visitor the last person on that browser was.
+- A route or a mount of the app's own finds the visitor in
+  `request.state.visitor`, next to `request.state.user`, so a download
+  link can check an owner the way a page does. It is `None` for a browser
+  that brought no id.
 - `TestApp.open(path, visitor="a")` opens a page from a browser with that
   visitor id. Two pages opened with the same one are two tabs of it.
 - `mw.Visitor` is the type of `s.visitor`.

@@ -1,6 +1,7 @@
 """Visitors: a browser's id in a signed cookie, and the session that carries it."""
 
 import base64
+import datetime as dt
 import json
 import logging
 from pathlib import Path
@@ -429,3 +430,108 @@ async def test_the_harness_refuses_a_visitor_the_app_does_not_identify() -> None
     with pytest.raises(ValueError, match="identify_visitors"):
         async with TestApp(app).open("/", visitor="a"):
             pass
+
+
+def said_by_a_route(request: Any) -> Any:
+    from starlette.responses import JSONResponse
+
+    visitor = request.state.visitor
+    user = getattr(request.state, "user", None)
+    return JSONResponse(
+        {"visitor": visitor.id if visitor else None, "user": user.id if user else None}
+    )
+
+
+def test_a_route_finds_the_visitor_a_page_would(tmp_path: Path) -> None:
+    app = make_app(tmp_path, secret=SECRET)
+    app.route("/api/me", said_by_a_route)
+    with TestClient(app.asgi) as client:
+        # No page was loaded, so the browser has no id, and a route issues none.
+        first = client.get("/api/me")
+        assert first.json() == {"visitor": None, "user": None}
+        assert cookie_set(first) is None
+        client.get("/")
+        mine = visitor_of(client)
+        assert client.get("/api/me").json()["visitor"] == mine
+        # A cookie nobody issued is no visitor here either.
+        client.cookies.clear()
+        client.cookies.set("mw_visitor", "someone-else", domain="testserver.local")
+        assert client.get("/api/me").json()["visitor"] is None
+
+
+def test_what_is_mounted_finds_the_visitor(tmp_path: Path) -> None:
+    from starlette.applications import Starlette
+    from starlette.routing import Route
+
+    app = make_app(tmp_path)
+    app.mount("/inner", Starlette(routes=[Route("/me", said_by_a_route)]))
+    with TestClient(app.asgi) as client:
+        client.get("/")
+        assert client.get("/inner/me").json()["visitor"] == visitor_of(client)
+
+
+def test_a_route_of_an_app_that_identifies_nobody_has_no_visitor(tmp_path: Path) -> None:
+    from starlette.responses import JSONResponse
+
+    app = make_app(tmp_path, identify_visitors=False)
+    app.route("/api/me", lambda request: JSONResponse(hasattr(request.state, "visitor")))
+    with TestClient(app.asgi) as client:
+        assert client.get("/api/me").json() is False
+
+
+def test_a_route_tells_the_visitor_by_who_is_signed_in(tmp_path: Path) -> None:
+    app = with_sign_in(tmp_path)
+    app.route("/api/me", said_by_a_route)
+    app.route("/api/open", said_by_a_route, public=True)
+    with TestClient(app.asgi) as client:
+        client.get("/")
+        nobody = visitor_of(client)
+        assert client.get("/api/open").json() == {"visitor": nobody, "user": None}
+        sign_in(client, "ada")
+        # Signed in, and no page loaded since: the id in the cookie is nobody's.
+        assert client.get("/api/me").json() == {"visitor": None, "user": "ada"}
+        client.get("/desk")
+        adas = visitor_of(client, "/desk")
+        assert adas != nobody
+        assert client.get("/api/me").json() == {"visitor": adas, "user": "ada"}
+        # A route open to anyone is told the same visitor, and no user.
+        assert client.get("/api/open").json() == {"visitor": adas, "user": None}
+        # The sign-in is gone: the id was Ada's, and is nobody's now.
+        client.cookies.delete("mw_auth")
+        assert client.get("/api/open").json() == {"visitor": None, "user": None}
+        assert client.get("/api/me").status_code == 401
+
+
+def test_a_public_route_answers_when_nobody_can_say_who_is_signed_in(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    asked = []
+
+    def admit(identity: auth.Identity) -> auth.User:
+        return auth.User(id=identity.subject, name=identity.subject)
+
+    def recheck(user: auth.User) -> auth.User:
+        asked.append(user.id)
+        if len(asked) > 1:
+            raise RuntimeError("the directory is down")
+        return user
+
+    sign_ins = auth.Auth(
+        [auth.Password(lambda u, p: p == "pw")],
+        on_login=admit,
+        recheck=recheck,
+        recheck_every=dt.timedelta(microseconds=1),
+    )
+    app = make_app(tmp_path, secret=SECRET, auth=sign_ins)
+    app.route("/hook", said_by_a_route, public=True)
+    with TestClient(app.asgi) as client:
+        # Something that brings no cookie is not looked up at all.
+        assert client.get("/hook").json() == {"visitor": None, "user": None}
+        assert asked == []
+        sign_in(client, "ada")
+        client.get("/desk")
+        assert asked == ["ada"]
+        with caplog.at_level(logging.ERROR, logger="millwork"):
+            answer = client.get("/hook")
+        assert answer.status_code == 200 and answer.json()["visitor"] is None
+        assert any("has no visitor" in r.getMessage() for r in caplog.records)

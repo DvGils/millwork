@@ -89,6 +89,10 @@ class Visitors:
         brought one that is this person's to use."""
         return self.read(conn.cookies.get(cookie_name(conn.scope, VISITOR_COOKIE)), user)
 
+    def named(self, conn: HTTPConnection) -> bool:
+        """Whether the browser sent anything under the cookie's name at all."""
+        return cookie_name(conn.scope, VISITOR_COOKIE) in conn.cookies
+
     def greet(self, request: Request, response: Response, user: Any) -> Response:
         """A page load, the login page included: a browser that brought no id
         of this person's leaves with a new one."""

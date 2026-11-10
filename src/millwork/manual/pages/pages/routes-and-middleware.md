@@ -26,7 +26,10 @@ app.mount("/api", fastapi_app)
 
 In an app with auth a route and a mount need a sign-in like a page does,
 unless they are marked `public=True`, and a route takes `allow=` like a
-page. [Access rules](/sign-in/access-rules) has the rules.
+page. [Access rules](/sign-in/access-rules) has the rules. The endpoint
+finds the signed-in user in `request.state.user`, and in an app that
+[identifies its visitors](/pages/visitors) the browser that asks in
+`request.state.visitor`.
 
 Everything millwork owns lives under `/_mw/`, which leaves every other
 path to the app. The `public/` folder next to the app is served at

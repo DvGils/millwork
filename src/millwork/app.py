@@ -45,7 +45,7 @@ from millwork.proxy import ASGIApp, Proxied
 from millwork.scope import Scope
 from millwork.shell import Shell, plain, root_of
 from millwork.theme import Theme, find_theme, under
-from millwork.visitors import Visitors
+from millwork.visitors import Visitor, Visitors
 from millwork.work import live
 
 # The policy for every HTML page; ``{scripts}`` becomes the page's script sources
@@ -478,11 +478,15 @@ class App:
         With auth it needs a sign-in like a page does, and ``allow`` narrows it
         like a page's. The endpoint finds the user in ``request.state.user``.
         ``public=True`` opens it to anyone, which is what a webhook or a
-        health check needs."""
+        health check needs. In an app that identifies visitors the endpoint
+        finds the browser that asks in ``request.state.visitor``, or None
+        there when the browser brought no id."""
         self._check_access(f"the route {path}", public, allow)
         route = Route(path, endpoint, methods=methods or ["GET"])
         rule = rule_for(allow, route.param_convertors, f"the route {path}") if allow else None
         self._extra.append(_Extra("route", path, public, rule))
+        if self.visitors is not None:
+            route.app = _Visited(self, route.app)
         if self.auth is not None and not public:
             route.app = _Guarded(self, route.app, rule, f"the route {path}")
         self._routes.append(route)
@@ -497,10 +501,13 @@ class App:
     ) -> None:
         """Serve another ASGI app under a path. With auth, everything under it
         needs a sign-in unless ``public=True``, and ``allow`` narrows it by the
-        user alone."""
+        user alone. What is mounted finds the user and the visitor where a
+        route does."""
         self._check_access(f"the mount {path}", public, allow)
         rule = rule_for(allow, (), f"the mount {path}") if allow else None
         self._extra.append(_Extra("mount", path, public, rule))
+        if self.visitors is not None:
+            asgi_app = _Visited(self, asgi_app)
         if self.auth is not None and not public:
             asgi_app = _Guarded(self, asgi_app, rule, f"the mount {path}")
         self._routes.append(Mount(path, app=asgi_app))
@@ -1067,6 +1074,44 @@ class _Guarded:
             login = f"{base}{PREFIX}/login?{urlencode({'next': path})}"
             response = RedirectResponse(login, status_code=302)
         await response(scope, receive, send)
+
+
+class _Visited:
+    """An app's own route or mount, told which browser is asking.
+
+    ``request.state.visitor`` is the visitor a session opened from that
+    browser would have, or None when the browser brought no id that is this
+    person's to use. Nothing is issued here: a browser gets its id from a
+    page."""
+
+    def __init__(self, app: App, inner: Any) -> None:
+        self.app, self.inner = app, inner
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] in ("http", "websocket"):
+            state = scope.setdefault("state", {})
+            state["visitor"] = await self._asking(scope, state)
+        await self.inner(scope, receive, send)
+
+    async def _asking(self, scope: Any, state: dict[str, Any]) -> Visitor | None:
+        visitors = self.app.visitors
+        conn = HTTPConnection(scope)
+        if visitors is None or not visitors.named(conn):
+            # Most of what calls a public route, a webhook say, brings no
+            # cookie, and nobody needs identifying to say so.
+            return None
+        if "user" in state:
+            user = state["user"]
+        else:
+            try:
+                user = await self.app.user_for(conn)
+            except Exception:
+                # A route open to anyone answers whether or not the app can
+                # say who is signed in. Without that the id is nobody's.
+                log.exception("identity lookup failed; the request has no visitor")
+                return None
+        known = visitors.of(conn, user)
+        return Visitor(known) if known is not None else None
 
 
 def _error_view(s: Any, kind: str) -> Component:

@@ -2,7 +2,7 @@
 title: Visitors
 order: 5
 description: An id for the browser behind a session, so an app without sign-in can say whose something is.
-related: /pages/sessions, /sign-in/sign-out-and-cookies, /running/hosting-checklist
+related: /pages/sessions, /pages/routes-and-middleware, /sign-in/sign-out-and-cookies, /running/hosting-checklist
 ---
 
 # Visitors
@@ -57,6 +57,31 @@ age of its own.
 
 Without sign-in a browser is one visitor, whoever sits at it. What people
 who share a browser should not see of each other needs sign-in.
+
+## In a route
+
+A [route of the app's own](/pages/routes-and-middleware) has no session.
+It finds the visitor in `request.state.visitor`, which is the visitor a
+page opened from that browser would have, or `None` for a browser that
+brought no id. A route issues none, since a browser gets its id from a
+page.
+
+```python
+from starlette.responses import Response
+
+
+async def export(request):
+    report = await store.report(request.path_params["report_id"])
+    visitor = request.state.visitor
+    if report is None or visitor is None or report.owner != visitor.id:
+        return Response(status_code=404)
+    return Response(report.pdf, media_type="application/pdf")
+
+
+app.route("/reports/{report_id}.pdf", export)
+```
+
+What is mounted with `app.mount` finds it the same way.
 
 ## The user and the visitor
 

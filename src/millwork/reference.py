@@ -137,6 +137,8 @@ def reference() -> str:
         "`s.visitor.id` names the browser the session was opened from, the same",
         "in every tab of it, signed in or not. The id comes from a signed cookie,",
         "and an app without sign-in pins what it keeps outside the session to it.",
+        "A route of the app's own finds the same visitor in",
+        "`request.state.visitor`, or `None` for a browser that brought no id.",
         "",
     ]
     for name in SESSION_API:
