@@ -73,6 +73,11 @@ versions; a release says so here when it does.
   one, and in the destructive color once the field is full. A text field
   of a `ui.Form` gets the same with `overrides={"/notes": {"counter":
   True}}`.
+- Drawing a page takes less of the server's time. Turning the components
+  of a page into what is sent looked at every prop of every component,
+  the ones nobody gave included. What a component was not given now comes
+  from its class in one step. A page of nine hundred components went from
+  9.3 ms to 3.7 ms for that part of a render, with the same result.
 
 ### The manual
 

@@ -210,13 +210,58 @@ def build(root: Component, root_id: str = ROOT_ID) -> Tree:
     return tree
 
 
+class _Shape:
+    """What the walk knows of a component class before it meets one of them:
+    the props an instance that was given nothing sends, and the fields it has
+    to look at whether they were given or not."""
+
+    __slots__ = ("always", "events", "extra", "plain", "skip")
+
+    def __init__(self, cls: type[Component]) -> None:
+        self.skip = frozenset({"children", "key"}) | cls.wire_exclude
+        self.plain: dict[str, Any] = {}
+        always: set[str] = set()
+        for name, field in cls.model_fields.items():
+            if name in self.skip:
+                continue
+            default = field.default
+            if (
+                name in cls.theme_words
+                or field.default_factory is not None
+                or type(default) not in _SCALARS
+            ):
+                # A word of the theme's is looked up per session. A list or
+                # a dict can be changed in place, which leaves no trace in
+                # what the instance says it was given.
+                always.add(name)
+            elif default is not None and not (name == "hidden" and default is False):
+                self.plain[name] = default
+        self.always = frozenset(always)
+        self.extra = cls.wire_extra is not Component.wire_extra
+        self.events = "events" in cls.model_fields
+
+
+_SCALARS = frozenset({str, int, float, bool, type(None)})
+_SHAPES: dict[type[Component], _Shape] = {}
+
+
 def _walk(component: Component, node_id: str, tree: Tree) -> None:
-    props: dict[str, Any] = {}
+    cls = type(component)
+    shape = _SHAPES.get(cls)
+    if shape is None:
+        shape = _SHAPES[cls] = _Shape(cls)
+    # Most props of most components are the class's own defaults. Those come
+    # from the class in one step, and only what this instance was given is
+    # looked at prop by prop.
+    props: dict[str, Any] = dict(shape.plain)
     if component.needs_session:
         tree.session_bound.append(node_id)
-    for name, value in component:
-        if name in ("children", "key") or name in component.wire_exclude:
+    given = component.model_fields_set
+    values = component.__dict__
+    for name in given | shape.always if shape.always else given:
+        if name in shape.skip:
             continue
+        value = values[name]
         if name in component.theme_words:
             value = component.in_theme_words(name)
         if callable(value) and not isinstance(value, type):
@@ -243,12 +288,13 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
                 items.append({"$node": slot_id})
             props[name] = items
             continue
-        if value is None and name not in component.model_fields_set:
+        if value is None and name not in given:
             # Absent on the wire: a prop the page never set. An explicit ``value=None``
             # is sent as null and means "controlled, and empty".
+            props.pop(name, None)
             continue
         props[name] = wire_value(value)
-    for name, value in component.wire_extra().items():
+    for name, value in (component.wire_extra() if shape.extra else {}).items():
         if isinstance(value, Wired):
             props[name] = value.value
         elif isinstance(value, Component):
@@ -268,9 +314,10 @@ def _walk(component: Component, node_id: str, tree: Tree) -> None:
             props[name] = slots
         else:
             props[name] = wire_value(value)
-    for event, handler in getattr(component, "events", {}).items():
-        tree.handlers[(node_id, event)] = handler
-        props[f"on_{event}"] = True
+    if shape.events:
+        for event, handler in values["events"].items():
+            tree.handlers[(node_id, event)] = handler
+            props[f"on_{event}"] = True
     if props.get("hidden") is False:
         del props["hidden"]
     children_ids: list[str] = []

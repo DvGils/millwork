@@ -319,3 +319,44 @@ def test_a_button_with_an_href_is_a_link_and_takes_no_handler() -> None:
     # A menu's trigger opens the menu: it cannot also be a link.
     with pytest.raises(ValueError, match="takes no href"):
         ui.DropdownMenu(trigger=ui.Button("More", href="/a"), items=[])
+
+
+class Shelf(Component):
+    type: ClassVar[str] = "Shelf"
+    size: str = "md"
+    note: str | None = None
+    tags: list[str] = []
+
+
+def test_a_component_given_nothing_sends_its_class_defaults() -> None:
+    props = build(Shelf()).nodes["root"].props
+    assert props == {"size": "md", "tags": []}
+
+
+def test_what_a_component_was_given_goes_over_its_defaults() -> None:
+    props = build(Shelf(size="lg", note=None, hidden=True)).nodes["root"].props
+    # An explicit None is sent as null, where an unset one is left out.
+    assert props == {"size": "lg", "note": None, "tags": [], "hidden": True}
+
+    class Wide(Shelf):
+        size: str = "xl"
+
+    assert build(Wide()).nodes["root"].props["size"] == "xl"
+    assert build(Shelf()).nodes["root"].props["size"] == "md"
+
+
+def test_a_prop_changed_after_the_component_was_made_is_the_one_sent() -> None:
+    shelf = Shelf()
+    shelf.tags.append("new")
+    shelf.size = "sm"
+    assert build(shelf).nodes["root"].props == {"size": "sm", "tags": ["new"]}
+    # The next one starts from the class again.
+    assert build(Shelf()).nodes["root"].props == {"size": "md", "tags": []}
+
+
+def test_two_nodes_do_not_share_a_props_table() -> None:
+    tree = build(Box(Shelf(), Shelf()))
+    first, second = tree.nodes["root/0:Shelf"], tree.nodes["root/1:Shelf"]
+    first.props["size"] = "changed"
+    assert second.props["size"] == "md"
+    assert build(Shelf()).nodes["root"].props["size"] == "md"
