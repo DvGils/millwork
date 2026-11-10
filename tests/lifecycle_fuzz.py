@@ -968,9 +968,14 @@ class Tab:
             return
         envelope = json.loads(event["text"])
         seq, msg = envelope["seq"], envelope["msg"]
-        if seq > self.last_seq:
-            self.last_seq = seq
         kind = msg["type"]
+        # As the bundle counts: the message that says which session this is
+        # carries the session's number and is not one of the numbered ones,
+        # and a numbered one that comes a second time, where a replay
+        # overlapped what was being sent, is not taken again.
+        again = kind != "session" and 0 < seq <= self.last_seq
+        if kind != "session" and seq > self.last_seq:
+            self.last_seq = seq
         fact: dict[str, Any] = {"tab": self.label, "type": kind, "seq": seq, "sent": sent}
         if kind == "session":
             self.session, self.resume = msg["id"], msg["resume"]
@@ -984,12 +989,17 @@ class Tab:
             self.look()
         elif kind == "mount":
             fact["marked"] = ADMIN_MARK in event["text"]
-            self.nodes = msg["nodes"]
-            self.look()
+            if not again:
+                self.nodes = msg["nodes"]
+                # A whole page: the tabs that live on in it say again where
+                # they are, as the session may have forgotten on the way.
+                self.told.clear()
+                self.look()
         elif kind == "patch":
             fact["marked"] = ADMIN_MARK in event["text"]
-            self.patch(msg["ops"])
-            self.look()
+            if not again:
+                self.patch(msg["ops"])
+                self.look()
         elif kind == "command":
             fact["name"] = msg["name"]
             if msg["name"] == "navigate":

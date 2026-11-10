@@ -5,7 +5,7 @@ import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
 import { t } from "../theme";
-import { store, useNode } from "../store";
+import { store, useMounts, useNode } from "../store";
 import { has, linkLook } from "../lib";
 import { anchorProps, InSidebar } from "./anchor";
 import { ScrollArea as UiScrollArea } from "@/components/ui/scroll-area";
@@ -40,17 +40,20 @@ export const Tabs: Renderer = ({ node, props, emit }) => {
   const first = String(props.default ?? firstTabId(tabs));
   // The open tab, for tabs that keep their own choice. The server asks for
   // it with `track` when parts of the page under these tabs are only kept up
-  // to date while their tab is open. It is said when the tabs appear, when
-  // the choice changes and when the socket opens again, since the session
-  // behind a new socket may not have heard it.
+  // to date while their tab is open. It is said when the tabs appear and
+  // when the choice changes. It is said again when the socket opens and
+  // when a whole page is put here, since these tabs live on under the same
+  // id while the session behind them may be a new one, or may have been on
+  // a page without them in between and have forgotten.
   const [open, setOpen] = useState(first);
   const status = useStatus();
+  const mounts = useMounts();
   const track = Boolean(props.track) && !controlled;
   useEffect(() => {
     if (track && status === "open") emit("show", open);
     // `emit` is made anew at every render and always speaks for this node.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track, open, status]);
+  }, [track, open, status, mounts]);
   return (
     <UiTabs
       value={controlled ? String(props.value ?? "") : undefined}

@@ -46,6 +46,10 @@ export function splice(list: unknown, edits: [number, number, unknown[]][]): unk
 class Store {
   root: NodeId | null = null;
   title: string | null = null;
+  // How many whole pages have been put here. A component that lives on
+  // from one page to the next, under the same id, can tell by it that the
+  // page around it is a new one.
+  mounts = 0;
   private nodes = new Map<NodeId, Node>();
   private listeners = new Map<NodeId, Set<Listener>>();
   private rootListeners = new Set<Listener>();
@@ -59,6 +63,7 @@ class Store {
     this.epochs.clear();
     this.root = root;
     this.title = title;
+    this.mounts += 1;
     if (title && typeof document !== "undefined") document.title = title;
     for (const id of new Set([...previous, ...this.nodes.keys()])) this.notify(id);
     for (const l of this.rootListeners) l();
@@ -195,6 +200,14 @@ export function useResetEpoch(id: NodeId): number {
     (l) => store.subscribe(id, l),
     () => store.epoch(id),
     () => store.epoch(id),
+  );
+}
+
+export function useMounts(): number {
+  return useSyncExternalStore(
+    (l) => store.subscribeRoot(l),
+    () => store.mounts,
+    () => store.mounts,
   );
 }
 
