@@ -35,6 +35,7 @@ function ScrollBar({
   return (
     <ScrollAreaPrimitive.Scrollbar
       data-slot="scroll-area-scrollbar"
+      data-press=""
       data-orientation={orientation}
       orientation={orientation}
       className={cn(

@@ -19,6 +19,7 @@ function Slider({
     <SliderPrimitive.Root
       className={cn("data-horizontal:w-full data-vertical:h-full", className)}
       data-slot="slider"
+      data-press=""
       defaultValue={defaultValue}
       value={value}
       min={min}

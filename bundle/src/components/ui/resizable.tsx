@@ -246,6 +246,7 @@ function ResizableHandle({
     <div
       ref={ref}
       role="separator"
+      data-press=""
       tabIndex={0}
       aria-orientation={vertical ? "horizontal" : "vertical"}
       aria-valuenow={size !== undefined ? Math.round(size) : undefined}

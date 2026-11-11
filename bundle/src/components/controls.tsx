@@ -22,6 +22,7 @@ import {
 import { Badge as UiBadge } from "@/components/ui/badge";
 import { Separator as UiSeparator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { pressable, pressLook } from "../press";
 
 const buttonVariant: Record<string, "default" | "secondary" | "outline" | "ghost" | "link" | "destructive"> = {
   primary: "default",
@@ -164,7 +165,7 @@ export const Input: Renderer = ({ props, emit }) => {
   // The icon and the clear button stay centred on the input itself, in a row
   // of their own.
   const row = (
-    <div className={cn("relative flex items-center gap-2", own)}>
+    <div className={cn("relative flex items-center gap-2", own)} data-press="">
       {Prefix ? <Prefix className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" /> : null}
       {field}
       {clearable && Clear ? (
@@ -189,19 +190,20 @@ export const Input: Renderer = ({ props, emit }) => {
   );
 };
 
+// A card is edged by a ring and has no border, so a tone colors the ring.
 const cardTone: Record<string, string> = {
   muted: "bg-muted/40",
-  primary: "border-primary/40",
+  primary: "ring-primary/40",
   accent: "bg-accent",
-  success: "border-success/40",
-  warning: "border-warning/40",
-  destructive: "border-destructive/40",
+  success: "ring-success/40",
+  warning: "ring-warning/40",
+  destructive: "ring-destructive/40",
 };
 
 export const Card: Renderer = ({ props, children, emit }) => (
   <UiCard
-    className={cn(props.tone ? cardTone[String(props.tone)] : undefined, props.on_click && "cursor-pointer", props.cls as string)}
-    onClick={props.on_click ? () => emit("click") : undefined}
+    className={cn(props.tone ? cardTone[String(props.tone)] : undefined, props.on_click && pressLook, props.cls as string)}
+    {...(props.on_click ? pressable(() => emit("click")) : undefined)}
   >
     {props.title || props.description ? (
       <CardHeader>

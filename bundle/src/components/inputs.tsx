@@ -343,7 +343,7 @@ export const NumberInput: Renderer = ({ props, emit }) => {
     emit("change", value);
   };
   return (
-    <div className={cn("flex items-center gap-2", props.cls as string)}>
+    <div className={cn("flex items-center gap-2", props.cls as string)} data-press="">
       <UiInput
         type="number"
         value={current}

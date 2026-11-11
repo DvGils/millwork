@@ -150,7 +150,7 @@ function PieInner({ props, emit }: Omit<ChartProps, "kind">) {
       </text>
     ) : null;
   return (
-    <div className="flex w-full flex-col">
+    <div className="flex w-full flex-col" data-press={click ? "" : undefined}>
       <ChartContainer config={{}} className={cn("aspect-auto w-full", click && "cursor-pointer")} style={{ height: chartHeight(props) }}>
         <RPieChart margin={{ top: 8, right: labels ? 24 : 8, bottom: 8, left: labels ? 24 : 8 }} accessibilityLayer>
           <Tooltip content={<PieTip format={format} total={total} />} isAnimationActive={false} />
@@ -404,7 +404,7 @@ export function Chart({ kind, props, emit }: ChartProps) {
   }
 
   return (
-    <div className="flex w-full flex-col">
+    <div className="flex w-full flex-col" data-press={click ? "" : undefined}>
       <ChartContainer config={config} className="aspect-auto w-full" style={{ height: chartHeight(props) }}>
         {plot}
       </ChartContainer>

@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { cn } from "cn";
 import type { Renderer } from "../render";
+import { onControl } from "../press";
 import {
   clampPosition,
   clampRect,
@@ -77,8 +78,7 @@ function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, m
     if (!enabled || e.button !== 0) return;
     // A press on a control inside is that control's, not a drag: taking the
     // pointer here would take its click as well.
-    const control = (e.target as Element).closest("button, a, input, textarea, select, [role=button], [contenteditable]");
-    if (control && control !== e.currentTarget) return;
+    if (onControl(e.target, e.currentTarget)) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { from: { x: e.clientX, y: e.clientY }, origin: origin(), moved: false };
   };

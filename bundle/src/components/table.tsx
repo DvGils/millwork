@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ownPress } from "../press";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -211,12 +212,10 @@ const Row = memo(function Row({ row, rowKey, tone, cellTones, selected, columns,
   return (
     <TableRow
       data-state={selected ? "selected" : undefined}
+      data-press={clickable ? "" : undefined}
       className={cn(tone && rowTone[tone], clickable && "cursor-pointer")}
       onClick={(e) => {
-        // Clicks inside a portal (the actions menu) bubble through React, not the DOM.
-        if (!e.currentTarget.contains(e.target as Node)) return;
-        if ((e.target as HTMLElement).closest("button, a, [role=checkbox], [data-slot=dropdown-menu-trigger]")) return;
-        act("click", rowKey);
+        if (ownPress(e)) act("click", rowKey);
       }}
     >
       {checkbox ? (
