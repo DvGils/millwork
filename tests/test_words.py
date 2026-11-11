@@ -40,7 +40,7 @@ def test_every_string_the_bundle_asks_for_exists() -> None:
     for path in [*BUNDLE.rglob("*.tsx"), *BUNDLE.rglob("*.ts")]:
         if "__tests__" in path.parts:
             continue
-        for match in call.finditer(path.read_text()):
+        for match in call.finditer(path.read_text(encoding="utf-8")):
             asked.update(k for k in match.groups() if k)
     assert len(asked) > 40, "the pattern stopped finding the bundle's strings"
     assert sorted(asked - set(STRINGS)) == []

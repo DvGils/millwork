@@ -141,6 +141,14 @@ class Shell:
         self._load()
         return self._manifest is not None
 
+    @property
+    def build(self) -> str | None:
+        """The name of the bundle as it stands, which changes with every
+        build of it, or None when there is no bundle to name."""
+        self._load()
+        entries = [e for e in (self._manifest or {}).values() if e.get("isEntry")]
+        return _basename(str(entries[0]["file"])) if entries else None
+
     def _entry(self) -> dict[str, object]:
         self._load()
         assert self._manifest is not None
@@ -192,6 +200,7 @@ class Shell:
             "path": path,
             "base": base,
             "protocol": PROTOCOL_VERSION,
+            "bundle": _basename(str(entry["file"])),
             "ws": f"{base}{self.prefix}/ws",
         }
         if keep_alive:

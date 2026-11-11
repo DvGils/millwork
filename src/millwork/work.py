@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from millwork import context
 from millwork.auth import Forbidden, NotFound
-from millwork.files import Reject
+from millwork.files import Reject, fits
 from millwork.forms import FormIssues
 from millwork.protocol import Event, Head, Reply, Request, Stream, pack_frame
 from millwork.tasks import Cancelled
@@ -431,9 +431,7 @@ async def _receive_upload(
             raise Reject("an upload needs a size")
         field = payload.get("field")
         accept, max_bytes = s.upload_spec(msg.node, field if isinstance(field, str) else None)
-        if msg.size > max_bytes:
-            mb = max_bytes // (1024 * 1024)
-            raise Reject(f"the file is larger than {mb} MB", key="file_too_large", vars={"mb": mb})
+        fits(msg.size, max_bytes)
         name = payload.get("name")
         mime = payload.get("mime")
         writer = s.app.files.begin(

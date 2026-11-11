@@ -160,7 +160,8 @@ export const Chat: Renderer = ({ node, props, emit }) => {
     regenerate: props.regenerate !== false && Boolean(props.on_message),
     edit: props.edit !== false && Boolean(props.on_message),
     actions: props.on_action && Array.isArray(props.actions) ? (props.actions as ActionSpec[]) : [],
-    busy,
+    // A disabled chat starts no reply: no message, no edit and no second try.
+    busy: busy || Boolean(props.disabled),
     emit,
   };
   // Only the latest answer can be regenerated: an earlier one would take the
@@ -209,7 +210,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
       {suggestions.length ? (
         <div className="flex flex-wrap gap-2 px-1 pb-2">
           {suggestions.map((s) => (
-            <Button key={s} type="button" size="sm" variant="outline" disabled={busy} onClick={() => sendMessage(s, [], null)}>
+            <Button key={s} type="button" size="sm" variant="outline" disabled={busy || Boolean(props.disabled) || !props.on_message} onClick={() => sendMessage(s, [], null)}>
               {s}
             </Button>
           ))}
@@ -260,7 +261,9 @@ function ChatMessage({ message, inline, showSteps, streaming, tools, last, aids 
           <img src={aids.avatar} alt="" className="size-8 object-cover" />
         </MessageAvatar>
       ) : null}
-      <MessageContent className={cn("flex max-w-[85%] flex-col gap-2", user && "items-end")}>
+      {/* Words keep to a measure. A component in a reply, a table say, gets
+          the width of the thread, which in a narrow window it needs. */}
+      <MessageContent className={cn("flex flex-col gap-2", user ? "max-w-[85%] items-end" : "[&>*:not([data-wide])]:max-w-[85%]")}>
         {line.length ? (
           <div className={cn("text-xs text-muted-foreground transition-opacity", "opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100")}>
             {line.join(" · ")}
@@ -436,7 +439,11 @@ function PartView({ part, user, inline }: { part: Part; user: boolean; inline: R
     case "data-component": {
       const slot = (part.data as { slot?: string } | undefined)?.slot;
       const ref = slot ? inline[slot] : undefined;
-      return ref ? <Render id={ref.$node} /> : null;
+      return ref ? (
+        <div data-wide className="min-w-0">
+          <Render id={ref.$node} />
+        </div>
+      ) : null;
     }
     default:
       if (part.type.startsWith("data-")) {

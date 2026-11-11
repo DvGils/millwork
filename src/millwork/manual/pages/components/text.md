@@ -104,7 +104,9 @@ decoration.
 `ui.Icon`, and every `icon` in the catalogue, takes one of two things. A
 name is one of lucide's that the bundle carries, the set in `mw.ICONS`. A
 path is a file of the app's own under `public/`, such as
-`/public/icons/rocket.svg`.
+`/public/icons/rocket.svg`. A path whose file is not there draws nothing,
+and a [development warning](/state/warnings) says so when a page with
+such a component is drawn.
 
 ```python live
 ui.Row(

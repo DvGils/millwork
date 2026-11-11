@@ -10,6 +10,7 @@ import { icon } from "../icons";
 import { fileUrl, onStatus, request, saveFile } from "../ws";
 import { toast } from "@/components/ui/toast";
 import { linkLook, safeUrl } from "../lib";
+import { pressable, pressLook } from "../press";
 import { Button } from "@/components/ui/button";
 import { Progress, ProgressIndicator, ProgressTrack } from "@/components/ui/progress";
 import {
@@ -208,7 +209,6 @@ export const FileCard: Renderer = ({ props, emit }) => {
   // The tab is opened while the click still counts as the user's, then pointed
   // at the bytes once they are here; a blocked popup falls back to saving.
   const open = (e: React.MouseEvent) => {
-    e.stopPropagation();
     if (!file) return;
     e.preventDefault();
     const win = window.open("", "_blank", "noopener");
@@ -230,11 +230,12 @@ export const FileCard: Renderer = ({ props, emit }) => {
     <div
       className={cn(
         "flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm",
-        props.on_click && "cursor-pointer hover:bg-accent/50",
+        props.on_click && pressLook,
+        props.on_click && "hover:bg-accent/50",
         status === "error" && "border-destructive/50",
         props.cls as string,
       )}
-      onClick={props.on_click ? () => emit("click") : undefined}
+      {...(props.on_click ? pressable(() => emit("click")) : undefined)}
     >
       <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
         {status === "loading" && Spin ? <Spin className="size-4 animate-spin" /> : Icon ? <Icon className="size-4" /> : null}
@@ -246,13 +247,13 @@ export const FileCard: Renderer = ({ props, emit }) => {
         </div>
       </div>
       {url || file ? (
-        <a href={url ?? "#"} target="_blank" rel="noreferrer" className={cn("text-xs text-primary", linkLook)} onClick={file ? open : (e) => e.stopPropagation()}>
+        <a href={url ?? "#"} target="_blank" rel="noreferrer" className={cn("text-xs text-primary", linkLook)} onClick={file ? open : undefined}>
           {t("open")}
         </a>
       ) : null}
       {actions.length ? (
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label={t("actions")} onClick={(e) => e.stopPropagation()} />}>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label={t("actions")} />}>
             {More ? <More /> : "…"}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -282,8 +283,8 @@ export const Image: Renderer = ({ props, emit }) => {
     <img
       src={src}
       alt={String(props.alt ?? "")}
-      className={cn("rounded-lg", imageSize[String(props.size ?? "md")], props.fit === "cover" ? "object-cover" : "object-contain", props.on_click && "cursor-zoom-in", props.cls as string)}
-      onClick={props.on_click ? () => emit("click") : undefined}
+      className={cn("rounded-lg", imageSize[String(props.size ?? "md")], props.fit === "cover" ? "object-cover" : "object-contain", props.on_click && pressLook, props.on_click && "cursor-zoom-in", props.cls as string)}
+      {...(props.on_click ? pressable(() => emit("click")) : undefined)}
     />
   );
 };
@@ -303,6 +304,8 @@ export const Pdf: Renderer = ({ props }) => {
   );
 };
 
+const downloadSize: Record<string, "sm" | "default" | "lg"> = { sm: "sm", md: "default", lg: "lg" };
+
 export const Download: Renderer = ({ props, emit }) => {
   const Icon = icon(props.icon);
   const variant = String(props.variant ?? "outline") as "default" | "secondary" | "outline" | "ghost" | "link";
@@ -317,7 +320,13 @@ export const Download: Renderer = ({ props, emit }) => {
     saveFile(fileId, String(props.filename ?? "")).catch(failedDownload);
   };
   return (
-    <Button type="button" variant={variant === ("primary" as string) ? "default" : variant} disabled={Boolean(props.disabled)} onClick={click}>
+    <Button
+      type="button"
+      variant={variant === ("primary" as string) ? "default" : variant}
+      size={downloadSize[String(props.size ?? "md")]}
+      disabled={Boolean(props.disabled)}
+      onClick={click}
+    >
       {Icon ? <Icon /> : null}
       {String(props.label ?? t("download"))}
     </Button>

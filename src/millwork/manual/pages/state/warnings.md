@@ -14,7 +14,12 @@ log line with the page's path, and in debug mode as a toast as well.
   [lazy parts](/components/layout#lazy-parts) included. The page function
   builds the tree, and I/O belongs in the page's `connect` hook or a task.
 - **A list without keys**, meaning four or more siblings of one type
-  without a key whose number changed between renders.
+  without a key whose number changed between renders. Children that are
+  written out, one of them left out with `x if shown else None`, are no
+  such list, since their places stay where they are.
+- **An icon file that is not there**, a component's `icon` given as a
+  path under `/public/` whose file is not in the public folder. The
+  page draws nothing in its place, which is easy to miss.
 - **A handler that changed nothing**, no state, no command, no task.
   Usually a forgotten `await`.
 - **A sync task that changed state from its thread.** A task reports

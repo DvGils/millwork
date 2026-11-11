@@ -1257,7 +1257,8 @@ class NumberInput(_Owned):
 class Combobox(_Owned):
     """A searchable single choice. ``options`` filters in the tab; ``on_search(query)``
     returns the options for what was typed, answered over the socket without a render.
-    ``allow_custom`` lets typed text that matches nothing be the value."""
+    ``allow_custom`` adds a row that takes the text as typed, so the value can be
+    something that is no option."""
 
     type: ClassVar[str] = "Combobox"
     payloads: ClassVar[dict[str, str]] = {
@@ -1831,6 +1832,7 @@ __all__ = [
     "Code",
     "CheckboxGroup",
     "Collapsible",
+    "Combobox",
     "Command",
     "Custom",
     "Component",

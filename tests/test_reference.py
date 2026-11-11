@@ -5,6 +5,17 @@ from millwork.cli import main
 from millwork.reference import reference
 
 
+def test_every_component_of_the_catalogue_is_exported() -> None:
+    # Lazy is what a call of a ``ui.lazy`` function gives, and no component to write.
+    made = {
+        name
+        for name, obj in vars(ui).items()
+        if isinstance(obj, type) and issubclass(obj, ui.Component) and not name.startswith("_")
+    }
+    assert made - set(ui.__all__) == {"Lazy"}
+    assert "### ui.Combobox\n" in reference()
+
+
 def test_the_reference_covers_every_component_and_the_tables(capsys) -> None:
     text = reference()
     for name in ui.__all__:

@@ -165,6 +165,7 @@ class Download(Component):
     content: Any
     mime: str | None = None
     variant: Literal["primary", "secondary", "outline", "ghost", "link"] = "outline"
+    size: Literal["sm", "md", "lg"] = "md"
     icon: str | None = "download"
     disabled: bool = False
 
@@ -181,6 +182,7 @@ class Download(Component):
             content: Any,
             mime: str | None = None,
             variant: Literal["primary", "secondary", "outline", "ghost", "link"] = "outline",
+            size: Literal["sm", "md", "lg"] = "md",
             icon: str | None = "download",
             disabled: bool = False,
         ) -> None: ...

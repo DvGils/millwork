@@ -333,6 +333,9 @@ class Tree:
         # Nodes whose children include a run of keyless siblings of one type, and
         # that type: a list built from data, if the run grows or shrinks later.
         self.keyless_runs: dict[str, str] = {}
+        # Icons the page gives as files of its own, for the session to look
+        # for: one that is not there draws nothing.
+        self.icon_files: set[str] = set()
         # The lazy parts in it, by where they sit, and the ones among them
         # that were not built this time but taken from the tree before.
         self.parts: dict[str, Part] = {}
@@ -351,6 +354,7 @@ class Tree:
         self.components.update(other.components)
         self.session_bound.extend(other.session_bound)
         self.keyless_runs.update(other.keyless_runs)
+        self.icon_files |= other.icon_files
         self.parts.update(other.parts)
 
     def kept_part(self, node_id: str) -> str | None:
@@ -513,6 +517,8 @@ class _Shape:
 
 
 _SCALARS = frozenset({str, int, float, bool, type(None)})
+# The fields that name an icon, by a name of the bundle's or as a file.
+_ICON_FIELDS = frozenset({"icon", "prefix_icon"})
 _SHAPES: dict[type[Component], _Shape] = {}
 
 
@@ -546,6 +552,8 @@ def _walk(component: Component, node_id: str, tree: Tree, how: _Build, shows: bo
             elif name in given:
                 props[name] = None
             continue
+        if name in _ICON_FIELDS and type(value) is str and value[:1] == "/":
+            tree.icon_files.add(value)
         if name in component.theme_words:
             value = component.in_theme_words(name)
         if callable(value) and not isinstance(value, type):

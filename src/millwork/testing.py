@@ -18,12 +18,12 @@ from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
 from millwork.auth import Forbidden
 from millwork.connection import Connection
-from millwork.files import FileRef, _read_chunks
+from millwork.files import FileRef, Reject, _read_chunks, fits
 from millwork.nodes import Component
 from millwork.protocol import Command, Event, Patch, ServerError, Stream, server_message
 from millwork.scope import Scope
 from millwork.session import Session
-from millwork.ui import Button, Link, Tabs
+from millwork.ui import Button, Checkbox, Link, Switch, Tabs
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -69,6 +69,8 @@ class Page:
         self._tab: asyncio.Task[Any] | None = None
         self._conn: Connection | None = None
         session.on_failure = self._failed
+        session.on_unheard = self._unheard
+        self._deaf: list[tuple[str, str]] = []
 
     def _said_goodbye(self) -> bool:
         return self._tab is None or self._tab.done()
@@ -81,6 +83,22 @@ class Page:
 
     def _failed(self, where: str, exc: BaseException) -> None:
         self.failures.append((where, exc))
+
+    def _unheard(self, event: Event, why: str) -> None:
+        self._deaf.append((event.node, why))
+
+    async def _send(self, found: Found, *events: tuple[str, Any]) -> None:
+        """Events for one node through the real dispatcher, then everything
+        they set off. One the page does not take raises ``LookupError``."""
+        if found.props.get("hidden"):
+            raise LookupError(f"{found!r} is hidden")
+        seen = len(self._deaf)
+        for name, payload in events:
+            self.session.event(Event(node=found.id, name=name, payload=payload))
+        await self.settle()
+        for node_id, why in self._deaf[seen:]:
+            if node_id == found.id:
+                raise LookupError(f"{found!r} {why}")
 
     def _raise_failures(self) -> None:
         """In a strict harness, what the app raised is raised in the test, where the
@@ -220,17 +238,41 @@ class Page:
     # ------------------------------------------------------------- acting
 
     async def event(self, node: Found | str, name: str, payload: Any = None) -> None:
-        """One event through the real dispatcher, then everything it set off."""
-        node_id = node.id if isinstance(node, Found) else self.find(node).id
-        self.session.event(Event(node=node_id, name=name, payload=payload))
-        await self.settle()
+        """One event through the real dispatcher, then everything it set off.
+
+        An event the page does not take raises ``LookupError``: one for a
+        node that has no handler for it, or that is disabled. In a tab that
+        is a press that does nothing, so a test that passes on one has
+        checked nothing."""
+        found = node if isinstance(node, Found) else self.find(node)
+        await self._send(found, (name, payload))
 
     async def click(self, node: Found | str) -> None:
         """Click it. A ``Download``'s button starts the download, so that is
         what clicking one does here, and a ``Link`` or a button with an
         ``href`` to a page of the app takes the session there. One that
-        leaves the app does nothing here, as the session sees nothing of it."""
+        leaves the app does nothing here, as the session sees nothing of it.
+        A ``Checkbox`` or a ``Switch`` whose value the page holds goes to the
+        other of its two values. One that keeps its own value takes
+        ``change`` with the value, since what a tab holds is not known here."""
         found = node if isinstance(node, Found) else self.find(node)
+        component = found.component
+        for off in ("disabled", "loading", "hidden"):
+            if getattr(component, off, False):
+                raise LookupError(f"{found!r} is {off}")
+        if isinstance(component, Checkbox | Switch):
+            if "checked" not in component.model_fields_set:
+                raise LookupError(
+                    f"{found!r} keeps its own value, in the tab, which a test does not "
+                    "have: say what it turns to with page.change(node, True or False)"
+                )
+            await self.change(found, not component.checked)
+            return
+        if isinstance(component, Button) and component.form and component.on_click is None:
+            raise LookupError(
+                f"{found!r} submits the form {component.form}, "
+                "whose draft is the test's to give: use page.submit(form, draft)"
+            )
         href = getattr(found.component, "href", None)
         if isinstance(found.component, Button | Link) and href is not None:
             inside = href.startswith("/") and not href.startswith(("/_mw/", "/public/"))
@@ -261,16 +303,17 @@ class Page:
         found = node if isinstance(node, Found) else self.find(node)
         tabs = found.component
         if not isinstance(tabs, Tabs):
-            await self.event(found, "change", value)
+            await self._send(found, ("change", value))
             return
         if value not in tabs.open_tabs():
             raise LookupError(f"{found!r} has no tab {value!r} that can be chosen")
+        events: list[tuple[str, Any]] = []
         if tabs.on_change is not None or "value" in tabs.model_fields_set:
-            self.session.event(Event(node=found.id, name="change", payload=value))
+            events.append(("change", value))
         if "value" not in tabs.model_fields_set:
             # Tabs that own their choice say which one is open.
-            self.session.event(Event(node=found.id, name="show", payload=value))
-        await self.settle()
+            events.append(("show", value))
+        await self._send(found, *events)
 
     async def submit(self, form: Found | str, draft: Any) -> None:
         """Submit a draft (a dict or a model instance) as the tab would."""
@@ -300,16 +343,18 @@ class Page:
         """A row action on a Table (``[action, key]``) or a card action (``action``)."""
         await self.event(node, "action", [action, key] if key is not None else action)
 
-    def _store(self, node_id: str, path: Path | str, accept: list[str] | None) -> FileRef:
+    def _store(self, node_id: str, path: Path | str, field: str | None = None) -> FileRef:
+        """Store a file for a node under what the node allows, as an upload
+        from a tab is stored. Raises ``Reject``."""
         p = Path(path)
-        mime = mimetypes.guess_type(p.name)[0]
-        files = self.session.app.files
-        return files.store(
+        accept, max_bytes = self.session.upload_spec(node_id, field)
+        fits(p.stat().st_size, max_bytes)
+        return self.session.app.files.store(
             self.session,
             p.name,
             _read_chunks(p),
-            mime=mime,
-            max_bytes=files.max_session_bytes,
+            mime=mimetypes.guess_type(p.name)[0],
+            max_bytes=max_bytes,
             accept=accept,
             node=node_id,
         )
@@ -317,24 +362,36 @@ class Page:
     async def upload(
         self, node: Found | str, path: Path | str, *, field: str | None = None
     ) -> FileRef:
-        """Put a file into the session for a node, as the upload route would.
+        """Put a file into the session for a node, as an upload from a tab
+        would, with every check that one gets.
 
-        For a ``FileUpload`` the ``upload`` event follows. For a ``Form`` the
-        file is stored for the form and returned, to go into a draft at
-        ``field``'s pointer; the submit then resolves it.
+        For a ``FileUpload`` with ``on_upload`` the ``upload`` event follows.
+        For a ``Form`` the file is stored for the form and returned, to go
+        into a draft at ``field``'s pointer; the submit then resolves it.
+
+        A file that is refused raises ``millwork.files.Reject`` with the
+        reason. A ``FileUpload`` with ``on_reject`` is told first, as a tab
+        tells it.
         """
         found = node if isinstance(node, Found) else self.find(node)
         component = found.component
-        accept: list[str] | None = None
-        if isinstance(component, FileUpload):
-            accept = component.accept
-        elif isinstance(component, Form):
+        if isinstance(component, Form):
             if field is None:
                 raise ValueError("uploading to a Form takes field=, the file field's pointer")
-        elif not isinstance(component, Chat):
+        elif not isinstance(component, FileUpload | Chat):
             raise TypeError(f"{found.type} takes no uploads")
-        ref = self._store(found.id, path, accept)
-        if isinstance(component, FileUpload):
+        if getattr(component, "disabled", False):
+            raise LookupError(f"{found!r} is disabled")
+        try:
+            ref = self._store(found.id, path, field)
+        except Reject as refused:
+            if isinstance(component, FileUpload) and component.on_reject is not None:
+                reason = refused.reason
+                if refused.key:
+                    reason = self.session.text(refused.key, **refused.vars)
+                await self.event(found, "reject", {"name": Path(path).name, "reason": reason})
+            raise
+        if isinstance(component, FileUpload) and component.on_upload is not None:
             await self.event(found, "upload", [ref.model_dump(mode="json")])
         return ref
 
@@ -348,7 +405,7 @@ class Page:
     ) -> None:
         """A chat turn: the message event with text, attachments and a command."""
         found = chat if isinstance(chat, Found) else self.find(chat)
-        refs = [self._store(found.id, p, None) for p in files]
+        refs = [self._store(found.id, p) for p in files]
         payload = {
             "text": text,
             "files": [r.model_dump(mode="json") for r in refs],

@@ -12,6 +12,7 @@ import { t, locale } from "../theme";
 import { useOwned } from "./inputs";
 import { optionLabel } from "./option-label";
 import { SortableChips } from "./sortable-chips";
+import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import { Button as UiButton } from "@/components/ui/button";
 import {
   Combobox as UiCombobox,
@@ -85,6 +86,12 @@ export function MultiSelectControl({
   const selected = useMemo(() => value.map((v) => byValue.get(v) ?? { value: v, label: v }), [value, byValue]);
   const full = typeof max === "number" && value.length >= max;
   const items = useMemo(() => (full ? options.filter((o) => value.includes(o.value)) : options), [full, options, value]);
+  // Typing looks for something to add, so what is chosen already is left out
+  // while there is text. Enter then takes the first match and never takes one
+  // away, which a click on a chosen row of the whole list does.
+  const { contains } = ComboboxPrimitive.useFilter();
+  const addable = (o: Opt, query: string) => !value.includes(o.value) && contains(o.label ?? o.value, query);
+  const typing = useRef(false);
   return (
     <UiCombobox
       multiple
@@ -96,6 +103,11 @@ export function MultiSelectControl({
       disabled={disabled}
       open={open}
       onOpenChange={setOpen}
+      filter={addable}
+      autoHighlight
+      onInputValueChange={(text: string) => {
+        typing.current = text.trim() !== "";
+      }}
     >
       <ComboboxChips ref={anchor} className="w-full" aria-invalid={invalid || undefined}>
         <ComboboxValue>
@@ -118,6 +130,10 @@ export function MultiSelectControl({
                     e.preventBaseUIHandler?.();
                     setOpen(false);
                   }
+                  // Enter with text in the field looks for something to add.
+                  // With nothing to add it does nothing, and does not submit
+                  // a form the field is in.
+                  if (e.key === "Enter" && typing.current) e.preventDefault();
                 }}
               />
             </>

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -119,12 +120,66 @@ def test_unknown_page_and_protocol(tmp_path: Path) -> None:
             assert "There is nothing at /nope." in texts(recv(ws))
         with client.websocket_connect("/_mw/ws") as ws:
             send(ws, {"type": "hello", "path": "/", "protocol": 999})
-            assert recv(ws) == {"type": "command", "name": "reload", "args": {}}
+            assert recv(ws) == {"type": "command", "name": "reload", "args": {"bundle": None}}
             assert closed_with(ws) == 4426
         assert client.get("/_mw/health").json()["ok"] is True
         assert client.get("/").status_code == 503  # no bundle in tmp_path
         missing = client.get("/nope")
         assert missing.status_code == 404 and "There is nothing at /nope." in missing.text
+
+
+def test_a_tab_on_another_bundle_than_the_server_serves_is_told_to_reload(tmp_path: Path) -> None:
+    app = make_app(tmp_path)
+    manifest = tmp_path / ".vite" / "manifest.json"
+    manifest.parent.mkdir()
+
+    def build(name: str, stamp: float) -> None:
+        manifest.write_text(
+            json.dumps({"src/main.tsx": {"file": f"assets/{name}", "isEntry": True}})
+        )
+        os.utime(manifest, (stamp, stamp))
+
+    build("main-AAAAAAAA.js", 1000)
+    with TestClient(app.asgi) as client:
+        # The page says which bundle it loads.
+        assert '"bundle": "main-AAAAAAAA.js"' in client.get("/").text
+        with client.websocket_connect("/_mw/ws") as ws:
+            hello(ws, bundle="main-AAAAAAAA.js")
+            assert recv(ws)["type"] == "mount"
+        # A new bundle is put in place, as a deploy does. A tab that still
+        # runs the old one would draw the page with components it may not
+        # have, so it is sent for the page again.
+        build("main-BBBBBBBB.js", 2000)
+        sessions = len(app.sessions)
+        with client.websocket_connect("/_mw/ws") as ws:
+            send(ws, {"type": "hello", "path": "/", "bundle": "main-AAAAAAAA.js"})
+            # It is told which bundle there is, so that it loads the page
+            # once for it and not over and over.
+            sent_for = {"bundle": "main-BBBBBBBB.js"}
+            assert recv(ws) == {"type": "command", "name": "reload", "args": sent_for}
+            assert closed_with(ws) == 4426
+        # It got no session.
+        assert len(app.sessions) == sessions
+        with client.websocket_connect("/_mw/ws") as ws:
+            hello(ws, bundle="main-BBBBBBBB.js")
+            assert recv(ws)["type"] == "mount"
+        # A client that names no bundle is none of the bundle's tabs.
+        with client.websocket_connect("/_mw/ws") as ws:
+            hello(ws)
+            assert recv(ws)["type"] == "mount"
+        # A tab from before tabs named their bundle speaks an older protocol.
+        with client.websocket_connect("/_mw/ws") as ws:
+            send(ws, {"type": "hello", "path": "/", "protocol": 4})
+            assert recv(ws)["name"] == "reload"
+        # While there is no bundle to serve, as in the middle of a build, a
+        # tab is left with the one it has: the page it would load is not there.
+        manifest.write_text("{}")
+        os.utime(manifest, (3000, 3000))
+        with client.websocket_connect("/_mw/ws") as ws:
+            hello(ws, bundle="main-BBBBBBBB.js")
+        manifest.unlink()
+        with client.websocket_connect("/_mw/ws") as ws:
+            hello(ws, bundle="main-BBBBBBBB.js")
 
 
 def test_superseded_socket_does_not_detach_the_live_one(tmp_path: Path) -> None:

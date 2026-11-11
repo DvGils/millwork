@@ -125,6 +125,32 @@ FAILURE_DETAIL_CHARS = 2000
 BUNDLE_DIR = Path(__file__).parent / "_bundle" / "dist"
 
 
+def _check_page_function(path: str, fn: Callable[..., Any]) -> None:
+    """A page function is called with the session and nothing else. One that
+    asks for more, the path's parameters as a rule, fails here, where the
+    page is added, and not when the page is first drawn."""
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return
+    try:
+        signature.bind(None)
+    except TypeError:
+        name = getattr(fn, "__name__", type(fn).__name__)
+        # The names alone: annotations make a long line of a short mistake.
+        bare = signature.replace(
+            parameters=[
+                p.replace(annotation=inspect.Parameter.empty) for p in signature.parameters.values()
+            ],
+            return_annotation=inspect.Signature.empty,
+        )
+        raise TypeError(
+            f"the page function of {path} is called with the session alone, which "
+            f"{name}{bare} does not take. The parameters of a path are in "
+            "s.params, and the page's connect hook gets them as keyword arguments"
+        ) from None
+
+
 @dataclass
 class PageDef:
     path: str
@@ -142,6 +168,7 @@ class PageDef:
 
     def __post_init__(self) -> None:
         self._regex, _, self._param_convertors = compile_path(self.path)
+        _check_page_function(self.path, self.render)
         # How exact each segment is, from a literal down to a parameter that
         # takes the rest of the path. Of the pages a path matches, the one
         # that is exact soonest is the page meant. The end counts as the

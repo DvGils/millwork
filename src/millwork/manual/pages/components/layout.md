@@ -134,8 +134,11 @@ ui.Grid(
 ## Card
 
 `ui.Card` frames content with an optional `title`, `description` and
-`footer`. `tone` colors its border, and `on_click` makes the whole card a
-target.
+`footer`. `tone` colors its edge, and `on_click` makes the whole card a
+target. A clickable card takes focus, and Enter or Space clicks it. A
+press on a button, a field, a slider or any other control inside the card
+is that control's and does not click the card. Neither does a drag, to
+select text or to move a handle.
 
 ```python live
 ui.Grid(

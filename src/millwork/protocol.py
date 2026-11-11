@@ -12,7 +12,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 5
 
 
 class Wire(BaseModel):
@@ -159,6 +159,9 @@ class Hello(Wire):
     resume: str | None = None
     seq: int = 0
     protocol: int = PROTOCOL_VERSION
+    # The bundle the tab runs, as its page named it. A client that is not
+    # the bundle names none.
+    bundle: str | None = None
 
 
 class Event(Wire):

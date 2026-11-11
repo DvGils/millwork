@@ -33,6 +33,21 @@ millwork applies the forwarded headers, and `--ws-max-size 1048576`, the
 bound `millwork run` puts on a message from the tab. Uploads travel in
 smaller frames, so the bound costs nothing.
 
+## A new version
+
+A restart ends every session. The tabs that were open connect again on
+their own and draw the page anew. Such a tab still runs the bundle it
+loaded, which the new version may have replaced, and so does a tab that
+a browser restored with a page from its cache. A tab says which bundle
+it runs when it connects, and one that is not the bundle the server has
+loads the page again, so it never draws a page with components it does
+not know.
+
+It loads the page once. If the page that comes back still names another
+bundle, something between the browser and the app keeps handing out an
+old page, a cache in front of the app for one. The tab then stops and
+says the page is out of date, with a button to try again.
+
 ## A unix socket
 
 On one machine with the proxy, `--uds` listens on a unix socket. The

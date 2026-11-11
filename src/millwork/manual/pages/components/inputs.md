@@ -265,8 +265,17 @@ ui.Row(
 
 `ui.Combobox` is a Select with a search box. With `options` it filters in
 the browser. With `on_search`, Python answers each search over the
-session's socket, without a render. `allow_custom=True` lets typed text
-that matches nothing be the value.
+session's socket, without a render. `allow_custom=True` adds a last row
+that takes the text as typed, so the value can be something that is no
+option.
+
+With `options`, the first match is lit while typing, and Enter takes the
+row that is lit. That is the typed text when nothing else matches, or
+after moving down to its row. With `on_search` the list is Python's answer
+to an earlier keystroke, so no row is lit until one is moved to, and
+Enter then takes the text as typed when `allow_custom` is set. With
+`allow_custom`, text that is typed and then left is taken as the value
+too.
 
 ```python live
 PEOPLE = [("ada", "Ada Lovelace"), ("grace", "Grace Hopper"), ("edsger", "Edsger Dijkstra")]
@@ -289,6 +298,10 @@ def example(s):
 ## MultiSelect
 
 `ui.MultiSelect` picks several, shown as chips. `max` stops further picks.
+Typing narrows the list to what can still be added, with the first match
+lit, so Enter adds it. Enter with text in the field never submits a form
+the field is in. The whole list, with what is chosen ticked, shows while
+nothing is typed.
 
 ```python live
 ui.MultiSelect(

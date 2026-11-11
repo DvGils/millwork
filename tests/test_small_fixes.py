@@ -320,3 +320,97 @@ async def test_events_are_handled_in_the_order_they_came_in(
         s.event(Event(node=tabs, name="show", payload="b"))
         await page.settle()
         assert s._showing == {tabs: "b"}
+
+
+async def test_a_fixed_row_with_an_optional_child_is_no_list_without_keys(tmp_path: Path) -> None:
+    class S(BaseModel):
+        more: bool = False
+        rows: list[str] = ["a", "b", "c", "d"]
+
+    app = mw.App("w", state=S, public=None, bundle_dir=tmp_path, debug=True)
+
+    def flip(s: mw.Session[S], _: Any) -> None:
+        s.state.more = not s.state.more
+
+    def grow(s: mw.Session[S], _: Any) -> None:
+        s.state.rows.append("e")
+
+    @app.page("/")
+    def home(s: mw.Session[S]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            # Four children written out, one of them there or not: the places
+            # stay where they are, and nothing is redrawn that a key would save.
+            ui.Row(
+                ui.Badge("a"),
+                ui.Badge("b"),
+                ui.Badge("c"),
+                ui.Badge("d") if st.more else None,
+                key="fixed",
+            ),
+            # Rows made from data: one more of them moves every place after it.
+            ui.Row(*(ui.Badge(r) for r in st.rows), key="made"),
+            ui.Button("flip", key="flip", on_click=flip),
+            ui.Button("grow", key="grow", on_click=grow),
+        )
+
+    async with TestApp(app).open("/") as page:
+        warned = lambda: [  # noqa: E731
+            c.args["message"]
+            for c in page.commands
+            if c.name == "toast" and c.args.get("title") == "millwork"
+        ]
+        await page.click("flip")
+        await page.click("flip")
+        assert not any("without keys" in w for w in warned())
+        await page.click("grow")
+        assert [w.split(" is ")[0] for w in warned() if "without keys" in w] == ["root/made"]
+
+
+async def test_an_icon_file_that_is_not_there_is_said_once(tmp_path: Path) -> None:
+    (tmp_path / "public" / "icons").mkdir(parents=True)
+    (tmp_path / "public" / "icons" / "rocket.svg").write_text("<svg/>")
+    app = mw.App("i", public=tmp_path / "public", bundle_dir=tmp_path, debug=True)
+    # Made once, outside any page, as an app's links often are.
+    links = [ui.Link(label="Early", href="/", icon="/public/icons/early.svg")]
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Button("there", icon="/public/icons/rocket.svg", key="there"),
+            ui.Button("gone", icon="/public/icons/missing.svg", key="gone"),
+            ui.Button("again", icon="/public/icons/missing.svg", key="again", on_click=again),
+            ui.Input(prefix_icon="/public/icons/lens.svg", key="field"),
+            header=ui.Header(title="Icons", links=links),
+        )
+
+    def again(s: mw.Session, _: Any) -> None:
+        s.refresh()
+
+    async with TestApp(app).open("/") as page:
+        await page.click("again")
+        said = [c.args["message"] for c in page.commands if c.args.get("title") == "millwork"]
+        assert sorted(m.split()[2] for m in said if "icon" in m) == [
+            "/public/icons/early.svg",
+            "/public/icons/lens.svg",
+            "/public/icons/missing.svg",
+        ]
+
+
+def test_a_page_function_that_asks_for_more_than_the_session_fails_where_it_is_added() -> None:
+    app = mw.App("p", public=None)
+
+    with pytest.raises(TypeError, match=r"/jobs/\{job_id\}.*job\(s, job_id\).*s\.params"):
+
+        @app.page("/jobs/{job_id}")
+        def job(s: Any, job_id: Any) -> ui.Component:
+            return ui.Page()
+
+    with pytest.raises(TypeError, match="session alone"):
+        app.not_found(lambda: ui.Page())
+
+    assert app.pages == []
+    # What can be called with the session alone is a page function, whatever
+    # else it could take.
+    app.page("/a")(lambda s, extra=None: ui.Page())
+    app.page("/b")(lambda *args: ui.Page())

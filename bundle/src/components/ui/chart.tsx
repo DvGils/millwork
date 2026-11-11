@@ -55,10 +55,24 @@ function ChartContainer({
 }) {
   const uniqueId = React.useId()
   const chartId = `chart-${id ?? uniqueId.replace(/:/g, "")}`
+  // A chart is drawn while its box has a size. In a tab that is not open
+  // the box has none, and a chart measured there says so in the console.
+  const box = React.useRef<HTMLDivElement>(null)
+  const [sized, setSized] = React.useState(false)
+  React.useLayoutEffect(() => {
+    const el = box.current
+    if (!el) return
+    const measure = () => setSized(el.clientWidth > 0 && el.clientHeight > 0)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <ChartContext.Provider value={{ config }}>
       <div
+        ref={box}
         data-slot="chart"
         data-chart={chartId}
         className={cn(
@@ -68,11 +82,13 @@ function ChartContainer({
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer
-          initialDimension={initialDimension}
-        >
-          {children}
-        </RechartsPrimitive.ResponsiveContainer>
+        {sized ? (
+          <RechartsPrimitive.ResponsiveContainer
+            initialDimension={initialDimension}
+          >
+            {children}
+          </RechartsPrimitive.ResponsiveContainer>
+        ) : null}
       </div>
     </ChartContext.Provider>
   )

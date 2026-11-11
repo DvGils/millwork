@@ -15,7 +15,7 @@ ICONS_TS = Path(__file__).resolve().parents[1] / "bundle" / "src" / "icons.ts"
 
 
 def test_the_python_table_is_the_bundles() -> None:
-    source = ICONS_TS.read_text()
+    source = ICONS_TS.read_text(encoding="utf-8")
     table = re.search(r"const byPascal[^{]*\{([^}]*)\}", source)
     assert table is not None
     names = [n.strip() for n in table.group(1).split(",") if n.strip()]

@@ -16,7 +16,13 @@ make, an upload for one, as they are.
 ## A plain table
 
 Sorting is on by default and happens in the browser. `row_key` names the
-field that identifies a row, `id` unless told otherwise.
+field that identifies a row, `id` unless told otherwise. A table that
+selects, opens or acts on a row, or is given `selected`, needs values
+there that tell its rows apart. Rows that share a value or have none
+make the page fail with an error that names them, since a handler would
+get one key for two rows. A table that only shows its rows goes by their
+position when the field does not tell them apart, as the rows of a
+query's result may not.
 
 ```python live
 ROWS = [

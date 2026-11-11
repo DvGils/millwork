@@ -82,6 +82,13 @@ class Reject(Exception):
         super().__init__(reason)
 
 
+def fits(size: int, max_bytes: int) -> None:
+    """Refuse a file that says it is larger than an upload may be."""
+    if size > max_bytes:
+        mb = max_bytes // (1024 * 1024)
+        raise Reject(f"the file is larger than {mb} MB", key="file_too_large", vars={"mb": mb})
+
+
 # Magic bytes for the formats worth checking; anything else is accepted by extension.
 _MAGIC: dict[str, tuple[bytes, ...]] = {
     "pdf": (b"%PDF",),

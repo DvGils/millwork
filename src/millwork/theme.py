@@ -79,6 +79,7 @@ STRINGS: dict[str, str] = {
     "session_ended": "This session has ended.",
     "reload": "Reload",
     "other_tab": "This page was opened in another tab.",
+    "page_out_of_date": "This page is out of date.",
     "copied": "Copied",
     "working": "Working",
     "thinking": "Thinking",
@@ -149,6 +150,7 @@ STRINGS: dict[str, str] = {
     "choose": "Choose",
     "search": "Search",
     "no_results": "No results",
+    "use_typed": "Use “{text}”",
     "open": "Open",
     "download_failed": "The download failed.",
     "filter": "Filter",
@@ -201,6 +203,7 @@ STRINGS: dict[str, str] = {
     "dark": "Dark",
     "system": "System",
     "menu": "Menu",
+    "navigation": "Navigation",
 }
 
 
