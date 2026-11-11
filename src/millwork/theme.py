@@ -149,6 +149,7 @@ STRINGS: dict[str, str] = {
     "choose": "Choose",
     "search": "Search",
     "no_results": "No results",
+    "use_typed": "Use “{text}”",
     "open": "Open",
     "download_failed": "The download failed.",
     "filter": "Filter",

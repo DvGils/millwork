@@ -11,7 +11,9 @@ import { cn } from "cn";
 import { has, placed } from "../lib";
 import { icon } from "../icons";
 import { optionLabel } from "./option-label";
+import { typedOption } from "./typed-option";
 import { t } from "../theme";
+import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import {
   Select as UiSelect,
   SelectContent,
@@ -43,6 +45,8 @@ interface Opt {
   icon?: string | null;
   disabled?: boolean;
   group?: string | null;
+  // The row that offers the text as typed, which is no option of the app's.
+  typed?: boolean;
 }
 
 function opts(value: unknown): Opt[] {
@@ -365,6 +369,11 @@ export const NumberInput: Renderer = ({ props, emit }) => {
 
 // Combobox: static `options` filter in the tab; with `on_search` every change of the
 // text (debounced) asks the server over the socket and shows what comes back.
+// With `allow_custom` a last row offers the text as typed. Enter takes the row
+// that is lit. With static options that is the first match as soon as there is
+// text, and the typed text when it is the only row or the one moved to. With
+// `on_search` the list is the answer to an earlier keystroke, so no row is lit
+// until one is moved to, and Enter with none lit takes the text as typed.
 export const Combobox: Renderer = ({ node, props, emit }) => {
   const controlled = has(props, "value");
   const [current, setDraft] = useOwned<string | null>(controlled, (props.value as string | null) ?? null, (props.default as string | null) ?? null);
@@ -373,11 +382,11 @@ export const Combobox: Renderer = ({ node, props, emit }) => {
   const [results, setResults] = useState<Opt[]>([]);
   const [text, setText] = useState("");
   const later = useDebounced(150);
-  const items = remote ? results : staticItems;
+  const found = remote ? results : staticItems;
   // Labels of every option seen so far: a chosen item keeps its label after the
   // results move on, and a controlled value whose option came earlier still reads.
   const labels = useRef(new Map<string, string>());
-  for (const o of [...items, ...staticItems]) labels.current.set(o.value, o.label ?? o.value);
+  for (const o of [...found, ...staticItems]) labels.current.set(o.value, o.label ?? o.value);
   // One object per value: the primitive treats a new object as a new value and
   // would reset the typed text on every render.
   const selectedLabel = current === null ? null : (labels.current.get(current) ?? current);
@@ -386,6 +395,9 @@ export const Combobox: Renderer = ({ node, props, emit }) => {
     [current, selectedLabel],
   );
   const allowCustom = Boolean(props.allow_custom);
+  const typed = useMemo(() => (allowCustom ? typedOption(found, text, selected) : null), [allowCustom, found, text, selected]);
+  const items = useMemo<Opt[]>(() => (typed ? [...found, typed] : found), [found, typed]);
+  const { contains } = ComboboxPrimitive.useFilter();
 
   // One search in flight: a newer one cancels the older, whose answer (or
   // "cancelled") must not touch the list.
@@ -406,24 +418,39 @@ export const Combobox: Renderer = ({ node, props, emit }) => {
       });
   };
   useEffect(() => () => inflight.current?.cancel(), []);
+  // Whether there is text typed since the last choice. A choice ends what was
+  // typed, so leaving the field after one sends nothing more, also while a
+  // controlled value has yet to follow.
+  const typedSince = useRef(false);
   const choose = (next: string | null) => {
+    typedSince.current = false;
     if (!controlled) setDraft(next);
     if (props.on_change) emit("change", next);
   };
-  // Typed text that matches no option becomes the value when custom entries are allowed.
+  // Text that is typed and left becomes the value when custom entries are
+  // allowed, as the option it names or as it stands. An option that is
+  // disabled cannot be chosen by its name either.
   const commitCustom = () => {
-    const typed = text.trim();
-    if (!allowCustom || !typed || typed === (selected?.label ?? selected?.value)) return;
-    const match = items.find((o) => o.value === typed || o.label === typed);
-    choose(match ? match.value : typed);
+    const left = text.trim();
+    if (!allowCustom || !typedSince.current || !left || left === (selected?.label ?? selected?.value)) return;
+    const match = found.find((o) => o.value === left || o.label === left);
+    if (match?.disabled) return;
+    choose(match ? match.value : left);
   };
+  const lit = useRef(false);
 
   return (
     <UiCombobox
       items={items}
       value={selected}
       onValueChange={(v) => choose(v ? (v as Opt).value : null)}
-      filter={remote || allowCustom ? null : undefined}
+      // The typed row stays whatever is typed. With `on_search` the server
+      // has done the matching.
+      filter={remote ? null : (o: Opt, query: string) => Boolean(o.typed) || contains(o.label ?? o.value, query)}
+      autoHighlight={!remote}
+      onItemHighlighted={(item: Opt | undefined) => {
+        lit.current = item !== undefined;
+      }}
       itemToStringLabel={(o: Opt) => o.label ?? o.value}
       isItemEqualToValue={(a: Opt, b: Opt) => a.value === b.value}
       onInputValueChange={(s: string) => {
@@ -440,16 +467,19 @@ export const Combobox: Renderer = ({ node, props, emit }) => {
         showClear={Boolean(props.clearable) && current !== null}
         className={cn("w-full", props.cls as string)}
         onBlur={commitCustom}
+        onChange={() => {
+          typedSince.current = true;
+        }}
         onKeyDown={(e: React.KeyboardEvent) => {
-          if (e.key === "Enter") commitCustom();
+          if (e.key === "Enter" && !lit.current) commitCustom();
         }}
       />
       <ComboboxContent>
         <ComboboxEmpty>{t("no_results")}</ComboboxEmpty>
         <ComboboxList>
           {(item: Opt) => (
-            <ComboboxItem key={item.value} value={item} disabled={Boolean(item.disabled)}>
-              {optionLabel(item)}
+            <ComboboxItem key={item.typed ? "\u0000typed" : item.value} value={item} disabled={Boolean(item.disabled)}>
+              {item.typed ? t("use_typed", { text: item.value }) : optionLabel(item)}
             </ComboboxItem>
           )}
         </ComboboxList>
