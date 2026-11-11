@@ -41,6 +41,16 @@ versions; a release says so here when it does.
 - The development warning for a list without keys fired for a fixed row
   of children with one of them left out by `x if shown else None`. It
   now counts places, so it fires for children made from data.
+- A label on a chart was cut off where it reached the edge: the value
+  above the tallest bar, the value after the longest lying bar, and a
+  series name longer than a few letters at the end of its line. A chart
+  with `labels=True` keeps the room its labels take.
+- A page function written to take a path's parameters, as in
+  `def job(s, job_id)`, failed when the page was first drawn, with a
+  `TypeError` about a missing argument that said nothing of where the
+  parameters are. `@app.page` now refuses such a function when the app
+  is built, and the error points at `s.params` and the page's connect
+  hook.
 - `ui.Combobox` was missing from `millwork.ui.__all__`, so
   `millwork reference` and `llms.txt` left it out.
 - A `ui.Combobox` with `allow_custom=True` stopped filtering its options,
