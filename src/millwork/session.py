@@ -206,6 +206,8 @@ class Session[S]:
         # Development warnings: each is said once per session; counters tell a
         # handler that changed nothing, and a thread that changed state, apart.
         self._warned: set[str] = set()
+        # Icon files already looked for in the public folder.
+        self._icon_files: set[str] = set()
         self._slow_builds = 0
         self._handler_runs = 0
         self._noop_watch: tuple[str, int] | None = None
@@ -1158,6 +1160,21 @@ class Session[S]:
                     "a change moves rows instead of redrawing them",
                 )
 
+    def _check_icons(self, tree: Tree) -> None:
+        """The icons a page gives as files under ``/public/``. One that is
+        not in the public folder draws nothing, and where it should be is
+        easy to miss on a page, so it is said here, once. An app that serves
+        ``/public`` itself has no folder to look in."""
+        folder = self.app.public_dir
+        if folder is None:
+            return
+        for path in tree.icon_files - self._icon_files:
+            self._icon_files.add(path)
+            if not (folder / path.removeprefix("/public/")).is_file():
+                self.warn(
+                    f"icon:{path}", f"the icon {path} names a file that is not in the public folder"
+                )
+
     def warn(self, key: str, message: str) -> None:
         """A development warning: one log line per session and key, and in debug mode a
         toast as well, so the author sees it where it happened."""
@@ -1226,6 +1243,8 @@ class Session[S]:
                 root.children.append(ask.component.model_copy(update={"key": f"@ask:{request}"}))
             last = self.tree if self.tree is not self._failure else None
             tree = build(root, last=last, showing=self._showing, wanted=self._parts_due)
+            if tree.icon_files:
+                self._check_icons(tree)
             # The lazy functions are the page function in parts, so their
             # time is its time.
             ms = (took + tree.spent) * 1000

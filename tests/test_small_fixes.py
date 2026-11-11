@@ -365,3 +365,33 @@ async def test_a_fixed_row_with_an_optional_child_is_no_list_without_keys(tmp_pa
         assert not any("without keys" in w for w in warned())
         await page.click("grow")
         assert [w.split(" is ")[0] for w in warned() if "without keys" in w] == ["root/made"]
+
+
+async def test_an_icon_file_that_is_not_there_is_said_once(tmp_path: Path) -> None:
+    (tmp_path / "public" / "icons").mkdir(parents=True)
+    (tmp_path / "public" / "icons" / "rocket.svg").write_text("<svg/>")
+    app = mw.App("i", public=tmp_path / "public", bundle_dir=tmp_path, debug=True)
+    # Made once, outside any page, as an app's links often are.
+    links = [ui.Link(label="Early", href="/", icon="/public/icons/early.svg")]
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Button("there", icon="/public/icons/rocket.svg", key="there"),
+            ui.Button("gone", icon="/public/icons/missing.svg", key="gone"),
+            ui.Button("again", icon="/public/icons/missing.svg", key="again", on_click=again),
+            ui.Input(prefix_icon="/public/icons/lens.svg", key="field"),
+            header=ui.Header(title="Icons", links=links),
+        )
+
+    def again(s: mw.Session, _: Any) -> None:
+        s.refresh()
+
+    async with TestApp(app).open("/") as page:
+        await page.click("again")
+        said = [c.args["message"] for c in page.commands if c.args.get("title") == "millwork"]
+        assert sorted(m.split()[2] for m in said if "icon" in m) == [
+            "/public/icons/early.svg",
+            "/public/icons/lens.svg",
+            "/public/icons/missing.svg",
+        ]
