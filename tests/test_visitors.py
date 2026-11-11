@@ -4,6 +4,7 @@ import base64
 import datetime as dt
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -531,6 +532,10 @@ def test_a_public_route_answers_when_nobody_can_say_who_is_signed_in(
         sign_in(client, "ada")
         client.get("/desk")
         assert asked == ["ada"]
+        # An answer is kept for two steps of the clock at the least, which is
+        # some 30 ms where the clock is coarse, so the next request waits
+        # that out to be one that asks again.
+        time.sleep(3 * auth.TICK)
         with caplog.at_level(logging.ERROR, logger="millwork"):
             answer = client.get("/hook")
         assert answer.status_code == 200 and answer.json()["visitor"] is None
