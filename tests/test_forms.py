@@ -2,6 +2,7 @@ import json
 from datetime import date
 from typing import Annotated, Literal
 
+import pytest
 from pydantic import BaseModel, Field, SecretStr
 from starlette.testclient import TestClient
 
@@ -289,14 +290,14 @@ async def test_forms_over_the_wire_nested_lists_unions_and_rejections(tmp_path) 
         await page.submit("strict", {"name": "a", "extra": 1})
         assert page.commands[-1].args["issues"][0]["pointer"] == "/extra"
         before = len(page.commands)
-        await page.submit("ro", {"name": "a"})
-        await page.submit("off", {"name": "a"})
+        with pytest.raises(LookupError, match="is read-only"):
+            await page.submit("ro", {"name": "a"})
+        with pytest.raises(LookupError, match="is disabled"):
+            await page.submit("off", {"name": "a"})
         assert len(page.commands) == before and not any(isinstance(v, Strict) for v in got)
 
 
 def test_form_initial_must_be_a_model_or_a_mapping() -> None:
-    import pytest
-
     from millwork.nodes import build
 
     with pytest.raises(TypeError):

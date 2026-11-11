@@ -73,6 +73,7 @@ def test_a_session_is_only_set_up_from_outside_never_changed() -> None:
         "runs_connect",
         "state",
         "on_failure",
+        "on_unheard",
     }
     names = {"session", "candidate", "newcomer", "oldest"}
     written = set()

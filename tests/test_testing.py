@@ -660,3 +660,289 @@ async def test_finding_by_a_prop_and_asking_for_the_print_dialog(tmp_path: Path)
         await page.navigate("/")
         await page.click("link")
         assert page.find("t").props["content"] == "the other page"
+
+
+class Acts(BaseModel):
+    box: bool = False
+    held: list[bool] = []
+    switch: bool = False
+    refused: list[dict[str, str]] = []
+    uploaded: list[str] = []
+    clicks: int = 0
+    hidden: bool = False
+    tab: str = "a"
+    heard: list[str] = []
+
+
+class Note(BaseModel):
+    text: str = ""
+    file: mw.FileRef | None = None
+
+
+def acting_app(tmp_path: Path) -> mw.App:
+    app = mw.App("acts", state=Acts, public=None, bundle_dir=tmp_path, files=mw.Files(tmp_path))
+
+    def uploaded(s: mw.Session[Acts], refs: list[mw.FileRef]) -> None:
+        s.state.uploaded += [r.name for r in refs]
+
+    def hear(what: str) -> Any:
+        return lambda s, _: s.state.heard.append(what)
+
+    @app.page("/")
+    def home(s: mw.Session[Acts]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.Checkbox(
+                checked=st.box, on_change=lambda s, v: setattr(s.state, "box", v), key="box"
+            ),
+            # It keeps its own value, in the tab, for as long as it is on the page.
+            None
+            if st.hidden
+            else ui.Checkbox(
+                default_checked=True, on_change=lambda s, v: s.state.held.append(v), key="held"
+            ),
+            ui.Button(
+                "hide", key="hide", on_click=lambda s, _: setattr(s.state, "hidden", not st.hidden)
+            ),
+            ui.Switch(
+                checked=st.switch, on_change=lambda s, v: setattr(s.state, "switch", v), key="sw"
+            ),
+            ui.Checkbox(key="deaf"),
+            ui.Text("words", key="words"),
+            ui.Button("off", key="off", disabled=True, on_click=count_click),
+            ui.Button("gone", key="gone", disabled=True, href="/other"),
+            ui.Button("on", key="on", on_click=count_click),
+            ui.Button("spins", key="spins", loading=True, on_click=count_click),
+            ui.Button("unseen", key="unseen", hidden=True, on_click=count_click),
+            ui.Chat(key="mute"),
+            ui.Button("save", key="save", form="note"),
+            ui.Form(Note, key="note", on_submit=hear("note saved")),
+            ui.Tabs(
+                ui.Tab("a", id="a", label="A"),
+                ui.Tab("b", id="b", label="B"),
+                value=st.tab,
+                key="stuck",
+            ),
+            ui.FileUpload(
+                accept=[".txt"],
+                max_size_mb=1,
+                on_upload=uploaded,
+                on_reject=lambda s, r: s.state.refused.append(r),
+                key="told",
+            ),
+            ui.FileUpload(accept=[".txt"], on_upload=uploaded, key="untold"),
+            ui.FileUpload(accept=[".txt"], key="kept"),
+            ui.FileUpload(
+                disabled=True, on_reject=lambda s, r: s.state.refused.append(r), key="shut"
+            ),
+            ui.Chat(key="plain", on_message=hear("message")),
+            ui.Chat(key="busy", disabled=True, on_message=hear("message"), on_stop=hear("stop")),
+            ui.Form(
+                Note, key="shown", read_only=True, cancel="Close", on_cancel=hear("shown closed")
+            ),
+            ui.Form(
+                Note, key="frozen", disabled=True, cancel="Close", on_cancel=hear("frozen closed")
+            ),
+        )
+
+    def count_click(s: mw.Session[Acts], _: Any) -> None:
+        s.state.clicks += 1
+
+    @app.page("/other")
+    def other(s: mw.Session[Acts]) -> ui.Component:
+        return ui.Page(ui.Text("other"))
+
+    return app
+
+
+async def test_a_click_toggles_a_checkbox_and_a_switch(tmp_path: Path) -> None:
+    async with TestApp(acting_app(tmp_path)).open("/") as page:
+        await page.click("box")
+        assert page.state.box is True
+        await page.click("box")
+        assert page.state.box is False
+        await page.click("sw")
+        assert page.state.switch is True
+        # One that keeps its own value holds it in the tab, where a test
+        # cannot read it. The test says what it turns to.
+        with pytest.raises(LookupError, match=r"keeps its own value.*page\.change"):
+            await page.click("held")
+        await page.change("held", False)
+        await page.change("held", True)
+        assert page.state.held == [False, True]
+
+
+async def test_an_action_the_page_does_not_take_fails_the_test(tmp_path: Path) -> None:
+    async with TestApp(acting_app(tmp_path)).open("/") as page:
+        with pytest.raises(LookupError, match=r"<Text root/words> has no handler for click"):
+            await page.click("words")
+        with pytest.raises(LookupError, match="has no handler for change"):
+            await page.change("deaf", True)
+        with pytest.raises(LookupError, match="has no handler for wave"):
+            await page.event("on", "wave")
+        with pytest.raises(LookupError, match=r"<Button root/off> is disabled"):
+            await page.click("off")
+        # A disabled button that is a link goes nowhere.
+        with pytest.raises(LookupError, match=r"<Button root/gone> is disabled"):
+            await page.click("gone")
+        assert page.session.path == "/"
+        # Nor can a button that shows a spinner be pressed, or one that is hidden.
+        with pytest.raises(LookupError, match="is loading"):
+            await page.click("spins")
+        with pytest.raises(LookupError, match="is hidden"):
+            await page.click("unseen")
+        # A chat that hears no message has its field switched off in a tab.
+        with pytest.raises(LookupError, match="has no handler for message"):
+            await page.send("mute", "hello")
+        assert page.state.clicks == 0
+        # Tabs whose choice the page holds, with nothing to hear a change.
+        with pytest.raises(LookupError, match="has no handler for change"):
+            await page.change("stuck", "b")
+        # A button that submits a form: the draft is the test's to give.
+        with pytest.raises(LookupError, match=r"submits the form note.*page\.submit"):
+            await page.click("save")
+        await page.click("on")
+        assert page.state.clicks == 1
+    # Not a matter of strictness, which is about what the app's code raises.
+    async with TestApp(acting_app(tmp_path), strict=False).open("/") as page:
+        with pytest.raises(LookupError):
+            await page.click("words")
+
+
+async def test_what_a_disabled_chat_and_a_form_that_takes_no_submit_still_take(
+    tmp_path: Path,
+) -> None:
+    async with TestApp(acting_app(tmp_path)).open("/") as page:
+        # A disabled chat starts no reply, and its reply can still be stopped:
+        # the tab shows the button, and an app disables a chat while it replies.
+        with pytest.raises(LookupError, match="is disabled"):
+            await page.send("busy", "hello")
+        with pytest.raises(LookupError, match="is disabled"):
+            await page.event("busy", "regenerate", {"id": "m1"})
+        await page.stop("busy")
+        # A form that takes no submit can still be left.
+        with pytest.raises(LookupError, match="is read-only"):
+            await page.submit("shown", {"text": "x"})
+        await page.event("shown", "cancel")
+        with pytest.raises(LookupError, match="is disabled"):
+            await page.submit("frozen", {"text": "x"})
+        await page.event("frozen", "cancel")
+        assert page.state.heard == ["stop", "shown closed", "frozen closed"]
+
+
+async def test_a_refused_upload_is_told_to_on_reject_and_to_the_test(tmp_path: Path) -> None:
+    (tmp_path / "a.txt").write_text("hello")
+    (tmp_path / "b.bin").write_bytes(b"\x00\x01")
+    (tmp_path / "big.txt").write_text("x" * (1024 * 1024 + 1))
+    async with TestApp(acting_app(tmp_path)).open("/") as page:
+        # The app is told as a tab tells it, and the test is told as well.
+        with pytest.raises(mw.files.Reject, match="not accepted"):
+            await page.upload("told", tmp_path / "b.bin")
+        assert page.state.refused == [
+            {"name": "b.bin", "reason": "this type of file is not accepted; expected .txt"}
+        ]
+        # The size the component allows counts, as it does for a tab.
+        with pytest.raises(mw.files.Reject, match="larger than 1 MB"):
+            await page.upload("told", tmp_path / "big.txt")
+        assert page.state.refused[-1] == {
+            "name": "big.txt",
+            "reason": "the file is larger than 1 MB",
+        }
+        ref = await page.upload("told", tmp_path / "a.txt")
+        assert ref.name == "a.txt" and page.state.uploaded == ["a.txt"]
+        with pytest.raises(mw.files.Reject, match="not accepted"):
+            await page.upload("untold", tmp_path / "b.bin")
+        assert len(page.state.refused) == 2
+        # A disabled one takes no file, and nothing is told to anyone.
+        with pytest.raises(LookupError, match="is disabled"):
+            await page.upload("shut", tmp_path / "a.txt")
+        assert len(page.state.refused) == 2
+        # Without on_upload a tab stores the file and says nothing of it.
+        kept = await page.upload("kept", tmp_path / "a.txt")
+        assert kept.name == "a.txt" and page.state.uploaded == ["a.txt"]
+        # What a tab could not send is refused here too: a file to a form's
+        # field that takes none, and one to a chat without attachments.
+        with pytest.raises(mw.files.Reject, match="no file field"):
+            await page.upload("note", tmp_path / "a.txt", field="/text")
+        assert (await page.upload("note", tmp_path / "a.txt", field="/file")).name == "a.txt"
+        with pytest.raises(mw.files.Reject, match="no upload component"):
+            await page.send("plain", "see this", files=[tmp_path / "a.txt"])
+
+
+class Asked(BaseModel):
+    got: list[str] = []
+
+
+class Who(BaseModel):
+    name: str
+
+
+def asking_app(tmp_path: Path) -> mw.App:
+    app = mw.App("asks", state=Asked, public=None, bundle_dir=tmp_path)
+    questions: dict[str, Any] = {
+        "form": lambda: ui.Form(Who, key="who"),
+        "words": lambda: ui.Stack(ui.Text("Sure?"), ui.Button("Yes", key="ok")),
+        "sheet": lambda: ui.Sheet(ui.Form(Who, key="who"), title="Who?"),
+        "dialog": lambda: ui.Dialog(ui.Form(Who, key="who"), title="Who?", size="lg"),
+        "inside": lambda: ui.Stack(ui.Dialog(ui.Form(Who, key="who"), title="Who?")),
+        "shown": lambda: ui.Form(Who, key="who", read_only=True, cancel="Close"),
+    }
+
+    async def ask(s: mw.Session[Asked], _: Any, which: str) -> None:
+        answer = await s.ask(questions[which]())
+        s.state.got.append(getattr(answer, "name", str(answer)))
+
+    @app.page("/")
+    def home(s: mw.Session[Asked]) -> ui.Component:
+        return ui.Page(
+            *(
+                ui.Button(which, key=which, on_click=lambda s, p, which=which: ask(s, p, which))
+                for which in questions
+            )
+        )
+
+    return app
+
+
+async def test_a_question_that_is_no_dialog_is_asked_in_one(tmp_path: Path) -> None:
+    async with TestApp(asking_app(tmp_path)).open("/") as page:
+
+        def asked() -> Any:
+            ask = next(iter(page.session._asks.values()))
+            return page.find(page.session._ask_root(ask.request))
+
+        # A bare form would sit at the foot of the page, out of sight under
+        # whatever the page is long with. It is asked in a dialog.
+        await page.click("form")
+        assert asked().type == "Dialog" and asked().props["open"] is True
+        (form,) = page.find_all(ui.Form, within=asked())
+        # Its Cancel is wired like its submit, or the button would be dead in a tab.
+        assert form.props["on_submit"] is True and form.props["on_cancel"] is True
+        await page.answer({"name": "Ada"})
+        await page.click("form")
+        await page.answer(None)
+        await page.click("words")
+        assert asked().type == "Dialog"
+        await page.answer(True)
+        assert page.state.got == ["Ada", "None", "True"]
+
+        # A dialog or a sheet is the app's own choice of one, and is shown as given.
+        await page.click("dialog")
+        assert asked().type == "Dialog" and asked().props["size"] == "lg"
+        assert len(page.find_all(ui.Dialog)) == 1
+        await page.answer({"name": "Bo"})
+        await page.click("sheet")
+        assert asked().type == "Sheet" and asked().props["open"] is True
+        assert not page.find_all(ui.Dialog)
+        await page.answer({"name": "Cy"})
+        await page.click("inside")
+        assert asked().type == "Stack" and len(page.find_all(ui.Dialog)) == 1
+        await page.answer({"name": "Di"})
+        # A form that takes no submit takes none as a question either, and
+        # can be left.
+        await page.click("shown")
+        with pytest.raises(LookupError, match="is read-only"):
+            await page.answer({"name": "Ed"})
+        (form,) = page.find_all(ui.Form, within=asked())
+        await page.event(form, "cancel")
+        assert page.state.got[3:] == ["Bo", "Cy", "Di", "None"]

@@ -69,10 +69,13 @@ async def test_the_notes_example_has_a_bound(tmp_path: Path) -> None:
     app.bundle_dir = tmp_path
     async with TestApp(app).open("/state/lists-and-keys") as page:
         add = next(b for b in page.find_all(ui.Button) if b.props.get("label") == "Add a note")
-        for _ in range(20):
+        while len(page.session.state.board.notes) < 12:
             await page.click(add)
-        assert len(page.session.state.board.notes) == 12
         add = next(b for b in page.find_all(ui.Button) if b.props.get("label") == "Add a note")
         assert add.props.get("disabled") is True
+        # The button is off, and a click a tab could not send adds nothing.
+        with pytest.raises(LookupError, match="is disabled"):
+            await page.click(add)
+        assert len(page.session.state.board.notes) == 12
         title = next(c for c in page.find_all(ui.Input) if c.props.get("placeholder") == "Title")
         assert title.props["max_length"] == 80
