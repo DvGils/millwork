@@ -45,6 +45,10 @@ versions; a release says so here when it does.
   above the tallest bar, the value after the longest lying bar, and a
   series name longer than a few letters at the end of its line. A chart
   with `labels=True` keeps the room its labels take.
+- A component in a chat reply, a table say, was held to the width a
+  reply's words keep, 85% of the thread. In an `ui.Assistant` window
+  that cut a table of three columns short. A component in a reply now
+  gets the width of the thread, and the words keep their measure.
 - A page function written to take a path's parameters, as in
   `def job(s, job_id)`, failed when the page was first drawn, with a
   `TypeError` about a missing argument that said nothing of where the
