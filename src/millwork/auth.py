@@ -531,8 +531,10 @@ TICK = time.get_clock_info("monotonic").resolution
 def _left(span: float, since: float, now: float) -> float:
     """How much of ``span`` seconds is left ``now``, counted from ``since``,
     and nothing once less than a step of the clock is left. So a timer set
-    for what is left finds none of it when it calls, early or not."""
-    left = span - (now - since)
+    for what is left finds none of it when it calls, early or not. A span
+    counts for two steps at the least: a shorter one would never be found
+    to have anything left, and whoever waits it out would never wait."""
+    left = max(span, 2 * TICK) - (now - since)
     return left if left > TICK else 0.0
 
 

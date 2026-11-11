@@ -708,6 +708,26 @@ async def test_a_recheck_timer_called_early_finds_its_answer_run_out(
         assert calls < 5
 
 
+async def test_an_interval_shorter_than_a_step_of_the_clock_asks_once_a_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An answer good for less than a step of the clock would never be found
+    # good, and the timer that waits it out would be called at once, again
+    # and again. It is kept for two steps at the least.
+    step = 0.2
+    monkeypatch.setattr(asyncio.get_running_loop(), "_clock_resolution", step)
+    monkeypatch.setattr(auth, "TICK", step)
+    world = World()
+    app = make_app(tmp_path, world, recheck=True)
+    app.auth.recheck_every = 0.1
+    ada = auth.User(id="ada", name="ada", claims={"role": "admin"})
+    async with TestApp(app).open("/", user=ada) as page:
+        assert await app.auth.current("ada's sign-in", ada) == ada
+        page.session.watch_user(("ada's sign-in", ada))
+        await asyncio.to_thread(time.sleep, 0.9)
+        assert 3 <= len(world.asked) <= 8
+
+
 def test_a_proxys_user_is_put_to_recheck_like_any_other(tmp_path: Path) -> None:
     world = World()
     app = make_app(
