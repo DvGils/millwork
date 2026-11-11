@@ -395,3 +395,22 @@ async def test_an_icon_file_that_is_not_there_is_said_once(tmp_path: Path) -> No
             "/public/icons/lens.svg",
             "/public/icons/missing.svg",
         ]
+
+
+def test_a_page_function_that_asks_for_more_than_the_session_fails_where_it_is_added() -> None:
+    app = mw.App("p", public=None)
+
+    with pytest.raises(TypeError, match=r"/jobs/\{job_id\}.*job\(s, job_id\).*s\.params"):
+
+        @app.page("/jobs/{job_id}")
+        def job(s: Any, job_id: Any) -> ui.Component:
+            return ui.Page()
+
+    with pytest.raises(TypeError, match="session alone"):
+        app.not_found(lambda: ui.Page())
+
+    assert app.pages == []
+    # What can be called with the session alone is a page function, whatever
+    # else it could take.
+    app.page("/a")(lambda s, extra=None: ui.Page())
+    app.page("/b")(lambda *args: ui.Page())
