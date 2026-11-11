@@ -53,7 +53,8 @@ def example(s):
 
 `ui.FileCard` shows a file with its size and kind, an optional `meta` line,
 a `status` and `actions`. Given a `FileRef`, Open shows the bytes in a new
-tab. Given a `url`, it links there.
+tab. Given a `url`, it links there. With `on_click` the card is a target,
+by pointer and by keyboard, and Open and the actions stay their own.
 
 ```python live
 from pydantic import BaseModel
@@ -87,10 +88,14 @@ def example(s):
 ## Image and Pdf
 
 `ui.Image` and `ui.Pdf` take a `FileRef` or an outside URL. An image has
-a `size` and a `fit`, and a PDF a `page` and a `height`. The browser's own
+a `size` and a `fit`, and with `on_click` it is a target that takes focus
+and answers Enter and Space. A PDF has a `page` and a `height`. The browser's own
 viewer shows the PDF, so a form or a link inside it looks like part of the
 app. Show files the app made or the person uploaded themselves, and keep
-documents from strangers out of it.
+documents from strangers out of it. A browser that cannot show a PDF
+inside a page, which some phone browsers cannot, shows an empty frame, so
+an app that is used on phones puts a `ui.FileCard` or a `ui.Download`
+next to the PDF.
 
 ```python live
 import struct, zlib
@@ -174,7 +179,8 @@ def example(s):
 `ui.Download` is a button that saves a file. `content` is bytes, text, a
 path, a callable that makes any of those on click, or a `FileRef`, which
 saves straight away without a round trip. `s.download(filename, content)`
-does the same from a handler, without a button.
+does the same from a handler, without a button. It takes the `variant`
+and the `size` of a Button.
 
 ```python live
 def report() -> str:

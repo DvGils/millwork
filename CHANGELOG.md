@@ -3,6 +3,139 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.3.1
+
+### Bug fixes
+
+- A tab could go on running an old bundle against a newer server, after
+  a deploy or when a browser restored the page from its cache. It then
+  drew what it did not know as a broken custom component, as in
+  "custom component SidebarGroup: HTTP 404". A tab now says which bundle
+  it runs when it connects, and one that is not the bundle the server has
+  loads the page again. It does so once. If the page that comes back
+  names an old bundle again, as behind a cache that keeps the page, the
+  tab says that the page is out of date and offers a reload.
+- On a narrow screen a `ui.Header` kept its links in the user menu,
+  behind a picture or a sun, and with `user_menu=False` they were gone
+  altogether. A button at the left of the header now opens the links in
+  a panel, with the page's sidebar below them when it has one. The bar
+  that a page with a sidebar got under its header, for the button that
+  opens the sidebar, is gone with it. The panel closes when a link in
+  it is pressed and when the page behind it changes. The button's label
+  is a new theme string, `navigation`, for an app that translates the
+  framework's words.
+- A `ui.Table` took rows that shared a `row_key`, or had none in that
+  field, and ticking one of them ticked them all. Keys are now compared
+  as a browser holds them, so 1 and 1.0 are one key, and so are two
+  whole numbers too large for a browser to keep apart. A table that only
+  shows its rows goes by their position when the field does not tell
+  them apart, so the rows of a query's result need no key.
+- **A page can now fail where it drew before.** A table that selects,
+  opens or acts on a row, or is given `selected`, raises `ValueError`
+  for rows that share a `row_key` or have none, and the error names the
+  rows. Such a table drew before and acted on the wrong row. Give it a
+  `row_key` whose values tell its rows apart.
+- A chart in a `ui.Tab` that was not open put a warning in the browser's
+  console, twice, about a width and height of 0. A chart is drawn once
+  its box has a size.
+- The development warning for a list without keys fired for a fixed row
+  of children with one of them left out by `x if shown else None`. It
+  now counts places, so it fires for children made from data.
+- `ui.Combobox` was missing from `millwork.ui.__all__`, so
+  `millwork reference` and `llms.txt` left it out.
+- A `ui.Combobox` with `allow_custom=True` stopped filtering its options,
+  so all of them stayed listed whatever was typed. The options filter as
+  in any Combobox, and a last row, Use “…”, takes the text as typed.
+  Typing the name of a disabled option and leaving the field no longer
+  chooses it, and leaving the field after a choice no longer sends the
+  choice a second time when the handler is slow to answer.
+- `ui.Card(tone=)` drew nothing for `primary`, `success`, `warning` and
+  `destructive`. The tone set a border color on a card that has no
+  border. It now colors the card's edge.
+- A click on a checkbox, a button or any other control inside a
+  `ui.Card` with `on_click` also ran the card's handler. So did a choice
+  from the menu of a `ui.FileCard` with `on_click`. A press on a control
+  inside is now that control's alone. A drag is no click on the card,
+  whether it selects text, moves a slider or a handle, or starts in a
+  field and ends beside it.
+- A `ui.Card`, a `ui.Image` and a `ui.FileCard` with `on_click` could not
+  be reached by keyboard. They take focus, and Enter or Space clicks
+  them.
+- A checkbox, a switch or a radio button in a `ui.Floating` with
+  `draggable=True` could not be clicked, and dragging a slider in one
+  moved the panel.
+- `s.ask` with a `ui.Form`, or anything else that is no dialog, drew it
+  at the bottom of the page, out of sight on a long one, while the
+  handler waited. A question that brings no `ui.Dialog` or `ui.Sheet` of
+  its own is now shown in a dialog. A `ui.Sheet` given to `s.ask` stayed
+  closed, and now opens. The Cancel button of a form given to `s.ask`
+  did nothing, and now answers None.
+- Stop did nothing on a `ui.Chat` that was disabled, which an app does
+  while a reply runs, so the reply could not be stopped. Its thumbs and
+  message actions did nothing either, and its suggestions, Edit and
+  Regenerate could be pressed and did nothing. A disabled chat starts no
+  reply, so those three are switched off. Its reply can still be stopped
+  and rated, and a message's actions still run.
+- The Cancel button of a `ui.Form` with `read_only=True` or
+  `disabled=True` did nothing. Such a form takes no submit, and it can
+  still be left.
+- On Windows with Python 3.12, an `Auth(recheck_every=)` of 15 ms or
+  less asked `recheck` a hundred times a second. An answer is kept for
+  two steps of the clock at the least.
+- In a test, `page.click` on a `ui.Checkbox` or a `ui.Switch` did nothing
+  and the test passed. A click turns one with `checked` to its other
+  value. One with `default_checked` keeps its value in the browser, so
+  the click says to use `page.change` with the value.
+- In a test, `page.upload` of a file that was refused never ran
+  `on_reject`. A `ui.FileUpload` with `on_reject` is now told, with the
+  reason a browser shows, before `upload` raises
+  `millwork.files.Reject` as it did.
+
+### Features
+
+- `ui.Download` takes `size`, as a Button does, so it fits a row of small
+  buttons.
+- Enter picks the first match in a `ui.Combobox` with `options` and in a
+  `ui.MultiSelect`. The first row is lit while typing. Before, Enter
+  took a row only after moving to it. A MultiSelect lists what can still
+  be added while there is text, so Enter never takes a chosen item away,
+  and Enter with text in the field no longer submits the form around it.
+- A test fails on an action the page does not take. `page.click`,
+  `page.change`, `page.submit`, `page.send`, `page.upload` and
+  `page.event` raise `LookupError` for a node that has no handler for
+  the event, for one that is disabled or hidden, for a button that is
+  loading, and for a submit of a read-only form. These used to log a
+  line and pass, so a test could click something dead and assert on
+  nothing. A test that did so on purpose now expects the error with
+  `pytest.raises(LookupError)`.
+- A test's uploads go by what the component allows, as a browser's do.
+  `max_size_mb` and a chat's `accept` are checked, `page.upload` to a
+  form refuses a `field` that is no file field, `page.send` with `files`
+  to a chat without `attachments` is refused, and a `ui.FileUpload`
+  without `on_upload` keeps the file and sends no event. A test that
+  relied on one of these passing now gets `millwork.files.Reject`.
+- A component's `icon` given as a file under `/public/` that is not in
+  the public folder gets a development warning when its page is drawn.
+  The page draws nothing in its place, which is easy to miss.
+
+### The manual
+
+- Deployment says what a tab does when a new version is put in place.
+- Routes and middleware no longer calls `App` a Starlette application.
+  What a server runs is `app.asgi`, and Testing shows a route tested on
+  it.
+- Tasks says what `await task` raises when the task was canceled, ran
+  past its timeout or failed.
+- Navigation says where a header's links go on a narrow screen.
+- Feedback shows `s.ask` with a form and says where the question
+  appears.
+- Testing says what a refused upload does in a test, and what an action
+  the page does not take does.
+- Layout, Files and Inputs say what a clickable Card, Image and FileCard
+  do with the keyboard and with a press on a control inside, and how a
+  Combobox and a MultiSelect take typed text.
+- Files says that a phone without a PDF viewer shows an empty frame.
+
 ## 0.3.0
 
 ### Bug fixes

@@ -54,6 +54,12 @@ sessions go with it, and their tabs start fresh sessions elsewhere, as
 they would on a reload. The cookie is valid on every replica that has the
 same `secret`, and so is the one that names a [visitor](/pages/visitors).
 
+Replicas serve the same version. A page names the files of its own
+version, so while two versions run side by side a browser has to get its
+page, its files and its socket from one of them. A new version takes the
+old one's place in one go, or a browser is kept on one replica until the
+old ones are gone.
+
 ## The page's security headers
 
 Every page carries a Content Security Policy. Scripts come from the app's

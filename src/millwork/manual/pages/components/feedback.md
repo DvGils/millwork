@@ -105,16 +105,23 @@ def example(s):
 
 Two session calls wait for the user from inside a handler. `await s.confirm(
 title, description=, destructive=)` shows a dialog and returns True or
-False. `await s.ask(component)` shows any component and returns what it
-submits. A `Form` answers with its validated model, and a closed dialog
-answers None.
+False. `await s.ask(component)` asks with any component and returns what
+it submits. A `Form` answers with its validated model, and a dialog that
+is closed answers None.
+
+The question is shown in a dialog. A `ui.Dialog` or a `ui.Sheet` given to
+`s.ask` is shown as it is, with its own title and size.
 
 ```python live
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Asked(BaseModel):
     answer: str = "nothing yet"
+
+
+class Rename(BaseModel):
+    name: str = Field(title="New name", min_length=1)
 
 
 async def confirm(s, _):
@@ -123,10 +130,17 @@ async def confirm(s, _):
     st.answer = "archived" if ok else "kept"
 
 
+async def rename(s, _):
+    st = s.state.asked
+    new = await s.ask(ui.Form(Rename, submit="Rename", cancel="Cancel"))
+    st.answer = "left as it was" if new is None else f"renamed to {new.name}"
+
+
 def example(s):
     st = s.state.asked
     return ui.Row(
         ui.Button("Archive", variant="outline", on_click=confirm),
+        ui.Button("Rename", variant="outline", on_click=rename),
         ui.Text(f"Result: {st.answer}", variant="muted"),
         gap=3,
     )

@@ -87,9 +87,11 @@ stops at its next check.
 ## Waiting for a result
 
 A handler can `await` the task to use its result, and lends its turn
-while it waits. `on_done=` names a handler to run when the task
-ends, with the task as its argument. `timeout=` cancels a task that runs
-too long.
+while it waits. When the task was canceled the `await` raises
+`mw.Cancelled`, which the handler can catch, and when the task failed it
+raises what the task raised. `on_done=` names a handler to run when the
+task ends, with the task as its argument. `timeout=` stops a task that
+runs too long, and the `await` then raises `TimeoutError`.
 
 ```python live
 import asyncio

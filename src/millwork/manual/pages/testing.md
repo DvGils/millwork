@@ -73,7 +73,31 @@ field=)`, which runs every check an upload gets and returns the `FileRef`,
 `send(chat, text, files=)`, `stop(chat)`, `navigate(path)`, and `event(node,
 name, payload)` for anything else. A draft that fails validation produces
 the same `form_issues` command the tab would get, at the same pointers.
-On `ui.Tabs`, `change(tabs, "history")` opens the tab with that id.
+On `ui.Tabs`, `change(tabs, "history")` opens the tab with that id. A
+click on a `Checkbox` or a `Switch` with `checked` turns it to its other
+value. One with `default_checked` keeps its value in the browser, where
+a test cannot read it, so the test says what it turns to with `change`.
+
+An action the page does not take fails the test with a `LookupError`
+that names the node. That is an event for a node that has no handler for
+it, anything sent to a node that is disabled or hidden, a click on a
+button that is loading, and a submit of a read-only form. In a browser
+such an action does nothing, so a test that passed on one would have
+checked nothing. A disabled `Chat` still takes `stop`, feedback and a
+message's actions, and a disabled or read-only `Form` still takes
+`cancel`.
+
+A click on a `Button` with `form=` submits that form in a browser. The
+draft is the test's to give, so the test calls `submit(form, draft)`.
+
+A file that is refused raises `millwork.files.Reject`, whose message is
+the reason. A `FileUpload` with `on_reject` is told first, with the
+reason a browser would show. What a browser could not send is refused
+the same way: a file for a form field that takes none, and a file sent
+to a `Chat` without `attachments`. A `FileUpload` without `on_upload`
+keeps the file and sends no event, as in a browser, and a disabled one
+takes no file, which is a `LookupError` like any action on a disabled
+node.
 
 An event of a custom component is sent by its name, with the payload the
 component would emit.
@@ -119,6 +143,20 @@ async def test_wiping_asks_first(app):
         await page.click("wipe")
         await page.answer(True)
         assert page.state.count == -1
+```
+
+## Routes
+
+A route of the app's own has no session, so it is tested with
+Starlette's `TestClient`, on `app.asgi`.
+
+```python
+from starlette.testclient import TestClient
+
+
+def test_the_export_is_its_makers_alone(app):
+    with TestClient(app.asgi) as client:
+        assert client.get("/reports/1.pdf").status_code == 404
 ```
 
 ## What the tab would have seen

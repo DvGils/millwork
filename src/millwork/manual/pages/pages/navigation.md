@@ -38,6 +38,13 @@ list needs no classes of its own. `ui.SidebarGroup` folds a set of links
 under a label. This manual's sidebar is a `Sidebar` of such groups. The
 [Layout](/components/layout) page shows them all.
 
+On a narrow screen the header's links do not fit beside the title. A
+button at the left of the header opens them in a panel, with the page's
+sidebar below them when it has one. The panel closes when a link in it
+is pressed and when the page behind it changes. A sidebar with
+`collapsible="none"` stays on the page at every width, so the button
+then opens the links alone.
+
 ## What travels with the session
 
 The session's state, its files, its identity and its tasks stay as the

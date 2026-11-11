@@ -7,7 +7,9 @@ related: /sign-in/access-rules, /running/deployment
 
 # Routes and middleware
 
-`App` is a Starlette application, and an app adds to it the Starlette way.
+An `App` holds a Starlette application and adds to it the Starlette way.
+The `App` itself is not what a server runs. That is `app.asgi`, the ASGI
+application around it.
 `app.route(path, endpoint, methods=[...])` adds an API endpoint,
 `app.mount(path, asgi_app)` mounts anything ASGI, FastAPI included, and
 `app.middleware(cls)` adds pure ASGI middleware.
