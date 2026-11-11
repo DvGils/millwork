@@ -304,6 +304,8 @@ export const Pdf: Renderer = ({ props }) => {
   );
 };
 
+const downloadSize: Record<string, "sm" | "default" | "lg"> = { sm: "sm", md: "default", lg: "lg" };
+
 export const Download: Renderer = ({ props, emit }) => {
   const Icon = icon(props.icon);
   const variant = String(props.variant ?? "outline") as "default" | "secondary" | "outline" | "ghost" | "link";
@@ -318,7 +320,13 @@ export const Download: Renderer = ({ props, emit }) => {
     saveFile(fileId, String(props.filename ?? "")).catch(failedDownload);
   };
   return (
-    <Button type="button" variant={variant === ("primary" as string) ? "default" : variant} disabled={Boolean(props.disabled)} onClick={click}>
+    <Button
+      type="button"
+      variant={variant === ("primary" as string) ? "default" : variant}
+      size={downloadSize[String(props.size ?? "md")]}
+      disabled={Boolean(props.disabled)}
+      onClick={click}
+    >
       {Icon ? <Icon /> : null}
       {String(props.label ?? t("download"))}
     </Button>
