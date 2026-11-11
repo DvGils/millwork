@@ -95,6 +95,16 @@ function endLabel(text: string, last: number) {
     ) : null;
 }
 
+// How wide a label is as the chart writes it, to keep that much room beside
+// the plot. Without a canvas to measure on it is a guess by the character.
+let ruler: CanvasRenderingContext2D | null | undefined;
+function labelWidth(text: string): number {
+  if (ruler === undefined) ruler = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+  if (!ruler) return text.length * 6.5;
+  ruler.font = `10px ${getComputedStyle(document.body).fontFamily}`;
+  return ruler.measureText(text).width;
+}
+
 export interface ChartProps {
   kind: ChartKind;
   props: Record<string, unknown>;
@@ -293,13 +303,25 @@ export function Chart({ kind, props, emit }: ChartProps) {
       isAnimationActive={false}
     />
   );
+  // Room for the labels that are written outside the plot: a series name
+  // after the end of its line, a value after the end of a lying bar, and a
+  // value above a standing one, whose bar may reach the top of the axis.
+  const beside = useMemo(() => {
+    if (!labels) return 12;
+    let texts: string[] = [];
+    if (kind !== "bar") texts = series.map((s) => s.label);
+    else if (horizontal && !stacked && !diverging)
+      texts = rows.flatMap((row) => series.map((_, i) => formatNumber(row[slot(i)], format)));
+    return 12 + Math.ceil(Math.max(0, ...texts.map(labelWidth)));
+  }, [labels, kind, horizontal, stacked, diverging, rows, series, format]);
+  const above = labels && kind === "bar" && !horizontal && !stacked && !diverging ? 20 : 8;
   const common = {
     data: rows,
     layout: horizontal ? ("vertical" as const) : ("horizontal" as const),
     // Stacks keep positives above and negatives below the axis; "none"
     // would draw a negative segment inside the positive one.
     stackOffset: stacked === "percent" ? ("expand" as const) : diverging || stacked ? ("sign" as const) : ("none" as const),
-    margin: { top: 8, right: labels && kind !== "bar" ? 56 : labels && horizontal ? 40 : 12, bottom: 0, left: 0 },
+    margin: { top: above, right: beside, bottom: 0, left: 0 },
     accessibilityLayer: true,
     onClick: chartClick,
     className: click ? "cursor-pointer" : undefined,
