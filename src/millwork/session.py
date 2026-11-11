@@ -47,7 +47,7 @@ from millwork.protocol import (
 from millwork.scope import Scope, Timer
 from millwork.tasks import Task
 from millwork.turn import Turn
-from millwork.ui import Button, Dialog, DropdownMenu, Tabs, Text
+from millwork.ui import Button, Dialog, DropdownMenu, Sheet, Tabs, Text
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -197,6 +197,9 @@ class Session[S]:
         self.on_failure: Callable[[str, BaseException], None] | None = None
         """Told of every exception the session caught from the app's code, after the
         log line: a page function, a handler, a hook. The test harness raises them."""
+        self.on_unheard: Callable[[Event, str], None] | None = None
+        """Told of every event the page did not take, with the reason. The test
+        harness raises on them."""
         # The failure page's tree, while it is what the tab shows in place of
         # a page whose function raised.
         self._failure: Tree | None = None
@@ -590,6 +593,13 @@ class Session[S]:
         if self.on_failure is not None:
             self.on_failure(where, exc)
 
+    def _unheard(self, event: Event, why: str) -> None:
+        """An event the page does not take. In a tab that is a press that
+        does nothing. The test harness is told, and fails the test that
+        sent it."""
+        if self.on_unheard is not None:
+            self.on_unheard(event, why)
+
     def command(self, name: str, **args: Any) -> None:
         """An instruction to the tab: toast, navigate, clipboard."""
         self.post(Command(name=name, args=args))
@@ -941,9 +951,12 @@ class Session[S]:
         component = _unlazy(component)
         if not isinstance(component, Component):
             raise TypeError("a question is a component, and this lazy function returned none")
-        ask = _Ask(
-            request=request, component=_askable(component), future=self._loop.create_future()
-        )
+        asked = _askable(component)
+        if not _overlaid(asked):
+            # A handler is waiting on the answer, so the question goes in
+            # front of the page and not at the foot of it.
+            asked = Dialog(asked, open=True, on_close=_noop)
+        ask = _Ask(request=request, component=asked, future=self._loop.create_future())
         self._asks[request] = ask
         self.refresh()
         return ask
@@ -996,6 +1009,9 @@ class Session[S]:
             if ask.future.done():
                 return True
             if event.name == "submit" and isinstance(component, Form):
+                if component.disabled or component.read_only:
+                    # No answer: it goes on to be refused like any such submit.
+                    return False
                 draft = resolve_files(event.payload, self._form_file(event.node))
                 instance, issues = validate(component.model, draft, self.text)
                 if issues:
@@ -1330,14 +1346,12 @@ class Session[S]:
             return None
         if self._asks and self._answer_ask(event, component):
             return None
-        if getattr(component, "disabled", False):
+        if getattr(component, "disabled", False) and not _despite_disabled(component, event):
             log.debug("event %s on disabled node %s dropped", event.name, event.node)
+            self._unheard(event, "is disabled")
             return None
-        if (
-            isinstance(component, Form)
-            and component.read_only
-            and event.name in ("submit", "cancel")
-        ):
+        if isinstance(component, Form) and component.read_only and event.name == "submit":
+            self._unheard(event, "is read-only")
             return None
         payload = event.payload
 
@@ -1350,6 +1364,10 @@ class Session[S]:
                 "regenerate": self._chat_regenerate,
                 "edit": self._chat_edit,
             }
+            starts_a_reply = event.name in ("message", "regenerate", "edit")
+            if starts_a_reply and self.tree.handler(event.node, "message") is None:
+                self._unheard(event, "has no handler for message")
+                return None
             if event.name in chat_events:
                 return chat_events[event.name](event, component)
 
@@ -1368,6 +1386,7 @@ class Session[S]:
         handler = self.tree.handler(event.node, event.name)
         if handler is None:
             log.warning("no handler for %s on %s", event.name, event.node)
+            self._unheard(event, f"has no handler for {event.name}")
             return None
 
         if event.name == "upload" and isinstance(component, FileUpload):
@@ -1565,12 +1584,15 @@ def _noop(*args: Any, **kwargs: Any) -> None:
 def _askable(component: Component) -> Component:
     """A copy whose Dialog opens and closes, and whose Forms submit, into the ask."""
     update: dict[str, Any] = {}
-    if isinstance(component, Dialog):
+    if isinstance(component, Dialog | Sheet):
         update["open"] = True
         if component.on_close is None:
             update["on_close"] = _noop
-    if isinstance(component, Form) and component.on_submit is None:
-        update["on_submit"] = _noop
+    if isinstance(component, Form):
+        # The tab sends a submit and a cancel only where there is a handler.
+        update |= {
+            name: _noop for name in ("on_submit", "on_cancel") if getattr(component, name) is None
+        }
     for name in ("footer", "action"):
         slot = _unlazy(getattr(component, name, None))
         if isinstance(slot, Component):
@@ -1578,6 +1600,26 @@ def _askable(component: Component) -> Component:
     children = [_unlazy(c) for c in component.children]
     update["children"] = [_askable(c) if isinstance(c, Component) else c for c in children]
     return component.model_copy(update=update)
+
+
+def _despite_disabled(component: Component, event: Event) -> bool:
+    """What a disabled component still takes. A disabled chat starts no
+    reply: it takes no message, no edit and no second try. A reply can
+    still be stopped and rated, and a message's actions still run. A
+    disabled form takes no submit and can still be left."""
+    if isinstance(component, Chat):
+        return event.name in ("stop", "feedback", "action")
+    return isinstance(component, Form) and event.name == "cancel"
+
+
+def _overlaid(component: Component) -> bool:
+    """Whether a question brings its own Dialog or Sheet, as itself or
+    somewhere inside."""
+    if isinstance(component, Dialog | Sheet):
+        return True
+    parts = [*component.children, getattr(component, "footer", None)]
+    parts.append(getattr(component, "action", None))
+    return any(_overlaid(part) for part in parts if isinstance(part, Component))
 
 
 def _unlazy(part: Any) -> Any:

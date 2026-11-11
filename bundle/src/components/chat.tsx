@@ -160,7 +160,8 @@ export const Chat: Renderer = ({ node, props, emit }) => {
     regenerate: props.regenerate !== false && Boolean(props.on_message),
     edit: props.edit !== false && Boolean(props.on_message),
     actions: props.on_action && Array.isArray(props.actions) ? (props.actions as ActionSpec[]) : [],
-    busy,
+    // A disabled chat starts no reply: no message, no edit and no second try.
+    busy: busy || Boolean(props.disabled),
     emit,
   };
   // Only the latest answer can be regenerated: an earlier one would take the
@@ -209,7 +210,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
       {suggestions.length ? (
         <div className="flex flex-wrap gap-2 px-1 pb-2">
           {suggestions.map((s) => (
-            <Button key={s} type="button" size="sm" variant="outline" disabled={busy} onClick={() => sendMessage(s, [], null)}>
+            <Button key={s} type="button" size="sm" variant="outline" disabled={busy || Boolean(props.disabled) || !props.on_message} onClick={() => sendMessage(s, [], null)}>
               {s}
             </Button>
           ))}
