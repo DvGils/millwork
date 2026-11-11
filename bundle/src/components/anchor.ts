@@ -25,3 +25,19 @@ export function anchorProps(href: unknown, target: unknown) {
 
 // True for what a Sidebar holds, where a link is a place to go and looks it.
 export const InSidebar = createContext(false);
+
+// What a page with a sidebar and a header on it have to say to each other
+// for the narrow screen, where the sidebar is a panel and the header has the
+// button that opens it. A header can sit in the page's header slot or among
+// its children, and can be hidden, so it says for itself that it is there.
+export interface PageNav {
+  // Whether the sidebar is a panel on a narrow screen. One that never folds
+  // away is not, and the header then opens a panel of its own.
+  panel: boolean;
+  open: boolean;
+  toggle: () => void;
+  // The header's links, for the panel to list, or null when no header shows
+  // a button and the page has to give one itself.
+  announce: (links: string[] | null) => void;
+}
+export const PageNavContext = createContext<PageNav | null>(null);

@@ -203,6 +203,7 @@ STRINGS: dict[str, str] = {
     "dark": "Dark",
     "system": "System",
     "menu": "Menu",
+    "navigation": "Navigation",
 }
 
 

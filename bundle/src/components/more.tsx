@@ -1,14 +1,15 @@
 // Sidebar, accordion, collapsible, radio and toggle groups, checkbox group, sheet, slider.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
 import { Render, Slot } from "../render";
 import { useStatus } from "../ws";
-import { useNode } from "../store";
+import { useMounts, useNode } from "../store";
 import { cn } from "cn";
 import { has } from "../lib";
 import { PageBody, pageBodyClass } from "./page-body";
-import { InSidebar } from "./anchor";
+import { InSidebar, PageNavContext, type PageNav } from "./anchor";
+import { NavLinks } from "./header";
 import { icon } from "../icons";
 import { optionLabel } from "./option-label";
 import {
@@ -20,7 +21,9 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarProvider,
+  SidebarSeparator,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import {
   Accordion as UiAccordion,
@@ -101,37 +104,93 @@ export function PageWithSidebar({
       className="mw-shell h-dvh"
       style={p.width ? ({ "--sidebar-width": String(p.width) } as React.CSSProperties) : undefined}
     >
-      <UiSidebar
-        side={p.side === "right" ? "right" : "left"}
-        collapsible={(p.collapsible as "offcanvas" | "icon" | "none") ?? "offcanvas"}
-      >
-        {p.title ? (
-          <SidebarHeader>
-            <div className="px-2 py-1 text-sm font-semibold">{String(p.title)}</div>
-          </SidebarHeader>
-        ) : null}
-        <SidebarContent className="gap-4 p-3">
-          <InSidebar.Provider value={true}>
-            {sidebar.children.map((cid) => (
-              <Render key={cid} id={cid} />
-            ))}
-          </InSidebar.Provider>
-        </SidebarContent>
-      </UiSidebar>
-      <SidebarInset className="min-h-0 min-w-0">
-        <Slot value={header} />
-        <div className="flex items-center gap-2 border-b px-3 py-2 md:hidden print:hidden">
-          <SidebarTrigger />
-        </div>
-        <div className={pageBodyClass(padding)}>
-          <PageBody className={cn(gap, className)} style={style}>
-            {rest.map((cid) => (
-              <Render key={cid} id={cid} />
-            ))}
-          </PageBody>
-        </div>
-      </SidebarInset>
+      <PageNavProvider panel={p.collapsible !== "none"}>
+        {(links) => (
+          <>
+            <UiSidebar
+              side={p.side === "right" ? "right" : "left"}
+              collapsible={(p.collapsible as "offcanvas" | "icon" | "none") ?? "offcanvas"}
+            >
+              <PanelLinks links={links} />
+              {p.title ? (
+                <SidebarHeader>
+                  <div className="px-2 py-1 text-sm font-semibold">{String(p.title)}</div>
+                </SidebarHeader>
+              ) : null}
+              <SidebarBody>
+                <InSidebar.Provider value={true}>
+                  {sidebar.children.map((cid) => (
+                    <Render key={cid} id={cid} />
+                  ))}
+                </InSidebar.Provider>
+              </SidebarBody>
+            </UiSidebar>
+            <SidebarInset className="min-h-0 min-w-0">
+              <Slot value={header} />
+              {/* A header that shows has the button that opens the sidebar
+                  on a narrow screen. A page without one gets a bar for it,
+                  unless the sidebar never folds away. */}
+              {links === null && p.collapsible !== "none" ? (
+                <div className="flex items-center gap-2 border-b px-3 py-2 md:hidden print:hidden">
+                  <SidebarTrigger />
+                </div>
+              ) : null}
+              <div className={pageBodyClass(padding)}>
+                <PageBody className={cn(gap, className)} style={style}>
+                  {rest.map((cid) => (
+                    <Render key={cid} id={cid} />
+                  ))}
+                </PageBody>
+              </div>
+            </SidebarInset>
+          </>
+        )}
+      </PageNavProvider>
     </SidebarProvider>
+  );
+}
+
+// What the page's sidebar and a header on the page have to say to each
+// other for the narrow screen. It holds the links a header announced, and
+// closes the panel when the page behind it changes, however it was left.
+function PageNavProvider({ panel, children }: { panel: boolean; children: (links: string[] | null) => React.ReactNode }) {
+  const { openMobile, setOpenMobile, toggleSidebar } = useSidebar();
+  const [links, setLinks] = useState<string[] | null>(null);
+  const mounts = useMounts();
+  useEffect(() => setOpenMobile(false), [mounts, setOpenMobile]);
+  const nav = useMemo<PageNav>(
+    () => ({ panel, open: openMobile, toggle: toggleSidebar, announce: setLinks }),
+    [panel, openMobile, toggleSidebar],
+  );
+  return <PageNavContext.Provider value={nav}>{children(links)}</PageNavContext.Provider>;
+}
+
+// The header's links at the head of the sidebar's panel on a narrow screen,
+// where they do not fit in the header.
+function PanelLinks({ links }: { links: string[] | null }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  if (!isMobile || !links?.length) return null;
+  return (
+    <div className="flex flex-col gap-3 px-3 pt-3">
+      <NavLinks links={links} onGo={() => setOpenMobile(false)} />
+      <SidebarSeparator className="mx-0" />
+    </div>
+  );
+}
+
+// What the sidebar holds. As a panel on a narrow screen it closes on a press
+// of a link in it.
+function SidebarBody({ children }: { children: React.ReactNode }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  return (
+    <SidebarContent
+      className="gap-4 p-3"
+      onClick={(e) => {
+        if (isMobile && (e.target as Element).closest("a[href]")) setOpenMobile(false);
+      }}
+    >
+      {children}
+    </SidebarContent>
   );
 }
 
