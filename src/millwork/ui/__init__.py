@@ -1831,6 +1831,7 @@ __all__ = [
     "Code",
     "CheckboxGroup",
     "Collapsible",
+    "Combobox",
     "Command",
     "Custom",
     "Component",
