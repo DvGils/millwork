@@ -79,6 +79,7 @@ STRINGS: dict[str, str] = {
     "session_ended": "This session has ended.",
     "reload": "Reload",
     "other_tab": "This page was opened in another tab.",
+    "page_out_of_date": "This page is out of date.",
     "copied": "Copied",
     "working": "Working",
     "thinking": "Thinking",

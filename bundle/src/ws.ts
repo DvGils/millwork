@@ -16,6 +16,8 @@ import { keepScrollInHistory, restoreScroll, scrollFromHistory, watchScroll } fr
 interface Boot {
   path: string;
   protocol: number;
+  // The bundle this page loaded, as the server named it.
+  bundle?: string;
   ws: string;
   keep_alive?: boolean;
 }
@@ -48,6 +50,8 @@ let lastSeq = 0;
 let outSeq = 0;
 let retry = 0;
 let closedForGood = false;
+// The bundle the page was last loaded again for, until a session opens.
+const RELOADED_FOR = "mw:reloaded-for";
 const queue: Record<string, unknown>[] = [];
 
 // Outside a browser (the unit tests import this module) there is no boot object.
@@ -412,6 +416,11 @@ function apply(m: ServerMessage) {
       sessionId = m.id;
       resumeToken = m.resume;
       storeSession();
+      try {
+        sessionStorage.removeItem(RELOADED_FOR);
+      } catch {
+        // storage may be unavailable
+      }
       if (m.components) syncVersions(m.components);
       setStatus("open");
       while (queue.length && socket && socket.readyState === WebSocket.OPEN) sendNow(queue.shift()!);
@@ -520,10 +529,29 @@ function command(name: string, args: Record<string, unknown>) {
       // After two frames: the patch that came just before has been drawn by then.
       requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
       break;
-    case "reload":
+    case "reload": {
+      // The server has another bundle than this page runs. The page loads
+      // again, once: if what comes back is sent for again, for the same
+      // bundle, something on the way keeps handing out an old page, and
+      // loading it over and over would get nowhere. It then stays as it is
+      // and says so, with the reload a person can ask for.
       closedForGood = true;
-      window.location.reload();
+      const wanted = String(args.bundle ?? "");
+      let again = true;
+      try {
+        again = sessionStorage.getItem(RELOADED_FOR) === wanted;
+        sessionStorage.setItem(RELOADED_FOR, wanted);
+      } catch {
+        // Without storage there is no telling, and no loop either.
+      }
+      if (again) {
+        endReason = t("page_out_of_date");
+        setStatus("closed");
+      } else {
+        window.location.reload();
+      }
       break;
+    }
     case "theme":
       applyTheme(args as { css?: string; boot?: ThemeBoot });
       break;
@@ -596,6 +624,7 @@ export function connect() {
       resume: resumeToken ?? resumable?.resume ?? null,
       seq: sessionId ? lastSeq : 0,
       protocol: boot.protocol,
+      bundle: boot.bundle ?? null,
     });
     // "open" comes with the session message: nothing else is sent before the
     // server has said which session this socket speaks for.

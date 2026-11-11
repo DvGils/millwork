@@ -837,7 +837,7 @@ class Tab:
             "subprotocols": [],
             "state": {},
         }
-        hello: dict[str, Any] = {"type": "hello", "path": self.path, "protocol": 4}
+        hello: dict[str, Any] = {"type": "hello", "path": self.path, "protocol": 5}
         if resume_from is not None and resume_from.session is not None:
             seq = resume_from.last_seq if seq is None else seq
             hello.update(session=resume_from.session, resume=resume_from.resume, seq=seq)

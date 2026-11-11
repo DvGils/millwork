@@ -69,8 +69,17 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         await ws.send_text(pack(0, ServerError(message="expected hello", fatal=True)))
         await ws.close(code=4400)
         return
-    if first.protocol != PROTOCOL_VERSION:
-        await ws.send_text(pack(0, Command(name="reload")))
+    serving = app.shell.build
+    if first.protocol != PROTOCOL_VERSION or (
+        first.bundle is not None and serving is not None and first.bundle != serving
+    ):
+        # The tab runs a bundle this server does not serve: it outlived a
+        # deploy, or its page came out of a cache. It would draw the page
+        # with components and files it may not have, so it loads the page
+        # again and gets the bundle there is. It is told which one that is,
+        # and loads the page once for it. While there is no bundle to serve,
+        # as in the middle of a build, a tab is left with the one it has.
+        await ws.send_text(pack(0, Command(name="reload", args={"bundle": serving})))
         await ws.close(code=4426)
         return
 
