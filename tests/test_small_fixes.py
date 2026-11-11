@@ -320,3 +320,48 @@ async def test_events_are_handled_in_the_order_they_came_in(
         s.event(Event(node=tabs, name="show", payload="b"))
         await page.settle()
         assert s._showing == {tabs: "b"}
+
+
+async def test_a_fixed_row_with_an_optional_child_is_no_list_without_keys(tmp_path: Path) -> None:
+    class S(BaseModel):
+        more: bool = False
+        rows: list[str] = ["a", "b", "c", "d"]
+
+    app = mw.App("w", state=S, public=None, bundle_dir=tmp_path, debug=True)
+
+    def flip(s: mw.Session[S], _: Any) -> None:
+        s.state.more = not s.state.more
+
+    def grow(s: mw.Session[S], _: Any) -> None:
+        s.state.rows.append("e")
+
+    @app.page("/")
+    def home(s: mw.Session[S]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            # Four children written out, one of them there or not: the places
+            # stay where they are, and nothing is redrawn that a key would save.
+            ui.Row(
+                ui.Badge("a"),
+                ui.Badge("b"),
+                ui.Badge("c"),
+                ui.Badge("d") if st.more else None,
+                key="fixed",
+            ),
+            # Rows made from data: one more of them moves every place after it.
+            ui.Row(*(ui.Badge(r) for r in st.rows), key="made"),
+            ui.Button("flip", key="flip", on_click=flip),
+            ui.Button("grow", key="grow", on_click=grow),
+        )
+
+    async with TestApp(app).open("/") as page:
+        warned = lambda: [  # noqa: E731
+            c.args["message"]
+            for c in page.commands
+            if c.name == "toast" and c.args.get("title") == "millwork"
+        ]
+        await page.click("flip")
+        await page.click("flip")
+        assert not any("without keys" in w for w in warned())
+        await page.click("grow")
+        assert [w.split(" is ")[0] for w in warned() if "without keys" in w] == ["root/made"]

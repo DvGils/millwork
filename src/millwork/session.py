@@ -1146,10 +1146,12 @@ class Session[S]:
 
     def _check_keyless(self, old: Tree, new: Tree) -> None:
         """A run of keyless same-type siblings whose length changed is a data list
-        without keys: every row after the change is redrawn instead of moved."""
+        without keys: every row after the change is redrawn instead of moved.
+        The length is that of the places, a None among them counted: children
+        that are written out, one of them there or not, keep their places."""
         for node_id, kind in new.keyless_runs.items():
-            before = old.nodes.get(node_id)
-            if before is not None and len(before.children) != len(new.nodes[node_id].children):
+            before, now = old.components.get(node_id), new.components[node_id]
+            if before is not None and len(before.children) != len(now.children):
                 self.warn(
                     f"keyless:{node_id}",
                     f"{node_id} is a list of {kind} rows without keys; give each a key so "
