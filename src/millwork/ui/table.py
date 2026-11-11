@@ -8,6 +8,8 @@ server's.
 from __future__ import annotations
 
 import dataclasses
+import json
+import math
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
@@ -93,6 +95,60 @@ def _wire_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
     return out
 
 
+# Whole numbers up to here are held exactly by a number in a browser. Past
+# it two ids can arrive as one.
+_EXACT = 2**53
+
+
+def _as_tab(value: Any) -> Any:
+    """A JSON value as a tab holds it after the wire: every number a float,
+    and one that is no number at all, a NaN say, nothing."""
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return value
+    if isinstance(value, int | float):
+        try:
+            number = float(value)
+        except OverflowError:
+            return None
+        return number if math.isfinite(number) else None
+    if isinstance(value, Mapping):
+        return {str(k): _as_tab(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_as_tab(v) for v in value]
+    return str(value)
+
+
+def _mark(key: Any) -> Any:
+    """A row key as the tab will tell it from another, in a form a set can
+    hold, or None for one the tab gets as nothing. True and 1 are two keys
+    there, 1 and 1.0 are one, and so are two whole numbers too large for a
+    browser to keep apart."""
+    there = _as_tab(key)
+    if there is None or isinstance(there, str | float):
+        return there
+    if isinstance(there, bool):
+        return ("bool", there)
+    return ("json", json.dumps(there))
+
+
+def _clash(keys: list[Any]) -> tuple[int, ...] | None:
+    """What keeps a table's row keys from telling its rows apart: the one
+    row that has none, or the two that share one. None when they do."""
+    marks = [
+        k if type(k) is str or (type(k) is int and -_EXACT < k < _EXACT) else _mark(k) for k in keys
+    ]
+    if None not in marks and len(set(marks)) == len(marks):
+        return None
+    seen: dict[Any, int] = {}
+    for index, mark in enumerate(marks):
+        if mark is None:
+            return (index,)
+        first = seen.setdefault(mark, index)
+        if first != index:
+            return (first, index)
+    return None
+
+
 class Table(Component):
     """Rows as data. A row is a dict, a model or a dataclass, and ``row_key``
     names the field that tells rows apart. A column is headed by its key
@@ -175,16 +231,35 @@ class Table(Component):
                     if tone:
                         cells[col] = tone
                 tone_cells.append(cells or None)
-        # Keys the browser uses for selection and clicks. Rows without the key column
-        # fall back to their index, which only works when no row has a key to clash with.
+        # Keys the browser uses for selection and clicks. They are the values
+        # of the key column where those tell the rows apart, and the rows'
+        # positions where they do not: no row has the column, one has
+        # nothing in it, or two share a value. A table that only shows its
+        # rows gets by on positions, as the rows of a query's result may have
+        # no key at all. One that names rows by key, to select, open or act
+        # on them, would take two rows for one or have no name for a row.
         row_key = self.row_key
-        keyed = [row_key in row for row in rows]
-        if any(keyed) and not all(keyed):
-            missing = keyed.index(False)
-            raise ValueError(f"table row {missing} has no {row_key!r}; every row needs one")
+        row_keys: list[Any] = list(range(len(rows)))
+        if any(row_key in row for row in rows):
+            named = [row.get(row_key) for row in rows]
+            clash = _clash(named)
+            if clash is None:
+                row_keys = named
+            elif self.selection != "none" or self.on_row_click or self.row_actions or self.selected:
+                if len(clash) == 1:
+                    said = f"row {clash[0]} has no {row_key!r}"
+                else:
+                    first, second = clash
+                    said = f"rows {first} and {second} share the {row_key!r} {named[first]!r}"
+                    if named[first] != named[second]:
+                        said += f" and {named[second]!r}, which are one value in a browser"
+                raise ValueError(
+                    f"table {said}; a table that selects, opens or acts on a row needs "
+                    "a row_key whose values tell its rows apart"
+                )
         return {
             "rows": Wired(rows),
-            "keys": Wired([row.get(row_key, i) for i, row in enumerate(rows)]),
+            "keys": Wired(row_keys),
             "columns": [c.model_dump(mode="json") for c in columns],
             "tone_rows": Wired(tone_rows),
             "tone_cells": Wired(tone_cells),

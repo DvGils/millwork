@@ -1,3 +1,6 @@
+from typing import Any
+
+import pytest
 from pydantic import BaseModel
 
 import millwork as mw
@@ -44,7 +47,6 @@ def test_a_model_row_is_what_the_model_dumps_and_other_rows_are_refused() -> Non
     import datetime as dt
     import types
 
-    import pytest
     from pydantic import ConfigDict, Field
 
     class Sale(BaseModel):
@@ -157,8 +159,6 @@ def test_rows_of_any_shape_become_json() -> None:
     import json
     from decimal import Decimal
 
-    import pytest
-
     class Kind(enum.Enum):
         A = "a"
 
@@ -174,14 +174,10 @@ def test_rows_of_any_shape_become_json() -> None:
     assert props["keys"] == [1, 2]
     assert props["default_sort"] == [["id", "desc"]]
     assert build(ui.Table()).nodes["root"].props["columns"] == []
-    # Keys come from ``row_key``; without that column every row keys by its index,
-    # and a table where only some rows have it is refused rather than mis-keyed.
+    # Keys come from ``row_key``; without that column every row keys by its index.
     props = build(ui.Table(rows=[Q(id=9, name="a", type="t")], row_key="name")).nodes["root"].props
     assert props["keys"] == ["a"]
     assert build(ui.Table(rows=[{"n": 1}, {"n": 2}])).nodes["root"].props["keys"] == [0, 1]
-    with pytest.raises(ValueError, match="row 1 has no 'id'"):
-        build(ui.Table(rows=[{"id": 1}, {"n": "no key"}]))
-
     assert (
         build(ui.Table(columns=[{"key": "n", "format": "number"}]))
         .nodes["root"]
@@ -206,6 +202,60 @@ def test_rows_of_any_shape_become_json() -> None:
         .props
     )
     assert props["tone_cells"] == [{"n": "muted"}, None] and props["tone_rows"] == []
+
+
+def test_row_keys_that_do_not_tell_rows_apart() -> None:
+    rows = [{"id": 1, "name": "a"}, {"id": 1, "name": "b"}, {"id": None, "name": "c"}]
+
+    def keys(*rows: dict[str, Any], **props: Any) -> Any:
+        return build(ui.Table(rows=list(rows), **props)).nodes["root"].props["keys"]
+
+    # A table that only shows its rows goes by their position, as it does
+    # without the key column: a query's result need not have a key at all.
+    assert keys(*rows) == [0, 1, 2]
+    assert keys(rows[0], rows[2]) == [0, 1]
+    assert keys(rows[0], {"name": "no id at all"}) == [0, 1]
+    assert keys(rows[0], {"id": 2}) == [1, 2]
+    # One that names its rows by key could not tell such rows apart: ticking
+    # one would tick both, and a highlight would land on another row.
+    uses: list[dict[str, Any]] = [
+        {"selection": "rows"},
+        {"selection": "row"},
+        {"on_row_click": lambda s, key: None},
+        {"row_actions": [ui.MenuItem(id="open", label="Open")]},
+        {"selected": [1]},
+    ]
+    for use in uses:
+        with pytest.raises(ValueError, match="rows 0 and 1 share the 'id' 1; a table that"):
+            keys(rows[0], rows[1], **use)
+        with pytest.raises(ValueError, match="row 1 has no 'id'"):
+            keys(rows[0], rows[2], **use)
+        with pytest.raises(ValueError, match="row 1 has no 'id'"):
+            keys(rows[0], {"name": "no id at all"}, **use)
+        assert keys(rows[0], {"id": 2}, **use) == [1, 2]
+        assert keys(**use) == []
+
+    def told_apart(a: Any, b: Any) -> bool:
+        try:
+            keys({"id": a}, {"id": b}, selection="rows")
+        except ValueError:
+            return False
+        return True
+
+    # Keys are compared as the tab holds them once they have crossed the wire.
+    assert told_apart(1, True) and told_apart(1, "1") and told_apart("a", "A")
+    assert told_apart({"a": 1, "b": 2}, {"b": 2, "a": 1}) and told_apart([1], "[1.0]")
+    assert not told_apart(1, 1.0) and not told_apart([1], [1.0]) and not told_apart(0, -0.0)
+    # A number that is none arrives as nothing, and two whole numbers past
+    # what a browser's number holds arrive as one.
+    assert not told_apart(1, float("nan")) and not told_apart(float("nan"), float("nan"))
+    big = 1234567890123456789
+    assert told_apart(2**53 - 1, 2**53 - 2) and not told_apart(big, big + 1)
+    with pytest.raises(ValueError, match=f"share the 'id' {big} and {big + 1}, which are one"):
+        keys({"id": big}, {"id": big + 1}, selection="rows")
+    # The words name the column and leave the value as it is.
+    with pytest.raises(ValueError, match="rows 0 and 1 share the 'KEY' 'KEY-17'"):
+        keys({"KEY": "KEY-17"}, {"KEY": "KEY-17"}, selection="rows", row_key="KEY")
 
 
 async def test_table_events_reach_handlers_as_sent(tmp_path) -> None:
