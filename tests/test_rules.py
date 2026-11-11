@@ -13,7 +13,7 @@ from pathlib import Path
 import millwork
 
 SRC = Path(millwork.__file__).parent
-FILES = {p.name: ast.parse(p.read_text()) for p in sorted(SRC.glob("*.py"))}
+FILES = {p.name: ast.parse(p.read_text(encoding="utf-8")) for p in sorted(SRC.glob("*.py"))}
 
 
 def calls(tree: ast.AST) -> set[str]:

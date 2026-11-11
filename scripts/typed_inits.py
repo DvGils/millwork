@@ -105,7 +105,7 @@ def _defaults(params: list[ast.arg], defaults: list[ast.expr]) -> list[ast.expr 
 def collect() -> dict[str, Klass]:
     classes: dict[str, Klass] = {}
     for module in MODULES:
-        tree = ast.parse(module.read_text())
+        tree = ast.parse(module.read_text(encoding="utf-8"))
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 classes[node.name] = Klass(node, module)
@@ -166,7 +166,7 @@ def signature(klass: Klass, classes: dict[str, Klass]) -> list[str]:
 
 
 def rewrite(module: Path, classes: dict[str, Klass]) -> str:
-    source = module.read_text()
+    source = module.read_text(encoding="utf-8")
     lines = source.split("\n")
     mine = [k for k in classes.values() if k.module == module and is_component(k, classes)]
     # Bottom up, so earlier line numbers stay valid.
@@ -215,10 +215,10 @@ def main(argv: list[str]) -> int:
     changed = []
     for module in MODULES:
         new = formatted(rewrite(module, classes))
-        if new != module.read_text():
+        if new != module.read_text(encoding="utf-8"):
             changed.append(module)
             if not check:
-                module.write_text(new)
+                module.write_text(new, encoding="utf-8")
     if check and changed:
         names = ", ".join(str(m.relative_to(ROOT.parent.parent)) for m in changed)
         print(f"typed signatures are stale in {names}; run scripts/typed_inits.py", file=sys.stderr)
