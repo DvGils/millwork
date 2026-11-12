@@ -592,6 +592,15 @@ def make_app(theme: Any = None) -> mw.App:
                         cls="text-sm text-muted-foreground hover:text-foreground",
                     ),
                     title="millwork",
+                    # Which millwork this manual describes, and what changed in it.
+                    links=[
+                        ui.Link(
+                            label=mw.__version__,
+                            href=f"https://github.com/DvGils/millwork/releases/tag/v{mw.__version__}",
+                            target="_blank",
+                            cls="text-muted-foreground hover:text-foreground",
+                        )
+                    ],
                 ),
             )
 

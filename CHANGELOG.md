@@ -37,6 +37,9 @@ versions; a release says so here when it does.
 - Layout describes `ui.Page(max_width=)`, which takes a CSS length.
 - Testing says where a chart's rows are on a found node.
 - Form says what a field's `choices` take and which widget draws what.
+- The header shows the version of millwork the manual describes, beside
+  the title, as a link to that version's release notes. On a narrow
+  screen it is in the navigation panel.
 
 ## 0.3.1
 
