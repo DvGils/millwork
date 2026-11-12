@@ -397,3 +397,47 @@ def test_an_unstable_factory_gives_the_form_no_default() -> None:
     assert "default" not in by_name["n"]
     assert field_spec(Model)["fields"] == field_spec(Model)["fields"]
     assert by_name["v"]["default"] == {"kind": "v", "tags": ["x"]}
+
+
+def test_a_choice_keeps_what_an_option_carries() -> None:
+    from millwork.nodes import build
+
+    class Model(BaseModel):
+        plan: Literal["free", "pro", "team"] = "free"
+        size: int = Field(
+            1, json_schema_extra={"choices": [{"value": 1, "icon": "star"}, (2, "Two")]}
+        )
+        tone: str = "a"
+
+    form = ui.Form(
+        Model,
+        labels={
+            "plan": {
+                "choices": [
+                    ui.Option(value="free", label="Free", icon="heart", group="Open"),
+                    ui.Option(value="pro", description="For a few"),
+                    ui.Option(value="team", label="Team (sold out)", disabled=True),
+                ]
+            },
+            "tone": {"choices": ["a", "b"]},
+        },
+    )
+    fields = {f["name"]: f for f in build(form).nodes["root"].props["schema"]["fields"]}
+    assert fields["plan"]["options"] == [
+        {"value": "free", "label": "Free", "group": "Open", "icon": "heart"},
+        {"value": "pro", "label": "pro", "description": "For a few"},
+        {"value": "team", "label": "Team (sold out)", "disabled": True},
+    ]
+    # The value of a dict or a pair keeps its type, since the field holds it
+    # when the choice is made.
+    assert fields["size"]["options"] == [
+        {"value": 1, "label": "1", "icon": "star"},
+        {"value": 2, "label": "Two"},
+    ]
+    assert fields["tone"]["options"] == [{"value": "a", "label": "a"}, {"value": "b", "label": "b"}]
+    assert fields["tone"]["widget"] == "select"
+    with pytest.raises(ValueError, match="names its value"):
+        build(ui.Form(Model, labels={"tone": {"choices": [{"label": "A"}]}}))
+    # An icon the bundle does not draw fails here, as it does on an Option.
+    with pytest.raises(ValueError, match="no icon named"):
+        build(ui.Form(Model, labels={"tone": {"choices": [{"value": "a", "icon": "nope"}]}}))

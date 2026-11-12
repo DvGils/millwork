@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, t
 import type { Renderer } from "../render";
 import { cn } from "cn";
 import { icon } from "../icons";
-import { Count, limitOf, PasswordInput } from "./inputs";
+import { Count, grouped, limitOf, PasswordInput } from "./inputs";
+import { optionLabel } from "./option-label";
 import { t } from "../theme";
 import { onStatus } from "../ws";
 import { formatSize, upload, type FileRef } from "./files";
@@ -30,14 +31,22 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 
+// A choice of a field. What an option of a Select can carry, a choice can
+// too, and the widgets below draw it as the standalone controls do.
 interface Opt {
   value: string | number | boolean;
   label: string;
+  description?: string | null;
+  icon?: string | null;
+  disabled?: boolean;
+  group?: string | null;
 }
 
 interface FieldSpec {
@@ -527,15 +536,20 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
       return <Checkbox id={id} checked={Boolean(value)} disabled={ctx.disabled} onCheckedChange={(c) => set(Boolean(c))} />;
     case "select":
       return (
-        <Select value={value === undefined || value === "" ? null : (value as string | number | boolean | null)} disabled={ctx.disabled} items={(f.options ?? []).map((o) => ({ value: o.value, label: o.label }))} onValueChange={(v) => set(v)}>
+        <Select value={value === undefined || value === "" ? null : (value as string | number | boolean | null)} disabled={ctx.disabled} items={(f.options ?? []).map((o) => ({ value: o.value, label: optionLabel(o) }))} onValueChange={(v) => set(v)}>
           <SelectTrigger id={id} className="w-full" aria-invalid={invalid || undefined}>
             <SelectValue placeholder={f.placeholder ?? "Choose"} />
           </SelectTrigger>
           <SelectContent>
-            {(f.options ?? []).map((o) => (
-              <SelectItem key={String(o.value)} value={o.value}>
-                {o.label}
-              </SelectItem>
+            {grouped(f.options ?? []).map((bucket, i) => (
+              <SelectGroup key={bucket.group ?? i}>
+                {bucket.group ? <SelectLabel>{bucket.group}</SelectLabel> : null}
+                {bucket.items.map((o) => (
+                  <SelectItem key={String(o.value)} value={o.value} disabled={Boolean(o.disabled)}>
+                    {optionLabel(o)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             ))}
           </SelectContent>
         </Select>
@@ -544,28 +558,44 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
       return (
         <RadioGroup value={value as string | null} disabled={ctx.disabled} onValueChange={(v) => set(v)}>
           {(f.options ?? []).map((o) => (
-            <div key={String(o.value)} className="flex items-center gap-2">
-              <RadioGroupItem id={`${id}-${String(o.value)}`} value={o.value as string} />
-              <Label htmlFor={`${id}-${String(o.value)}`}>{o.label}</Label>
+            <div key={String(o.value)} className={cn("flex gap-2", o.description ? "items-start" : "items-center")}>
+              <RadioGroupItem id={`${id}-${String(o.value)}`} value={o.value as string} disabled={Boolean(o.disabled)} />
+              <div className="grid gap-0.5 leading-none">
+                <Label htmlFor={`${id}-${String(o.value)}`}>{optionLabel(o)}</Label>
+                {o.description ? <p className="text-xs text-muted-foreground">{o.description}</p> : null}
+              </div>
             </div>
           ))}
         </RadioGroup>
       );
-    case "toggle":
+    case "toggle": {
+      // The group goes by strings, and a field's value may be a number or
+      // a boolean, so each item is named by its value as text and a press
+      // is turned back into the value the choice stands for.
+      const choices = f.options ?? [];
       return (
-        <ToggleGroup value={value === null || value === undefined ? [] : [String(value)]} disabled={ctx.disabled} onValueChange={(v) => set((v as unknown[])[0] ?? null)}>
-          {(f.options ?? []).map((o) => (
-            <ToggleGroupItem key={String(o.value)} value={o.value as string}>
-              {o.label}
+        <ToggleGroup
+          value={value === null || value === undefined ? [] : [String(value)]}
+          disabled={ctx.disabled}
+          onValueChange={(v) => {
+            const pressed = (v as unknown[])[0];
+            const chosen = choices.find((o) => String(o.value) === pressed);
+            set(chosen ? chosen.value : null);
+          }}
+        >
+          {choices.map((o) => (
+            <ToggleGroupItem key={String(o.value)} value={String(o.value)} disabled={Boolean(o.disabled)}>
+              {optionLabel(o)}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
       );
+    }
     case "multiselect":
       return (
         <MultiSelectControl
           id={id}
-          options={(f.options ?? []).map((o) => ({ value: String(o.value), label: o.label }))}
+          options={(f.options ?? []).map((o) => ({ ...o, value: String(o.value) }))}
           value={Array.isArray(value) ? (value as unknown[]).map(String) : []}
           placeholder={f.placeholder ?? undefined}
           max={f.max_items ?? null}
@@ -596,9 +626,12 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
           {(f.options ?? []).map((o) => {
             const cid = `${id}-${String(o.value)}`;
             return (
-              <div key={cid} className="flex items-center gap-2">
-                <Checkbox id={cid} checked={arr.includes(o.value)} disabled={ctx.disabled} onCheckedChange={(c) => set(c ? [...arr.filter((x) => x !== o.value), o.value] : arr.filter((x) => x !== o.value))} />
-                <Label htmlFor={cid}>{o.label}</Label>
+              <div key={cid} className={cn("flex gap-2", o.description ? "items-start" : "items-center")}>
+                <Checkbox id={cid} checked={arr.includes(o.value)} disabled={ctx.disabled || Boolean(o.disabled)} onCheckedChange={(c) => set(c ? [...arr.filter((x) => x !== o.value), o.value] : arr.filter((x) => x !== o.value))} />
+                <div className="grid gap-0.5 leading-none">
+                  <Label htmlFor={cid}>{optionLabel(o)}</Label>
+                  {o.description ? <p className="text-xs text-muted-foreground">{o.description}</p> : null}
+                </div>
               </div>
             );
           })}

@@ -54,7 +54,8 @@ of each is the name it goes by. Its `props` are the ones the component
 was given in `props=`, side by side with the catalogue's own, so
 `page.find(ui.Custom, chosen="5")` finds it by one of them, and each of
 its events shows as `on_<name>: True`. A found node has `id`, `type`, `props` as
-they would go to the tab, `children` and, on a table, `rows`. `page.text()` is every string on the page, for a quick "is
+they would go to the tab, `children` and, on a table, `rows`. A chart
+has no `rows`. What it sends to the tab is in `props["data"]`. `page.text()` is every string on the page, for a quick "is
 it there". `page.state` is the live state and `page.session` the session
 itself.
 
@@ -83,7 +84,9 @@ that names the node. That is an event for a node that has no handler for
 it, anything sent to a node that is disabled or hidden, a click on a
 button that is loading, and a submit of a read-only form. In a browser
 such an action does nothing, so a test that passed on one would have
-checked nothing. A disabled `Chat` still takes `stop`, feedback and a
+checked nothing. A custom component is the exception to hidden. A tab
+keeps it running while it does not show, so `page.event` with an event
+it emits is taken. A disabled `Chat` still takes `stop`, feedback and a
 message's actions, and a disabled or read-only `Form` still takes
 `cancel`.
 

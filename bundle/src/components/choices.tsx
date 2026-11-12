@@ -322,6 +322,7 @@ export const DropdownMenu: Renderer = ({ props, emit }) => {
             variant={variants[String(tp.variant ?? "outline")]}
             size={sizes[String(tp.size ?? "md")]}
             disabled={Boolean(tp.disabled) || Boolean(props.disabled)}
+            title={tp.tooltip ? String(tp.tooltip) : undefined}
             className={cn(tp.cls as string, props.cls as string)}
           />
         }

@@ -3,6 +3,44 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.3.2
+
+### Bug fixes
+
+- In a test, `page.event` refused an event of a `ui.Custom` with
+  `hidden=True`, though a tab keeps a hidden component running and the
+  server takes what it emits. A custom component's events are now taken
+  whether it shows or not.
+- In a test, `page.upload` to a hidden `ui.FileUpload` and `page.send`
+  with files to a hidden `ui.Chat` stored the file before the action was
+  refused, and an upload to a hidden `ui.FileUpload` without `on_upload`
+  was taken. Both now raise `LookupError` before anything is stored.
+- `ui.DropdownMenu` dropped the `tooltip` of its trigger button, so a
+  trigger that is an icon alone had no hint on hover and no name for a
+  screen reader.
+- The `choices` of a `ui.Form` field ignored what a `ui.Option` carries
+  beyond its value and label. A disabled choice could be picked and
+  submitted, no icon was drawn, and an Option without a label drew an
+  empty choice. A choice now keeps its `icon`, `description`, `group`
+  and `disabled`, and the form's `select`, `radio`, `toggle`,
+  `multiselect` and `checkboxes` widgets draw them. An icon name the
+  bundle does not have fails when the page is built, as it does on an
+  Option.
+- A bare value in a form's `choices`, as in `{"choices": ["a", "b"]}`
+  under `labels` or `overrides`, drew an empty choice. It is now a
+  choice with the value as its label.
+- A form's `toggle` widget on a field that holds a number or a boolean
+  never showed which choice was pressed, though the draft held it.
+
+### The manual
+
+- Layout describes `ui.Page(max_width=)`, which takes a CSS length.
+- Testing says where a chart's rows are on a found node.
+- Form says what a field's `choices` take and which widget draws what.
+- The header shows the version of millwork the manual describes, beside
+  the title, as a link to that version's release notes. On a narrow
+  screen it is in the navigation panel.
+
 ## 0.3.1
 
 ### Bug fixes
