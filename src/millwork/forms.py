@@ -16,6 +16,8 @@ from typing import Any, Union, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_core import PydanticKnownError, to_jsonable_python
 
+from millwork.icons import check_icon
+
 Widget = str  # input, textarea, password, number, slider, switch, checkbox, select, radio,
 # toggle, checkboxes, multiselect, date, datetime, fieldset, list, union, file, hidden
 
@@ -262,6 +264,32 @@ def resolve_files(draft: Any, lookup: Callable[[str], Any]) -> Any:
 # ---------------------------------------------------------------- schema -> fields
 
 
+def choice(c: Any) -> dict[str, Any]:
+    """One choice of a field as the tab takes it, from a bare value, a
+    ``(value, label)`` pair, a mapping or a ``ui.Option``. The value keeps
+    its type, since it is what the field holds when the choice is made. An
+    option's ``icon``, ``description``, ``group`` and ``disabled`` come
+    along when they are given, for the widgets that draw them."""
+    if isinstance(c, BaseModel):
+        c = c.model_dump()
+    if isinstance(c, tuple | list) and len(c) == 2:
+        return {"value": c[0], "label": str(c[1])}
+    if not isinstance(c, Mapping):
+        return {"value": c, "label": str(c)}
+    if "value" not in c:
+        raise ValueError(f"a choice given as a mapping names its value, and {dict(c)!r} has none")
+    label = c.get("label")
+    out = {"value": c["value"], "label": str(c["value"]) if label is None else str(label)}
+    for extra in ("description", "group"):
+        if c.get(extra) is not None:
+            out[extra] = str(c[extra])
+    if c.get("icon") is not None:
+        out["icon"] = check_icon(c["icon"])
+    if c.get("disabled"):
+        out["disabled"] = True
+    return out
+
+
 def humanize(name: str) -> str:
     return name.replace("_", " ").strip().capitalize()
 
@@ -364,11 +392,7 @@ class _Walker:
         return spec
 
     def option(self, c: Any) -> dict[str, Any]:
-        if isinstance(c, Mapping):
-            return {"value": c["value"], "label": c.get("label", str(c["value"]))}
-        if isinstance(c, tuple | list) and len(c) == 2:
-            return {"value": c[0], "label": str(c[1])}
-        return {"value": c, "label": str(c)}
+        return choice(c)
 
     def classify(self, prop: Mapping[str, Any], spec: dict[str, Any], name: str) -> None:
         # Optional[X] is anyOf [X, null]; unwrap and mark clearable.

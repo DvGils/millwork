@@ -5,8 +5,8 @@ import type { ReactNode } from "react";
 import { cn } from "cn";
 import { icon } from "../icons";
 
-export function optionLabel(o: { value: string; label?: string | null; icon?: string | null }, size = "size-4"): ReactNode {
-  const text = o.label ?? o.value;
+export function optionLabel(o: { value: string | number | boolean; label?: string | null; icon?: string | null }, size = "size-4"): ReactNode {
+  const text = o.label ?? String(o.value);
   const Drawn = o.icon ? icon(o.icon) : null;
   if (!Drawn) return text;
   return (

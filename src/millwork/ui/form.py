@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Type  # noqa: UP035
 
 from pydantic import BaseModel
 
-from millwork.forms import Issue, field_spec
+from millwork.forms import Issue, choice, field_spec
 from millwork.nodes import Component
 
 
@@ -117,10 +117,7 @@ def _apply(
         if override:
             for k, v in override.items():
                 if k == "choices":
-                    f["options"] = [
-                        {"value": c[0], "label": c[1]} if isinstance(c, tuple | list) else c
-                        for c in v
-                    ]
+                    f["options"] = [choice(c) for c in v]
                     if f["widget"] == "input":
                         f["widget"] = "select"
                 elif keys is None or k in keys:

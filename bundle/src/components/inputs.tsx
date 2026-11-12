@@ -53,8 +53,10 @@ function opts(value: unknown): Opt[] {
   return Array.isArray(value) ? (value as Opt[]) : [];
 }
 
-function grouped(items: Opt[]): Array<{ group: string | null; items: Opt[] }> {
-  const out: Array<{ group: string | null; items: Opt[] }> = [];
+// Options under the headings they name, in the order the headings first
+// appear. Those that name none come under none.
+export function grouped<T extends { group?: string | null }>(items: T[]): Array<{ group: string | null; items: T[] }> {
+  const out: Array<{ group: string | null; items: T[] }> = [];
   for (const it of items) {
     const g = it.group ?? null;
     let bucket = out.find((b) => b.group === g);
