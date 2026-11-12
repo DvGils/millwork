@@ -23,7 +23,7 @@ from millwork.nodes import Component
 from millwork.protocol import Command, Event, Patch, ServerError, Stream, server_message
 from millwork.scope import Scope
 from millwork.session import Session
-from millwork.ui import Button, Checkbox, Link, Switch, Tabs
+from millwork.ui import Button, Checkbox, Custom, Link, Switch, Tabs
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -90,7 +90,10 @@ class Page:
     async def _send(self, found: Found, *events: tuple[str, Any]) -> None:
         """Events for one node through the real dispatcher, then everything
         they set off. One the page does not take raises ``LookupError``."""
-        if found.props.get("hidden"):
+        # A custom component goes on running while it is hidden, as a tab
+        # keeps it there, and what it emits is its own doing and no press of
+        # a person's. Everything else is acted on by someone who has to see it.
+        if found.props.get("hidden") and not isinstance(found.component, Custom):
             raise LookupError(f"{found!r} is hidden")
         seen = len(self._deaf)
         for name, payload in events:
@@ -380,8 +383,10 @@ class Page:
                 raise ValueError("uploading to a Form takes field=, the file field's pointer")
         elif not isinstance(component, FileUpload | Chat):
             raise TypeError(f"{found.type} takes no uploads")
-        if getattr(component, "disabled", False):
-            raise LookupError(f"{found!r} is disabled")
+        # Before the file is stored, as a tab offers no way to send one.
+        for off in ("disabled", "hidden"):
+            if getattr(component, off, False):
+                raise LookupError(f"{found!r} is {off}")
         try:
             ref = self._store(found.id, path, field)
         except Reject as refused:
@@ -405,6 +410,8 @@ class Page:
     ) -> None:
         """A chat turn: the message event with text, attachments and a command."""
         found = chat if isinstance(chat, Found) else self.find(chat)
+        if getattr(found.component, "hidden", False):
+            raise LookupError(f"{found!r} is hidden")
         refs = [self._store(found.id, p) for p in files]
         payload = {
             "text": text,

@@ -714,6 +714,9 @@ def acting_app(tmp_path: Path) -> mw.App:
             ui.Button("on", key="on", on_click=count_click),
             ui.Button("spins", key="spins", loading=True, on_click=count_click),
             ui.Button("unseen", key="unseen", hidden=True, on_click=count_click),
+            ui.Custom("Ping", events={"ping": hear("pinged")}, hidden=True, key="ping"),
+            ui.FileUpload(key="veiled", hidden=True, on_upload=uploaded),
+            ui.Chat(key="unheard", hidden=True, attachments=ui.Accept(), on_message=hear("told")),
             ui.Chat(key="mute"),
             ui.Button("save", key="save", form="note"),
             ui.Form(Note, key="note", on_submit=hear("note saved")),
@@ -828,6 +831,28 @@ async def test_what_a_disabled_chat_and_a_form_that_takes_no_submit_still_take(
             await page.submit("frozen", {"text": "x"})
         await page.event("frozen", "cancel")
         assert page.state.heard == ["stop", "shown closed", "frozen closed"]
+
+
+async def test_a_custom_component_that_is_hidden_can_still_emit(tmp_path: Path) -> None:
+    async with TestApp(acting_app(tmp_path)).open("/") as page:
+        # A tab keeps a hidden component running, so what it emits arrives.
+        await page.event("ping", "ping", "hello")
+        assert page.state.heard == ["pinged"]
+        # An event it has no handler for is still one the page does not take.
+        with pytest.raises(LookupError, match="has no handler for wave"):
+            await page.event("ping", "wave")
+
+
+async def test_a_hidden_node_takes_no_file(tmp_path: Path) -> None:
+    (tmp_path / "a.txt").write_text("hello")
+    async with TestApp(acting_app(tmp_path)).open("/") as page:
+        with pytest.raises(LookupError, match="is hidden"):
+            await page.upload("veiled", tmp_path / "a.txt")
+        with pytest.raises(LookupError, match="is hidden"):
+            await page.send("unheard", "see this", files=[tmp_path / "a.txt"])
+        # Nothing was kept of a file that could not have been sent.
+        assert page.state.uploaded == [] and page.state.heard == []
+        assert not list(page.session.files.all())
 
 
 async def test_a_refused_upload_is_told_to_on_reject_and_to_the_test(tmp_path: Path) -> None:
