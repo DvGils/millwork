@@ -63,12 +63,23 @@ def example(s):
 `max`, `step` or `rows`. `counter` shows under a text field how much it
 holds, against its `max_length`. `fields` picks a subset in order.
 
+`choices` is a list of bare values, `(value, label)` pairs, dicts and
+`ui.Option`s. A dict takes the keys an Option has. An Option's value is
+a string, so a field that holds a number takes its choices as dicts or
+pairs. A choice's `icon` is drawn wherever the choice is listed, and
+`disabled=True` keeps it from being picked. Its `description` shows
+under a choice of a `radio` or `checkboxes` widget, and its `group`
+heads a section of a `select`. A field that already holds a disabled
+choice keeps it until the field is changed. A text field given `choices`
+becomes a `select`. A field of another type names the widget that shows
+them in `overrides`.
+
 The widgets are `input`, `textarea`, `password`, `number`, `slider`,
 `switch`, `checkbox`, `select`, `radio`, `toggle`, `multiselect`,
 `checkboxes`, `tags`, `date`, `datetime`, `file`, `files` and `hidden`.
 Each field gets one from its type, and an override swaps it for another
 that fits the same value, such as `radio` for a short enum or `toggle` for
-a boolean. A field with a `default_factory` opens with what the factory
+a boolean that is given its two `choices`. A field with a `default_factory` opens with what the factory
 makes, so a date field defaulting to today shows today. A factory that
 makes a new value on every call, a uuid or the time of day, gives the form
 nothing, and the model makes that value on submit as it always did.

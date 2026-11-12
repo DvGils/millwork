@@ -19,6 +19,8 @@ scrolls its body under a fixed header, and lays itself out around a
 of stats, a chart and a table stand apart without a `Stack` around them.
 Give it a `title` for the browser tab and a `header` for the app bar.
 `padding=False` lets a child such as `ui.Chat` fill it edge to edge.
+`max_width` keeps the column from growing wider than a CSS length, such
+as `"60rem"` or `"960px"`, and centers it in the room the page has.
 
 A page prints in full, on as many sheets as its content needs. The
 sidebar and the header stay off the paper, a box that scrolls on screen,
