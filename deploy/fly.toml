@@ -13,6 +13,12 @@ primary_region = "ams"
   auto_start_machines = true
   min_machines_running = 1
 
+  # A browser that has been here once comes back over HTTPS only, for a year.
+  # The header is for this host alone: no includeSubDomains, so another name
+  # under the domain is not bound by it.
+  [http_service.http_options.response.headers]
+    Strict-Transport-Security = "max-age=31536000"
+
   [[http_service.checks]]
     interval = "30s"
     timeout = "5s"
