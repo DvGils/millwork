@@ -1,5 +1,6 @@
-"""Record the README's GIF from ``demo.py``: twelve seconds of the app being
-used. Run from the repository root:
+"""Record the README's GIFs from ``demo.py``: twelve seconds of the app being
+used, once in the light and once in the dark, for a reader in either. Run
+from the repository root:
 
     uv run python .github/readme/record.py
 
@@ -284,12 +285,19 @@ async def main() -> None:
                 break
             except Exception:
                 await asyncio.sleep(0.2)
-        async with Tab() as tab:
-            await record(tab)
-            frames = tab.frames
-        gif(frames, HERE / "demo.gif")
-        size = (HERE / "demo.gif").stat().st_size
-        print(f"{len(frames)} frames, {len(frames) / FPS:.1f} s, demo.gif {size / 1e6:.2f} MB")
+        # The demo's theme follows the browser, so the browser is told which
+        # of the two it prefers, and each recording is a session of its own.
+        for scheme, name in (("light", "demo.gif"), ("dark", "demo-dark.gif")):
+            async with Tab() as tab:
+                await tab.call(
+                    "Emulation.setEmulatedMedia",
+                    features=[{"name": "prefers-color-scheme", "value": scheme}],
+                )
+                await record(tab)
+                frames = tab.frames
+            gif(frames, HERE / name)
+            size = (HERE / name).stat().st_size
+            print(f"{len(frames)} frames, {len(frames) / FPS:.1f} s, {name} {size / 1e6:.2f} MB")
     finally:
         chrome.terminate()
         app.terminate()
