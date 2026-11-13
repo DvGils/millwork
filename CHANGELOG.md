@@ -3,6 +3,29 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.3.3
+
+### Bug fixes
+
+- A chart stayed behind its gray placeholder for three tenths of a
+  second at the least, however soon its code arrived. On a repeat visit,
+  where the code comes from the browser's cache, that was most of the
+  wait. A chart is now drawn as soon as its code is there.
+
+### Features
+
+- `animate=True` on a `ui.BarChart`, `ui.LineChart`, `ui.AreaChart` or
+  `ui.PieChart` lets the chart draw itself when it is first shown. Bars
+  grow from the baseline, a line is drawn from its first point and a pie
+  sweeps around. When the rows or the series change, the marks move
+  from the old values to the new. It is off unless asked for. A reader whose system
+  asks for less motion gets the chart at once, and a page that is
+  printed has its charts as they are at the end.
+
+### The manual
+
+- Charts has a section on motion, with an example.
+
 ## 0.3.2
 
 ### Bug fixes
