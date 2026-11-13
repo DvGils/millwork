@@ -1,4 +1,4 @@
-"""Record the README's GIF from ``demo.py``: ten seconds of the app being
+"""Record the README's GIF from ``demo.py``: twelve seconds of the app being
 used. Run from the repository root:
 
     uv run python .github/readme/record.py
@@ -27,8 +27,30 @@ import websockets
 HERE = Path(__file__).resolve().parent
 PORT = 8031
 CDP = 9344
-WIDTH, HEIGHT = 1200, 880
+WIDTH, HEIGHT = 1200, 836
 FPS = 10
+
+# A pointer drawn on the page, since a screenshot has none: an arrow that
+# glides to what is pressed next and a ring where it presses. It is no part
+# of the app, and nothing on the page can be reached through it.
+POINTER = """
+(() => {
+  const p = document.createElement('div');
+  p.id = 'pointer';
+  p.style.cssText = 'position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;'
+    + 'transition:transform .32s cubic-bezier(.2,.7,.2,1);transform:translate(640px,430px)';
+  p.innerHTML = '<span style="position:absolute;left:-12px;top:-12px;width:30px;height:30px;'
+    + 'border-radius:50%;background:rgba(37,99,235,.4);transform:scale(0)"></span>'
+    + '<svg width="20" height="24" viewBox="0 0 20 24" style="position:absolute;left:0;top:0">'
+    + '<path d="M2 2v17l4.6-4.3 3 6.9 2.9-1.3-3-6.8H16z" fill="#111" stroke="#fff"'
+    + ' stroke-width="1.6" stroke-linejoin="round"/></svg>';
+  document.body.appendChild(p);
+})()
+"""
+
+# The assistant's window at a size a reader gave it, as the browser keeps it:
+# small enough to leave the chart in view.
+WINDOW = {"x": WIDTH - 24 - 500, "y": HEIGHT - 24 - 376, "width": 500, "height": 376}
 
 
 class Tab:
@@ -84,11 +106,21 @@ class Tab:
         box = await self.eval(
             f"(() => {{ const e = {js_element}; if (!e) return null;"
             " const r = e.getBoundingClientRect();"
-            " return {x: r.x + r.width / 2, y: r.y + r.height / 2}; })()"
+            " return {x: r.x + r.width * 0.7, y: r.y + r.height * 0.6}; })()"
         )
         if box is None:
             raise RuntimeError(f"no element for {js_element}")
         x, y = box["x"], box["y"]  # type: ignore[index]
+        # The pointer goes there first, in view, and the press shows as a ring.
+        await self.eval(
+            "document.getElementById('pointer').style.transform ="
+            f" 'translate({x - 2}px, {y - 2}px)'"
+        )
+        await self.capture(0.4)
+        await self.eval(
+            "document.querySelector('#pointer span').animate([{transform: 'scale(.2)',"
+            " opacity: 1}, {transform: 'scale(1.2)', opacity: 0}], {duration: 380})"
+        )
         await self.call("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y)
         await self.call(
             "Input.dispatchMouseEvent", type="mousePressed", x=x, y=y, button="left", clickCount=1
@@ -134,7 +166,13 @@ def browser() -> str:
 
 async def record(tab: Tab) -> None:
     url = f"http://127.0.0.1:{PORT}/"
+    await tab.call(
+        "Page.addScriptToEvaluateOnNewDocument",
+        source="localStorage.setItem('mw:floating:root/assistant:window', "
+        f"{json.dumps(json.dumps(WINDOW))})",
+    )
     await tab.nav(url, settle=2.5)
+    await tab.eval(POINTER)
 
     # 1. A new order: refused once, then saved.
     await tab.capture(0.8)
@@ -148,26 +186,29 @@ async def record(tab: Tab) -> None:
     await tab.click(
         "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add')"
     )
-    await tab.capture(1.4)
+    await tab.capture(1.1)
     await tab.select_all(amount)
     await tab.type("980")
     await tab.capture(0.3)
     await tab.click(
         "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add')"
     )
-    await tab.capture(1.6)
+    await tab.capture(1.0)
 
-    # 2. An import with progress, the table filling as it runs.
+    # 2. An import with progress, the table and the chart following it.
     await tab.click(
         "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Import')"
     )
-    await tab.capture(4.2)
+    await tab.capture(3.9)
 
-    # 3. A question, answered by a reply that streams.
+    # 3. A question in the assistant's window, answered by a reply that streams.
+    await tab.click("document.querySelector('button[aria-label=\"Ask about the orders\"]')")
+    await tab.capture(0.5)
     await tab.click("document.querySelector('textarea')")
-    await tab.type("Which customer spent most?")
+    await tab.type("Who still has to pay?")
     await tab.key("Enter")
-    await tab.capture(3.8)
+    # The answer, and a moment on the finished page before the loop starts over.
+    await tab.capture(4.3)
 
 
 def gif(frames: list[bytes], out: Path) -> None:

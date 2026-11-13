@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
 </p>
 
-<img src=".github/readme/demo.gif" alt="A millwork page in use: a form submits with a validation message and then succeeds, an import runs with a progress bar and steps while rows appear in the table, and a chat answer streams in." width="100%">
+<img src=".github/readme/demo.gif" alt="A millwork page in use: a form submits with a validation message and then succeeds, an import runs with a progress bar and steps while rows appear in the table and the bars of a chart move with them, and a question in a floating assistant gets an answer that streams in." width="100%">
 
 A page is a Python function of the session's state. A handler changes the
 state, the page renders again, and the browser receives a patch. The React bundle
