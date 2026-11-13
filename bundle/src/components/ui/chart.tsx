@@ -42,9 +42,13 @@ function ChartContainer({
   children,
   config,
   initialDimension = INITIAL_DIMENSION,
+  onSized,
   ...props
 }: React.ComponentProps<"div"> & {
   config: ChartConfig
+  // Told whenever the box gets a size or loses it, so whoever draws the
+  // chart knows when it is on the page to be seen.
+  onSized?: (sized: boolean) => void
   children: React.ComponentProps<
     typeof RechartsPrimitive.ResponsiveContainer
   >["children"]
@@ -59,10 +63,16 @@ function ChartContainer({
   // the box has none, and a chart measured there says so in the console.
   const box = React.useRef<HTMLDivElement>(null)
   const [sized, setSized] = React.useState(false)
+  const told = React.useRef(onSized)
+  told.current = onSized
   React.useLayoutEffect(() => {
     const el = box.current
     if (!el) return
-    const measure = () => setSized(el.clientWidth > 0 && el.clientHeight > 0)
+    const measure = () => {
+      const has = el.clientWidth > 0 && el.clientHeight > 0
+      setSized(has)
+      told.current?.(has)
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
