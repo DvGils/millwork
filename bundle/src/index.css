@@ -205,6 +205,23 @@ body.mw-dragging * {
     display: none;
   }
 }
+/* The rules of a divided Stack. Each child sits in a box of its own that
+   takes no room, on which a border is not drawn, but what such a box puts
+   before itself is laid out as a child of the Stack. So a rule is put
+   before every child that draws something and has one before it that does:
+   a hidden child and a dialog that is closed get none, and none follows
+   them. The rule is one more thing in the column, with the Stack's gap on
+   either side, and as wide as the Stack however its children are placed. */
+@layer components {
+  .mw-divided > div:not(:empty):not([style*="display: none"]) ~ div:not(:empty):not([style*="display: none"])::before {
+    content: "";
+    display: block;
+    flex: none;
+    align-self: stretch;
+    height: 1px;
+    background: var(--border);
+  }
+}
 /* A Grid's columns. The count comes from the node as a variable per width,
    and each width takes the count of the one below until it has its own. */
 @layer components {

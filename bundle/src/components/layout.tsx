@@ -58,7 +58,7 @@ export const Stack: Renderer = ({ props, children }) => (
       alignClass[String(props.align ?? "stretch")],
       justifyClass[String(props.justify ?? "start")],
       props.grow && "grow",
-      props.divided && "divide-y divide-border",
+      props.divided && "mw-divided",
       props.cls as string,
     )}
   >
