@@ -81,7 +81,9 @@ of the whole page. `font-heading` is the font of headings and of the
 titles of cards, dialogs, sheets and the header, and follows `font-sans`
 until it is set. `font-mono` is the font of code. A `url` to a font
 service is accepted instead of `src`. That is logged once at start, as a
-reminder that every page view then calls a third party.
+reminder that every page view then calls a third party. The page's
+security policy lets that service's stylesheet and its font files in. An
+app with a policy of its own names them there.
 
 ## Logo, favicon and login image
 

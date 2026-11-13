@@ -42,6 +42,13 @@ versions; a release says so here when it does.
 - A task that failed was logged as an error with its traceback even
   when a handler was awaiting it and dealt with the failure. That is
   now one line. Any other failure is an error as before.
+- A theme font given as a `url` to a font service was blocked by the
+  page's own security policy, so the font never loaded. The policy now
+  lets the service's stylesheet and font files in. The reminder that
+  such a font calls a third party was logged on every page view, and is
+  logged once.
+- `Auth(providers)` was typed as a `list[Provider]`, so a type checker
+  refused a list of `OAuth` providers. It takes any sequence of them.
 - A chart stayed behind its gray placeholder for three tenths of a
   second at the least, however soon its code arrived. On a repeat visit,
   where the code comes from the browser's cache, that was most of the
@@ -69,6 +76,10 @@ versions; a release says so here when it does.
 - Files says what Open on a `ui.FileCard` shows and what it saves, and
   how long a download's copy is kept.
 - Tasks says how a failed task is logged.
+- Testing says that a `TestApp` runs the app's startup hooks.
+- Hosting checklist says where a page's stylesheets and fonts may come
+  from, and what an app with a policy of its own has to add for a font
+  service.
 
 ## 0.3.2
 
