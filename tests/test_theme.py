@@ -185,3 +185,56 @@ def test_currency_is_an_iso_code_and_reaches_the_boot() -> None:
     assert Theme(currency="USD").boot()["currency"] == "USD"
     with pytest.raises(ValueError, match="ISO 4217"):
         Theme(currency="euro")
+
+
+def test_a_font_service_is_let_in_by_the_pages_policy_and_said_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    theme = Theme(
+        fonts=[
+            Font(family="Inter", url="https://fonts.googleapis.com/css2?family=Inter&test=policy"),
+            Font(family="Mona", url="https://fonts.bunny.net/css?family=mona&test=policy"),
+            Font(family="Own", src="/public/fonts/own.woff2"),
+        ]
+    )
+    with caplog.at_level("WARNING", logger="millwork.theme"):
+        app = mw.App("fonts", public=None, bundle_dir=tmp_path, theme=theme)
+
+        @app.page("/")
+        def home(s: mw.Session) -> ui.Component:
+            return ui.Page()
+
+        with TestClient(app.asgi) as client:
+            policies = {client.get("/").headers["Content-Security-Policy"] for _ in range(3)}
+    policy = "; ".join(part for part in policies.pop().split("; ") if "script-src" not in part)
+    assert not policies or all("script-src" in p for p in policies)
+    # Google keeps its font files on a host of their own, the other service
+    # next to its stylesheet.
+    google, bunny = "https://fonts.googleapis.com", "https://fonts.bunny.net"
+    assert f"style-src 'self' 'unsafe-inline' {google} {bunny};" in policy
+    assert f"font-src 'self' data: https://fonts.gstatic.com {bunny};" in policy
+    # Said when the theme is read, once for each service, and not at a page view.
+    said = [r.getMessage() for r in caplog.records if "on every page view" in r.getMessage()]
+    assert len(said) == 2 and "Inter" in said[0] and "Mona" in said[1]
+
+    plain = mw.App("plain", public=None, bundle_dir=tmp_path)
+    plain.page("/")(lambda s: ui.Page())
+    with TestClient(plain.asgi) as client:
+        policy = client.get("/").headers["Content-Security-Policy"]
+    assert "style-src 'self' 'unsafe-inline';" in policy and "font-src 'self' data:;" in policy
+    # A policy of the app's own is sent as it is written.
+    own = mw.App("own", public=None, bundle_dir=tmp_path, theme=theme, csp="default-src 'self'")
+    own.page("/")(lambda s: ui.Page())
+    with TestClient(own.asgi) as client:
+        assert client.get("/").headers["Content-Security-Policy"] == "default-src 'self'"
+
+
+def test_only_a_plain_host_name_goes_into_the_policy() -> None:
+    odd = Theme(
+        fonts=[
+            Font(family="A", url="https://exa mple.com; script-src *"),
+            Font(family="B", url="https://user:pw@fonts.example:8443/x.css"),
+            Font(family="C", url="https://fonts.example:port/x.css"),
+        ]
+    )
+    assert odd.font_sources() == (["https://fonts.example:8443"], ["https://fonts.example:8443"])

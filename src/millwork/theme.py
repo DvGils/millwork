@@ -15,10 +15,14 @@ import logging
 import re
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 log = logging.getLogger("millwork.theme")
+
+# The font service addresses the log has a line for already.
+_SAID: set[str] = set()
 
 Mode = Literal["light", "dark", "system"]
 Density = Literal["comfortable", "compact"]
@@ -355,6 +359,41 @@ class Theme(BaseModel):
                 parts.append(f"{selector}{{{body}}}")
         return "".join(parts)
 
+    def say_font_services(self) -> None:
+        """A line in the log for each font that comes from a font service, as
+        a reminder that every page view then calls a third party. Said once
+        for each address, however often the theme is read again."""
+        for f in self.fonts:
+            if f.url is not None and f.url not in _SAID:
+                _SAID.add(f.url)
+                log.warning("theme font %s loads from %s on every page view", f.family, f.url)
+
+    def font_sources(self) -> tuple[list[str], list[str]]:
+        """Where the page's security policy has to let stylesheets and font
+        files come from for the theme's font services, as two lists of
+        origins. A service's stylesheet names its font files, which Google
+        keeps on a host of their own and the others next to the stylesheet."""
+        styles: list[str] = []
+        fonts: list[str] = []
+        for f in self.fonts:
+            if f.url is None:
+                continue
+            try:
+                parts = urlsplit(f.url)
+                host, port = parts.hostname or "", parts.port
+            except ValueError:
+                continue
+            # A name that is no plain host name stays out of the policy.
+            if not re.fullmatch(r"[a-z0-9.-]+", host):
+                continue
+            origin = f"https://{host}" + (f":{port}" if port else "")
+            files = "https://fonts.gstatic.com" if host == "fonts.googleapis.com" else origin
+            if origin not in styles:
+                styles.append(origin)
+            if files not in fonts:
+                fonts.append(files)
+        return styles, fonts
+
     def head(self, base: str = "") -> str:
         """A preload for each self-hosted font, so it is fetched with the page
         and the text is drawn in it from the first paint, and a stylesheet
@@ -367,7 +406,6 @@ class Theme(BaseModel):
                 href = (under(base, f.src) or "").replace('"', "%22")
                 links.append(f'<link rel="preload" as="font"{kind} href="{href}" crossorigin>')
             if f.url is not None:
-                log.warning("theme font %s loads from %s on every page view", f.family, f.url)
                 safe = f.url.replace('"', "%22")
                 links.append(f'<link rel="stylesheet" href="{safe}">')
         return "".join(links)

@@ -52,14 +52,16 @@ from millwork.work import live
 # (the bundle and the nonce of its two inline lines). Styles stay inline because
 # the theme and Tailwind's runtime inject them; images, media and frames may come
 # from anywhere over https since an app shows external files and pages.
+# ``{styles}`` and ``{fonts}`` become the font services the theme names, or
+# nothing: a font that is asked for in the theme has to be let in here.
 DEFAULT_CSP = "; ".join(
     [
         "default-src 'self'",
         "script-src {scripts}",
-        "style-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'{styles}",
         "img-src 'self' data: blob: https:",
         "media-src 'self' blob: https:",
-        "font-src 'self' data:",
+        "font-src 'self' data:{fonts}",
         "connect-src 'self'",
         "frame-src 'self' blob: https:",
         "worker-src 'self' blob:",
@@ -323,6 +325,7 @@ class App:
             self._theme_path = candidate if candidate and candidate.is_file() else None
             self.theme = find_theme(self.public_dir)
         self._theme_mtime = self._theme_path.stat().st_mtime if self._theme_path else 0.0
+        self.theme.say_font_services()
         self._component_mtimes: dict[str, float] = {}
         # A content hash per custom component: in the source URL, so a tab caches
         # a version for good and fetches a changed one under a new URL.
@@ -835,6 +838,7 @@ class App:
             log.error("theme not reloaded: %s", exc)
             return False
         log.info("theme reloaded from %s", self._theme_path)
+        self.theme.say_font_services()
         self._push_theme()
         return True
 
@@ -885,7 +889,12 @@ class App:
             if self.components_dir is not None and self.components_dir.is_dir():
                 # Custom components are compiled in the tab (react-runner uses Function).
                 scripts += " 'unsafe-eval'"
-            headers["Content-Security-Policy"] = self.csp.format(scripts=scripts)
+            styles, fonts = self.theme.font_sources()
+            headers["Content-Security-Policy"] = self.csp.format(
+                scripts=scripts,
+                styles="".join(f" {origin}" for origin in styles),
+                fonts="".join(f" {origin}" for origin in fonts),
+            )
         return HTMLResponse(page, status_code=status, headers=headers)
 
     def _check_stripped(self, scope: Any, path: str) -> None:
