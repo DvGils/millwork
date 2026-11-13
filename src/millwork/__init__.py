@@ -12,6 +12,7 @@ from millwork import auth, context, theme
 from millwork.app import App, PageDef
 from millwork.auth import Forbidden, NotFound, User
 from millwork.chat import ChatTurn, Reply, UIMessage
+from millwork.deprecation import MillworkDeprecationWarning
 from millwork.files import FileRef, Files
 from millwork.icons import ICONS
 from millwork.nodes import Component
@@ -32,6 +33,7 @@ __all__ = [
     "Forbidden",
     "Files",
     "ICONS",
+    "MillworkDeprecationWarning",
     "NotFound",
     "PageDef",
     "Reply",

@@ -53,9 +53,13 @@ class Klass:
         self.name = node.name
         self.bases = [ast.unparse(b) for b in node.bases]
         self.fields: dict[str, tuple[str, str | None]] = {}
+        # Old names of keywords, each with the name that took its place.
+        self.old_names: dict[str, str] = {}
         self.positional: list[str] = []
         self.explicit_init: ast.FunctionDef | None = None
         for stmt in node.body:
+            if _assigns_old_names(stmt):
+                self.old_names = dict(_renames(stmt.value, node.name))
             if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
                 name = stmt.target.id
                 annotation = ast.unparse(stmt.annotation)
@@ -86,6 +90,29 @@ def _is_type_checking(stmt: ast.stmt) -> bool:
         and isinstance(stmt.test, ast.Name)
         and stmt.test.id == "TYPE_CHECKING"
     )
+
+
+def _assigns_old_names(stmt: ast.stmt) -> bool:
+    targets = stmt.targets if isinstance(stmt, ast.Assign) else [getattr(stmt, "target", None)]
+    return any(isinstance(t, ast.Name) and t.id == "old_names" for t in targets)
+
+
+def _renames(written: ast.expr | None, where: str) -> list[tuple[str, str]]:
+    """``{"old": Renamed("new", ...)}`` as pairs of old and new. Anything
+    else is refused: the signature has to be read off the source."""
+    wrong = SystemExit(
+        f'{where}.old_names has to be written out as {{"old": Renamed("new", ...)}}:'
+        f" {ast.unparse(written) if written else 'no value'}"
+    )
+    if not isinstance(written, ast.Dict):
+        raise wrong
+    pairs = []
+    for key, value in zip(written.keys, written.values, strict=True):
+        new = value.args[0] if isinstance(value, ast.Call) and value.args else None
+        if not (isinstance(key, ast.Constant) and isinstance(new, ast.Constant)):
+            raise wrong
+        pairs.append((key.value, new.value))
+    return pairs
 
 
 def _default(value: ast.expr | None) -> str | None:
@@ -131,6 +158,15 @@ def all_fields(klass: Klass, classes: dict[str, Klass]) -> dict[str, tuple[str, 
     return fields
 
 
+def all_old_names(klass: Klass, classes: dict[str, Klass]) -> dict[str, str]:
+    names: dict[str, str] = {}
+    for base in klass.bases:
+        if base in classes:
+            names.update(all_old_names(classes[base], classes))
+    names.update(klass.old_names)
+    return names
+
+
 def positional(klass: Klass, classes: dict[str, Klass]) -> list[str]:
     """The nearest explicit init's positional parameters: the class's own, or
     the ones it inherits from a base in the catalogue."""
@@ -148,19 +184,56 @@ def signature(klass: Klass, classes: dict[str, Klass]) -> list[str]:
     fields = all_fields(klass, classes)
     params = positional(klass, classes)
     positional_names = {p.split(":")[0] for p in params}
+    old_names = all_old_names(klass, classes)
+    for old, new in old_names.items():
+        # A keyword renamed twice goes by the name it has now.
+        seen = {old}
+        while new in old_names:
+            if new in seen:
+                raise SystemExit(f"{klass.name}.old_names goes in a circle at {new!r}")
+            seen.add(new)
+            new = old_names[new]
+        if new not in fields:
+            raise SystemExit(f"{klass.name}.old_names: {old!r} is now {new!r}, which is no field")
+        old_names[old] = new
+
+    def accepted(name: str, annotation: str) -> str:
+        """What a call may pass for a field. A renamed field keeps what was
+        written down for it under its old name."""
+        for known in (name, *(old for old, new in old_names.items() if new == name)):
+            for key in (f"{klass.name}.{known}", known):
+                if key in ACCEPTS:
+                    return ACCEPTS[key]
+        return annotation
+
+    # A keyword that may still come under its old name cannot be required
+    # under the new one: the checker accepts every call the runtime does.
+    renamed = set(old_names.values())
     lines = [MARK, "", "        def __init__(", "            self,"]
+    optional = False
     for p in params:
+        # A parameter after an optional one is optional too, or it is no signature.
+        optional = optional or " = " in p or p.split(":")[0] in renamed
+        if optional and " = " not in p:
+            p += " = ..."
         lines.append(f"            {p}," + ("  # noqa: UP006" if "Type[" in p else ""))
     lines.append("            *children: Any,")
     for name, (annotation, default) in fields.items():
         if name in positional_names or name == "children":
             continue
-        annotation = ACCEPTS.get(f"{klass.name}.{name}", ACCEPTS.get(name, annotation))
+        annotation = accepted(name, annotation)
+        if name in renamed and not default:
+            default = "..."
         line = f"            {name}: {annotation}" + (f" = {default}," if default else ",")
         if annotation.startswith("Type["):
             # ``type`` in a class body is the component's wire name.
             line += "  # noqa: UP006"
         lines.append(line)
+    # A call that still uses an old name passes the checker as it passes at
+    # runtime, where it warns.
+    for old, new in old_names.items():
+        annotation = accepted(new, fields[new][0])
+        lines.append(f"            {old}: {annotation} = ...,  # the old name of {new}")
     lines.append("        ) -> None: ...")
     return lines
 

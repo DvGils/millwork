@@ -55,6 +55,8 @@ packages = ["src/millwork"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# millwork does not use its own retired spellings.
+filterwarnings = ["error::millwork.MillworkDeprecationWarning"]
 faulthandler_timeout = 30
 
 [tool.ruff]
