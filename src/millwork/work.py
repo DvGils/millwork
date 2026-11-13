@@ -275,10 +275,11 @@ async def turn(s: Session[Any], plan: Plan) -> None:
             if plan.visit is not None and plan.visit != s.visit:
                 # The page it was meant for was left while the question stood.
                 return
-        before = s._handler_begins()
+        s._before_handler(plan.event)
+        before = s._handler_begins(plan.event)
         await _call(plan.handler, *plan.args)
         if plan.event is not None:
-            s._handler_ended(plan.where, before)
+            s._handler_ended(plan.where, before, plan.event)
     except FormIssues as exc:
         if plan.event is None:
             _report(s, plan, exc)
