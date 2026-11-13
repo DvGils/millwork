@@ -3,6 +3,21 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.4.0
+
+### Features
+
+- A way to retire a spelling without breaking an app. The old spelling
+  keeps working for one minor release and warns with a
+  `MillworkDeprecationWarning` that points at the app's line, names the
+  release that drops it and says what to write now. `millwork run` logs
+  each one, once for every line that causes it. Nothing is deprecated yet.
+
+### The manual
+
+- Development has a section on deprecations, with the pytest setting that
+  makes a test fail on one.
+
 ## 0.3.3
 
 ### Bug fixes

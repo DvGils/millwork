@@ -75,6 +75,24 @@ CI=1 pnpm -C bundle build
   under `src/millwork/manual/pages`. A test checks that every component
   has one. The manual says what a thing is and shows it working, in plain
   American English.
+- **A deprecation, for a spelling that changes.** The old spelling keeps
+  working for at least one minor release and warns.
+  `src/millwork/deprecation.py` has the pieces. A component's renamed
+  keyword goes in its `old_names` with a `Renamed`, written out as a
+  literal, since the typed signatures are read off the source. A call with
+  the old name then works and warns. So does an app's subclass whose
+  `__init__` was written to the old name. The typed signatures take both
+  names, and while they do the checker cannot insist on a required one.
+  That covers the keyword in a call. The attribute on an instance and the
+  prop a test reads go by the new name at once, and a subclass that
+  declares a field under the old name is warned that it is a separate
+  field now, so the changelog says so. Anything else declares a
+  `Deprecation` at module level and calls its `warn()` where the old
+  spelling is used. What is noticed while no code of the app runs passes
+  what it is about, a handler for one, as `at=`. Every declaration names
+  the release that starts warning and the release that drops the spelling,
+  and a test fails once the version in `pyproject.toml` reaches the second
+  while the old spelling is still in the code.
 - **A changelog entry.** Anything a user of millwork would notice gets a
   line under the next version in `CHANGELOG.md`, saying what changed and
   what it did before.
