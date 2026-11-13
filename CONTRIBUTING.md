@@ -40,12 +40,14 @@ change does.
 
 ## The checks
 
-CI runs these on every pull request, on Python 3.12 and 3.13 and on
-Linux, Windows and macOS. Run them before you push.
+CI runs these on every pull request, on every released Python from 3.12
+up on Linux and on the oldest and the newest of them on Windows and macOS.
+It runs the tests once more with the oldest version of each dependency
+that `pyproject.toml` allows. Run them before you push.
 
 ```
-uv run ruff check src tests
-uv run ruff format --check src tests
+uv run ruff check src scripts tests
+uv run ruff format --check src scripts tests
 uv run mypy src
 uv run pytest -q
 ```
