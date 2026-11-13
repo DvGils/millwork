@@ -22,7 +22,7 @@ import math
 import os
 import secrets
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -555,7 +555,7 @@ class _Answer:
 class Auth:
     def __init__(
         self,
-        providers: list[Provider],
+        providers: Sequence[Provider],
         *,
         on_login: OnLogin | None = None,
         on_logout: OnLogout | None = None,
