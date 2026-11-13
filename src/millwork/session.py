@@ -649,8 +649,11 @@ class Session[S]:
         self.command("reset", key=key)
 
     def download(self, filename: str, content: Any, mime: str | None = None) -> FileRef:
-        """Send a file to the tab without a button: the tab fetches it over the socket."""
-        ref = content_to_file(self, content, filename, mime)
+        """Send a file to the tab without a button: the tab fetches it over the
+        socket. Bytes, text, a path or a callable make a copy that is the
+        session's until the tab has it. A ``FileRef`` is sent as it is and
+        stays the session's file."""
+        ref = content_to_file(self, content, filename, mime, passing=True)
         self.command("download", id=ref.id, filename=filename)
         return ref
 

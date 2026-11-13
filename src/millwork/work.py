@@ -400,6 +400,10 @@ async def _serve_file(s: Session[Any], conn: Connection, msg: Request) -> None:
         conn.say(Reply(request=msg.request, error="no such file"))
         return
     async with s._file_slots:
+        if s.files.get(ref.id) is None or not ref.path.is_file():
+            # A download's copy that another request took while this one waited.
+            conn.say(Reply(request=msg.request, error="no such file"))
+            return
         conn.say(
             Head(
                 request=msg.request, payload={"name": ref.name, "mime": ref.mime, "size": ref.size}
@@ -415,6 +419,7 @@ async def _serve_file(s: Session[Any], conn: Connection, msg: Request) -> None:
                     return
                 sent += len(chunk)
     conn.say(Reply(request=msg.request, payload={"size": sent}))
+    s.files.served(ref.id)
 
 
 async def _receive_upload(
