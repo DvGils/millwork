@@ -46,7 +46,9 @@ app.
 ## Intents
 
 `Auth(intents={"demo": "Try the demo"})` adds a secondary button to the
-login page for each intent. The one pressed arrives as `identity.intent`,
-and the hook decides what it means. [A login page of your
+login page for each intent. With more than one OAuth provider each of
+them gets the button, and it names its provider, as in "Try the demo
+with Google". The one pressed arrives as `identity.intent`, and the hook
+decides what it means. [A login page of your
 own](/sign-in/login-page) places it with `ui.SignIn(provider_id,
 intent="demo")`.

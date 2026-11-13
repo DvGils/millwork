@@ -42,6 +42,17 @@ versions; a release says so here when it does.
 - A task that failed was logged as an error with its traceback even
   when a handler was awaiting it and dealt with the failure. That is
   now one line. Any other failure is an error as before.
+- A chat reply that raised sent the exception's own words to the tab as
+  part of the reply, and so did a step that raised. Such words can name
+  a table, a host or a path. The tab now gets "Something went wrong." in
+  their place, and the log has the exception as before. In debug mode
+  the words are sent as they were. A handler that wants words of its own
+  catches the exception and calls `reply.error`.
+- With more than one OAuth provider, the default login page gave the
+  button of an intent to the first provider only, and two such buttons
+  on a page of the app's own read the same. Every provider now has the
+  button, and it names its provider, as in "Try the demo with Google".
+  The words are a new theme string, `intent_with`.
 - A theme font given as a `url` to a font service was blocked by the
   page's own security policy, so the font never loaded. The policy now
   lets the service's stylesheet and font files in. The reminder that
@@ -77,6 +88,9 @@ versions; a release says so here when it does.
   how long a download's copy is kept.
 - Tasks says how a failed task is logged.
 - Testing says that a `TestApp` runs the app's startup hooks.
+- Chat says what a reader sees of a reply that raised.
+- Admitting users says what an intent's button reads with more than one
+  provider.
 - Hosting checklist says where a page's stylesheets and fonts may come
   from, and what an app with a policy of its own has to add for a font
   service.
