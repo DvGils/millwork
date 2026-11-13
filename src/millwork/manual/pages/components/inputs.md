@@ -129,6 +129,13 @@ clear button. A password has a button that shows what was typed, as does
 a password field in a form and on the sign-in page. `on_change` fires after a pause in typing, set by
 `debounce_ms` and 250 ms by default, and `on_submit` fires on Enter.
 
+What is typed reaches the server before anything else the tab sends, so
+a button pressed right after typing finds the text in state. The page
+is only drawn again after that, though. A button whose `disabled` is
+worked out from the typed text is therefore still disabled at a press
+that comes within the pause, and the press does nothing. A send button
+stays enabled and its handler checks the text.
+
 `max_length` caps what the field takes, and `counter=True` shows under the
 field how much it holds, against the limit when there is one. The count
 takes the destructive color once the field is full. A field of the kind
@@ -349,6 +356,8 @@ def example(s):
 Three ways to choose from a short list. Radios pick one, checkboxes pick
 several, and pressed buttons do either, with `multiple=True` for several.
 A radio and a checkbox show an option's `description` under its label.
+Pressing the pressed button of a `ToggleGroup` lets it go, and
+`on_change` then gets `None`, or the list without it with `multiple`.
 
 ```python live
 ui.Stack(

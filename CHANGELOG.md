@@ -7,6 +7,41 @@ versions; a release says so here when it does.
 
 ### Bug fixes
 
+- Typing into a text field whose value the page holds, a `ui.Input`,
+  `ui.Textarea` or `ui.NumberInput` with `value=`, could lose letters
+  or whole words. The server's answer to what was typed came back a
+  moment later and replaced the field's text, with it whatever had been
+  typed since. It took a pause of between a quarter and three tenths of
+  a second between two words. A field now keeps what was typed after
+  the value it sent, and still takes any other value the server gives
+  it.
+- A text field whose value the page holds kept its text when a handler
+  cleared the value right after the typing, as a Post button pressed at
+  once does, or Enter in the field. The page held an empty value while
+  the field showed the text, and the next keystroke sent the old text
+  again. The field is now told.
+- Open on a `ui.FileCard` with a session file left an empty tab and
+  saved the file. It now shows a PDF, a picture that is no SVG, plain
+  text, sound or film in the new tab, and saves any other file without
+  opening one.
+- `ui.Download` and `s.download` with bytes, text or a path, given as
+  they are or made by a callable, kept a copy in the session for every
+  press. A button pressed often
+  enough used up the session's storage, and every download after that
+  failed. The copy is now forgotten once the tab has it.
+- **A file is no longer kept where it was before.** The `FileRef` that
+  `s.download` returns for bytes, text or a path is good until the tab
+  has the file. To keep a file in the session, make it
+  with `s.files.add` and download that.
+- `ui.Stack(divided=True)` drew no rules. There is now a rule between
+  each two children that show.
+- A custom component that imported a lucide icon the bundle does not
+  carry got nothing for it, and failed with React's "error #130" when
+  the icon was first drawn. It now fails when it is loaded, and names
+  the icon.
+- A task that failed was logged as an error with its traceback even
+  when a handler was awaiting it and dealt with the failure. That is
+  now one line. Any other failure is an error as before.
 - A chart stayed behind its gray placeholder for three tenths of a
   second at the least, however soon its code arrived. On a repeat visit,
   where the code comes from the browser's cache, that was most of the
@@ -22,9 +57,18 @@ versions; a release says so here when it does.
   asks for less motion gets the chart at once, and a page that is
   printed has its charts as they are at the end.
 
+- Six icons join the ones the bundle carries, which makes 150: `euro`,
+  `file-search`, `files`, `message-square-plus`, `reply` and `user-pen`.
+
 ### The manual
 
 - Charts has a section on motion, with an example.
+- Custom says which lucide icons a component can import.
+- Inputs says why a send button stays enabled, and what a `ToggleGroup`
+  sends when its pressed button is pressed.
+- Files says what Open on a `ui.FileCard` shows and what it saves, and
+  how long a download's copy is kept.
+- Tasks says how a failed task is logged.
 
 ## 0.3.2
 
