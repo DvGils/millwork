@@ -460,13 +460,20 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
     @handler("slow")
     async def slow(s: mw.Session[State], _: Any) -> None:
         # In the middle of a change for as long as it waits, with its turn
-        # held: the page must not be drawn from what it has half done.
+        # held: the page must not be drawn from what it has half done. It
+        # asks for a drawing first, as a handler does that starts a task or
+        # says something on the page, so one comes due while it waits.
         world.halfway.add(s.id)
+        s.refresh()
         try:
             await asyncio.sleep(knobs["handler_delay"])
         finally:
             world.halfway.discard(s.id)
         s.state.n += 1
+        if s.state.n % 2 == 0:
+            # Every other time it leaves, with the drawing it asked for
+            # still due: the page it leaves is not drawn again.
+            s.navigate("/open")
 
     @handler("end", plain=False)
     async def end(s: mw.Session[State], _: Any) -> None:
@@ -635,6 +642,16 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
             sid=world.name(s.id),
             early=s.id in world.connecting,
             halfway=s.id in world.halfway,
+            # On the tab already, another page asked for, and drawn at its
+            # own time: this one is being left. A page that is put on the
+            # tab for the first time while the next is already asked for is
+            # not, and neither is one drawn for a handler in its turn, which
+            # needs the page as it stands to find what was pressed.
+            leaving=s.stage == "ready"
+            and s.turn.free
+            and s.tree is not None
+            and s.tree is not s._failure
+            and bool(s._wanted or getattr(s, "fuzz_leaving", False)),
         )
         if knobs["render_fails"]:
             raise RuntimeError("the page function fails")
@@ -1882,17 +1899,22 @@ def at_rest(sim: Sim, session: Any, sid: str) -> None:
     exactly the page the session has, and the session goes by the tab of
     each ``Tabs`` that the browser is on."""
     tree = session.tree
-    resting = (
+    quiet = (
         not session.over
         and session.stage == "ready"
+        and not session._wanted
         and session.turn.free
         and session._inflight == 0
-        and not session._render_due
         and session._render_timer is None
         and tree is not session._failure
         and not getattr(session, "fuzz_failed", False)
     )
-    if not resting:
+    if quiet and session._render_due:
+        # Nothing is under way and no timer is armed, so nothing is going
+        # to make the drawing: the tab stays on what it was last told.
+        why = f"{sid} has a drawing due and nothing that will make it"
+        sim.world.broken.append(("left undrawn", why))
+    if not quiet or session._render_due:
         return
     sim.world.counts["pages looked at, at rest"] += 1
     tabs = {
@@ -1989,6 +2011,10 @@ def examine(world: World, sim: Sim, loop: asyncio.AbstractEventLoop) -> list[tup
             found.append(("drawn early", f"{e['sid']} was drawn before its connect returned"))
         if e["kind"] == "draw" and e["halfway"]:
             found.append(("half drawn", f"{e['sid']} was drawn in the middle of a handler's turn"))
+        if e["kind"] == "draw" and e["leaving"]:
+            # A handler that asks for another page may have left state the
+            # page it is on cannot show.
+            found.append(("drawn on the way out", f"{e['sid']} drew a page it was leaving"))
 
     # A session keeps the user it started with, and a guarded page is only
     # ever acted on for a user its rule admits.

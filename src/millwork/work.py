@@ -294,7 +294,13 @@ async def turn(s: Session[Any], plan: Plan) -> None:
     if plan.form is not None and not rejected:
         # The empty issue list is the form's acknowledgement: the draft was accepted.
         s.command("form_issues", node=plan.form, issues=[])
-    s.refresh()
+    if plan.typed:
+        # The field shows what was typed already, and a press may be right
+        # behind it: the page follows, and leaves the next drawing to that.
+        s.refresh()
+    else:
+        # What the handler did is what the person is looking at the page for.
+        s._refresh_now()
 
 
 def _report(s: Session[Any], plan: Plan, exc: Exception) -> None:

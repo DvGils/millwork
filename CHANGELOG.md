@@ -5,6 +5,25 @@ versions; a release says so here when it does.
 
 ## 0.4.0
 
+### Bug fixes
+
+- What a handler did was drawn about 50 ms late. The page was drawn
+  50 ms after any change, so that changes close together became one
+  patch, and a press waited that out like everything else. The page is
+  now drawn as the handler ends, or 50 ms after the end of the drawing
+  before it when that was more recent. What is typed into a `ui.Input`
+  or a `ui.Textarea` is drawn within 50 ms as it was, since the field
+  shows it already, and so are a task's reports and `s.refresh()`. A
+  task that a handler starts shows as running at once, where one that
+  was done within 50 ms showed nothing before. A test sees what it saw:
+  in `millwork.testing` the end of a handler waits like any other
+  change.
+- A page that a handler left with `s.navigate()` could be drawn once
+  more on its way out, and failed when the handler had left state the
+  page could not show. It happened when a drawing came due while the
+  handler was still running: a question, a task or `s.refresh()` more
+  than 50 ms before it left.
+
 ### Features
 
 - A way to retire a spelling without breaking an app. The old spelling

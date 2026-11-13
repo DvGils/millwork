@@ -47,7 +47,7 @@ from millwork.protocol import (
 from millwork.scope import Scope, Timer
 from millwork.tasks import Task
 from millwork.turn import Turn
-from millwork.ui import Button, Dialog, DropdownMenu, Sheet, Tabs, Text
+from millwork.ui import Button, Dialog, DropdownMenu, Input, Sheet, Tabs, Text, Textarea
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -90,6 +90,9 @@ class Plan:
     visit: int | None = None
     """The visit of a page the handler belongs to. A handler that is not of
     a page (a task's ``on_done``, a toast's button) has none."""
+    typed: bool = False
+    """The event is what was typed into a text field. The tab shows that by
+    itself, and sends it right before a press that follows it."""
     more: dict[str, Any] = field(default_factory=dict)
 
 
@@ -178,10 +181,18 @@ class Session[S]:
         self.tasks: list[Task[Any]] = []
         self._tasks_started = 0
         self._render_due = False
-        # Due, and its timer fired while a handler held the turn: it is drawn
-        # as the turn comes free.
+        # Due, and its time has come while a handler holds the turn: it is
+        # drawn as the turn comes free.
         self._render_late = False
         self._render_timer: Timer | None = None
+        # When the last drawing that came at its own time was done, on the
+        # loop's clock.
+        self._drawn_at = float("-inf")
+        # Whether what a handler did is drawn as its turn ends. The test
+        # harness turns it off: there a handler's end waits like any other
+        # change, so that what a test sees does not depend on how fast the
+        # machine runs it.
+        self.answers_at_once = True
         # The node whose `change` a handler has taken and no drawing has
         # followed yet.
         self._typed: str | None = None
@@ -519,9 +530,18 @@ class Session[S]:
         page, params = self.app.locate(path) or self.app.fallback("not_found", path)
         if self.app.auth is not None and not page.public and self.user is None:
             self.post(ServerError(message=self.text("sign_in_hint"), fatal=True))
-            self.stage = READY
+            self._stays()
             return None
         return page, params, path, fragment
+
+    def _stays(self) -> None:
+        """The page that was asked for does not come: the session is on the
+        page it has, which is ready again. What was not drawn while it was
+        on its way out is drawn now: what a handler changed before it asked
+        for the other page, and a tab that was opened meanwhile."""
+        self.stage = READY
+        if self._showing or self._render_due:
+            self.refresh()
 
     def enter(self, page: PageDef, params: dict[str, str], path: str) -> None:
         """Step onto the page a navigation leads to, for its connect to run.
@@ -580,10 +600,7 @@ class Session[S]:
             # failed connect wrote to the state stays.
             assert self._previous is not None
             self.page, self.params, self.path, self.tree = self._previous
-            self.stage = READY
-            if self._showing:
-                # A tab that was opened while the page was away is drawn now.
-                self.refresh()
+            self._stays()
             self.post(ServerError(message=self.text("page_failed"), fatal=False))
         self._previous = None
 
@@ -973,13 +990,13 @@ class Session[S]:
             asked = Dialog(asked, open=True, on_close=_noop)
         ask = _Ask(request=request, component=asked, future=self._loop.create_future())
         self._asks[request] = ask
-        self.refresh()
+        self._refresh_now()
         return ask
 
     def close_ask(self, ask: _Ask) -> None:
         if self._asks.get(ask.request) is ask:
             del self._asks[ask.request]
-        self.refresh()
+        self._refresh_now()
 
     def _confirm_dialog(
         self,
@@ -1051,17 +1068,48 @@ class Session[S]:
     # ------------------------------------------------------------- rendering
 
     def refresh(self) -> None:
-        """Render soon. Coalesced: many calls in one tick are one patch."""
+        """Draw the page within ``RENDER_COALESCE_SECONDS``, together with
+        whatever else changes it in that time: many calls are one patch.
+        For what happens beside a handler, a task's report or news from
+        another session."""
         if self.over:
             return
         self._render_due = True
         if self._render_timer is None:
             self._render_timer = self.scope.later(RENDER_COALESCE_SECONDS, self._render_tick)
 
+    def _refresh_now(self) -> None:
+        """Draw the page for what a person is waiting on: the end of a
+        handler, a question put to them. That is as the turn comes free,
+        with no timer to wait out, unless the page was drawn less than
+        ``RENDER_COALESCE_SECONDS`` ago. Then it is drawn when that time is
+        over, counted from the end of that drawing, so events that come
+        without a pause are still twenty drawings a second at most."""
+        if not self.answers_at_once:
+            self.refresh()
+            return
+        if self.over:
+            return
+        self._render_due = True
+        wait = self._drawn_at + RENDER_COALESCE_SECONDS - self._loop.time()
+        if wait > 0:
+            if self._render_timer is None:
+                self._render_timer = self.scope.later(wait, self._render_tick)
+        elif self.turn.free:
+            # Nobody is going to give the turn back: the loop's next step
+            # draws.
+            if self._render_timer is not None:
+                self._render_timer.cancel()
+            self._render_timer = self.scope.later(0, self._render_tick)
+        else:
+            # No timer here. One with no delay would run before or after
+            # the turn is given back, as the loop happens to order the two.
+            self._render_late = True
+
     def _render_tick(self) -> None:
         self._render_timer = None
         if self.turn.free:
-            self.render()
+            self._draw()
         else:
             # A handler is in the middle of its turn. The page is drawn when
             # it is done, and never from state it has half changed.
@@ -1069,7 +1117,26 @@ class Session[S]:
 
     def _turn_free(self) -> None:
         if self._render_late:
-            self.render()
+            self._draw()
+
+    def _draw(self) -> None:
+        """Draw what is due, at its own time: its timer fired or a handler
+        ended, and the turn is free."""
+        if self._render_timer is not None:
+            self._render_timer.cancel()
+            self._render_timer = None
+        # Whatever comes of it, nothing is late after this: a turn given
+        # back later on finds no drawing left to make at that moment.
+        self._render_late = False
+        if self._wanted or not self._render_due:
+            # Another page is asked for: the handler that asked may have
+            # left state this page has no way to show, and the page that is
+            # coming is drawn from it anyway. Or the page was drawn
+            # meanwhile, by a handler that needed it as it stood.
+            return
+        self.render()
+        if not self._render_due:
+            self._drawn_at = self._loop.time()
 
     def _before_handler(self, event: Event | None) -> None:
         """Draw the page before a handler that follows a value typed into a
@@ -1348,7 +1415,7 @@ class Session[S]:
         self._showing[event.node] = event.payload
         if before != event.payload:
             # Other than what the page was drawn by, so it is drawn again.
-            self.refresh()
+            self._refresh_now()
 
     def kept_part(self, node_id: str) -> str | None:
         """The lazy part that holds this node as it was at an earlier render."""
@@ -1479,6 +1546,7 @@ class Session[S]:
             question=_confirmation(component, event),
             form=form,
             visit=self.visit,
+            typed=event.name == "change" and isinstance(component, Input | Textarea),
         )
 
     def _form_file(self, node: str) -> Callable[[str], FileRef | None]:

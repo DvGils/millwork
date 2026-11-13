@@ -638,6 +638,9 @@ class TestApp:
         # What a page refuses with is raised in the test, where a running app
         # would land on its page for that.
         session.falls_back = False
+        # Drawings wait for the test to settle, and are not made as a handler
+        # ends: what a test sees does not depend on how fast it runs.
+        session.answers_at_once = False
         page = Page(session, strict=self.strict)
         if state is not None:
             session.state = state
