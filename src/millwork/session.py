@@ -182,6 +182,9 @@ class Session[S]:
         # as the turn comes free.
         self._render_late = False
         self._render_timer: Timer | None = None
+        # The node whose `change` a handler has taken and no drawing has
+        # followed yet.
+        self._typed: str | None = None
         self._print_asked = False
         self._asks: dict[str, _Ask] = {}
         self._toast_actions: dict[str, Callable[..., Any]] = {}
@@ -646,8 +649,11 @@ class Session[S]:
         self.command("reset", key=key)
 
     def download(self, filename: str, content: Any, mime: str | None = None) -> FileRef:
-        """Send a file to the tab without a button: the tab fetches it over the socket."""
-        ref = content_to_file(self, content, filename, mime)
+        """Send a file to the tab without a button: the tab fetches it over the
+        socket. Bytes, text, a path or a callable make a copy that is the
+        session's until the tab has it. A ``FileRef`` is sent as it is and
+        stays the session's file."""
+        ref = content_to_file(self, content, filename, mime, passing=True)
         self.command("download", id=ref.id, filename=filename)
         return ref
 
@@ -938,12 +944,19 @@ class Session[S]:
         if child is not None:
             self.turn.give_back(child)
 
-    def _handler_begins(self) -> int:
+    def _handler_begins(self, event: Event | None = None) -> int:
         self._handler_runs += 1
+        if event is not None and event.name == "change":
+            # From here on, not from where the handler ends: one that waits
+            # for a task lets other handlers in before it is done, and one
+            # that raises has still put its value in state.
+            self._typed = event.node
         return self._effects
 
-    def _handler_ended(self, where: str, before: int) -> None:
+    def _handler_ended(self, where: str, before: int, event: Event) -> None:
         self._noop_watch = (where, before)
+        if event.name == "change":
+            self._typed = event.node
 
     # ------------------------------------------------------------- asking
 
@@ -1058,6 +1071,26 @@ class Session[S]:
         if self._render_late:
             self.render()
 
+    def _before_handler(self, event: Event | None) -> None:
+        """Draw the page before a handler that follows a value typed into a
+        field, when that value has not been drawn yet.
+
+        A field shows what was typed into it before the server has heard of
+        it, and a patch is the difference between two drawings. A handler
+        that clears the field's value right after the typing, a Post button
+        pressed at once, would give a drawing equal to the one from before
+        the typing: no patch, and the tab keeps the text. With a drawing in
+        between, the tab is told the typed value and then the cleared one.
+        The next value of the same field needs none, so typing and dragging
+        stay one drawing for many changes."""
+        typed = self._typed
+        if typed is None:
+            return
+        if event is not None and event.name == "change" and event.node == typed:
+            return
+        self._render_due = True
+        self.render()
+
     def flush(self) -> None:
         """Render now what is due, if the turn is free. For the test harness,
         which does not wait out the timer."""
@@ -1123,6 +1156,7 @@ class Session[S]:
         ops = diff(self.tree, tree)
         self._check_keyless(self.tree, tree)
         self.tree = tree
+        self._typed = None
         if ops:
             self.post(Patch(ops=ops))
         if self._print_asked:

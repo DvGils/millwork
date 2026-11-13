@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from starlette.testclient import TestClient
 
 import millwork as mw
@@ -493,3 +494,49 @@ async def test_a_command_is_a_message_without_any_text(tmp_path: Path) -> None:
         assert assistant.text == "ok"
         assert [c["type"] for c in page.stream][0] == "start"
         assert "".join(c["delta"] for c in page.stream if c["type"] == "text-delta") == "ok"
+
+
+async def test_a_reply_that_raises_says_the_themes_line_and_the_log_has_the_rest(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from millwork.testing import TestApp
+
+    def chat_app(debug: bool) -> mw.App:
+        app = mw.App("errs", public=None, bundle_dir=tmp_path, debug=debug)
+
+        async def answer(s: mw.Session, turn: Any) -> None:
+            async with turn.reply() as reply:
+                if turn.text == "step":
+                    async with reply.step("Looking it up"):
+                        raise RuntimeError("no route to db-internal-7:5432")
+                raise RuntimeError("relation customer_secrets does not exist")
+
+        @app.page("/")
+        def home(s: mw.Session) -> ui.Component:
+            return ui.Page(ui.Chat(key="c", on_message=answer))
+
+        return app
+
+    def errors(page: Any) -> list[str]:
+        return [c["errorText"] for c in page.stream if "errorText" in c]
+
+    async with TestApp(chat_app(debug=False), strict=False).open("/") as page:
+        with caplog.at_level("ERROR", logger="millwork.chat"):
+            await page.send("c", "hello")
+            await page.send("c", "step")
+        # A reader sees the theme's line: an exception's words can name a
+        # table or a host.
+        assert errors(page) == ["Something went wrong."] * 3
+        assert "customer_secrets" not in str(page.stream) and "db-internal" not in str(page.stream)
+        logged = "".join(str(r.exc_info[1]) for r in caplog.records if r.exc_info)
+        assert "customer_secrets" in logged and "db-internal-7" in logged
+
+    async with TestApp(chat_app(debug=True), strict=False).open("/") as page:
+        await page.send("c", "hello")
+        await page.send("c", "step")
+        # In debug mode the reader is the developer.
+        assert errors(page) == [
+            "relation customer_secrets does not exist",
+            "no route to db-internal-7:5432",
+            "no route to db-internal-7:5432",
+        ]

@@ -28,11 +28,11 @@ import * as DropdownMenu from "@/components/ui/dropdown-menu";
 import * as ScrollArea from "@/components/ui/scroll-area";
 import * as Toast from "@/components/ui/toast";
 import { cn } from "cn";
-import { lucideSubset } from "./icons";
+import { lucideForComponents } from "./icons";
 
 export const imports: Record<string, unknown> = {
   react: React,
-  "lucide-react": lucideSubset,
+  "lucide-react": lucideForComponents,
   cn: { cn },
   "@/components/ui/button": Button,
   "@/components/ui/input": Input,

@@ -414,3 +414,95 @@ def test_a_page_function_that_asks_for_more_than_the_session_fails_where_it_is_a
     # else it could take.
     app.page("/a")(lambda s, extra=None: ui.Page())
     app.page("/b")(lambda *args: ui.Page())
+
+
+async def test_a_field_cleared_right_after_typing_is_told_so() -> None:
+    from millwork.protocol import Event
+
+    class Draft(BaseModel):
+        text: str = ""
+        posted: list[str] = []
+
+    app = mw.App("composer", state=Draft, public=None)
+
+    def post(s: mw.Session[Draft], _: Any) -> None:
+        s.state.posted.append(s.state.text)
+        s.state.text = ""
+
+    @app.page("/")
+    def home(s: mw.Session[Draft]) -> ui.Component:
+        return ui.Page(
+            ui.Textarea(
+                value=s.state.text, on_change=lambda s, v: setattr(s.state, "text", v), key="box"
+            ),
+            ui.Input(
+                value=s.state.text,
+                on_change=lambda s, v: setattr(s.state, "text", v),
+                on_submit=post,
+                key="line",
+            ),
+            ui.Button("Post", on_click=post, key="post"),
+        )
+
+    def nothing() -> None:
+        return None
+
+    async def waits(s: mw.Session[Draft], v: str) -> None:
+        s.state.text = v
+        await s.task(nothing, label="Checking", quiet=True)
+
+    def raises(s: mw.Session[Draft], v: str) -> None:
+        s.state.text = v
+        raise RuntimeError("after the value was kept")
+
+    @app.page("/more")
+    def more(s: mw.Session[Draft]) -> ui.Component:
+        return ui.Page(
+            ui.Textarea(value=s.state.text, on_change=waits, key="waits"),
+            ui.Textarea(value=s.state.text, on_change=raises, key="raises"),
+            ui.Button("Post", on_click=post, key="post"),
+        )
+
+    def told(page: Any, node: str) -> list[Any]:
+        return [
+            op.props["value"]
+            for patch in page.patches
+            for op in patch.ops
+            if op.op == "set" and op.id == node and "value" in op.props
+        ]
+
+    async with TestApp(app).open("/") as page:
+        box, line, button = page.find("box").id, page.find("line").id, page.find("post").id
+        # A button pressed right after typing: the tab sends the field's
+        # value and the click one after the other.
+        page.session.event(Event(node=box, name="change", payload="fast body"))
+        page.session.event(Event(node=button, name="click"))
+        await page.settle()
+        assert page.state.posted == ["fast body"] and page.state.text == ""
+        # The tab hears the typed value and then the cleared one. One drawing
+        # for both would find the value as it was before the typing.
+        assert told(page, box) == ["fast body", ""]
+        # Enter in a field does the same from the field's own node.
+        page.session.event(Event(node=line, name="change", payload="a line"))
+        page.session.event(Event(node=line, name="submit", payload="a line"))
+        await page.settle()
+        assert page.state.posted == ["fast body", "a line"]
+        assert told(page, line)[-2:] == ["a line", ""]
+        # Many values of one field are still one drawing.
+        drawn = len(page.patches)
+        for text in ("a", "ab", "abc"):
+            page.session.event(Event(node=box, name="change", payload=text))
+        await page.settle()
+        assert len(page.patches) == drawn + 1 and told(page, box)[-1] == "abc"
+
+    async with TestApp(app, strict=False).open("/more") as page:
+        button = page.find("post").id
+        # A handler that waits for a task lets the click in before it is
+        # done, and one that raises has still put the value in state.
+        for key, text in (("waits", "while it waits"), ("raises", "though it raised")):
+            field = page.find(key).id
+            page.session.event(Event(node=field, name="change", payload=text))
+            page.session.event(Event(node=button, name="click"))
+            await page.settle()
+            assert page.state.posted[-1] == text and page.state.text == ""
+            assert told(page, field)[-2:] == [text, ""]

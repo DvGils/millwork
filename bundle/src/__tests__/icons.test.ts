@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { icon } from "../icons";
+import { icon, lucideForComponents, missingIcons } from "../icons";
 
 const markup = (path: string, className?: string) => renderToStaticMarkup(createElement(icon(path)!, { className }));
 
@@ -108,5 +108,51 @@ describe("icon", () => {
     expect(icon("no-such-icon")).toBeNull();
     expect(warn).toHaveBeenCalledWith('millwork: unknown icon "no-such-icon"');
     warn.mockRestore();
+  });
+});
+
+describe("missingIcons", () => {
+  it("names the icons a source imports that the bundle does not carry", () => {
+    const source = [
+      'import { useState } from "react";',
+      'import { Search, Scissors, Trash2 as Bin } from "lucide-react";',
+      "import {",
+      "  Ruler,",
+      "  Check,",
+      "} from 'lucide-react';",
+    ].join("\n");
+    expect(missingIcons(source)).toEqual(["Scissors", "Ruler"]);
+  });
+
+  it("finds nothing in a source that imports what there is, or nothing", () => {
+    expect(missingIcons('import { Search, Check } from "lucide-react";')).toEqual([]);
+    expect(missingIcons('import { Ruler } from "./icons";')).toEqual([]);
+    expect(missingIcons("export default function X() { return null; }")).toEqual([]);
+  });
+
+  it("passes over an import that is commented out, and a type", () => {
+    const source = [
+      '// import { Scissors } from "lucide-react";',
+      '/* import { Ruler } from "lucide-react"; */',
+      'import { Search, type LucideIcon } from "lucide-react";',
+    ].join("\n");
+    expect(missingIcons(source)).toEqual([]);
+  });
+});
+
+describe("lucideForComponents", () => {
+  it("hands out the icons the bundle carries", () => {
+    expect(lucideForComponents.Search).toBe(icon("search"));
+    expect(lucideForComponents.Euro).toBe(icon("euro"));
+  });
+
+  it("names an icon it does not carry where that icon is reached for", () => {
+    expect(() => lucideForComponents.Scissors).toThrow(/no Scissors in this bundle/);
+  });
+
+  it("answers what a module is asked besides its icons", () => {
+    expect(lucideForComponents.default).toBe(lucideForComponents);
+    expect(lucideForComponents.__esModule).toBe(true);
+    expect(lucideForComponents.then).toBeUndefined();
   });
 });

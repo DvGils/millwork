@@ -81,6 +81,8 @@ class Task[T]:
         self._result: T | None = None
         self._future: asyncio.Future[T] = session._loop.create_future()
         self._observed = False
+        # Someone is awaiting the task, and gets what it raises.
+        self._awaited = False
         self._cancel_flag = threading.Event()
         # While it waits to start: the timer, and the work it will run.
         self._timer: Timer | None = None
@@ -133,6 +135,7 @@ class Task[T]:
     def __await__(self) -> Any:
         """Awaiting from a handler lets renders through (the handler lends its turn)."""
         self._observed = True
+        self._awaited = True
         return self._session.wait_for_task(self).__await__()
 
     async def _in_thread(self, fn: Callable[[], Any]) -> Any:
@@ -277,7 +280,13 @@ class Task[T]:
         self._finish("done")
 
     def _fail(self, exc: BaseException) -> None:
-        log.exception("task %s (%s) failed", self.label, self.id, exc_info=exc)
+        if self._awaited:
+            # Whoever awaits the task gets the exception, to handle it or to
+            # let it through, and a handler that lets it through is logged
+            # as one that raised. A failure the app expected is no error.
+            log.info("task %s (%s) failed: %s: %s", self.label, self.id, type(exc).__name__, exc)
+        else:
+            log.exception("task %s (%s) failed", self.label, self.id, exc_info=exc)
         self.error = TaskError(type=type(exc).__name__, message=str(exc) or type(exc).__name__)
         self._finish("failed", exc)
 

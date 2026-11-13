@@ -90,7 +90,7 @@ export const Button: Renderer = ({ props, emit }) => {
 // Input: on the wire `value` means server-owned (shown as is); `default` keeps a draft here.
 export const Input: Renderer = ({ props, emit }) => {
   const controlled = has(props, "value");
-  const [current, setDraft] = useOwned<string>(controlled, String(props.value ?? ""), String(props.default ?? ""));
+  const [current, setDraft, tell] = useOwned<string>(controlled, String(props.value ?? ""), String(props.default ?? ""));
   const later = useDebounced(typeof props.debounce_ms === "number" ? props.debounce_ms : 250);
   const Prefix = icon(props.prefix_icon);
   const Clear = icon("x");
@@ -113,7 +113,10 @@ export const Input: Renderer = ({ props, emit }) => {
   const fieldRef = useRef<HTMLInputElement>(null);
   const clear = () => {
     setDraft("");
-    if (props.on_change) emit("change", "");
+    if (props.on_change) {
+      tell("");
+      emit("change", "");
+    }
     // The button goes away with the text, and the focus would go with it.
     fieldRef.current?.focus();
   };
@@ -131,7 +134,11 @@ export const Input: Renderer = ({ props, emit }) => {
       onChange={(e) => {
         const next = e.target.value;
         setDraft(next);
-        if (props.on_change) later(() => emit("change", next));
+        if (props.on_change)
+          later(() => {
+            tell(next);
+            emit("change", next);
+          });
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" && props.on_submit) {

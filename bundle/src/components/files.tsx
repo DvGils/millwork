@@ -198,6 +198,10 @@ export const FileUpload: Renderer = ({ node, props, emit }) => {
   );
 };
 
+// The types a new tab is given to show: a PDF, a picture that is no drawing
+// with scripts in it, plain text, sound and film.
+const SHOWN_IN_A_TAB = /^(application\/pdf|text\/plain|image\/(png|jpeg|gif|webp|avif|bmp)|audio\/[\w.+-]+|video\/[\w.+-]+)$/;
+
 export const FileCard: Renderer = ({ props, emit }) => {
   const file = (props.file ?? null) as FileRef | null;
   const name = String(props.name ?? file?.name ?? "");
@@ -208,10 +212,19 @@ export const FileCard: Renderer = ({ props, emit }) => {
   // A session file opens in a new tab from its bytes; an outside URL as a link.
   // The tab is opened while the click still counts as the user's, then pointed
   // at the bytes once they are here; a blocked popup falls back to saving.
+  // The new tab is cut off from this one by hand: asked for with "noopener"
+  // the browser hands nothing back, and there would be no tab to point.
+  // Bytes shown in a tab are a page of this app, so only what a browser
+  // shows without running anything is opened, and the rest is saved.
   const open = (e: React.MouseEvent) => {
     if (!file) return;
     e.preventDefault();
-    const win = window.open("", "_blank", "noopener");
+    if (!SHOWN_IN_A_TAB.test(file.mime.split(";")[0].trim().toLowerCase())) {
+      saveFile(file.id, file.name).catch(failedDownload);
+      return;
+    }
+    const win = window.open("", "_blank");
+    if (win) win.opener = null;
     fileUrl(file.id)
       .then((u) => {
         if (win) win.location.href = u;

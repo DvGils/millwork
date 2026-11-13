@@ -1,7 +1,7 @@
 // The icons the bundle ships. lucide-react has four thousand; importing the
 // namespace costs 750 KB, so the catalogue and custom components get this
 // curated set by name. Adding one is a minor version; the whole set stays
-// under a hundred and fifty.
+// at a hundred and fifty.
 
 import {
   Activity,
@@ -46,14 +46,17 @@ import {
   DollarSign,
   Download,
   Edit,
+  Euro,
   ExternalLink,
   Eye,
   EyeOff,
   File,
   FileCode,
   FileJson,
+  FileSearch,
   FileSpreadsheet,
   FileText,
+  Files,
   Filter,
   Flag,
   FlaskConical,
@@ -90,6 +93,7 @@ import {
   Maximize2,
   Menu,
   MessageSquare,
+  MessageSquarePlus,
   Mic,
   Minimize2,
   Minus,
@@ -107,6 +111,7 @@ import {
   Plus,
   Printer,
   RefreshCw,
+  Reply,
   Rocket,
   RotateCcw,
   Save,
@@ -140,6 +145,7 @@ import {
   Unlock,
   Upload,
   User,
+  UserPen,
   UserPlus,
   Users,
   Volume2,
@@ -196,14 +202,17 @@ const byPascal: Record<string, LucideIcon> = {
   DollarSign,
   Download,
   Edit,
+  Euro,
   ExternalLink,
   Eye,
   EyeOff,
   File,
   FileCode,
   FileJson,
+  FileSearch,
   FileSpreadsheet,
   FileText,
+  Files,
   Filter,
   Flag,
   FlaskConical,
@@ -240,6 +249,7 @@ const byPascal: Record<string, LucideIcon> = {
   Maximize2,
   Menu,
   MessageSquare,
+  MessageSquarePlus,
   Mic,
   Minimize2,
   Minus,
@@ -257,6 +267,7 @@ const byPascal: Record<string, LucideIcon> = {
   Plus,
   Printer,
   RefreshCw,
+  Reply,
   Rocket,
   RotateCcw,
   Save,
@@ -290,6 +301,7 @@ const byPascal: Record<string, LucideIcon> = {
   Unlock,
   Upload,
   User,
+  UserPen,
   UserPlus,
   Users,
   Volume2,
@@ -327,3 +339,36 @@ export function icon(name: unknown): IconType | null {
 
 // What `import { Search } from "lucide-react"` resolves to in a custom component.
 export const lucideSubset: Record<string, unknown> = { ...byPascal };
+
+// The icons a custom component's source imports by name from lucide-react
+// that the bundle does not carry. Such an import gives nothing, and React
+// says so only when the branch that draws the icon is first reached, in
+// words that name neither the icon nor the import.
+export function missingIcons(source: string): string[] {
+  const missing: string[] = [];
+  // An import that is commented out is none, and a type is no icon.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  for (const found of code.matchAll(/^\s*import\s*\{([^}]*)\}\s*from\s*["']lucide-react["']/gm)) {
+    for (const part of found[1].split(",")) {
+      const name = part.trim().split(/\s+as\s+/)[0].trim();
+      if (!name || name.startsWith("type ") || name in lucideSubset || missing.includes(name)) continue;
+      missing.push(name);
+    }
+  }
+  return missing;
+}
+
+// lucide-react as a custom component gets it. An icon that is asked for
+// some other way than by name in an import, off the whole module say, and
+// is not carried, fails where it is drawn with its name in the message.
+// It says it is a module, so that an import of the whole of it is handed
+// this and not a copy that would give nothing for such a name, and its
+// default is itself, as it is for a module that does not say so.
+export const lucideForComponents: Record<string, unknown> = new Proxy(lucideSubset, {
+  get(carried, name, receiver) {
+    if (name === "__esModule") return true;
+    if (name === "default") return receiver;
+    if (typeof name !== "string" || name in carried || !/^[A-Z]/.test(name)) return Reflect.get(carried, name, receiver);
+    throw new Error(`lucide-react has no ${name} in this bundle. The icons it carries are the ones in millwork.ICONS.`);
+  },
+});

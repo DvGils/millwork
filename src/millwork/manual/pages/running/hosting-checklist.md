@@ -65,9 +65,12 @@ old ones are gone.
 Every page carries a Content Security Policy. Scripts come from the app's
 origin with a nonce, connections go to the app's origin, images and media
 may come from anywhere over HTTPS, and no other site may frame the page.
+Stylesheets and fonts come from the app's origin, and from a font
+service when the theme names one.
 An app with a `components/` folder also allows `eval`, since custom
 components are compiled in the tab. A custom component that needs a
 library loads it from `public/`, as the [Custom](/components/custom) page
 shows. `App(csp=None)` drops the header, and a string of your own
 replaces it, with `{scripts}` marking where millwork puts the script
-sources.
+sources. Such a string has to let in a font service of the theme
+itself, or carry `{styles}` and `{fonts}` where millwork is to name it.

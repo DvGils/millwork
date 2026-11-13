@@ -7,6 +7,7 @@ import { mw } from "./lib";
 import { useCallback, useContext, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import type { Node } from "./store";
 import { imports } from "./imports";
+import { missingIcons } from "./icons";
 import { fileUrl, request } from "./ws";
 import { ensureTailwindRuntime } from "./tailwind-runtime";
 import { ChatContext, type ChatApi } from "./chat-context";
@@ -81,6 +82,13 @@ async function compile(name: string, code: string): Promise<Compiled> {
   const key = `${version}:${name}`;
   const hit = compiled.get(key);
   if (hit) return hit;
+  const missing = missingIcons(code);
+  if (missing.length) {
+    throw new Error(
+      `custom component ${name} imports ${missing.join(", ")} from lucide-react, which the bundle does not carry. ` +
+        "The icons it has are the ones in millwork.ICONS. Any other icon can be an SVG of your own.",
+    );
+  }
   const { importCode } = await import("react-runner");
   const mod = importCode(code, { import: imports }) as { default?: Compiled };
   if (typeof mod.default !== "function") throw new Error(`custom component ${name} has no default export`);

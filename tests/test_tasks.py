@@ -448,3 +448,59 @@ async def test_a_task_cancelled_as_it_starts_still_ends(tmp_path: Path) -> None:
             await asyncio.wait_for(asyncio.shield(task.future), 1)
         await page.settle()
         assert ran == [] and told == ["cancelled"]
+
+
+async def test_a_failure_the_handler_awaits_is_no_error_in_the_log(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from millwork.testing import TestApp
+
+    class Outcome(BaseModel):
+        said: str = ""
+
+    app = mw.App("quiet", state=Outcome, public=None, bundle_dir=tmp_path)
+
+    def broken() -> None:
+        raise ValueError("this file has a password")
+
+    async def handled(s: mw.Session[Outcome], _: Any) -> None:
+        try:
+            await s.task(broken, label="Parse")
+        except ValueError as exc:
+            s.state.said = f"handled: {exc}"
+
+    def left(s: mw.Session[Outcome], _: Any) -> None:
+        s.task(broken, label="Parse")
+
+    def watched(s: mw.Session[Outcome], _: Any) -> None:
+        s.task(broken, label="Parse", on_done=lambda s, task: None)
+
+    @app.page("/")
+    def home(s: mw.Session[Outcome]) -> ui.Component:
+        return ui.Page(
+            ui.Button("handled", key="handled", on_click=handled),
+            ui.Button("left", key="left", on_click=left),
+            ui.Button("watched", key="watched", on_click=watched),
+        )
+
+    async with TestApp(app, strict=False).open("/") as page:
+        with caplog.at_level("INFO", logger="millwork.tasks"):
+            await page.click("handled")
+        assert page.state.said == "handled: this file has a password"
+        told = [r for r in caplog.records if r.name == "millwork.tasks"]
+        # One line that says what happened, with no traceback: the app dealt with it.
+        assert [(r.levelname, r.exc_info) for r in told] == [("INFO", None)]
+        assert "ValueError: this file has a password" in told[0].getMessage()
+        caplog.clear()
+        with caplog.at_level("INFO", logger="millwork.tasks"):
+            await page.click("left")
+        told = [r for r in caplog.records if r.name == "millwork.tasks"]
+        # A failure nobody awaits is an error, with where it came from.
+        assert [r.levelname for r in told] == ["ERROR"] and told[0].exc_info
+        caplog.clear()
+        with caplog.at_level("INFO", logger="millwork.tasks"):
+            await page.click("watched")
+        told = [r for r in caplog.records if r.name == "millwork.tasks"]
+        # So is one that only has an on_done: that handler gets the task and
+        # what it says went wrong, and nothing of where.
+        assert [r.levelname for r in told] == ["ERROR"] and told[0].exc_info

@@ -157,6 +157,58 @@ ui.Grid(
 )
 ```
 
+## Motion
+
+`animate=True` lets a chart draw itself. Bars grow from the baseline, a
+line is drawn from its first point, an area follows its line and a pie
+sweeps around, all in the same six tenths of a second. It happens when
+the chart is first shown, which for a chart in a tab is the first time
+the tab is opened. A chart in a dialog draws itself each time the dialog
+opens. When the rows or the series change, the marks move from the old
+values to the new. Another width, height or color does not set a chart
+in motion. Value labels are written once the marks have arrived, and so
+are the dots of a line that draws itself.
+
+A reader whose system asks for less motion gets the chart as it is at
+the end, and so does a page that is printed while a chart is moving.
+
+```python live
+from pydantic import BaseModel
+
+
+class Half(BaseModel):
+    second: bool = False
+
+
+LATER = [
+    {"month": "Jul", "sales": 66, "visits": 2000},
+    {"month": "Aug", "sales": 58, "visits": 1700},
+    {"month": "Sep", "sales": 74, "visits": 2300},
+    {"month": "Oct", "sales": 81, "visits": 2500},
+    {"month": "Nov", "sales": 77, "visits": 2400},
+    {"month": "Dec", "sales": 90, "visits": 2900},
+]
+
+
+def example(s):
+    half = s.state.half
+    rows = LATER if half.second else MONTHS
+    return ui.Stack(
+        ui.Button(
+            "The first half" if half.second else "The second half",
+            variant="outline",
+            on_click=lambda s, _: setattr(half, "second", not half.second),
+            cls="self-start",
+        ),
+        ui.Grid(
+            ui.BarChart(rows, x="month", y="sales", labels=True, animate=True, height=200),
+            ui.LineChart(rows, x="month", y="visits", animate=True, height=200),
+            cols={"sm": 1, "md": 2},
+        ),
+        gap=3,
+    )
+```
+
 ## Clicks
 
 `on_click` receives the point. It has the `x`, the `series` key and

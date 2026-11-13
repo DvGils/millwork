@@ -1716,8 +1716,9 @@ class SignIn(Component):
     """One way to sign in, put where the page wants it. ``provider`` is the id
     of one of the app's auth providers: an OAuth provider is drawn as its
     button, and ``"password"`` as the username and password form. ``intent``
-    makes it the button for one of ``Auth(intents=)``, and ``label`` replaces
-    the words on the button. It is what ``Auth(login=)`` lays the login page
+    makes it the button for one of ``Auth(intents=)``, which names its
+    provider when the app has more than one, and ``label`` replaces the
+    words on the button. It is what ``Auth(login=)`` lays the login page
     out with, and it works on a public page of the app as well."""
 
     type: ClassVar[str] = "SignIn"
@@ -1758,6 +1759,9 @@ class SignIn(Component):
                 f"the app has {', '.join(offered) or 'none'}"
             )
         label = self.label
+        # An intent's own words say nothing of the provider. Where there is
+        # more than one to go through, the button names the one it is for.
+        with_provider = False
         if self.intent is not None:
             if provider.kind != "oauth":
                 raise ValueError(
@@ -1768,12 +1772,15 @@ class SignIn(Component):
                     f"ui.SignIn(intent={self.intent!r}) is not one of Auth(intents=): "
                     f"{', '.join(sorted(auth.intents)) or 'none'}"
                 )
-            label = label or auth.intents[self.intent]
+            if not label:
+                label = auth.intents[self.intent]
+                with_provider = sum(p.kind == "oauth" for p in auth.providers.values()) > 1
         return {
             "kind": provider.kind,
             "name": provider.label,
             "icon": provider.icon,
             "label": label,
+            "with_provider": with_provider,
         }
 
 

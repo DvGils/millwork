@@ -542,6 +542,46 @@ def test_download_contents_reach_the_tab_by_id(tmp_path: Path) -> None:
         assert data == b"from a handler" and head["mime"] == "text/plain"
 
 
+def test_a_downloads_copy_is_the_sessions_until_the_tab_has_it(tmp_path: Path) -> None:
+    files = Files(tmp_path, max_session_mb=1)
+    app = mw.App("once", public=None, bundle_dir=tmp_path, secret="s3cret", files=files)
+    held: list[mw.FileRef] = []
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        if not held:
+            held.append(s.files.add(b"k" * 1000, name="kept.bin"))
+        return ui.Page(
+            ui.Download("big", key="big", filename="big.bin", content=b"x" * 400_000),
+            ui.Download("kept", key="kept", filename="kept.bin", content=held[0]),
+            ui.Button("push", key="push", on_click=lambda s, _: s.download("p.txt", "pushed")),
+            ui.Button("push kept", key="again", on_click=lambda s, _: s.download("k", held[0])),
+        )
+
+    with TestClient(app.asgi) as client, client.websocket_connect("/_mw/ws") as ws:
+        send(ws, {"type": "hello", "path": "/"})
+        session = recv(ws)["id"]
+        recv(ws)
+        # Ten presses of a button whose copy is two fifths of the quota.
+        for _ in range(10):
+            send(ws, {"type": "event", "node": "root/big", "name": "download"})
+            cmd = recv(ws)
+            assert cmd["name"] == "download", cmd
+            assert len(fetch(ws, cmd["args"]["id"])[1]) == 400_000
+            # The copy went with its last byte: asked for again, it is not there.
+            assert fetch(ws, cmd["args"]["id"])[0] is None
+        send(ws, {"type": "event", "node": "root/push", "name": "click"})
+        pushed = recv(ws)["args"]["id"]
+        assert fetch(ws, pushed)[1] == b"pushed" and fetch(ws, pushed)[0] is None
+        assert files.used(session) == 1000
+        # A file the app made itself is the session's, however often it is sent.
+        send(ws, {"type": "event", "node": "root/again", "name": "click"})
+        assert recv(ws)["args"]["id"] == held[0].id
+        assert fetch(ws, held[0].id)[1] == b"k" * 1000
+        assert fetch(ws, held[0].id)[1] == b"k" * 1000
+        assert files.used(session) == 1000
+
+
 def test_text_check_allows_a_cut_character() -> None:
     check_content("note.txt", ("a" * 63 + "é").encode()[:64])  # cut inside the é
     check_content("note.csv", "é".encode()[:1])

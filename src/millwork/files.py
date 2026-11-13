@@ -442,6 +442,7 @@ class SessionFiles:
     def __init__(self, session: Session[Any]) -> None:
         self._session = session
         self._refs: dict[str, FileRef] = {}
+        self._passing: set[str] = set()
 
     def register(self, ref: FileRef) -> None:
         self._refs[ref.id] = ref
@@ -452,8 +453,21 @@ class SessionFiles:
     def all(self) -> list[FileRef]:
         return list(self._refs.values())
 
+    def passing(self, file_id: str) -> None:
+        """Mark a file as one that is only on its way to the tab: a copy made
+        for a download. It is forgotten once the tab has its bytes, so that
+        a button pressed a hundred times holds one copy at a time and not a
+        hundred against the session's quota."""
+        self._passing.add(file_id)
+
+    def served(self, file_id: str) -> None:
+        """The tab has all of a file's bytes."""
+        if file_id in self._passing:
+            self.remove(file_id)
+
     def remove(self, file_id: str) -> bool:
         """Forget a file and delete it from disk; its quota is freed. False if unknown."""
+        self._passing.discard(file_id)
         ref = self._refs.pop(file_id, None)
         if ref is None:
             return False
@@ -481,16 +495,23 @@ def _read_chunks(path: Path, size: int = 1 << 16) -> Iterable[bytes]:
             yield chunk
 
 
-def content_to_file(session: Session[Any], content: Any, name: str, mime: str | None) -> FileRef:
-    """What ``Download`` and ``s.download`` accept: a FileRef, bytes, text or a callable."""
+def content_to_file(
+    session: Session[Any], content: Any, name: str, mime: str | None, *, passing: bool = False
+) -> FileRef:
+    """What ``Download`` and ``s.download`` accept: a FileRef, bytes, text or a callable.
+    A file made here with ``passing`` is the session's until the tab has it."""
     if callable(content):
         content = content()
     if isinstance(content, FileRef):
         return content
     if isinstance(content, bytes | bytearray):
-        return session.files.add(bytes(content), name=name, mime=mime)
-    if isinstance(content, str):
-        return session.files.add(content, name=name, mime=mime or "text/plain")
-    if isinstance(content, Path):
-        return session.files.add(content, name=name, mime=mime)
-    raise TypeError(f"cannot download a {type(content).__name__}")
+        ref = session.files.add(bytes(content), name=name, mime=mime)
+    elif isinstance(content, str):
+        ref = session.files.add(content, name=name, mime=mime or "text/plain")
+    elif isinstance(content, Path):
+        ref = session.files.add(content, name=name, mime=mime)
+    else:
+        raise TypeError(f"cannot download a {type(content).__name__}")
+    if passing:
+        session.files.passing(ref.id)
+    return ref

@@ -115,7 +115,11 @@ export const SignIn: Renderer = ({ props }) => {
   return (
     <Button variant={intent ? "ghost" : "outline"} className={cn("w-full", props.cls as string)} onClick={go}>
       {intent ? null : <ProviderIcon name={props.icon} />}
-      {label ?? t("continue_with", { provider: String(props.name ?? "") })}
+      {label === null
+        ? t("continue_with", { provider: String(props.name ?? "") })
+        : props.with_provider
+          ? t("intent_with", { intent: label, provider: String(props.name ?? "") })
+          : label}
     </Button>
   );
 };

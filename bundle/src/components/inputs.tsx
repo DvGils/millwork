@@ -12,6 +12,7 @@ import { has, placed } from "../lib";
 import { icon } from "../icons";
 import { optionLabel } from "./option-label";
 import { typedOption } from "./typed-option";
+import { caughtUp, type Told } from "../owned";
 import { t } from "../theme";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import {
@@ -69,10 +70,6 @@ export function grouped<T extends { group?: string | null }>(items: T[]): Array<
   return out;
 }
 
-// A draft kept here. Controlled: the server's value is taken over whenever it
-// changes (by content, so a value rebuilt on every render does not loop) and
-// what the user does in between stays until then. Uncontrolled: the draft
-// starts at `initial` and is the component's own.
 // A password field with a button that shows what was typed, for whoever is
 // typing it. The same field serves ui.Input, a form's password widget and
 // the sign-in form. Shown, it is a text field to the browser, which would
@@ -99,18 +96,34 @@ export function PasswordInput({ className, type: _type, ...props }: React.Compon
   );
 }
 
-export function useOwned<T>(controlled: boolean, value: T, initial: T): [T, (v: T) => void] {
+// A draft kept here. Controlled: the server's value is taken over whenever it
+// changes (by content, so a value rebuilt on every render does not loop) and
+// what the user does in between stays until then. Uncontrolled: the draft
+// starts at `initial` and is the component's own. A field that shows what is
+// typed before the server has it calls `tell` with each value it sends, so
+// that the server's answer to it does not wipe out what was typed since.
+export function useOwned<T>(controlled: boolean, value: T, initial: T): [T, (v: T) => void, (v: T) => void] {
   const [draft, setDraft] = useState<T>(controlled ? value : initial);
   const key = JSON.stringify(value);
   const seen = useRef(key);
+  const told = useRef<Told[]>([]);
   useEffect(() => {
-    if (controlled && seen.current !== key) {
-      seen.current = key;
-      setDraft(value);
-    }
+    if (!controlled || seen.current === key) return;
+    seen.current = key;
+    const next = caughtUp(told.current, key, performance.now());
+    told.current = next.told;
+    if (next.take) setDraft(value);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlled, key]);
-  return [draft, setDraft];
+  const tell = useCallback(
+    (v: T) => {
+      const sent = JSON.stringify(v);
+      // What the server holds already it will not send back.
+      if (controlled && sent !== seen.current) told.current.push({ key: sent, at: performance.now() });
+    },
+    [controlled],
+  );
+  return [draft, setDraft, tell];
 }
 
 export interface Debounced {
@@ -279,7 +292,7 @@ export function Count({ id, length, max }: { id?: string; length: number; max?: 
 // (debounced); an uncontrolled one keeps its draft and emits the same way.
 export const Textarea: Renderer = ({ props, emit }) => {
   const controlled = has(props, "value");
-  const [current, setDraft] = useOwned<string>(controlled, String(props.value ?? ""), String(props.default ?? ""));
+  const [current, setDraft, tell] = useOwned<string>(controlled, String(props.value ?? ""), String(props.default ?? ""));
   const later = useDebounced(typeof props.debounce_ms === "number" ? props.debounce_ms : 250);
   const max = limitOf(props.max_length);
   const countId = useId();
@@ -304,7 +317,11 @@ export const Textarea: Renderer = ({ props, emit }) => {
       onChange={(e) => {
         const next = e.target.value;
         setDraft(next);
-        if (props.on_change) later(() => emit("change", next));
+        if (props.on_change)
+          later(() => {
+            tell(next);
+            emit("change", next);
+          });
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && props.on_submit) {
@@ -325,7 +342,7 @@ export const Textarea: Renderer = ({ props, emit }) => {
 
 export const NumberInput: Renderer = ({ props, emit }) => {
   const controlled = has(props, "value");
-  const [current, setDraft] = useOwned<string>(
+  const [current, setDraft, tell] = useOwned<string>(
     controlled,
     props.value === null || props.value === undefined ? "" : String(props.value),
     typeof props.default === "number" ? String(props.default) : "",
@@ -346,6 +363,8 @@ export const NumberInput: Renderer = ({ props, emit }) => {
     const value = parse(current);
     if (sent.current !== undefined && sent.current === value) return;
     sent.current = value;
+    // As the server's value reads here: a number as text, none as no text.
+    tell(value === null ? "" : String(value));
     emit("change", value);
   };
   return (

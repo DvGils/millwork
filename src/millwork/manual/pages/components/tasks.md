@@ -89,7 +89,10 @@ stops at its next check.
 A handler can `await` the task to use its result, and lends its turn
 while it waits. When the task was canceled the `await` raises
 `mw.Cancelled`, which the handler can catch, and when the task failed it
-raises what the task raised. `on_done=` names a handler to run when the
+raises what the task raised. A failure that comes while a handler is
+awaiting the task is the handler's to deal with, and the log has one
+line for it. Any other failure is logged as an error, with where it
+came from. `on_done=` names a handler to run when the
 task ends, with the task as its argument. `timeout=` stops a task that
 runs too long, and the `await` then raises `TimeoutError`.
 

@@ -91,7 +91,9 @@ def _series_spec(y: Any) -> list[dict[str, str]]:
 
 
 class _Chart(Component):
-    """What every chart shares: rows, the x column, series, formats, a click."""
+    """What every chart shares: rows, the x column, series, formats, a click.
+    ``animate`` lets the chart draw itself when it is first shown, and move
+    from the old values to the new when its rows change."""
 
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"rows", "y", "by", "colors"})
     payloads: ClassVar[dict[str, str]] = {
@@ -109,6 +111,7 @@ class _Chart(Component):
     emphasis: str | None = None
     colors: dict[str, int] | None = None
     height: int | None = None
+    animate: bool = False
     on_click: Any = None
 
     # Built once from the rows: the series in drawing order and the wide points.
@@ -133,6 +136,7 @@ class _Chart(Component):
             emphasis: str | None = None,
             colors: dict[str, int] | None = None,
             height: int | None = None,
+            animate: bool = False,
             on_click: Any = None,
         ) -> None: ...
     else:
@@ -269,6 +273,7 @@ class BarChart(_Chart):
             emphasis: str | None = None,
             colors: dict[str, int] | None = None,
             height: int | None = None,
+            animate: bool = False,
             on_click: Any = None,
             stacked: bool | Literal["percent"] = False,
             horizontal: bool = False,
@@ -324,6 +329,7 @@ class LineChart(_Chart):
             emphasis: str | None = None,
             colors: dict[str, int] | None = None,
             height: int | None = None,
+            animate: bool = False,
             on_click: Any = None,
             curve: bool = False,
             dots: bool = False,
@@ -367,6 +373,7 @@ class AreaChart(_Chart):
             emphasis: str | None = None,
             colors: dict[str, int] | None = None,
             height: int | None = None,
+            animate: bool = False,
             on_click: Any = None,
             stacked: bool | Literal["percent"] = False,
             curve: bool = False,
@@ -381,7 +388,8 @@ class PieChart(Component):
     named by ``other``, drawn in grey; with
     ``other=None`` a sixth row is refused instead. ``donut`` leaves the middle
     open and ``center`` writes a figure there. ``labels`` writes each slice's
-    share beside it."""
+    share beside it. ``animate`` lets the pie sweep around when it is first
+    shown."""
 
     type: ClassVar[str] = "PieChart"
     theme_words: ClassVar[dict[str, str]] = {"other": "other"}
@@ -401,6 +409,7 @@ class PieChart(Component):
     other: str | None = "Other"
     colors: dict[str, int] | None = None
     height: int | None = None
+    animate: bool = False
     on_click: Any = None
 
     _slices: list[dict[str, Any]] = PrivateAttr()
@@ -424,6 +433,7 @@ class PieChart(Component):
             other: str | None = "Other",
             colors: dict[str, int] | None = None,
             height: int | None = None,
+            animate: bool = False,
             on_click: Any = None,
         ) -> None: ...
     else:

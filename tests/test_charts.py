@@ -104,6 +104,18 @@ def test_empty_rows_are_fine() -> None:
     ]
 
 
+def test_a_chart_is_still_unless_it_is_told_to_animate() -> None:
+    charts = (ui.BarChart, ui.LineChart, ui.AreaChart)
+    rows = [{"month": "Jan", "sales": 1}]
+    for chart in charts:
+        assert not build(chart(rows, x="month", y="sales")).nodes["root"].props.get("animate")
+        moving = build(chart(rows, x="month", y="sales", animate=True)).nodes["root"].props
+        assert moving["animate"] is True
+    assert not build(ui.PieChart(rows, x="month", y="sales")).nodes["root"].props.get("animate")
+    pie = build(ui.PieChart(rows, x="month", y="sales", animate=True)).nodes["root"].props
+    assert pie["animate"] is True
+
+
 def test_stat_delta_and_trend() -> None:
     props = (
         build(ui.Stat(label="Revenue", value="€12k", delta=0.12, good="up", trend=[1, 2, 3]))

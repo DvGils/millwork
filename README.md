@@ -1,4 +1,4 @@
-<p align="center"><img src="bundle/public/favicon.svg" alt="" width="72"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/DvGils/millwork/main/bundle/public/favicon.svg" alt="" width="72"></p>
 
 <h1 align="center">millwork</h1>
 
@@ -10,7 +10,10 @@
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
 </p>
 
-<img src=".github/readme/demo.gif" alt="A millwork page in use: a form submits with a validation message and then succeeds, an import runs with a progress bar and steps while rows appear in the table, and a chat answer streams in." width="100%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/DvGils/millwork/main/.github/readme/demo-dark.gif">
+  <img src="https://raw.githubusercontent.com/DvGils/millwork/main/.github/readme/demo.gif" alt="A millwork page in use: a form submits with a validation message and then succeeds, an import runs with a progress bar and steps while rows appear in the table and the bars of a chart move with them, and a question in a floating assistant gets an answer that streams in." width="100%">
+</picture>
 
 A page is a Python function of the session's state. A handler changes the
 state, the page renders again, and the browser receives a patch. The React bundle

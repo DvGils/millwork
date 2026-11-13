@@ -31,6 +31,9 @@ async def test_a_click_counts(app):
 
 Tests are `async def`, run by pytest-asyncio in auto mode. `open(path)`
 runs the page's `connect` and the first render and yields a `Page`.
+The first `open` of a `TestApp` runs the app's `on_startup` hooks first,
+as a server does when it starts, so a hook that warms up a client or
+opens a connection does that in a test too.
 Leaving the block closes the session, `close` hook included, and a hook
 that raises fails the test there. `open(path,
 user=User(...))` signs a person in. Without one, a gated page raises

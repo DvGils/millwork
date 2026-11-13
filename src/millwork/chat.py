@@ -30,6 +30,16 @@ log = logging.getLogger("millwork.chat")
 Role = Literal["user", "assistant", "system"]
 
 
+def _said(session: Session[Any], exc: BaseException) -> str:
+    """What the transcript says of a reply or a step that raised. The words
+    of an exception are for whoever runs the app: they can name a table, a
+    host or a path. A reader gets the theme's own line, and the log has the
+    rest. In debug mode the reader is the developer, and gets the words."""
+    if session.app.debug:
+        return str(exc) or type(exc).__name__
+    return session.text("something_went_wrong")
+
+
 class UIMessage(BaseModel):
     """The AI SDK message shape: a role and a list of parts."""
 
@@ -143,7 +153,7 @@ class ChatTurn:
             raise
         except Exception as exc:
             log.exception("chat turn failed")
-            await reply.error(str(exc) or type(exc).__name__)
+            await reply.error(_said(self.session, exc))
             await reply._finish("error")
             raise
         else:
@@ -256,7 +266,7 @@ class Reply:
         try:
             yield handle
         except Exception as exc:
-            await handle.error(str(exc) or type(exc).__name__)
+            await handle.error(_said(self._s, exc))
             raise
         else:
             if handle.part["state"] == "input-available":

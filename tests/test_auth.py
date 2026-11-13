@@ -760,3 +760,41 @@ def test_only_the_apps_own_pages_can_sign_someone_out(tmp_path: Path) -> None:
         r = client.post("/_mw/auth/logout", headers={"origin": "http://testserver"})
         assert r.status_code == 200 and asked == ["demian"]
         assert client.get("/", follow_redirects=False).status_code == 302
+
+
+def test_an_intent_has_a_button_for_each_provider_that_names_it() -> None:
+    two = auth.Auth(
+        [
+            auth.AzureAD(tenant="t", client_id="c", client_secret="x"),
+            auth.Google(client_id="g", client_secret="y"),
+        ],
+        intents={"demo": "Try the demo"},
+    )
+    described = two.describe("/", either="or")
+    assert laid_out(described) == [
+        ("SignIn", ("azure-ad", None, None)),
+        ("SignIn", ("google", None, None)),
+        ("SignIn", ("azure-ad", "demo", "Try the demo")),
+        ("SignIn", ("google", "demo", "Try the demo")),
+    ]
+    buttons = [n["props"] for n in described["nodes"].values() if n["type"] == "SignIn"]
+    # With two ways through, the intent's words alone would be on two buttons.
+    assert [(b["name"], b["with_provider"]) for b in buttons if b.get("intent")] == [
+        ("Microsoft", True),
+        ("Google", True),
+    ]
+    assert not any(b["with_provider"] for b in buttons if not b.get("intent"))
+    # One provider needs no naming, and words of the app's own are left alone.
+    one = two_ways().describe("/", either="or")
+    alone = [n["props"] for n in one["nodes"].values() if n["type"] == "SignIn"]
+    assert not any(b["with_provider"] for b in alone)
+    own = auth.Auth(
+        [
+            auth.AzureAD(tenant="t", client_id="c", client_secret="x"),
+            auth.Google(client_id="g", client_secret="y"),
+        ],
+        intents={"demo": "Try the demo"},
+        login=ui.SignIn("google", intent="demo", label="Look around"),
+    ).describe("/", either="or")
+    (button,) = [n["props"] for n in own["nodes"].values() if n["type"] == "SignIn"]
+    assert button["label"] == "Look around" and not button["with_provider"]

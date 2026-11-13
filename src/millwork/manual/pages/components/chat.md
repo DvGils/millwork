@@ -172,6 +172,14 @@ def example(s):
 | `await reply.suggestions([...])` | follow-up chips |
 | `await reply.error(text)` | an error line |
 
+A handler that raises inside `turn.reply()` ends the reply as failed.
+The reader gets a toast saying so, the step that raised is marked, and
+the log has the exception. What the exception says stays on the server,
+since it can name a table, a host or a path, and the tab is sent
+"Something went wrong." in its place. In debug mode the tab gets the
+exception's own words. A handler that has something to tell the reader
+catches the exception and calls `reply.error` with it.
+
 ## Reading aids
 
 Four things are off until asked for, since a chat is often clean enough
