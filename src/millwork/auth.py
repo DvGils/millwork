@@ -674,16 +674,16 @@ class Auth:
 
     def layout(self, either: str = "or") -> Component:
         """What the login page shows under its heading: the app's own layout, or
-        every OAuth provider's button, a button per intent, and the password
-        form, with ``either`` on the line between buttons and form."""
+        every OAuth provider's button, a button per intent and provider, and
+        the password form, with ``either`` on the line between buttons and form."""
         from millwork import ui
 
         if self.login_page is not None:
             return self.login_page
         oauth = [p for p in self.providers.values() if p.kind == "oauth"]
         buttons: list[Component] = [ui.SignIn(p.id) for p in oauth]
-        if oauth:
-            buttons += [ui.SignIn(oauth[0].id, intent=intent) for intent in self.intents]
+        # An intent is a way in through a provider, so each provider has it.
+        buttons += [ui.SignIn(p.id, intent=intent) for intent in self.intents for p in oauth]
         parts: list[Component] = [ui.Stack(*buttons, gap=2)] if buttons else []
         form = next((p for p in self.providers.values() if p.kind == "password"), None)
         if form is not None:
