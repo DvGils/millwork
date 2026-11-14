@@ -23,6 +23,9 @@ versions; a release says so here when it does.
   page could not show. It happened when a drawing came due while the
   handler was still running: a question, a task or `s.refresh()` more
   than 50 ms before it left.
+- `s.reset(key)` took the keyboard out of the field it reset. A field
+  that its own `on_submit` reset got the first entry and none after.
+  The keyboard now stays where it was.
 
 ### Features
 

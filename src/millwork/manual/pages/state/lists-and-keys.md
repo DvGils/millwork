@@ -123,6 +123,7 @@ def example(s):
 ```
 
 A key is also how `s.reset(key)` returns a browser-owned control to its
-`default`, and how `ui.Button(form=key)` finds its form. `hidden=True`
+`default`, with the keyboard still in it when it was, and how
+`ui.Button(form=key)` finds its form. `hidden=True`
 keeps a component in the tree without showing it, so its browser-side
 state survives. `cls` adds Tailwind classes for a spacing or sizing tweak.

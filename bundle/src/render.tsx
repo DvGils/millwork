@@ -4,7 +4,7 @@
 // custom components. An error inside one node shows that node's id, never a
 // blank page.
 
-import { Component as ReactComponent, memo, useEffect, type ReactNode } from "react";
+import { Component as ReactComponent, memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { useNode, useResetEpoch, type Node } from "./store";
 import { emit as wsEmit } from "./ws";
 import { registry } from "./components";
@@ -23,12 +23,38 @@ export type Renderer = (p: RenderProps) => ReactNode;
 export const Render = memo(function Render({ id }: { id: string }) {
   const node = useNode(id);
   const epoch = useResetEpoch(id);
+  // A reset draws the node anew, and the keyboard would be nowhere after it
+  // when it was in the node. So where it was is noted as the reset comes in,
+  // while the old elements are still there, and it is put back in that
+  // place among the new ones: a field that is reset on Enter takes the next
+  // entry. The place is the element's number among those of its own kind,
+  // the second input or the first button, since a reset changes what else
+  // is there: a field that is emptied loses its clear button.
+  const wrapper = useRef<HTMLDivElement>(null);
+  const drawn = useRef(epoch);
+  const keyboard = useRef<{ kind: string; at: number } | null>(null);
+  if (drawn.current !== epoch) {
+    drawn.current = epoch;
+    const inside = wrapper.current;
+    const active = document.activeElement;
+    keyboard.current =
+      inside && active && inside.contains(active)
+        ? { kind: active.tagName, at: Array.from(inside.getElementsByTagName(active.tagName)).indexOf(active) }
+        : null;
+  }
+  useLayoutEffect(() => {
+    const was = keyboard.current;
+    keyboard.current = null;
+    if (!was) return;
+    const again = wrapper.current?.getElementsByTagName(was.kind)[was.at];
+    if (again instanceof HTMLElement) again.focus();
+  }, [epoch]);
   if (!node) return null;
   // The wrapper is always there, so flipping `hidden` never remounts the subtree:
   // `display: contents` keeps it out of the layout while shown.
   const hidden = Boolean(node.props.hidden);
   return (
-    <div style={{ display: hidden ? "none" : "contents" }}>
+    <div ref={wrapper} style={{ display: hidden ? "none" : "contents" }}>
       <Boundary key={`${node.type}:${epoch}`} id={id}>
         <NodeComponent node={node} />
       </Boundary>
