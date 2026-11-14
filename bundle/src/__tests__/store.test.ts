@@ -94,6 +94,76 @@ describe("store splice", () => {
   });
 });
 
+describe("store pages", () => {
+  const page = () => ({
+    root: node("root", "Page", {}, ["root/side", "root/body", "root/help"]),
+    "root/side": node("root/side", "Sidebar"),
+    "root/body": node("root/body", "Stack", {}, ["root/body/form"]),
+    "root/body/form": node("root/body/form", "Form"),
+    "root/help": node("root/help", "Assistant"),
+  });
+
+  it("gives the body of another page a number of its own, and leaves what goes with every page", () => {
+    store.mount("root", page(), null);
+    const before = store.pageOf("root/body");
+    // The page the tab already had, given again: nothing starts over.
+    store.mount("root", page(), null);
+    expect(store.pageOf("root/body")).toBe(before);
+    // Another page with a part under the same id: that part is another one.
+    const told: string[] = [];
+    const unsub = store.subscribe("root/body", () => told.push("body"));
+    store.mount("root", page(), null, true);
+    const on = store.pageOf("root/body");
+    expect(on).toBeGreaterThan(before);
+    expect(told).toEqual(["body"]);
+    unsub();
+    // Only the parts of the page body, and not what they hold, which
+    // starts over with them, nor the sidebar and the assistant.
+    expect(store.pageOf("root/body/form")).toBe(0);
+    expect(store.pageOf("root/side")).toBe(0);
+    expect(store.pageOf("root/help")).toBe(0);
+    expect(store.pageOf("root")).toBe(0);
+    // A page given again keeps the number, and the next other page moves it on.
+    store.mount("root", page(), null);
+    expect(store.pageOf("root/body")).toBe(on);
+    store.mount("root", page(), null, true);
+    expect(store.pageOf("root/body")).toBeGreaterThan(on);
+    // A part that is gone is forgotten.
+    store.mount("root", { root: node("root", "Page") }, null);
+    expect(store.pageOf("root/body")).toBe(0);
+  });
+
+  it("looks into what holds a part that stays, and starts a page over whole that is no Page", () => {
+    // An assistant inside a stack: the stack is kept for it, and the form
+    // beside it starts over.
+    store.mount(
+      "root",
+      {
+        root: node("root", "Page", {}, ["root/all"]),
+        "root/all": node("root/all", "Stack", {}, ["root/all/form", "root/all/more"]),
+        "root/all/form": node("root/all/form", "Form"),
+        "root/all/more": node("root/all/more", "Row", {}, ["root/all/more/help", "root/all/more/in"]),
+        "root/all/more/help": node("root/all/more/help", "Assistant"),
+        "root/all/more/in": node("root/all/more/in", "Input"),
+      },
+      null,
+      true,
+    );
+    const on = store.pageOf("root/all/form");
+    expect(on).toBeGreaterThan(0);
+    expect(store.pageOf("root/all/more/in")).toBe(on);
+    expect(store.pageOf("root/all")).toBe(0);
+    expect(store.pageOf("root/all/more")).toBe(0);
+    expect(store.pageOf("root/all/more/help")).toBe(0);
+    // A page that is a form, or a chat, and nothing around it.
+    store.mount("root", { root: node("root", "Form") }, null, true);
+    expect(store.pageOf("root")).toBeGreaterThan(on);
+    // One that is a sidebar alone has nothing that starts over.
+    store.mount("root", { root: node("root", "Sidebar") }, null, true);
+    expect(store.pageOf("root")).toBe(0);
+  });
+});
+
 describe("store mounts", () => {
   it("counts whole pages, and a patch is not one", () => {
     const told: number[] = [];

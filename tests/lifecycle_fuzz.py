@@ -879,6 +879,8 @@ class Tab:
         # session whose page the tab has when it comes back on a new socket.
         self.marks: list[dict[str, Any]] = []
         self.page_of: str | None = None
+        # Whether the page that comes next is another one than the tab is on.
+        self.another = False
         # Which tab each ``Tabs`` that keeps its own choice is on, and what
         # the tab last told the server about it.
         self.on: dict[str, str] = {}
@@ -929,6 +931,7 @@ class Tab:
         self.on = dict(old.on)
         self.marks = [dict(m) for m in old.marks]
         self.page_of = old.session
+        self.another = old.another
 
     def patch(self, ops: list[dict[str, Any]]) -> None:
         nodes = self.nodes
@@ -1093,6 +1096,9 @@ class Tab:
                 self.nodes = msg["nodes"]
                 # A page brings its marks.
                 self.marks = msg.get("marks", [])
+                if self.another:
+                    # Its tabs start over, on the tab they open on.
+                    self.on, self.another = {}, False
                 # A whole page: the tabs that live on in it say again where
                 # they are, as the session may have forgotten on the way.
                 self.told.clear()
@@ -1105,6 +1111,10 @@ class Tab:
         elif kind == "command":
             fact["name"] = msg["name"]
             if msg["name"] == "navigate":
+                # Another page, and not the one the tab is on with another
+                # query: the body of the page that comes is drawn anew.
+                if marks.bare(msg["args"]["path"]) != marks.bare(self.path):
+                    self.another = True
                 self.path = msg["args"]["path"]
             if msg["name"] == "leave":
                 self.left_for = msg["args"]["to"]

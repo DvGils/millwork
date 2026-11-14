@@ -323,6 +323,9 @@ function forgetFiles() {
 // the tab scrolls there once the page has mounted. Without one, the page
 // opens at the top, or where the reader left it when the history brings it back.
 let pendingHash: string | null = null;
+// Whether the page that is put here next is another one than the tab is
+// on, as the navigation before it said.
+let anotherPage = false;
 let pendingScroll: number | null = null;
 let poppedScroll: number | null = null;
 export function navigate(path: string) {
@@ -442,7 +445,8 @@ function apply(m: ServerMessage) {
         });
         break;
       }
-      store.mount(m.root, m.nodes, m.title);
+      store.mount(m.root, m.nodes, m.title, anotherPage);
+      anotherPage = false;
       // A page brings its marks. The ones there were are the last page's.
       marks.set(parseMarks(m.marks));
       const hash = pendingHash ?? (window.location.hash ? window.location.hash.slice(1) : null);
@@ -506,6 +510,10 @@ function command(name: string, args: Record<string, unknown>) {
     case "navigate": {
       // The server already switched the session's page; the tab follows without a reload.
       const path = String(args.path);
+      // Another page, and not the one it is on with another query: what
+      // the browser keeps of the page body ends with the page.
+      const bare = (p: string) => p.split(/[?#]/, 1)[0];
+      anotherPage = !samePath(bare(boot.path), bare(path));
       boot.path = path;
       storeSession();
       if (args.hash) pendingHash = String(args.hash);

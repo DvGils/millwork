@@ -167,7 +167,16 @@ class Session[S]:
         self.conn: Connection | None = None
         self._wanted: deque[Want] = deque([Want(path, first=True)])
         self._previous: (
-            tuple[PageDef, dict[str, str], str, Tree | None, set[Signal], list[marks.Mark]] | None
+            tuple[
+                PageDef,
+                dict[str, str],
+                str,
+                Tree | None,
+                set[Signal],
+                list[marks.Mark],
+                dict[str, str],
+            ]
+            | None
         ) = None
         # The signals the page the session is on follows.
         self._following: set[Signal] = set()
@@ -613,7 +622,12 @@ class Session[S]:
             self.tree,
             self._unfollow(),
             self._marks,
+            self._showing,
         )
+        if marks.bare(path) != marks.bare(self.path):
+            # On another page the tab's strips start over, on their first
+            # tab, so what they were on is not what this page is drawn by.
+            self._showing = {}
         # A mark is for one visit of a page: this one's are over, the ones
         # that waited for the page that comes are its own now, and the ones
         # for another page wait on.
@@ -690,7 +704,19 @@ class Session[S]:
             self._unfollow()
             # The keyboard was asked for in a page that did not come.
             self._focus_asked = None
-            self.page, self.params, self.path, self.tree, following, self._marks = self._previous
+            said = self._showing
+            (
+                self.page,
+                self.params,
+                self.path,
+                self.tree,
+                following,
+                self._marks,
+                self._showing,
+            ) = self._previous
+            # What the tab said of its strips meanwhile was said of the
+            # page it is still on.
+            self._showing = {**self._showing, **said}
             for signal in following:
                 self.follow(signal)
             if following:

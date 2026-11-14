@@ -39,6 +39,12 @@ versions; a release says so here when it does.
   themselves and showed a hidden one all the same. A hidden tab has no
   place in the strip, which does not open on it, and keeps what is in
   it.
+- A form, an input or a tab strip that stands in the same place on two
+  pages carried what the browser kept of it from one to the other: text
+  typed into a form on `/orders/1` showed on `/orders/2`. The body of a
+  page starts over on another path now. A sidebar, an assistant and the
+  header keep how they are, and a navigation to the same path with
+  another query keeps everything.
 
 ### Features
 

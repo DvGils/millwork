@@ -5,7 +5,7 @@
 // blank page.
 
 import { Component as ReactComponent, memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import { useNode, useResetEpoch, type Node } from "./store";
+import { useNode, usePageOf, useResetEpoch, type Node } from "./store";
 import { emit as wsEmit } from "./ws";
 import { registry } from "./components";
 import { CustomComponent } from "./custom";
@@ -23,6 +23,10 @@ export type Renderer = (p: RenderProps) => ReactNode;
 export const Render = memo(function Render({ id }: { id: string }) {
   const node = useNode(id);
   const epoch = useResetEpoch(id);
+  // A part of the page body is drawn anew on another page, though it has
+  // the id of one that was here: a form does not carry what was typed into
+  // it from one page to the next.
+  const page = usePageOf(id);
   // A reset draws the node anew, and the keyboard would be nowhere after it
   // when it was in the node. So where it was is noted as the reset comes in,
   // while the old elements are still there, and it is put back in that
@@ -55,7 +59,7 @@ export const Render = memo(function Render({ id }: { id: string }) {
   const hidden = Boolean(node.props.hidden);
   return (
     <div ref={wrapper} data-node={id} style={{ display: hidden ? "none" : "contents" }}>
-      <Boundary key={`${node.type}:${epoch}`} id={id}>
+      <Boundary key={`${node.type}:${epoch}:${page}`} id={id}>
         <NodeComponent node={node} />
       </Boundary>
     </div>
