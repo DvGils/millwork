@@ -174,6 +174,10 @@ class Page:
             raise LookupError(f"no {name}{having} {where}")
         return found[0]
 
+    def outline(self, **how: Any) -> Any:
+        """The page as data, as ``s.outline()`` gives it to the app."""
+        return self.session.outline(**how)
+
     def text(self) -> str:
         """Every string prop of the tree, for a quick "is it there" check. A
         prop that picks from a fixed set, a variant or an alignment, is not

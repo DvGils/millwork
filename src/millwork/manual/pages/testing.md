@@ -206,6 +206,9 @@ at the cause rather than at a failure page or a toast. `TestApp(app,
 strict=False)` leaves such failures in the log and in `page.failures`,
 which is how a running app treats them.
 
+`page.outline()` is the page as data, as the app's own `s.outline()`
+gives it, for a test of what an assistant is told.
+
 ## Two sessions
 
 One `TestApp` opens as many pages as the test asks for, each a session

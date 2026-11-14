@@ -23,10 +23,10 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 from urllib.parse import urlencode
 
-from millwork import context, work
+from millwork import context, outline, work
 from millwork.chat import ChatTurn, Thread, UIMessage
 from millwork.connection import REPLACED, Connection, End, Pipe
 from millwork.files import FileRef, Reject, SessionFiles, content_to_file
@@ -96,6 +96,21 @@ class Plan:
     """The event is what was typed into a text field. The tab shows that by
     itself, and sends it right before a press that follows it."""
     more: dict[str, Any] = field(default_factory=dict)
+
+
+def _drawn(tree: Tree, node_id: str) -> bool:
+    """Whether a form is on the page and the tab has it drawn. One inside a
+    closed dialog is not: the tab draws what a dialog holds when it opens,
+    and a form that is drawn anew shows nothing of its last submit."""
+    if node_id not in tree.nodes:
+        return False
+    at = node_id.find("/")
+    while at != -1:
+        above = tree.nodes.get(node_id[:at])
+        if above is not None and above.type in ("Dialog", "Sheet") and not above.props.get("open"):
+            return False
+        at = node_id.find("/", at + 1)
+    return True
 
 
 def names(name: str, node_id: str, component: Component | None) -> bool:
@@ -187,6 +202,8 @@ class Session[S]:
         # and says it again whenever the ``Tabs`` are new to it, so what it
         # said is kept until the node is gone from the page.
         self._showing: dict[str, str] = {}
+        # What each form was told is wrong with it at its last submit.
+        self._form_issues: dict[str, list[Any]] = {}
         # Lazy parts to build at the next render whether they show or not.
         self._parts_due: set[str] = set()
         # What events pass through one at a time, in the order they came in,
@@ -414,6 +431,8 @@ class Session[S]:
         # first connect hook says before the page is drawn reaches it.
         if last_seq <= 0:
             last_seq = 0 if self.outbox.seq == 0 else -1
+            # Its forms are drawn anew, with nothing of their last submit.
+            self._form_issues = {}
         conn.bind(self, last_seq)
         if self.tree is not None and self.tree is self._failure:
             # A reload is how a person tries a page that failed again.
@@ -665,6 +684,12 @@ class Session[S]:
 
     def command(self, name: str, **args: Any) -> None:
         """An instruction to the tab: toast, navigate, clipboard."""
+        if name == "form_issues":
+            # Kept for the page as data, which says what a form shows.
+            if args.get("issues"):
+                self._form_issues[str(args.get("node"))] = list(args["issues"])
+            else:
+                self._form_issues.pop(str(args.get("node")), None)
         self.post(Command(name=name, args=args))
 
     def toast(
@@ -710,10 +735,86 @@ class Session[S]:
             return []
         return [i for i in tree.nodes if names(name, i, tree.components.get(i))]
 
+    @overload
+    def outline(
+        self,
+        *,
+        within: str | None = ...,
+        as_text: Literal[False] = ...,
+        rows: int = ...,
+        chars: int = ...,
+    ) -> dict[str, Any] | None: ...
+    @overload
+    def outline(
+        self, *, within: str | None = ..., as_text: Literal[True], rows: int = ..., chars: int = ...
+    ) -> str: ...
+    @overload
+    def outline(
+        self, *, within: str | None = ..., as_text: bool, rows: int = ..., chars: int = ...
+    ) -> dict[str, Any] | str | None: ...
+    def outline(
+        self,
+        *,
+        within: str | None = None,
+        as_text: bool = False,
+        rows: int = 5,
+        chars: int = 200,
+    ) -> dict[str, Any] | str | None:
+        """The page as data: what it holds for the person in front of it,
+        said by each of its components. For an assistant in the app, which
+        reads it to answer what is on the page and where.
+
+        A dict for each component, with its id, its type, its key when it
+        has one, and what a person reads on it: a label, a text, a value
+        the page holds, a table's columns and first rows, a form's fields.
+        What it holds is under ``children``. ``as_text=True`` gives it as
+        text, a line for each component, for a model's prompt.
+
+        It is made from what was sent to the tab and holds less: nothing of
+        a hidden component, of a table's fields that have no column, of a
+        password, or of the props of an app's own component. What a press
+        would bring up is in it and says that it does not show now, as a
+        closed dialog does, or that it may not, where the browser keeps
+        whether a group is folded. It is the page as it was last drawn, so
+        a handler reads it before what it changed itself is in it.
+
+        ``within`` names the component to start at, by key or id, and
+        gives None, or no text, for a name that finds nothing or only what
+        is hidden. So does a session that has no page drawn yet, as in a
+        ``connect`` hook.
+        ``rows`` is how many rows of a table or a chart and how many of a
+        chat's last messages are given, and ``chars`` where a text is
+        cut."""
+        ids = None
+        if within is not None:
+            # Of several with that name, the first that shows.
+            ids = self.named(within)
+            if not ids:
+                return "" if as_text else None
+        found = outline.outline(
+            self.tree,
+            within=ids,
+            rows=rows,
+            chars=chars,
+            showing=self._showing,
+            issues=self._form_issues,
+            currency=self.app.theme.currency,
+        )
+        if not as_text:
+            return found
+        return outline.as_text(found, outline.pointed(self.tree) if self.tree else {})
+
     def reset(self, key: str) -> None:
         """Put the component with this key back to its default: the draft an
         input holds, a form's fields, a tab strip's choice."""
-        self.command("reset", ids=self.named(key))
+        ids = self.named(key)
+        # A form that is put back shows nothing of its last submit.
+        self._form_issues = {
+            k: v
+            for k, v in self._form_issues.items()
+            if not any(k == i or k.startswith(i + "/") for i in ids)
+        }
+        self.command("reset", ids=ids)
 
     def focus(self, name: str) -> None:
         """Put the keyboard in a component, named by its key or its id, or
@@ -1270,6 +1371,8 @@ class Session[S]:
         """Put the page on a tab that has nothing of it: no page yet, or the
         failure page."""
         self._render_due = self._render_late = False
+        # What the forms of the page before were told is not this page's.
+        self._form_issues = {}
         failed_before = self.tree is not None and self.tree is self._failure
         try:
             tree = self._page_tree()
@@ -1479,6 +1582,8 @@ class Session[S]:
                 )
             if self._showing:
                 self._showing = {k: v for k, v in self._showing.items() if k in tree.nodes}
+            if self._form_issues:
+                self._form_issues = {k: v for k, v in self._form_issues.items() if _drawn(tree, k)}
             return tree
         finally:
             context.unbind(token)

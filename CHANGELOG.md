@@ -52,6 +52,16 @@ versions; a release says so here when it does.
   the button that asked. `s.named(name)` gives the ids a name stands
   for: a key, an id, or the end of an id such as `one/qty` for one of
   several with the same key.
+- `s.outline()` gives the page as data: what it holds for the person,
+  said by each of its components, as a structure or with
+  `as_text=True` as text, for an assistant in the app to read. Each
+  kind of component says what a person reads on it and nothing else it
+  was sent: a table the columns it shows and the first rows it was
+  given, a chosen option its label. A hidden component is not in it,
+  nor a password, nor the props of an app's own component. A
+  closed dialog is in it and says so, and a group says that it is
+  folded, or that it may be where the browser keeps that.
+  `page.outline()` is the same in a test.
 - `autofocus=True` on `ui.Input`, `ui.Textarea` and `ui.NumberInput`
   puts the keyboard in the field whenever it is put on the page: when
   the page opens, after a reload, in a dialog as it opens.

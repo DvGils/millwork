@@ -158,6 +158,10 @@ def example(s):
     )
 ```
 
+An assistant that is asked about the page reads it with
+`s.outline(as_text=True)`, which
+[Accessing the session](/state/accessing-the-session) describes.
+
 ## Parts a reply can carry
 
 | Call | Shows as |
