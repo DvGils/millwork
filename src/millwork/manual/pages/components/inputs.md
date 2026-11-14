@@ -136,6 +136,35 @@ worked out from the typed text is therefore still disabled at a press
 that comes within the pause, and the press does nothing. A send button
 stays enabled and its handler checks the text.
 
+`clear_on_submit=True` empties the field at the Enter, in the browser,
+ready for the next entry: a line for a list, a code from a scanner, a
+message. The handler gets the text and has nothing to clear, and the
+keyboard stays in the field. A handler that empties a value it holds, or
+calls `s.reset`, does so a round trip later, and what was typed in that
+time goes with it. A `Textarea` takes the same at Ctrl+Enter.
+
+```python live
+from pydantic import BaseModel
+
+
+class Lines(BaseModel):
+    taken: list[str] = []
+
+
+def take(s, text):
+    if text:
+        s.state.lines.taken.append(text)
+
+
+def example(s):
+    taken = s.state.lines.taken
+    return ui.Stack(
+        ui.Input(placeholder="A line, then Enter", clear_on_submit=True, on_submit=take),
+        ui.Text(", ".join(taken[-6:]) or "Nothing yet.", variant="muted"),
+        gap=2,
+    )
+```
+
 `max_length` caps what the field takes, and `counter=True` shows under the
 field how much it holds, against the limit when there is one. The count
 takes the destructive color once the field is full. A field of the kind

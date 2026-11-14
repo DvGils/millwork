@@ -506,3 +506,22 @@ async def test_a_field_cleared_right_after_typing_is_told_so() -> None:
             await page.settle()
             assert page.state.posted[-1] == text and page.state.text == ""
             assert told(page, field)[-2:] == [text, ""]
+
+
+async def test_a_text_field_says_when_it_is_emptied_at_its_enter() -> None:
+    # The emptying is the browser's, at the Enter, so all the server does is
+    # tell the field to.
+    app = mw.App("t", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session[Any]) -> ui.Component:
+        return ui.Page(
+            ui.Input(key="line", clear_on_submit=True, on_submit=lambda s, text: None),
+            ui.Textarea(key="note", clear_on_submit=True, on_submit=lambda s, text: None),
+            ui.Input(key="plain"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        assert page.find("line").props["clear_on_submit"] is True
+        assert page.find("note").props["clear_on_submit"] is True
+        assert page.find("plain").props["clear_on_submit"] is False

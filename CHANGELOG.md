@@ -26,9 +26,19 @@ versions; a release says so here when it does.
 - `s.reset(key)` took the keyboard out of the field it reset. A field
   that its own `on_submit` reset got the first entry and none after.
   The keyboard now stays where it was.
+- An Enter that takes a word from an input method, as in Chinese,
+  Japanese and Korean, submitted a `ui.Input` with the text as it stood.
+  It is left to the input method now.
 
 ### Features
 
+- `ui.Input(clear_on_submit=True)`, and the same on `ui.Textarea`,
+  empties the field in the browser at the Enter that submits it, for
+  entries that follow each other: codes from a scanner, lines for a
+  list, messages. A handler that empties a held value or calls
+  `s.reset` does so a round trip later, on top of what was typed in
+  that time: at 100 ms between entries and a round trip of 120 ms,
+  codes came through cut short or joined.
 - A way to retire a spelling without breaking an app. The old spelling
   keeps working for one minor release and warns with a
   `MillworkDeprecationWarning` that points at the app's line, names the

@@ -31,3 +31,14 @@ export function caughtUp(told: Told[], key: string, now: number): { take: boolea
   const at = waiting.map((t) => t.key).lastIndexOf(key);
   return at < 0 ? { take: true, told: [] } : { take: false, told: waiting.slice(at + 1) };
 }
+
+// Whether a value the field tells the server is one to remember, because
+// an answer to it is due. The server sends back what it does not hold yet,
+// and what it holds is the last value it was told and has still to answer,
+// or else the value it sent last, `held`. A field that is emptied right
+// after it told its text tells both, and the second is an answer to wait
+// for even when the server's last value was the empty one too.
+export function answerDue(told: Told[], held: string, key: string, now: number): boolean {
+  const waiting = told.filter((t) => now - t.at < ANSWERED_WITHIN);
+  return key !== (waiting.length ? waiting[waiting.length - 1].key : held);
+}

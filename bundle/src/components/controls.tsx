@@ -141,9 +141,16 @@ export const Input: Renderer = ({ props, emit }) => {
           });
       }}
       onKeyDown={(e) => {
+        // An Enter that takes a word from an input method is not the
+        // person's Enter: the text is not what they mean yet.
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
         if (e.key === "Enter" && props.on_submit) {
           later.flush();
           emit("submit", current);
+          // Emptied here and now, for the next entry: a handler that cleared
+          // the value would do it a round trip later, on top of what was
+          // typed meanwhile.
+          if (props.clear_on_submit) clear();
         }
       }}
       // A search field gets a clear button from the browser. With the one
