@@ -1140,6 +1140,7 @@ class Input(_Owned):
     prefix_icon: str | None = None
     suffix: str | None = None
     disabled: bool = False
+    autofocus: bool = False
     readonly: bool = False
     clearable: bool = False
     max_length: int | None = None
@@ -1165,6 +1166,7 @@ class Input(_Owned):
             prefix_icon: str | None = None,
             suffix: str | None = None,
             disabled: bool = False,
+            autofocus: bool = False,
             readonly: bool = False,
             clearable: bool = False,
             max_length: int | None = None,
@@ -1192,6 +1194,7 @@ class Textarea(_Owned):
     counter: bool = False
     spellcheck: bool | None = None
     disabled: bool = False
+    autofocus: bool = False
     readonly: bool = False
     debounce_ms: int = 250
     clear_on_submit: bool = False
@@ -1215,6 +1218,7 @@ class Textarea(_Owned):
             counter: bool = False,
             spellcheck: bool | None = None,
             disabled: bool = False,
+            autofocus: bool = False,
             readonly: bool = False,
             debounce_ms: int = 250,
             clear_on_submit: bool = False,
@@ -1236,6 +1240,7 @@ class NumberInput(_Owned):
     suffix: str | None = None
     placeholder: str | None = None
     disabled: bool = False
+    autofocus: bool = False
     on_change: Any = None
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
@@ -1254,6 +1259,7 @@ class NumberInput(_Owned):
             suffix: str | None = None,
             placeholder: str | None = None,
             disabled: bool = False,
+            autofocus: bool = False,
             on_change: Any = None,
         ) -> None: ...
 

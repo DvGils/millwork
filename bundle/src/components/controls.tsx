@@ -130,6 +130,9 @@ export const Input: Renderer = ({ props, emit }) => {
       spellCheck={typeof props.spellcheck === "boolean" ? props.spellcheck : undefined}
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}
+      // The keyboard is in it whenever it is put on the page: at the first
+      // drawing, after a reload, in a dialog as it opens.
+      autoFocus={Boolean(props.autofocus)}
       aria-describedby={counted ? countId : undefined}
       onChange={(e) => {
         const next = e.target.value;

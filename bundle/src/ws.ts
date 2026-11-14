@@ -12,6 +12,7 @@ import { invalidate, syncVersions } from "./custom";
 import { ensureTailwindRuntime, needsRuntime, runtimeLoaded } from "./tailwind-runtime";
 import { markdownLoaded, needsMarkdown, preloadMarkdown } from "./components/markdown";
 import { keepScrollInHistory, restoreScroll, scrollFromHistory, watchScroll } from "./scroll";
+import { focusNode } from "./pointing";
 
 interface Boot {
   path: string;
@@ -581,8 +582,19 @@ function command(name: string, args: Record<string, unknown>) {
       window.dispatchEvent(new CustomEvent("mw:form-issues", { detail: { node: String(args.node), issues: args.issues ?? [] } }));
       break;
     case "reset":
-      store.reset(String(args.key));
+      store.reset(Array.isArray(args.ids) ? args.ids.map(String) : []);
       break;
+    case "focus": {
+      // After two frames: the drawing that came just before is on the page
+      // by then, a dialog it opened included.
+      const id = String(args.id);
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          if (!focusNode(id)) console.warn("millwork: nothing in", id, "takes the keyboard");
+        }),
+      );
+      break;
+    }
     default:
       console.warn("millwork: unknown command", name, args);
   }

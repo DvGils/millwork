@@ -125,11 +125,12 @@ class Store {
     }
   }
 
-  // Remount the subtrees of every node whose key is `key`: client state goes back to default.
-  reset(key: string): number {
+  // Remount the subtrees of these nodes: client state goes back to default.
+  // The server names them, by the one rule it has for what a key stands for.
+  reset(ids: string[]): number {
     let count = 0;
-    for (const id of this.nodes.keys()) {
-      if (id.endsWith(`/${key}`)) {
+    for (const id of ids) {
+      if (this.nodes.has(id)) {
         this.epochs.set(id, (this.epochs.get(id) ?? 0) + 1);
         this.notify(id);
         count += 1;

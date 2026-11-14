@@ -47,12 +47,12 @@ describe("store patch order", () => {
 });
 
 describe("store reset", () => {
-  it("bumps the epoch of every node with that key and notifies it", () => {
+  it("bumps the epoch of every node it is given and notifies it", () => {
     store.mount("root", { root: node("root", "Page", {}, ["root/f"]), "root/f": node("root/f", "Form") }, null);
     const seen: number[] = [];
     store.subscribe("root/f", () => seen.push(store.epoch("root/f")));
-    expect(store.reset("f")).toBe(1);
-    expect(store.reset("nope")).toBe(0);
+    expect(store.reset(["root/f"])).toBe(1);
+    expect(store.reset(["root/nope"])).toBe(0);
     expect(seen).toEqual([1]);
     expect(store.epoch("root")).toBe(0);
   });

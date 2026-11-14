@@ -311,6 +311,7 @@ export const Textarea: Renderer = ({ props, emit }) => {
       placeholder={props.placeholder ? String(props.placeholder) : undefined}
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}
+      autoFocus={Boolean(props.autofocus)}
       aria-describedby={counted ? countId : undefined}
       // In the box the field takes the height there is, for a box that was
       // given more than the field asks for.
@@ -388,6 +389,7 @@ export const NumberInput: Renderer = ({ props, emit }) => {
         step={typeof props.step === "number" ? props.step : undefined}
         placeholder={props.placeholder ? String(props.placeholder) : undefined}
         disabled={Boolean(props.disabled)}
+        autoFocus={Boolean(props.autofocus)}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={report}
         onKeyDown={(e) => {

@@ -22,7 +22,7 @@ from millwork.files import FileRef, Reject, _read_chunks, fits
 from millwork.nodes import Component
 from millwork.protocol import Command, Event, Patch, ServerError, Stream, server_message
 from millwork.scope import Scope
-from millwork.session import Session
+from millwork.session import Session, names
 from millwork.ui import Button, Checkbox, Custom, Link, Switch, Tabs
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
@@ -149,11 +149,7 @@ class Page:
                 continue
             component = tree.components.get(node_id)
             if isinstance(what, str):
-                hit = (
-                    node_id == what
-                    or node_id.rsplit("/", 1)[-1] == what
-                    or (component is not None and component.key == what)
-                )
+                hit = names(what, node_id, component)
             else:
                 hit = isinstance(component, what) or node.type == what.type
             if hit and all(_has(node, component, k, v) for k, v in props.items()):

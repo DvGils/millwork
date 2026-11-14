@@ -112,6 +112,10 @@ is closed answers None.
 The question is shown in a dialog. A `ui.Dialog` or a `ui.Sheet` given to
 `s.ask` is shown as it is, with its own title and size.
 
+When the question closes, the keyboard goes back to the button that asked
+it, so an Enter right after presses that button again. A handler that
+wants it elsewhere says so after the answer, with `s.focus(key)`.
+
 ```python live
 from pydantic import BaseModel, Field
 

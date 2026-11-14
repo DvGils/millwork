@@ -29,6 +29,11 @@ versions; a release says so here when it does.
 - An Enter that takes a word from an input method, as in Chinese,
   Japanese and Korean, submitted a `ui.Input` with the text as it stood.
   It is left to the input method now.
+- `s.reset(key)` did nothing for a keyed component in a slot, a button
+  in a dialog's footer for one. The server now works out what a key
+  names, by the rule the test harness has, and tells the tab.
+- `s.print()` from a page's `connect` hook opened the print dialog only
+  after the next press. It follows the page now.
 
 ### Features
 
@@ -39,6 +44,17 @@ versions; a release says so here when it does.
   `s.reset` does so a round trip later, on top of what was typed in
   that time: at 100 ms between entries and a round trip of 120 ms,
   codes came through cut short or joined.
+- `s.focus(key)` puts the keyboard in a component, or in the first thing
+  in it that takes the keyboard. It happens once the page has been drawn
+  again, so a handler can open a dialog and name a field in it, and one
+  that calls `s.navigate` first names a field of the page it goes to.
+  After `s.ask` or `s.confirm` it keeps the keyboard from going back to
+  the button that asked. `s.named(name)` gives the ids a name stands
+  for: a key, an id, or the end of an id such as `one/qty` for one of
+  several with the same key.
+- `autofocus=True` on `ui.Input`, `ui.Textarea` and `ui.NumberInput`
+  puts the keyboard in the field whenever it is put on the page: when
+  the page opens, after a reload, in a dialog as it opens.
 - `mw.Signal`, for data that sessions share. The data stays where the
   app keeps it, in an object of its own or in a database. A page
   follows a signal with `s.follow(signal)`, the code that changes the

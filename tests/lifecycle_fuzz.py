@@ -550,6 +550,15 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
     async def toast(s: mw.Session[State], _: Any) -> None:
         s.toast("Changed.", action=("Undo", undo))
 
+    @handler("point")
+    async def point(s: mw.Session[State], _: Any) -> None:
+        # The keyboard is asked for in something the page has, and a
+        # component is put back to how it began, both by name, wherever
+        # the session is in its life by then.
+        s.state.n += 1
+        s.focus("bump")
+        s.reset("mark")
+
     async def search(s: mw.Session[State], query: Any) -> list[str]:
         span = world.begin("request", s, name="search")
         try:
@@ -729,6 +738,7 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
             ui.Text(f"{mark} n={s.state.n}", key="mark"),
             ui.Text(f"shared={world.shared}", key="shared"),
             ui.Button("share", key="share", on_click=share),
+            ui.Button("point", key="point", on_click=point),
             ui.Button("await_task", key="await_task", on_click=await_task),
             ui.Button("flood", key="flood", on_click=flood),
             ui.Button("big_file", key="big_file", on_click=big_file),

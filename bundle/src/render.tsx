@@ -54,7 +54,7 @@ export const Render = memo(function Render({ id }: { id: string }) {
   // `display: contents` keeps it out of the layout while shown.
   const hidden = Boolean(node.props.hidden);
   return (
-    <div ref={wrapper} style={{ display: hidden ? "none" : "contents" }}>
+    <div ref={wrapper} data-node={id} style={{ display: hidden ? "none" : "contents" }}>
       <Boundary key={`${node.type}:${epoch}`} id={id}>
         <NodeComponent node={node} />
       </Boundary>

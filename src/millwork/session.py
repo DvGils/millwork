@@ -98,6 +98,17 @@ class Plan:
     more: dict[str, Any] = field(default_factory=dict)
 
 
+def names(name: str, node_id: str, component: Component | None) -> bool:
+    """Whether a name stands for this component: its id, the end of its id
+    from a slash on, or its key. ``one/qty`` is the ``qty`` in ``one``, for a
+    key that several have."""
+    return (
+        node_id == name
+        or node_id.endswith("/" + name)
+        or (component is not None and component.key == name)
+    )
+
+
 class Session[S]:
     def __init__(self, app: App, page: PageDef, params: dict[str, str], path: str) -> None:
         self._loop = asyncio.get_running_loop()
@@ -201,6 +212,11 @@ class Session[S]:
         # followed yet.
         self._typed: str | None = None
         self._print_asked = False
+        # The component that is to get the keyboard once the next drawing
+        # has gone out, by the name it was asked for with, and whether that
+        # was said after another page was asked for, and so is for that one.
+        self._focus_asked: str | None = None
+        self._focus_is_for_next = False
         self._asks: dict[str, _Ask] = {}
         self._toast_actions: dict[str, Callable[..., Any]] = {}
         # Requests in flight by id, each with the connection it came in on.
@@ -552,6 +568,12 @@ class Session[S]:
         """Step onto the page a navigation leads to, for its connect to run.
         What the session was on is kept, to go back to if that fails."""
         self._previous = (self.page, self.params, self.path, self.tree, self._unfollow())
+        # What was asked of the page that is left is not asked of this one.
+        # The keyboard asked for after this page was is.
+        self._print_asked = False
+        if not self._focus_is_for_next:
+            self._focus_asked = None
+        self._focus_is_for_next = False
         self.page, self.params, self.path = page, params, path
         self.tree = None
         self._slow_builds = 0
@@ -560,6 +582,8 @@ class Session[S]:
         """Land on the app's page for a page that refused, under the path
         that was asked for."""
         self.page, self.params = self.app.fallback(kind, self.path, message)
+        # Nor is the keyboard it asked for.
+        self._focus_asked = None
         # What the page that refused followed before it did is not this
         # page's to follow.
         self._unfollow()
@@ -608,6 +632,8 @@ class Session[S]:
             # failed connect wrote to the state stays.
             assert self._previous is not None
             self._unfollow()
+            # The keyboard was asked for in a page that did not come.
+            self._focus_asked = None
             self.page, self.params, self.path, self.tree, following = self._previous
             for signal in following:
                 self.follow(signal)
@@ -675,10 +701,34 @@ class Session[S]:
         where the app's ``on_logout`` says."""
         self.command("logout")
 
+    def named(self, name: str) -> list[str]:
+        """The ids of the components a name stands for, in the order they
+        are on the page: every component with that key, or the one with
+        that id. The one rule for whatever takes a component's name."""
+        tree = self.tree
+        if tree is None:
+            return []
+        return [i for i in tree.nodes if names(name, i, tree.components.get(i))]
+
     def reset(self, key: str) -> None:
         """Put the component with this key back to its default: the draft an
         input holds, a form's fields, a tab strip's choice."""
-        self.command("reset", key=key)
+        self.command("reset", ids=self.named(key))
+
+    def focus(self, name: str) -> None:
+        """Put the keyboard in a component, named by its key or its id, or
+        in the first thing in it that takes the keyboard. Of several with
+        that key it is the first on the page.
+
+        It happens once the next drawing has gone out. So a handler can open
+        a dialog and name a field in it, and one that asks for another page
+        first names a field of that page. The last one asked for before that
+        drawing is the one that gets it. A field the keyboard should be in
+        whenever the page is put on a tab says so itself, with
+        ``autofocus=True``."""
+        self._focus_asked = name
+        self._focus_is_for_next = bool(self._wanted)
+        self._refresh_now()
 
     def download(self, filename: str, content: Any, mime: str | None = None) -> FileRef:
         """Send a file to the tab without a button: the tab fetches it over the
@@ -1249,6 +1299,27 @@ class Session[S]:
         self.tree = tree
         self._title_shown = self._title(tree)
         self.post(Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown))
+        if self._failure is None:
+            self._after_drawing()
+
+    def _after_drawing(self) -> None:
+        """What was asked for the page as it is now, sent behind the
+        drawing that made it so: the patch, or the whole page."""
+        if self._focus_asked is not None:
+            name, self._focus_asked = self._focus_asked, None
+            ids = self.named(name)
+            if ids:
+                self.command("focus", id=ids[0])
+            else:
+                self.warn(
+                    f"focus:{name}",
+                    f"s.focus({name!r}) names nothing on the page: no component has"
+                    " that key or that id",
+                )
+        if self._print_asked:
+            # The page the handler meant to print.
+            self._print_asked = False
+            self.command("print")
 
     def _title(self, tree: Tree) -> str | None:
         """The tab's title: the root ``Page``'s own when it has one, else the page's."""
@@ -1268,6 +1339,8 @@ class Session[S]:
             return
         tree = self._build()
         if tree is None:
+            # Not at some later drawing that works, whenever that is.
+            self._focus_asked = None
             return
         ops = diff(self.tree, tree)
         self._check_keyless(self.tree, tree)
@@ -1275,10 +1348,7 @@ class Session[S]:
         self._typed = None
         if ops:
             self.post(Patch(ops=ops))
-        if self._print_asked:
-            # After the patch, which is the page the handler meant to print.
-            self._print_asked = False
-            self.command("print")
+        self._after_drawing()
         title = self._title(tree)
         if title != self._title_shown:
             self._title_shown = title

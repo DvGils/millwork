@@ -122,8 +122,13 @@ def example(s):
     )
 ```
 
-A key is also how `s.reset(key)` returns a browser-owned control to its
-`default`, with the keyboard still in it when it was, and how
-`ui.Button(form=key)` finds its form. `hidden=True`
-keeps a component in the tree without showing it, so its browser-side
-state survives. `cls` adds Tailwind classes for a spacing or sizing tweak.
+A key is also a component's name. `s.reset(key)` returns a browser-owned
+control to its `default`, with the keyboard still in it when it was.
+`s.focus(key)` puts the keyboard in a component, as
+[Inputs](/components/inputs) shows. `ui.Button(form=key)` finds its form.
+A key that several components have names them all: a reset reaches each
+of them, and the keyboard goes to the first on the page.
+
+`hidden=True` keeps a component in the tree without showing it, so its
+browser-side state survives. `cls` adds Tailwind classes for a spacing or
+sizing tweak.

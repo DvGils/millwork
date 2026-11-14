@@ -165,6 +165,23 @@ def example(s):
     )
 ```
 
+`autofocus=True` puts the keyboard in a field whenever the field is put
+on the page: when the page opens, after a reload, in a dialog as it opens.
+An `Input`, a `Textarea` and a `NumberInput` take it. `s.focus(key)` moves
+the keyboard from a handler, into a field or into the first thing that
+takes it inside any other component. It happens once the page has been
+drawn again, so a handler can open a dialog and name a field in it, and
+one that calls `s.navigate` first names a field of the page it goes to.
+
+```python live
+def example(s):
+    return ui.Row(
+        ui.Input(key="code-field", placeholder="A code"),
+        ui.Button("Put the keyboard there", variant="outline", on_click=lambda s, _: s.focus("code-field")),
+        gap=3,
+    )
+```
+
 `max_length` caps what the field takes, and `counter=True` shows under the
 field how much it holds, against the limit when there is one. The count
 takes the destructive color once the field is full. A field of the kind
