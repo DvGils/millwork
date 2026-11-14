@@ -111,6 +111,15 @@ versions; a release says so here when it does.
 - The hosting checklist says what happens to a tab whose connection drops
   when there is more than one replica, and that cookie affinity in the
   load balancer brings it back to its session.
+- Feedback has a section on highlights, with the three ways to draw one
+  and a tour in steps to try.
+- Accessing the session has a section on the page as data: what
+  `s.outline()` says of a page and what it leaves out.
+- Inputs says how the keyboard is put in a field, with `autofocus=True`
+  and with `s.focus`.
+- Lists and keys says what the browser keeps of a page and when that
+  ends, and that `hidden=True` is no way to keep something from the
+  person, since it is sent all the same.
 
 ## 0.3.3
 

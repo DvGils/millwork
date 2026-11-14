@@ -144,6 +144,6 @@ are two paths, though one page function draws both. A sidebar, an
 assistant and the page's header keep theirs.
 
 Everything is kept when the path is the same and only its query changed.
-So a list that should stay sorted while the detail beside it changes
-names the detail in the query. A draft that should outlive its page is
-kept in state.
+A list that should stay as it is while the detail beside it changes
+keeps which one is chosen in state and stays on its page, and a draft
+that should outlive its page is kept in state too.
