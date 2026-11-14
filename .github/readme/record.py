@@ -1,4 +1,4 @@
-"""Record the README's GIFs from ``demo.py``: twelve seconds of the app being
+"""Record the README's GIFs from ``demo.py``: thirteen seconds of the app being
 used, once in the light and once in the dark, for a reader in either. Run
 from the repository root:
 
@@ -206,10 +206,11 @@ async def record(tab: Tab) -> None:
     await tab.click("document.querySelector('button[aria-label=\"Ask about the orders\"]')")
     await tab.capture(0.5)
     await tab.click("document.querySelector('textarea')")
-    await tab.type("Who still has to pay?")
+    await tab.type("How much is still open?")
     await tab.key("Enter")
-    # The answer, and a moment on the finished page before the loop starts over.
-    await tab.capture(4.3)
+    # The answer, the highlight it sets around the figure it is about, and a
+    # moment on the finished page before the loop starts over.
+    await tab.capture(6.3)
 
 
 def gif(frames: list[bytes], out: Path) -> None:
