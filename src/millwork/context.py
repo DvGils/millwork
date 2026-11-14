@@ -48,6 +48,26 @@ def auth() -> Any:
     return s.app.auth if s is not None else None
 
 
+# The visit of a page that the running work began on: a handler's, and that
+# of the tasks it started. None for work that belongs to no one visit, and
+# for a handler that has asked for another page itself.
+_visit: ContextVar[int | None] = ContextVar("millwork_visit", default=None)
+
+
+def visit() -> int | None:
+    return _visit.get()
+
+
+def on_visit(number: int | None) -> object:
+    """Say which visit the work that runs from here on began on; returns
+    the token for ``off_visit``."""
+    return _visit.set(number)
+
+
+def off_visit(token: object) -> None:
+    _visit.reset(token)  # type: ignore[arg-type]
+
+
 def bind(s: Session[Any] | None) -> object:
     """Set the current session; returns the token for ``unbind``."""
     return _session.set(s)

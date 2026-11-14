@@ -12,7 +12,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/DvGils/millwork/main/.github/readme/demo-dark.gif">
-  <img src="https://raw.githubusercontent.com/DvGils/millwork/main/.github/readme/demo.gif" alt="A millwork page in use: a form submits with a validation message and then succeeds, an import runs with a progress bar and steps while rows appear in the table and the bars of a chart move with them, and a question in a floating assistant gets an answer that streams in." width="100%">
+  <img src="https://raw.githubusercontent.com/DvGils/millwork/main/.github/readme/demo.gif" alt="A millwork page in use: a form submits with a validation message and then succeeds, an import runs with a progress bar and steps while rows appear in the table and the bars of a chart move with them, and a question in a floating assistant gets an answer that streams in and puts an orange highlight around the figure it is about." width="100%">
 </picture>
 
 A page is a Python function of the session's state. A handler changes the

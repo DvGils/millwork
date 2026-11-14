@@ -1,6 +1,7 @@
 """The app behind the README's pictures: an orders desk with a form, an import
 that reports progress, a table and a chart that follow the rows as they
-arrive, and a chat in a floating window that streams its answer.
+arrive, and a chat in a floating window that streams its answer and points
+at the figure it is about.
 ``record.py`` drives it and writes the GIF, so what the README shows is what
 this file does."""
 
@@ -85,35 +86,23 @@ def start_import(s: mw.Session[State], _: object) -> None:
 
 
 async def answer(s: mw.Session[State], turn: mw.ChatTurn) -> None:
-    owing = sorted(
-        (o for o in s.state.orders if o["status"] == "open"),
-        key=lambda o: o["amount"],
-        reverse=True,
-    )
+    owing = [o for o in s.state.orders if o["status"] == "open"]
     async with turn.reply() as reply:
         async with reply.step("Looking up open orders") as step:
             await asyncio.sleep(0.6)
             await step.output({"open": len(owing)})
         if not owing:
-            await reply.text("Nobody. Every order is paid.")
+            await reply.text("Nothing. Every order is paid.")
             return
         total = sum(o["amount"] for o in owing)
-        most = owing[0]["amount"]
-        largest = [o["customer"] for o in owing if o["amount"] == most]
-        if len(owing) == 1:
-            said = f"**One order is still open**: {largest[0]}, {total:,.0f} euros."
-        elif len(largest) == 1:
-            said = (
-                f"**{len(owing)} orders are still open**, {total:,.0f} euros in all. "
-                f"The largest is {largest[0]}, {most:,.0f}."
-            )
-        else:
-            said = (
-                f"**{len(owing)} orders are still open**, {total:,.0f} euros in all. "
-                f"The largest are {' and '.join(largest)}, {most:,.0f} each."
-            )
-        words = said.split(" ")
-        for word in words:
+        count = "One order is" if len(owing) == 1 else f"{len(owing)} orders are"
+        for word in f"**{count} still open**, {total:,.0f} euros in all.".split(" "):
+            await reply.text(word + " ")
+            await asyncio.sleep(0.06)
+        # And where that is on the page: a frame around the figure, with a
+        # light that goes around it.
+        s.highlight("open", "orange", style="trace")
+        for word in "I've highlighted the card that shows it in orange.".split(" "):
             await reply.text(word + " ")
             await asyncio.sleep(0.06)
 
@@ -156,6 +145,7 @@ def home(s: mw.Session[State]) -> ui.Component:
                 delta=owed / LAST_WEEK["open"] - 1,
                 good="down",
                 hint="against last week",
+                key="open",
             ),
             cols={"sm": 1, "md": 3},
         ),

@@ -58,3 +58,9 @@ async def close_pool() -> None:
 
 At a stop every session closes before the shutdown hooks run, so a page's
 `close` hook still has the pool these hooks close.
+
+`app.spawn(coroutine)` runs work for as long as the app does, a listener
+on a database for one. It is called from a startup hook, it is stopped
+before the shutdown hooks run, and a failure it lets out is logged.
+[Accessing the session](/state/accessing-the-session) uses it for data
+that sessions share.

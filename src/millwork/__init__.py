@@ -12,10 +12,12 @@ from millwork import auth, context, theme
 from millwork.app import App, PageDef
 from millwork.auth import Forbidden, NotFound, User
 from millwork.chat import ChatTurn, Reply, UIMessage
+from millwork.deprecation import MillworkDeprecationWarning
 from millwork.files import FileRef, Files
 from millwork.icons import ICONS
 from millwork.nodes import Component
 from millwork.session import Session
+from millwork.signal import Signal
 from millwork.tasks import Cancelled, Step, Task, progress
 from millwork.visitors import Visitor
 
@@ -32,10 +34,12 @@ __all__ = [
     "Forbidden",
     "Files",
     "ICONS",
+    "MillworkDeprecationWarning",
     "NotFound",
     "PageDef",
     "Reply",
     "Session",
+    "Signal",
     "Step",
     "Task",
     "UIMessage",

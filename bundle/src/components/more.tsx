@@ -94,43 +94,49 @@ export function PageWithSidebar({
   if (!sidebar) return null;
   const p = sidebar.props;
   const controlled = has(p, "open");
+  // A hidden sidebar is not drawn, nor the button that opens one. The page
+  // around it stays as it is, so nothing on it starts over when the
+  // sidebar comes or goes.
+  const hidden = Boolean(p.hidden);
   return (
     <SidebarProvider
       open={controlled ? Boolean(p.open) : undefined}
       defaultOpen={!controlled ? p.default_open !== false : undefined}
       onOpenChange={(open) => {
-        if (p.on_toggle) window.__mwEmit?.(sidebarId, "toggle", open);
+        if (p.on_toggle && !hidden) window.__mwEmit?.(sidebarId, "toggle", open);
       }}
       className="mw-shell h-dvh"
       style={p.width ? ({ "--sidebar-width": String(p.width) } as React.CSSProperties) : undefined}
     >
-      <PageNavProvider panel={p.collapsible !== "none"}>
+      <PageNavProvider panel={!hidden && p.collapsible !== "none"}>
         {(links) => (
           <>
-            <UiSidebar
-              side={p.side === "right" ? "right" : "left"}
-              collapsible={(p.collapsible as "offcanvas" | "icon" | "none") ?? "offcanvas"}
-            >
-              <PanelLinks links={links} />
-              {p.title ? (
-                <SidebarHeader>
-                  <div className="px-2 py-1 text-sm font-semibold">{String(p.title)}</div>
-                </SidebarHeader>
-              ) : null}
-              <SidebarBody>
-                <InSidebar.Provider value={true}>
-                  {sidebar.children.map((cid) => (
-                    <Render key={cid} id={cid} />
-                  ))}
-                </InSidebar.Provider>
-              </SidebarBody>
-            </UiSidebar>
+            {hidden ? null : (
+              <UiSidebar
+                side={p.side === "right" ? "right" : "left"}
+                collapsible={(p.collapsible as "offcanvas" | "icon" | "none") ?? "offcanvas"}
+              >
+                <PanelLinks links={links} />
+                {p.title ? (
+                  <SidebarHeader>
+                    <div className="px-2 py-1 text-sm font-semibold">{String(p.title)}</div>
+                  </SidebarHeader>
+                ) : null}
+                <SidebarBody>
+                  <InSidebar.Provider value={true}>
+                    {sidebar.children.map((cid) => (
+                      <Render key={cid} id={cid} />
+                    ))}
+                  </InSidebar.Provider>
+                </SidebarBody>
+              </UiSidebar>
+            )}
             <SidebarInset className="min-h-0 min-w-0">
               <Slot value={header} />
               {/* A header that shows has the button that opens the sidebar
                   on a narrow screen. A page without one gets a bar for it,
                   unless the sidebar never folds away. */}
-              {links === null && p.collapsible !== "none" ? (
+              {links === null && p.collapsible !== "none" && !hidden ? (
                 <div className="flex items-center gap-2 border-b px-3 py-2 md:hidden print:hidden">
                   <SidebarTrigger />
                 </div>
@@ -273,7 +279,11 @@ function AccordionEntry({ id }: { id: string }) {
   const item = useNode(id);
   if (!item) return null;
   return (
-    <UiAccordionItem value={String(item.props.id)}>
+    <UiAccordionItem
+      data-node={id}
+      value={String(item.props.id)}
+      style={item.props.hidden ? { display: "none" } : undefined}
+    >
       <AccordionTrigger>{String(item.props.title ?? "")}</AccordionTrigger>
       <AccordionContent className="flex flex-col gap-3">
         {item.children.map((cid) => (
@@ -417,7 +427,7 @@ const sheetSize: Record<string, string> = {
   full: "data-[side=left]:w-full data-[side=right]:w-full data-[side=left]:sm:max-w-none data-[side=right]:sm:max-w-none",
 };
 
-export const Sheet: Renderer = ({ props, children, emit }) => {
+export const Sheet: Renderer = ({ node, props, children, emit }) => {
   const status = useStatus();
   return (
   <UiSheet
@@ -427,7 +437,7 @@ export const Sheet: Renderer = ({ props, children, emit }) => {
       if (!open && props.dismissable !== false && props.on_close) emit("close");
     }}
   >
-    <SheetContent side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], props.cls as string)}>
+    <SheetContent data-node={node.id} side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], props.cls as string)}>
       {props.title || props.description ? (
         <SheetHeader>
           {props.title ? <SheetTitle>{String(props.title)}</SheetTitle> : null}

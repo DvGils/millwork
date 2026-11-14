@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Login, type LoginBoot } from "./login";
 import { Logo } from "./components/header";
 import { t } from "./theme";
+import { Marks } from "./marks-layer";
 
 export function App() {
   const login = (window as unknown as { __mw?: { login?: LoginBoot } }).__mw?.login;
@@ -41,6 +42,7 @@ function Connected() {
         </div>
       ) : null}
       <Toaster />
+      {ended ? null : <Marks />}
     </>
   );
 }

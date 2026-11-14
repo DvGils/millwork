@@ -352,11 +352,14 @@ class Tabs(_Owned):
         return self
 
     def tab_ids(self) -> list[str]:
-        return [c.id for c in self.children if isinstance(c, Tab)]
+        """The ids of the tabs that are there. A hidden one is not."""
+        return [c.id for c in self.children if isinstance(c, Tab) and not c.hidden]
 
     def open_tabs(self) -> list[str]:
         """The ids of the tabs that can be chosen."""
-        return [c.id for c in self.children if isinstance(c, Tab) and not c.disabled]
+        return [
+            c.id for c in self.children if isinstance(c, Tab) and not c.disabled and not c.hidden
+        ]
 
     def shown(self, told: str | None) -> str | None:
         """The id of the open tab. With ``value`` the page says which it is.
@@ -1140,12 +1143,14 @@ class Input(_Owned):
     prefix_icon: str | None = None
     suffix: str | None = None
     disabled: bool = False
+    autofocus: bool = False
     readonly: bool = False
     clearable: bool = False
     max_length: int | None = None
     counter: bool = False
     spellcheck: bool | None = None
     debounce_ms: int = 250
+    clear_on_submit: bool = False
     on_change: Any = None
     on_submit: Any = None
 
@@ -1164,12 +1169,14 @@ class Input(_Owned):
             prefix_icon: str | None = None,
             suffix: str | None = None,
             disabled: bool = False,
+            autofocus: bool = False,
             readonly: bool = False,
             clearable: bool = False,
             max_length: int | None = None,
             counter: bool = False,
             spellcheck: bool | None = None,
             debounce_ms: int = 250,
+            clear_on_submit: bool = False,
             on_change: Any = None,
             on_submit: Any = None,
         ) -> None: ...
@@ -1190,8 +1197,10 @@ class Textarea(_Owned):
     counter: bool = False
     spellcheck: bool | None = None
     disabled: bool = False
+    autofocus: bool = False
     readonly: bool = False
     debounce_ms: int = 250
+    clear_on_submit: bool = False
     on_change: Any = None
     on_submit: Any = None
 
@@ -1212,8 +1221,10 @@ class Textarea(_Owned):
             counter: bool = False,
             spellcheck: bool | None = None,
             disabled: bool = False,
+            autofocus: bool = False,
             readonly: bool = False,
             debounce_ms: int = 250,
+            clear_on_submit: bool = False,
             on_change: Any = None,
             on_submit: Any = None,
         ) -> None: ...
@@ -1232,6 +1243,7 @@ class NumberInput(_Owned):
     suffix: str | None = None
     placeholder: str | None = None
     disabled: bool = False
+    autofocus: bool = False
     on_change: Any = None
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
@@ -1250,6 +1262,7 @@ class NumberInput(_Owned):
             suffix: str | None = None,
             placeholder: str | None = None,
             disabled: bool = False,
+            autofocus: bool = False,
             on_change: Any = None,
         ) -> None: ...
 

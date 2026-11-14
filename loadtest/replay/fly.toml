@@ -1,0 +1,34 @@
+# Two small machines for a few minutes, to see whether Fly's proxy replays a
+# websocket upgrade. Each ends by itself after DEADLINE seconds, and the app
+# is destroyed after the run. A machine that stopped is started again by a
+# socket that names it, so the deadline alone does not keep one down.
+# The name is one for a run: put a new one here before `fly apps create`.
+app = "mw-replay-0000"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DEADLINE = "1500"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/who"
+
+[[restart]]
+  policy = "never"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

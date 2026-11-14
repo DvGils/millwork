@@ -62,7 +62,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 import millwork as mw
-from millwork import auth, ui
+from millwork import auth, marks, ui
 from millwork.protocol import pack_frame
 
 ADMIN_MARK = "ADMIN-ONLY-CONTENT"
@@ -263,6 +263,9 @@ class World:
     # with a handler in the middle of a change it has not lent its turn for.
     connecting: set[str] = field(default_factory=set)
     halfway: set[str] = field(default_factory=set)
+    # A number every session sees, and the signal that says it changed.
+    shared: int = 0
+    signal: mw.Signal = field(default_factory=mw.Signal)
     people: dict[str, dict[str, Any]] = field(
         default_factory=lambda: {
             "ada": {"role": "admin", "active": True},
@@ -453,20 +456,59 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
 
         return wrap
 
+    def highlight(s: mw.Session[State]) -> None:
+        # Marks are set on what the page has and on what it has not, in
+        # steps and beside them, and taken off again, wherever the session
+        # is in its life by then.
+        world.counts["highlights asked for"] += 1
+        turn = world.counts["highlights asked for"] % 5
+        if turn == 1:
+            s.highlight("bump", "blue", step=1)
+            s.highlight("point", "orange", step=2, seconds=5)
+            s.highlight("end", step=3)
+        elif turn == 2:
+            s.highlight("shared", "#0a7d5c", label="here")
+            s.highlight("not-on-any-page", "red")
+        elif turn == 3:
+            s.highlight("share", "green", page="/")
+        elif turn == 4:
+            s.highlight("bump", None)
+        else:
+            s.highlight(None)
+
+    def shared_changed() -> None:
+        # What every session sees changes, and whoever shows it is told.
+        world.shared += 1
+        world.signal.fire()
+
     @handler("bump")
     async def bump(s: mw.Session[State], _: Any) -> None:
         s.state.n += 1
+        shared_changed()
+        highlight(s)
+
+    @handler("share")
+    async def share(s: mw.Session[State], _: Any) -> None:
+        shared_changed()
+        highlight(s)
 
     @handler("slow")
     async def slow(s: mw.Session[State], _: Any) -> None:
         # In the middle of a change for as long as it waits, with its turn
-        # held: the page must not be drawn from what it has half done.
+        # held: the page must not be drawn from what it has half done. It
+        # asks for a drawing first, as a handler does that starts a task or
+        # says something on the page, so one comes due while it waits.
         world.halfway.add(s.id)
+        s.refresh()
         try:
             await asyncio.sleep(knobs["handler_delay"])
         finally:
             world.halfway.discard(s.id)
         s.state.n += 1
+        if s.state.n % 2 == 0:
+            # Every other time it leaves, with the drawing it asked for
+            # still due: the page it leaves is not drawn again.
+            s.navigate("/open")
 
     @handler("end", plain=False)
     async def end(s: mw.Session[State], _: Any) -> None:
@@ -529,6 +571,17 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
     @handler("toast")
     async def toast(s: mw.Session[State], _: Any) -> None:
         s.toast("Changed.", action=("Undo", undo))
+        highlight(s)
+
+    @handler("point")
+    async def point(s: mw.Session[State], _: Any) -> None:
+        # The keyboard is asked for in something the page has, and a
+        # component is put back to how it began, both by name, wherever
+        # the session is in its life by then.
+        s.state.n += 1
+        s.focus("bump")
+        s.reset("mark")
+        highlight(s)
 
     async def search(s: mw.Session[State], query: Any) -> list[str]:
         span = world.begin("request", s, name="search")
@@ -635,6 +688,16 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
             sid=world.name(s.id),
             early=s.id in world.connecting,
             halfway=s.id in world.halfway,
+            # On the tab already, another page asked for, and drawn at its
+            # own time: this one is being left. A page that is put on the
+            # tab for the first time while the next is already asked for is
+            # not, and neither is one drawn for a handler in its turn, which
+            # needs the page as it stands to find what was pressed.
+            leaving=s.stage == "ready"
+            and s.turn.free
+            and s.tree is not None
+            and s.tree is not s._failure
+            and bool(s._wanted or getattr(s, "fuzz_leaving", False)),
         )
         if knobs["render_fails"]:
             raise RuntimeError("the page function fails")
@@ -697,6 +760,9 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
 
         return ui.Page(
             ui.Text(f"{mark} n={s.state.n}", key="mark"),
+            ui.Text(f"shared={world.shared}", key="shared"),
+            ui.Button("share", key="share", on_click=share),
+            ui.Button("point", key="point", on_click=point),
             ui.Button("await_task", key="await_task", on_click=await_task),
             ui.Button("flood", key="flood", on_click=flood),
             ui.Button("big_file", key="big_file", on_click=big_file),
@@ -737,6 +803,9 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
         span = world.begin("connect", s)
         world.connecting.add(s.id)
         ok = False
+        # Before anything that can fail: a page that does not come must not
+        # leave the session following for it.
+        s.follow(world.signal)
         try:
             await asyncio.sleep(knobs["connect_delay"])
             if knobs["connect_does"] == "task":
@@ -806,6 +875,12 @@ class Tab:
         # The page as the tab holds it: every node it was sent, with the
         # patches since applied.
         self.nodes: dict[str, dict[str, Any]] = {}
+        # The highlights the tab has, as it was last given them, and the
+        # session whose page the tab has when it comes back on a new socket.
+        self.marks: list[dict[str, Any]] = []
+        self.page_of: str | None = None
+        # Whether the page that comes next is another one than the tab is on.
+        self.another = False
         # Which tab each ``Tabs`` that keeps its own choice is on, and what
         # the tab last told the server about it.
         self.on: dict[str, str] = {}
@@ -854,6 +929,9 @@ class Tab:
         in the browser outlives its socket."""
         self.nodes = {i: json.loads(json.dumps(n)) for i, n in old.nodes.items()}
         self.on = dict(old.on)
+        self.marks = [dict(m) for m in old.marks]
+        self.page_of = old.session
+        self.another = old.another
 
     def patch(self, ops: list[dict[str, Any]]) -> None:
         nodes = self.nodes
@@ -1000,6 +1078,9 @@ class Tab:
             self.last_seq = seq
         fact: dict[str, Any] = {"tab": self.label, "type": kind, "seq": seq, "sent": sent}
         if kind == "session":
+            if msg["id"] != (self.session or self.page_of):
+                # The marks were another session's.
+                self.marks = []
             self.session, self.resume = msg["id"], msg["resume"]
             fact["sid"] = self.sim.world.name(msg["id"])
             unsent, self.unsent = self.unsent, []
@@ -1013,6 +1094,11 @@ class Tab:
             fact["marked"] = ADMIN_MARK in event["text"]
             if not again:
                 self.nodes = msg["nodes"]
+                # A page brings its marks.
+                self.marks = msg.get("marks", [])
+                if self.another:
+                    # Its tabs start over, on the tab they open on.
+                    self.on, self.another = {}, False
                 # A whole page: the tabs that live on in it say again where
                 # they are, as the session may have forgotten on the way.
                 self.told.clear()
@@ -1025,10 +1111,16 @@ class Tab:
         elif kind == "command":
             fact["name"] = msg["name"]
             if msg["name"] == "navigate":
+                # Another page, and not the one the tab is on with another
+                # query: the body of the page that comes is drawn anew.
+                if marks.bare(msg["args"]["path"]) != marks.bare(self.path):
+                    self.another = True
                 self.path = msg["args"]["path"]
             if msg["name"] == "leave":
                 self.left_for = msg["args"]["to"]
                 fact["to"] = self.left_for
+            if msg["name"] == "marks" and not again:
+                self.marks = msg["args"]["list"]
             if msg["name"] == "logout":
                 # The tab signs out for its browser and goes, as a real one does.
                 self.sim.background(self.sim.sign_out(self.browser.number - 1))
@@ -1240,7 +1332,7 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
         kinds += ["click"] * 14 + ["navigate"] * 2 + ["drop"] * 2 + ["deafen", "hear"]
         kinds += ["request", "stale", "answer", "chat", "chat", "upload", "upload", "fetch"]
         kinds += ["request", "reload", "duplicate"] + ["show"] * 8 + ["request"] * 3 + ["lie"]
-        kinds += ["rest"] * 6
+        kinds += ["rest"] * 6 + ["touch"] * 3
     if sim.app.sessions:
         kinds += ["push"]
     if any(t.gone or t.server_closed for t in sim.tabs):
@@ -1292,6 +1384,8 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
         return ("fetch", tab, rng.randrange(4))
     if kind == "drop":
         return ("drop", tab)
+    if kind == "touch":
+        return ("touch", tab, rng.randrange(4), rng.random() < 0.7)
     if kind == "deafen":
         return ("deafen", tab)
     if kind == "hear":
@@ -1465,6 +1559,17 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
     elif kind == "stale":
         world.note("act:stale", tab=tab.label, node=action[2])
         tab.say({"type": "event", "node": action[2], "name": "click"})
+    elif kind == "touch":
+        # The person gets to a highlighted component, or its time runs
+        # out. The tab says so and keeps the mark until the session sends
+        # the list without it: what it says can be lost with its socket.
+        if not tab.marks:
+            return False
+        mark = tab.marks[action[2] % len(tab.marks)]
+        what = "touched" if action[3] else "timed out"
+        world.note("act:touch", tab=tab.label, node=mark["id"], what=what)
+        payload = {"n": mark["n"], "what": what}
+        tab.say({"type": "event", "node": mark["id"], "name": "mark", "payload": payload})
     elif kind == "answer":
         handlers = [h for h in sim.handlers(tab) if "@ask" in h[0] and h[1] == "click"]
         wanted = "/ok" if action[2] else "/cancel"
@@ -1882,19 +1987,35 @@ def at_rest(sim: Sim, session: Any, sid: str) -> None:
     exactly the page the session has, and the session goes by the tab of
     each ``Tabs`` that the browser is on."""
     tree = session.tree
-    resting = (
+    quiet = (
         not session.over
         and session.stage == "ready"
+        and not session._wanted
         and session.turn.free
         and session._inflight == 0
-        and not session._render_due
         and session._render_timer is None
         and tree is not session._failure
         and not getattr(session, "fuzz_failed", False)
     )
-    if not resting:
+    if quiet and session._render_due:
+        # Nothing is under way and no timer is armed, so nothing is going
+        # to make the drawing: the tab stays on what it was last told.
+        why = f"{sid} has a drawing due and nothing that will make it"
+        sim.world.broken.append(("left undrawn", why))
+    if not quiet or session._render_due:
         return
     sim.world.counts["pages looked at, at rest"] += 1
+    if sim.world.signal in session._following:
+        # A page that follows the signal shows what is shared as it is now:
+        # every fire since reached it, wherever the session was then.
+        shows = next(
+            (n.props["content"] for i, n in tree.nodes.items() if i.endswith("/shared")), None
+        )
+        if shows is not None:
+            sim.world.counts["... that follow the signal"] += 1
+            if shows != f"shared={sim.world.shared}":
+                why = f"{sid} shows {shows} and it is shared={sim.world.shared}"
+                sim.world.broken.append(("stale", why))
     tabs = {
         node_id: component
         for node_id, component in tree.components.items()
@@ -1937,6 +2058,14 @@ def at_rest(sim: Sim, session: Any, sid: str) -> None:
         other = sorted(ids or (i for i in page if tab.nodes[i] != page[i]))
         what = "nodes on one side only" if ids else "nodes that differ"
         sim.problems.append(("page differs", f"{tab.label} and {sid}: {what}, {other[:3]}"))
+    # And exactly the highlights the session holds for this page.
+    held = json.loads(json.dumps(marks.now(session._marks, session.place)[0]))
+    if held:
+        sim.world.counts["... that have highlights"] += 1
+    if tab.marks != held:
+        has = [(m["n"], m["id"]) for m in tab.marks]
+        wants = [(m["n"], m["id"]) for m in held]
+        sim.problems.append(("marks differ", f"{tab.label} has {has} and {sid} holds {wants}"))
     if tab.lied:
         return
     for node_id, component in tabs.items():
@@ -1989,6 +2118,10 @@ def examine(world: World, sim: Sim, loop: asyncio.AbstractEventLoop) -> list[tup
             found.append(("drawn early", f"{e['sid']} was drawn before its connect returned"))
         if e["kind"] == "draw" and e["halfway"]:
             found.append(("half drawn", f"{e['sid']} was drawn in the middle of a handler's turn"))
+        if e["kind"] == "draw" and e["leaving"]:
+            # A handler that asks for another page may have left state the
+            # page it is on cannot show.
+            found.append(("drawn on the way out", f"{e['sid']} drew a page it was leaving"))
 
     # A session keeps the user it started with, and a guarded page is only
     # ever acted on for a user its rule admits.
@@ -2133,6 +2266,7 @@ ON_A_TAB = {
     "navigate",
     "request",
     "stale",
+    "touch",
     "answer",
     "drop",
     "deafen",

@@ -95,6 +95,32 @@ def test_the_oracle_notices_when_the_session_is_broken_on_purpose(
         # a hundred do it.
         assert found("half drawn", seeds=100)
     with monkeypatch.context() as broken:
+        # A handler that asks for another page may leave state the page
+        # it is on cannot show, and that page is not drawn again.
+        draw = session.Session._draw
+
+        def draws_a_page_it_is_leaving(self: Any) -> None:
+            wanted = self._wanted
+            self.fuzz_leaving = bool(wanted)
+            self._wanted = type(wanted)()
+            try:
+                draw(self)
+            finally:
+                wanted.extend(self._wanted)
+                self._wanted = wanted
+                self.fuzz_leaving = False
+
+        broken.setattr(session.Session, "_draw", draws_a_page_it_is_leaving)
+        assert found("drawn on the way out")
+    with monkeypatch.context() as broken:
+        # A drawing whose time came in a handler's turn is never made.
+        broken.setattr(session.Session, "_turn_free", lambda self: None)
+        assert found("left undrawn")
+    with monkeypatch.context() as broken:
+        # A signal that is fired and tells nobody.
+        broken.setattr(session.Session, "_nudge", lambda self: None)
+        assert found("stale")
+    with monkeypatch.context() as broken:
         broken.setattr(outbox.Outbox, "seal", lambda self: None)
         broken.setattr(connection.Connection, "close", lambda self, end=None, code=1000: None)
         assert found("sent after the end")
@@ -117,14 +143,14 @@ def test_the_oracle_notices_a_page_with_lazy_parts_broken_on_purpose(
         assert found("kept part called")
     with monkeypatch.context() as broken:
         # What the tab says about its tabs is noted and nothing is drawn.
-        refresh = session.Session.refresh
+        refresh = session.Session._refresh_now
 
         def notes_and_leaves_it(self: Any, event: Any) -> None:
-            broken.setattr(session.Session, "refresh", lambda self: None)
+            broken.setattr(session.Session, "_refresh_now", lambda self: None)
             try:
                 shown(self, event)
             finally:
-                broken.setattr(session.Session, "refresh", refresh)
+                broken.setattr(session.Session, "_refresh_now", refresh)
 
         shown = session.Session.shown
         broken.setattr(session.Session, "shown", notes_and_leaves_it)
@@ -133,6 +159,10 @@ def test_the_oracle_notices_a_page_with_lazy_parts_broken_on_purpose(
         # The session takes no notice of what the tab says about its tabs.
         broken.setattr(session.Session, "shown", lambda self, event: None)
         assert found("tabs parted")
+    with monkeypatch.context() as broken:
+        # The marks a session holds are never told to the tab.
+        broken.setattr(session.Session, "_send_marks", lambda self: None)
+        assert found("marks differ")
     with monkeypatch.context() as broken:
         # A patch that leaves out what changed in a node.
         diff = nodes.diff

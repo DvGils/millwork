@@ -36,6 +36,9 @@ class Mount(Wire):
     root: str
     nodes: dict[str, Node]
     title: str | None = None
+    # The highlights on the page, which a tab that is given a page has
+    # none of yet.
+    marks: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SetOp(Wire):

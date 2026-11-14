@@ -82,14 +82,20 @@ def configure_logging(debug: bool) -> None:
 def asgi_factory() -> object:
     """uvicorn's reloader needs an import string; this wraps ``load_app``. The
     reloader's server is a fresh process, so logging is configured here too."""
+    from millwork import deprecation
+
     debug = os.environ.get("MILLWORK_DEBUG") == "1"
     configure_logging(debug)
+    deprecation.show()
     return load_app(os.environ["MILLWORK_TARGET"], debug, os.environ.get("MILLWORK_PROXIED") == "1")
 
 
 def main(argv: list[str] | None = None) -> int:
-    from millwork import __version__
+    from millwork import __version__, deprecation
 
+    # Whatever the command, what it loads says which of its spellings are
+    # on their way out.
+    deprecation.show()
     parser = argparse.ArgumentParser(prog="millwork")
     parser.add_argument("--version", action="version", version=f"millwork {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)

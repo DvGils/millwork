@@ -490,6 +490,11 @@ def test_a_recheck_that_cannot_answer_is_neither_a_yes_nor_a_no(tmp_path: Path) 
     world = World()
     app = make_app(tmp_path, world, recheck=True)
     app.auth.recheck_every = 30.0
+    # The moment the hook is left alone for after it gave no answer, as an
+    # app with that interval has it. It is set when the app is made, from
+    # the 50 ms these tests recheck by, and three requests do not always
+    # fit in that.
+    app.auth._retry_after = 5.0
     with TestClient(app.asgi) as client:
         sign_in(client, "ada")
         assert client.get("/api/export").text == "for ada"
