@@ -61,6 +61,7 @@ SAID: dict[str, list[str]] = {
         "fields.name",
         "fields.options.label",
         "fields.options.value",
+        "fields.pointer",
         "initial",
         "issues.message",
         "issues.pointer",
@@ -844,21 +845,45 @@ async def test_a_closed_dialog_is_in_it_and_says_so() -> None:
         # of on the page.
         assert "label" not in form and form["state"] == ["values kept in the browser"]
         assert form["fields"][:3] == [
-            {"name": "customer", "kind": "input", "label": "Customer", "required": True},
+            {
+                "name": "customer",
+                "kind": "input",
+                "at": "root/dlg/order/customer",
+                "label": "Customer",
+                "required": True,
+            },
             {
                 "name": "amount",
                 "kind": "number",
+                "at": "root/dlg/order/amount",
                 "label": "Amount",
                 "required": True,
                 "help": "What the customer pays, without tax.",
             },
-            {"name": "tier", "kind": "select", "label": "Tier", "options": ["gold", "silver"]},
+            {
+                "name": "tier",
+                "kind": "select",
+                "at": "root/dlg/order/tier",
+                "label": "Tier",
+                "options": ["gold", "silver"],
+            },
         ]
         # A field that holds fields, and a list by the fields of one item.
         named = {f["name"]: f for f in form["fields"]}
         assert [f["name"] for f in named["address"]["fields"]] == ["street", "city"]
         assert [f["name"] for f in named["lines"]["fields"]] == ["sku", "qty"]
-        assert named["pin"] == {"name": "pin", "kind": "password", "label": "Pin"}
+        assert named["pin"] == {
+            "name": "pin",
+            "kind": "password",
+            "at": "root/dlg/order/pin",
+            "label": "Pin",
+        }
+        # A field is named by where it is in its form, and one of an item
+        # of a list, which is not there yet, has no name to point at.
+        assert named["address"]["fields"][0]["at"] == "root/dlg/order/address/street"
+        assert "at" not in named["lines"]["fields"][0]
+        for field in form["fields"]:
+            assert page.session.place(field["at"]) == ("root/dlg/order", "/" + field["name"])
         assert form["buttons"] == ["Place it", "Leave"]
         save = find(dialog, "save")
         assert save["slot"] == "footer" and save["id"] == "root/dlg/@footer"

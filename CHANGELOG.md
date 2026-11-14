@@ -57,6 +57,15 @@ versions; a release says so here when it does.
   the button that asked. `s.named(name)` gives the ids a name stands
   for: a key, an id, or the end of an id such as `one/qty` for one of
   several with the same key.
+- `s.highlight(name, color)` puts a frame around a component for the
+  person to find it, for an assistant that answers how something is done
+  by pointing at it. A color of the theme or a hex code, `style=` solid,
+  pulse or trace, `step=` for highlights that show one after the other,
+  `seconds=`, `label=`, `scroll=` and `page=` for one on another page. It
+  goes when the person gets to the component. `page.marks`,
+  `page.touch()` and `page.time_out()` in a test.
+- A field of a `ui.Form` has a name, the form's key, a slash and the
+  field's, as `order/amount`, which `s.focus` and `s.highlight` take.
 - `s.outline()` gives the page as data: what it holds for the person,
   said by each of its components, as a structure or with
   `as_text=True` as text, for an assistant in the app to read. Each

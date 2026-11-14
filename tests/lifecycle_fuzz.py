@@ -62,7 +62,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 import millwork as mw
-from millwork import auth, ui
+from millwork import auth, marks, ui
 from millwork.protocol import pack_frame
 
 ADMIN_MARK = "ADMIN-ONLY-CONTENT"
@@ -456,6 +456,26 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
 
         return wrap
 
+    def highlight(s: mw.Session[State]) -> None:
+        # Marks are set on what the page has and on what it has not, in
+        # steps and beside them, and taken off again, wherever the session
+        # is in its life by then.
+        world.counts["highlights asked for"] += 1
+        turn = world.counts["highlights asked for"] % 5
+        if turn == 1:
+            s.highlight("bump", "blue", step=1)
+            s.highlight("point", "orange", step=2, seconds=5)
+            s.highlight("end", step=3)
+        elif turn == 2:
+            s.highlight("shared", "#0a7d5c", label="here")
+            s.highlight("not-on-any-page", "red")
+        elif turn == 3:
+            s.highlight("share", "green", page="/")
+        elif turn == 4:
+            s.highlight("bump", None)
+        else:
+            s.highlight(None)
+
     def shared_changed() -> None:
         # What every session sees changes, and whoever shows it is told.
         world.shared += 1
@@ -465,10 +485,12 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
     async def bump(s: mw.Session[State], _: Any) -> None:
         s.state.n += 1
         shared_changed()
+        highlight(s)
 
     @handler("share")
     async def share(s: mw.Session[State], _: Any) -> None:
         shared_changed()
+        highlight(s)
 
     @handler("slow")
     async def slow(s: mw.Session[State], _: Any) -> None:
@@ -549,6 +571,7 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
     @handler("toast")
     async def toast(s: mw.Session[State], _: Any) -> None:
         s.toast("Changed.", action=("Undo", undo))
+        highlight(s)
 
     @handler("point")
     async def point(s: mw.Session[State], _: Any) -> None:
@@ -558,6 +581,7 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
         s.state.n += 1
         s.focus("bump")
         s.reset("mark")
+        highlight(s)
 
     async def search(s: mw.Session[State], query: Any) -> list[str]:
         span = world.begin("request", s, name="search")
@@ -851,6 +875,10 @@ class Tab:
         # The page as the tab holds it: every node it was sent, with the
         # patches since applied.
         self.nodes: dict[str, dict[str, Any]] = {}
+        # The highlights the tab has, as it was last given them, and the
+        # session whose page the tab has when it comes back on a new socket.
+        self.marks: list[dict[str, Any]] = []
+        self.page_of: str | None = None
         # Which tab each ``Tabs`` that keeps its own choice is on, and what
         # the tab last told the server about it.
         self.on: dict[str, str] = {}
@@ -899,6 +927,8 @@ class Tab:
         in the browser outlives its socket."""
         self.nodes = {i: json.loads(json.dumps(n)) for i, n in old.nodes.items()}
         self.on = dict(old.on)
+        self.marks = [dict(m) for m in old.marks]
+        self.page_of = old.session
 
     def patch(self, ops: list[dict[str, Any]]) -> None:
         nodes = self.nodes
@@ -1045,6 +1075,9 @@ class Tab:
             self.last_seq = seq
         fact: dict[str, Any] = {"tab": self.label, "type": kind, "seq": seq, "sent": sent}
         if kind == "session":
+            if msg["id"] != (self.session or self.page_of):
+                # The marks were another session's.
+                self.marks = []
             self.session, self.resume = msg["id"], msg["resume"]
             fact["sid"] = self.sim.world.name(msg["id"])
             unsent, self.unsent = self.unsent, []
@@ -1058,6 +1091,8 @@ class Tab:
             fact["marked"] = ADMIN_MARK in event["text"]
             if not again:
                 self.nodes = msg["nodes"]
+                # A page brings its marks.
+                self.marks = msg.get("marks", [])
                 # A whole page: the tabs that live on in it say again where
                 # they are, as the session may have forgotten on the way.
                 self.told.clear()
@@ -1074,6 +1109,8 @@ class Tab:
             if msg["name"] == "leave":
                 self.left_for = msg["args"]["to"]
                 fact["to"] = self.left_for
+            if msg["name"] == "marks" and not again:
+                self.marks = msg["args"]["list"]
             if msg["name"] == "logout":
                 # The tab signs out for its browser and goes, as a real one does.
                 self.sim.background(self.sim.sign_out(self.browser.number - 1))
@@ -1285,7 +1322,7 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
         kinds += ["click"] * 14 + ["navigate"] * 2 + ["drop"] * 2 + ["deafen", "hear"]
         kinds += ["request", "stale", "answer", "chat", "chat", "upload", "upload", "fetch"]
         kinds += ["request", "reload", "duplicate"] + ["show"] * 8 + ["request"] * 3 + ["lie"]
-        kinds += ["rest"] * 6
+        kinds += ["rest"] * 6 + ["touch"] * 3
     if sim.app.sessions:
         kinds += ["push"]
     if any(t.gone or t.server_closed for t in sim.tabs):
@@ -1337,6 +1374,8 @@ def _choose(rng: random.Random, sim: Sim) -> tuple[Any, ...]:
         return ("fetch", tab, rng.randrange(4))
     if kind == "drop":
         return ("drop", tab)
+    if kind == "touch":
+        return ("touch", tab, rng.randrange(4), rng.random() < 0.7)
     if kind == "deafen":
         return ("deafen", tab)
     if kind == "hear":
@@ -1510,6 +1549,17 @@ async def perform(sim: Sim, action: tuple[Any, ...]) -> bool:
     elif kind == "stale":
         world.note("act:stale", tab=tab.label, node=action[2])
         tab.say({"type": "event", "node": action[2], "name": "click"})
+    elif kind == "touch":
+        # The person gets to a highlighted component, or its time runs
+        # out. The tab says so and keeps the mark until the session sends
+        # the list without it: what it says can be lost with its socket.
+        if not tab.marks:
+            return False
+        mark = tab.marks[action[2] % len(tab.marks)]
+        what = "touched" if action[3] else "timed out"
+        world.note("act:touch", tab=tab.label, node=mark["id"], what=what)
+        payload = {"n": mark["n"], "what": what}
+        tab.say({"type": "event", "node": mark["id"], "name": "mark", "payload": payload})
     elif kind == "answer":
         handlers = [h for h in sim.handlers(tab) if "@ask" in h[0] and h[1] == "click"]
         wanted = "/ok" if action[2] else "/cancel"
@@ -1998,6 +2048,14 @@ def at_rest(sim: Sim, session: Any, sid: str) -> None:
         other = sorted(ids or (i for i in page if tab.nodes[i] != page[i]))
         what = "nodes on one side only" if ids else "nodes that differ"
         sim.problems.append(("page differs", f"{tab.label} and {sid}: {what}, {other[:3]}"))
+    # And exactly the highlights the session holds for this page.
+    held = json.loads(json.dumps(marks.now(session._marks, session.place)[0]))
+    if held:
+        sim.world.counts["... that have highlights"] += 1
+    if tab.marks != held:
+        has = [(m["n"], m["id"]) for m in tab.marks]
+        wants = [(m["n"], m["id"]) for m in held]
+        sim.problems.append(("marks differ", f"{tab.label} has {has} and {sid} holds {wants}"))
     if tab.lied:
         return
     for node_id, component in tabs.items():
@@ -2198,6 +2256,7 @@ ON_A_TAB = {
     "navigate",
     "request",
     "stale",
+    "touch",
     "answer",
     "drop",
     "deafen",

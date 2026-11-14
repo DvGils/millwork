@@ -20,7 +20,7 @@ from millwork.auth import Forbidden
 from millwork.connection import Connection
 from millwork.files import FileRef, Reject, _read_chunks, fits
 from millwork.nodes import Component
-from millwork.protocol import Command, Event, Patch, ServerError, Stream, server_message
+from millwork.protocol import Command, Event, Mount, Patch, ServerError, Stream, server_message
 from millwork.scope import Scope
 from millwork.session import Session, names
 from millwork.ui import Button, Checkbox, Custom, Link, Switch, Tabs
@@ -423,6 +423,45 @@ class Page:
     async def stop(self, chat: Found | str) -> None:
         """Press stop on a chat's running reply."""
         await self.event(chat, "stop")
+
+    @property
+    def marks(self) -> list[dict[str, Any]]:
+        """The highlights the tab has, as it was last given them. Each has
+        the ``id`` of its component, the ``field`` of a form when it is on
+        one, its ``color`` and ``style``, and its ``step`` when it has one.
+        One that waits for the steps before it has ``waits``."""
+        for message in reversed(self.messages):
+            if isinstance(message, Command) and message.name == "marks":
+                return [dict(mark) for mark in message.args.get("list") or []]
+            if isinstance(message, Mount):
+                # A page that is put on the tab brings its marks.
+                return [dict(mark) for mark in message.marks]
+        return []
+
+    def _mark(self, name: str) -> dict[str, Any]:
+        place = self.session.place(name)
+        for mark in self.marks:
+            if place == (mark["id"], mark.get("field")):
+                return mark
+        raise LookupError(f"nothing is highlighted at {name!r}")
+
+    async def touch(self, name: str) -> None:
+        """Get to a highlighted component as a person does: point at it,
+        press it or type in it. Its highlight goes, with the steps before
+        it. On one that waits for the steps before it, this is the press."""
+        mark = self._mark(name)
+        payload = {"n": mark["n"], "what": "touched"}
+        self.session.event(Event(node=mark["id"], name="mark", payload=payload))
+        await self.settle()
+
+    async def time_out(self, name: str) -> None:
+        """Let the time of a highlight that has ``seconds`` run out."""
+        mark = self._mark(name)
+        if "seconds" not in mark or mark.get("waits"):
+            raise LookupError(f"the highlight at {name!r} has no time running")
+        payload = {"n": mark["n"], "what": "timed out"}
+        self.session.event(Event(node=mark["id"], name="mark", payload=payload))
+        await self.settle()
 
     async def answer(self, payload: Any = None) -> None:
         """Answer the open ``ask``: ``True``/``False`` press OK or Cancel, a dict

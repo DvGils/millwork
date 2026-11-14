@@ -160,6 +160,10 @@ def test_the_oracle_notices_a_page_with_lazy_parts_broken_on_purpose(
         broken.setattr(session.Session, "shown", lambda self, event: None)
         assert found("tabs parted")
     with monkeypatch.context() as broken:
+        # The marks a session holds are never told to the tab.
+        broken.setattr(session.Session, "_send_marks", lambda self: None)
+        assert found("marks differ")
+    with monkeypatch.context() as broken:
         # A patch that leaves out what changed in a node.
         diff = nodes.diff
 

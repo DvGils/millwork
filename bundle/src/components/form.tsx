@@ -307,7 +307,7 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
 
   if (f.widget === "fieldset") {
     return (
-      <FieldSet>
+      <FieldSet data-field={pointer}>
         <FieldLegend>{f.title ?? f.label}</FieldLegend>
         {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
         <FieldGroup>
@@ -323,7 +323,7 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
     const Plus = icon("plus");
     const Trash = icon("trash-2");
     return (
-      <FieldSet>
+      <FieldSet data-field={pointer}>
         <FieldLegend>{f.label}</FieldLegend>
         {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
         <div className="flex flex-col gap-(--mw-field-gap)">
@@ -356,7 +356,7 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
 
   if (f.widget === "union") {
     return (
-      <FieldSet>
+      <FieldSet data-field={pointer}>
         <FieldLegend>{f.label}</FieldLegend>
         <FieldGroup>
           <ItemField item={f} pointer={pointer} schemaPointer={f.pointer} ctx={ctx} />
@@ -371,6 +371,7 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
 
   return (
     <Field
+      data-field={pointer}
       orientation={inline ? "horizontal" : ctx.orientation}
       data-invalid={invalid || undefined}
       className={counts(f) && ctx.orientation === "horizontal" ? "pb-5" : undefined}

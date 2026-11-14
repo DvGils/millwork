@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from millwork.nodes import Tree
     from millwork.protocol import Node
 
-__all__ = ["SAYS", "Says", "as_text", "outline", "pointed"]
+__all__ = ["SAYS", "Says", "as_text", "has_field", "outline", "pointed"]
 
 # How many options, menu items and suggestions are named before the rest
 # is counted, and how many columns of a table and fields of a form.
@@ -55,7 +55,12 @@ class _Limits:
         showing: dict[str, Any] | None = None,
         issues: dict[str, list[Any]] | None = None,
         currency: str | None = None,
+        marks: list[dict[str, Any]] | None = None,
     ) -> None:
+        # The highlights on the page, by the component each is on.
+        self.marks: dict[str, list[dict[str, Any]]] = {}
+        for mark in marks or ():
+            self.marks.setdefault(str(mark.get("id")), []).append(mark)
         self.rows = max(rows, 0)
         self.chars = max(chars, 0)
         # The tab each tab strip is on, as the browser said.
@@ -289,10 +294,13 @@ def _at(record: Any, pointer: Any) -> Any:
     return record
 
 
-def _fields(fields: Any, limits: _Limits, values: Any = None) -> dict[str, Any]:
+def _fields(
+    fields: Any, limits: _Limits, values: Any = None, pointed: bool = True
+) -> dict[str, Any]:
     """A form's fields, under ``fields``, as the form draws them: not one
     it keeps to itself. ``values`` is what the form shows in them, for one
-    that cannot be typed in. A field for a password gives none."""
+    that cannot be typed in. A field for a password gives none. A field
+    that can be pointed at has where it is in the form under ``at``."""
     drawn = [f for f in _list(fields) if isinstance(f, dict) and f.get("widget") != "hidden"]
     said: list[dict[str, Any]] = []
     for field in drawn[:FIELDS]:
@@ -301,6 +309,8 @@ def _fields(fields: Any, limits: _Limits, values: Any = None) -> dict[str, Any]:
             "name": limits.cut(field.get("name") or ""),
             "kind": limits.cut(widget or ""),
         }
+        if pointed and isinstance(field.get("pointer"), str) and field["pointer"]:
+            one["at"] = field["pointer"]
         if _text(field.get("label")):
             one["label"] = limits.cut(field["label"])
         if field.get("required"):
@@ -316,11 +326,13 @@ def _fields(fields: Any, limits: _Limits, values: Any = None) -> dict[str, Any]:
             one.update(limits.some("options", [label for _, label in options]))
         # A field that holds fields. A list has the fields of one item,
         # which are there to be filled in once an item is added.
-        inner = field.get("fields")
+        inner, item = field.get("fields"), None
         if values is None and not inner:
-            inner = _dict(field.get("item")).get("fields")
-        if inner:
-            one.update(_fields(inner, limits, values))
+            # Of an item that is not there yet, which has no place to
+            # point at.
+            item = _dict(field.get("item")).get("fields")
+        if inner or item:
+            one.update(_fields(inner or item, limits, values, pointed and not item))
         elif values is not None and widget != "password":
             value = _at(values, field.get("pointer"))
             if isinstance(value, str | int | float | bool):
@@ -332,6 +344,20 @@ def _fields(fields: Any, limits: _Limits, values: Any = None) -> dict[str, Any]:
     if len(drawn) > FIELDS:
         out["fields_more"] = len(drawn) - FIELDS
     return out
+
+
+def has_field(props: dict[str, Any], pointer: str) -> bool:
+    """Whether a form draws a field at this pointer, at any depth."""
+
+    def among(fields: Any) -> bool:
+        for field in _list(fields):
+            if not isinstance(field, dict) or field.get("widget") == "hidden":
+                continue
+            if field.get("pointer") == pointer or among(field.get("fields")):
+                return True
+        return False
+
+    return among(_dict(props.get("schema")).get("fields"))
 
 
 def _issues(issues: Any, limits: _Limits) -> dict[str, Any]:
@@ -784,6 +810,12 @@ def _entry(tree: Tree, node: Node, limits: _Limits) -> dict[str, Any]:
         extra = says.more(props, limits)
         state += extra.pop("state", [])
         out.update(extra)
+    on = limits.marks.get(node.id, [])
+    whole = next((mark for mark in on if "field" not in mark), None)
+    if whole is not None:
+        out["marked"] = _marked(whole)
+    if node.type == "Form":
+        _point(out, node.id, {str(mark["field"]): mark for mark in on if "field" in mark})
     told = limits.issues.get(node.id) if node.type == "Form" else None
     if told:
         # What its last submit was turned down for, which went to the tab
@@ -805,6 +837,24 @@ def _entry(tree: Tree, node: Node, limits: _Limits) -> dict[str, Any]:
     if state:
         out["state"] = state
     return out
+
+
+def _marked(mark: dict[str, Any]) -> dict[str, Any]:
+    """What a highlight on a component says: its color, its step, whether
+    it waits for the steps before it, and its label."""
+    said = {name: mark[name] for name in ("color", "step", "waits", "label") if mark.get(name)}
+    return said or {"color": "ring"}
+
+
+def _point(holder: dict[str, Any], form: str, marks: dict[str, dict[str, Any]]) -> None:
+    """Give each field of a form the name it is pointed at by, the form's
+    id and where the field is in it, and the highlight that is on it."""
+    for field in holder.get("fields", []):
+        if "at" in field:
+            if field["at"] in marks:
+                field["marked"] = _marked(marks[field["at"]])
+            field["at"] = form + field["at"]
+        _point(field, form, marks)
 
 
 def _mark(entry: dict[str, Any], word: str) -> None:
@@ -899,16 +949,22 @@ def outline(
     showing: dict[str, Any] | None = None,
     issues: dict[str, list[Any]] | None = None,
     currency: str | None = None,
+    marks: list[dict[str, Any]] | None = None,
+    nowhere: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """What the page holds for the person, as a structure: a dict for each
     component, with what it holds under ``children``. ``within`` is the id
     of a component to start at, or the ids a name finds, of which it is
     the first that shows. None for a page that is not there, and for a
     component that is hidden, inside a hidden one, or not on the page.
-    ``currency`` is what an amount of money is in."""
+    ``currency`` is what an amount of money is in. ``marks`` are the
+    highlights on the page as the tab is given them, and ``nowhere`` the
+    names of the ones that stand for nothing on it."""
     if tree is None:
         return None
-    whole = _walk(tree, tree.root, _Limits(rows, chars, showing, issues, currency))
+    whole = _walk(tree, tree.root, _Limits(rows, chars, showing, issues, currency, marks))
+    if whole is not None and nowhere:
+        whole["marks_nowhere"] = [str(name) for name in nowhere[:LISTED]]
     if whole is None or within is None:
         return whole
     # From the top, so that what the component is inside of is known: one
@@ -1037,6 +1093,8 @@ def _line(entry: dict[str, Any], keys: dict[str, int]) -> str:
         words.append("error " + _quoted(entry["error"]))
     if entry.get("empty"):
         words.append("shows " + _quoted(entry["empty"]))
+    if entry.get("marked"):
+        words.append(_mark_words(entry["marked"]))
     words += state
     if entry.get("help"):
         words.append(_quoted(entry["help"]))
@@ -1053,9 +1111,25 @@ def _named(entry: dict[str, Any], name: str) -> str:
     return ", ".join(said)
 
 
-def _field_lines(entry: dict[str, Any], pad: str) -> Iterator[str]:
+def _mark_words(mark: dict[str, Any]) -> str:
+    words = [f"highlighted {mark.get('color', 'ring')}"]
+    if mark.get("step"):
+        words.append(f"step {mark['step']}")
+    if mark.get("waits"):
+        words.append("waits for the steps before it")
+    if mark.get("label"):
+        words.append("labeled " + _quoted(mark["label"]))
+    return ", ".join(words)
+
+
+def _field_lines(entry: dict[str, Any], pad: str, form: tuple[str, str]) -> Iterator[str]:
+    """A line for each field. One that can be pointed at is named as it is
+    pointed at: the form's name, a slash, and where the field is in it."""
     for field in entry.get("fields", []):
-        words = [f"field {_word(field.get('name'))}"]
+        name = field.get("name")
+        if str(field.get("at", "")).startswith(form[0] + "/"):
+            name = form[1] + field["at"][len(form[0]) :]
+        words = [f"field {_word(name)}"]
         if field.get("label"):
             words.append(_quoted(field["label"]))
         if field.get("kind"):
@@ -1066,12 +1140,14 @@ def _field_lines(entry: dict[str, Any], pad: str) -> Iterator[str]:
             words.append(f"value={_quoted(field['value'])}")
         if field.get("options"):
             words.append("one of " + _named(field, "options"))
+        if field.get("marked"):
+            words.append(_mark_words(field["marked"]))
         if field.get("help"):
             words.append(_quoted(field["help"]))
         yield pad + "  ".join(words)
-        yield from _field_lines(field, pad + "  ")
-    if entry.get("fields_more"):
-        yield f"{pad}and {entry['fields_more']} more"
+        yield from _field_lines(field, pad + "  ", form)
+        if field.get("fields_more"):
+            yield f"{pad}  and {field['fields_more']} more"
 
 
 def _says_nothing(entry: dict[str, Any]) -> bool:
@@ -1105,7 +1181,16 @@ def _lines(entry: dict[str, Any], depth: int, keys: dict[str, int]) -> Iterator[
                 yield pad + "..."
             for who, said in entry["messages"]:
                 yield f"{pad}{_word(who)}: {_quoted(said)}"
-        yield from _field_lines(entry, pad)
+        if entry.get("fields"):
+            # The form's name as its own line has it.
+            key = entry.get("key")
+            named = key if key and keys.get(key) == 1 else entry["id"]
+            yield from _field_lines(entry, pad, (entry["id"], named))
+        if entry.get("fields_more"):
+            yield f"{pad}and {entry['fields_more']} more"
+        if entry.get("marks_nowhere"):
+            names = ", ".join(map(_quoted, entry["marks_nowhere"]))
+            yield f"{pad}highlighted and not on the page: {names}"
     for child in entry.get("children", []):
         yield from _lines(child, depth, keys)
 

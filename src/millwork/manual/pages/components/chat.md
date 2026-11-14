@@ -160,7 +160,9 @@ def example(s):
 
 An assistant that is asked about the page reads it with
 `s.outline(as_text=True)`, which
-[Accessing the session](/state/accessing-the-session) describes.
+[Accessing the session](/state/accessing-the-session) describes. It
+points at a component with `s.highlight`, which
+[Feedback](/components/feedback) shows.
 
 ## Parts a reply can carry
 

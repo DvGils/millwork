@@ -22,11 +22,11 @@ import secrets
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 from urllib.parse import urlencode
 
-from millwork import context, outline, work
+from millwork import context, marks, outline, work
 from millwork.chat import ChatTurn, Thread, UIMessage
 from millwork.connection import REPLACED, Connection, End, Pipe
 from millwork.files import FileRef, Reject, SessionFiles, content_to_file
@@ -166,7 +166,9 @@ class Session[S]:
         self.outbox = Outbox()
         self.conn: Connection | None = None
         self._wanted: deque[Want] = deque([Want(path, first=True)])
-        self._previous: tuple[PageDef, dict[str, str], str, Tree | None, set[Signal]] | None = None
+        self._previous: (
+            tuple[PageDef, dict[str, str], str, Tree | None, set[Signal], list[marks.Mark]] | None
+        ) = None
         # The signals the page the session is on follows.
         self._following: set[Signal] = set()
         self._wake: asyncio.Future[None] = self._loop.create_future()
@@ -234,6 +236,15 @@ class Session[S]:
         # was said after another page was asked for, and so is for that one.
         self._focus_asked: str | None = None
         self._focus_is_for_next = False
+        # The highlights the session holds, and the list the tab has of them.
+        self._marks: list[marks.Mark] = []
+        # What each name stands for on the page as it is, kept from one
+        # drawing to the next.
+        self._places: dict[str, tuple[str, str | None] | None] = {}
+        self._places_ids: tuple[str, ...] = ()
+        self._places_of: Tree | None = None
+        self._marks_sent: list[dict[str, Any]] = []
+        self._mark_serial = 0
         self._asks: dict[str, _Ask] = {}
         self._toast_actions: dict[str, Callable[..., Any]] = {}
         # Requests in flight by id, each with the connection it came in on.
@@ -466,8 +477,14 @@ class Session[S]:
         tree = self.tree
         if tree is None or self.stage != READY:
             return None
+        # With the marks the tab was last given, which are the ones of the
+        # page as it was last drawn. What changed since is said behind the
+        # next drawing, to this tab as to any.
         return pack(
-            self.outbox.seq, Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown)
+            self.outbox.seq,
+            Mount(
+                root=tree.root, nodes=tree.nodes, title=self._title_shown, marks=self._marks_sent
+            ),
         )
 
     # ----------------------------------------------------------- sign-in
@@ -540,6 +557,9 @@ class Session[S]:
             done.set_result(None)
             return done
         self._wanted.append(Want(path, done=done))
+        # Work that asks for another page goes there with it: what it
+        # says from here on is not for the page it began on.
+        context.on_visit(None)
         if not self._wake.done():
             self._wake.set_result(None)
         return done
@@ -586,7 +606,23 @@ class Session[S]:
     def enter(self, page: PageDef, params: dict[str, str], path: str) -> None:
         """Step onto the page a navigation leads to, for its connect to run.
         What the session was on is kept, to go back to if that fails."""
-        self._previous = (self.page, self.params, self.path, self.tree, self._unfollow())
+        self._previous = (
+            self.page,
+            self.params,
+            self.path,
+            self.tree,
+            self._unfollow(),
+            self._marks,
+        )
+        # A mark is for one visit of a page: this one's are over, the ones
+        # that waited for the page that comes are its own now, and the ones
+        # for another page wait on.
+        here = marks.bare(path)
+        self._marks = [
+            replace(m, page=None) if m.page == here else m
+            for m in self._marks
+            if m.page is not None
+        ]
         # What was asked of the page that is left is not asked of this one.
         # The keyboard asked for after this page was is.
         self._print_asked = False
@@ -601,8 +637,9 @@ class Session[S]:
         """Land on the app's page for a page that refused, under the path
         that was asked for."""
         self.page, self.params = self.app.fallback(kind, self.path, message)
-        # Nor is the keyboard it asked for.
+        # Nor is the keyboard it asked for, or a mark that was for it.
         self._focus_asked = None
+        self._marks = [m for m in self._marks if m.page is not None]
         # What the page that refused followed before it did is not this
         # page's to follow.
         self._unfollow()
@@ -653,7 +690,7 @@ class Session[S]:
             self._unfollow()
             # The keyboard was asked for in a page that did not come.
             self._focus_asked = None
-            self.page, self.params, self.path, self.tree, following = self._previous
+            self.page, self.params, self.path, self.tree, following, self._marks = self._previous
             for signal in following:
                 self.follow(signal)
             if following:
@@ -735,6 +772,138 @@ class Session[S]:
             return []
         return [i for i in tree.nodes if names(name, i, tree.components.get(i))]
 
+    def place(self, name: str) -> tuple[str, str | None] | None:
+        """Where a name points: the id of the first component it stands
+        for, or the id of a form and the pointer of a field of it, for a
+        name that is the form's, a slash, and the field's. None for a name
+        that stands for nothing on the page."""
+        tree = self.tree
+        if tree is None:
+            return None
+        if self._places_of is not tree:
+            # What a name stands for holds for as long as the page has the
+            # same components, which it does through most drawings.
+            ids = tuple(tree.nodes)
+            if ids != self._places_ids or len(self._places) > 256:
+                self._places, self._places_ids = {}, ids
+            self._places_of = tree
+        if name not in self._places:
+            self._places[name] = self._place(tree, name)
+        return self._places[name]
+
+    def _place(self, tree: Tree, name: str) -> tuple[str, str | None] | None:
+        ids = self.named(name)
+        if ids:
+            return ids[0], None
+        at = name.rfind("/")
+        while at > 0:
+            pointer = name[at:]
+            for form in self.named(name[:at]):
+                node = tree.nodes[form]
+                if node.type == "Form" and outline.has_field(node.props, pointer):
+                    return form, pointer
+            at = name.rfind("/", 0, at)
+        return None
+
+    def highlight(
+        self,
+        name: str | None,
+        color: str | None = "ring",
+        *,
+        style: str = "solid",
+        step: int | None = None,
+        seconds: float | None = None,
+        label: str | None = None,
+        scroll: bool = False,
+        page: str | None = None,
+    ) -> None:
+        """Mark a component for the person to find: a border around it, in
+        a color, drawn over the page. ``name`` is a key or an id, or a
+        form's name, a slash and a field's, as ``order/amount``.
+
+        ``color`` is ``red``, ``orange``, ``yellow``, ``green``, ``blue``,
+        ``pink`` or ``primary``, each a color of the theme, or a hex code.
+        ``style`` is ``solid``, ``pulse`` or ``trace``, a light that goes
+        around the component. Marks with a ``step`` show one step after the
+        other, each when the ones before it are done, and the others show
+        together. ``label`` is a word on a mark that has no step.
+
+        A mark goes when the person points at its component, presses it or
+        types in it, after ``seconds`` on the screen when that is given,
+        and when the page is left. ``s.highlight(name, None)``
+        takes it off, and ``s.highlight(None)`` takes all off. One for a
+        component that is not on the page yet, a field of a dialog that is
+        closed, shows when it is. ``page`` is the path of another page,
+        for a mark that shows when the person gets there. ``scroll=True``
+        brings the component into view when the mark shows.
+
+        A mark asked for by work that began on a page the person has left
+        since, a reply that took its time, is not set: the component it
+        means is not one of the page they are on."""
+        if name is None:
+            self._marks = []
+        elif color is None:
+            self._marks = [m for m in self._marks if m.name != name]
+        else:
+            if not isinstance(name, str) or not name:
+                raise TypeError("s.highlight() takes the key or the id of a component")
+            color, style, step, seconds, label, page = marks.checked(
+                color, style, step, seconds, label, page
+            )
+            began = context.visit()
+            if page is None and began is not None and began != self.visit:
+                # Asked by work that began on a page the person has left
+                # since, a reply that was still being written: the component
+                # it means is not one of this page.
+                return
+            if page is None and self._wanted:
+                # Set behind a navigation: for the page that was asked for.
+                page = marks.bare(self._wanted[-1].path)
+            elif page == marks.bare(self.path) and not self._wanted:
+                page = None
+            self._mark_serial += 1
+            mark = marks.Mark(
+                self._mark_serial, name, color, style, step, seconds, label, scroll, page
+            )
+            # One mark for a name on a page: a new one takes the old one's place.
+            kept = [m for m in self._marks if (m.name, m.page) != (name, page)]
+            self._marks = [*kept, mark][-marks.KEPT :]
+        # Sent behind the next drawing, which shows what a handler that
+        # set it opened as well.
+        self.refresh()
+
+    def marked(self, event: Event) -> None:
+        """The tab says a mark is done: the person got to its component, or
+        its time ran out. The mark goes, and with it the steps before it:
+        someone who used the field of step two has done step one. No
+        handler of the app's hears of it."""
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        n = payload.get("n")
+        mark = next((m for m in self._marks if type(n) is int and m.n == n), None)
+        if self.over or mark is None or mark.page is not None:
+            return
+        gone = {mark.n}
+        if payload.get("what") == "touched" and mark.step is not None:
+            gone |= {
+                m.n
+                for m in self._marks
+                if m.page is None and m.step is not None and m.step < mark.step
+            }
+        self._marks = [m for m in self._marks if m.n not in gone]
+        self._send_marks()
+
+    def _send_marks(self) -> None:
+        """Give the tab the marks of this page as they stand, when they are
+        other than the ones it has."""
+        if self.tree is None or self.tree is self._failure or self.stage != READY:
+            return
+        if not self._marks and not self._marks_sent:
+            return
+        found, _ = marks.now(self._marks, self.place)
+        if found != self._marks_sent:
+            self._marks_sent = found
+            self.command("marks", list=found)
+
     @overload
     def outline(
         self,
@@ -791,6 +960,7 @@ class Session[S]:
             ids = self.named(within)
             if not ids:
                 return "" if as_text else None
+        shown, nowhere = marks.now(self._marks, self.place)
         found = outline.outline(
             self.tree,
             within=ids,
@@ -799,6 +969,8 @@ class Session[S]:
             showing=self._showing,
             issues=self._form_issues,
             currency=self.app.theme.currency,
+            marks=shown,
+            nowhere=nowhere,
         )
         if not as_text:
             return found
@@ -1401,7 +1573,12 @@ class Session[S]:
             self._failure = None
         self.tree = tree
         self._title_shown = self._title(tree)
-        self.post(Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown))
+        # The marks of this page go with it: the ones the tab had were the
+        # last page's.
+        self._marks_sent = [] if self._failure else marks.now(self._marks, self.place)[0]
+        self.post(
+            Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown, marks=self._marks_sent)
+        )
         if self._failure is None:
             self._after_drawing()
 
@@ -1410,9 +1587,11 @@ class Session[S]:
         drawing that made it so: the patch, or the whole page."""
         if self._focus_asked is not None:
             name, self._focus_asked = self._focus_asked, None
-            ids = self.named(name)
-            if ids:
-                self.command("focus", id=ids[0])
+            place = self.place(name)
+            if place is not None and place[1] is not None:
+                self.command("focus", id=place[0], field=place[1])
+            elif place is not None:
+                self.command("focus", id=place[0])
             else:
                 self.warn(
                     f"focus:{name}",
@@ -1423,6 +1602,7 @@ class Session[S]:
             # The page the handler meant to print.
             self._print_asked = False
             self.command("print")
+        self._send_marks()
 
     def _title(self, tree: Tree) -> str | None:
         """The tab's title: the root ``Page``'s own when it has one, else the page's."""

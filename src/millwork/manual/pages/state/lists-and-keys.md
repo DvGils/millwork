@@ -125,7 +125,9 @@ def example(s):
 A key is also a component's name. `s.reset(key)` returns a browser-owned
 control to its `default`, with the keyboard still in it when it was.
 `s.focus(key)` puts the keyboard in a component, as
-[Inputs](/components/inputs) shows. `ui.Button(form=key)` finds its form.
+[Inputs](/components/inputs) shows, and `s.highlight(key)` puts a frame
+around one, as [Feedback](/components/feedback) shows.
+`ui.Button(form=key)` finds its form.
 A key that several components have names them all: a reset reaches each
 of them, and the keyboard goes to the first on the page.
 

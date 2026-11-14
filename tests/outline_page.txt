@@ -134,25 +134,25 @@ page  "Orders"  id=root
   patientcard  key=theirs
   form  key=record  read only
     buttons: "Save"
-    field customer  "Customer"  input  required  value="Kestrel Books"
-    field amount  "Amount"  number  required  value="12.5"  "What the customer pays, without tax."
-    field tier  "Tier"  select  value="gold"  one of "gold", "silver"
-    field pin  "Pin"  password
-    field address  "Address"  fieldset  required
-      field street  "Street"  input  required  value="Mill Lane 1"
-      field city  "City"  input  required  value="Delft"  "Where it is sent to."
-    field lines  "Lines"  list
+    field record/customer  "Customer"  input  required  value="Kestrel Books"
+    field record/amount  "Amount"  number  required  value="12.5"  "What the customer pays, without tax."
+    field record/tier  "Tier"  select  value="gold"  one of "gold", "silver"
+    field record/pin  "Pin"  password
+    field record/address  "Address"  fieldset  required
+      field record/address/street  "Street"  input  required  value="Mill Lane 1"
+      field record/address/city  "City"  input  required  value="Delft"  "Where it is sent to."
+    field record/lines  "Lines"  list
   dialog  "New order"  key=dlg  closed  "For a customer"
     form  key=order  values kept in the browser
       buttons: "Place it", "Leave"
-      field customer  "Customer"  input  required
-      field amount  "Amount"  number  required  "What the customer pays, without tax."
-      field tier  "Tier"  select  one of "gold", "silver"
-      field pin  "Pin"  password
-      field address  "Address"  fieldset  required
-        field street  "Street"  input  required
-        field city  "City"  input  required  "Where it is sent to."
-      field lines  "Lines"  list
+      field order/customer  "Customer"  input  required
+      field order/amount  "Amount"  number  required  "What the customer pays, without tax."
+      field order/tier  "Tier"  select  one of "gold", "silver"
+      field order/pin  "Pin"  password
+      field order/address  "Address"  fieldset  required
+        field order/address/street  "Street"  input  required
+        field order/address/city  "City"  input  required  "Where it is sent to."
+      field order/lines  "Lines"  list
         field sku  "Article"  input  required
         field qty  "Qty"  number
     button  "Save"  key=save  in its footer
@@ -313,25 +313,25 @@ page  "Orders"  id=root
   patientcard  key=theirs
   form  key=record  read only
     buttons: "Save"
-    field customer  "Customer"  input  required  value="Kestrel Book..."
-    field amount  "Amount"  number  required  value="12.5"  "What the cus..."
-    field tier  "Tier"  select  value="gold"  one of "gold", "silver"
-    field pin  "Pin"  password
-    field address  "Address"  fieldset  required
-      field street  "Street"  input  required  value="Mill Lane 1"
-      field city  "City"  input  required  value="Delft"  "Where it is..."
-    field lines  "Lines"  list
+    field record/customer  "Customer"  input  required  value="Kestrel Book..."
+    field record/amount  "Amount"  number  required  value="12.5"  "What the cus..."
+    field record/tier  "Tier"  select  value="gold"  one of "gold", "silver"
+    field record/pin  "Pin"  password
+    field record/address  "Address"  fieldset  required
+      field record/address/street  "Street"  input  required  value="Mill Lane 1"
+      field record/address/city  "City"  input  required  value="Delft"  "Where it is..."
+    field record/lines  "Lines"  list
   dialog  "New order"  key=dlg  closed  "For a custom..."
     form  key=order  values kept in the browser
       buttons: "Place it", "Leave"
-      field customer  "Customer"  input  required
-      field amount  "Amount"  number  required  "What the cus..."
-      field tier  "Tier"  select  one of "gold", "silver"
-      field pin  "Pin"  password
-      field address  "Address"  fieldset  required
-        field street  "Street"  input  required
-        field city  "City"  input  required  "Where it is..."
-      field lines  "Lines"  list
+      field order/customer  "Customer"  input  required
+      field order/amount  "Amount"  number  required  "What the cus..."
+      field order/tier  "Tier"  select  one of "gold", "silver"
+      field order/pin  "Pin"  password
+      field order/address  "Address"  fieldset  required
+        field order/address/street  "Street"  input  required
+        field order/address/city  "City"  input  required  "Where it is..."
+      field order/lines  "Lines"  list
         field sku  "Article"  input  required
         field qty  "Qty"  number
     button  "Save"  key=save  in its footer
@@ -362,14 +362,14 @@ dialog  "New order"  key=dlg  "For a customer"
   form  key=order  values kept in the browser
     buttons: "Place it", "Leave"
     its last submit was turned down for: "/customer: No such customer."
-    field customer  "Customer"  input  required
-    field amount  "Amount"  number  required  "What the customer pays, without tax."
-    field tier  "Tier"  select  one of "gold", "silver"
-    field pin  "Pin"  password
-    field address  "Address"  fieldset  required
-      field street  "Street"  input  required
-      field city  "City"  input  required  "Where it is sent to."
-    field lines  "Lines"  list
+    field order/customer  "Customer"  input  required
+    field order/amount  "Amount"  number  required  "What the customer pays, without tax."
+    field order/tier  "Tier"  select  one of "gold", "silver"
+    field order/pin  "Pin"  password
+    field order/address  "Address"  fieldset  required
+      field order/address/street  "Street"  input  required
+      field order/address/city  "City"  input  required  "Where it is sent to."
+    field order/lines  "Lines"  list
       field sku  "Article"  input  required
       field qty  "Qty"  number
   button  "Save"  key=save  in its footer

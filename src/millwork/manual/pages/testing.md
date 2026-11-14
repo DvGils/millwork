@@ -207,7 +207,10 @@ strict=False)` leaves such failures in the log and in `page.failures`,
 which is how a running app treats them.
 
 `page.outline()` is the page as data, as the app's own `s.outline()`
-gives it, for a test of what an assistant is told.
+gives it, for a test of what an assistant is told. `page.marks` is the
+highlights the tab has. `page.touch(name)` gets to a highlighted
+component as a person does, and `page.time_out(name)` lets the time of
+one run out.
 
 ## Two sessions
 

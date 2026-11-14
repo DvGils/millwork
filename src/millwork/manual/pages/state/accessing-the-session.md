@@ -210,5 +210,7 @@ In the text, what the app gave stands in quotes, or bare where it is one
 plain word, so that a label or a cell cannot be read as a line of the
 outline. A component that can be pointed at has a name on its line:
 `key=` when its key finds no other component on the page, and `id=`
-otherwise. Either is a name `s.focus` takes. Keys and ids are in it as
-they are, and so is whatever a key was made from.
+otherwise. A field of a form is named by its form and where it is in it,
+as `order/amount`. Each is a name `s.focus` and `s.highlight` take. What
+is highlighted says so on its line. Keys and ids are in it as they are,
+and so is whatever a key was made from.

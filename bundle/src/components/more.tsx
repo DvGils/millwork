@@ -279,7 +279,11 @@ function AccordionEntry({ id }: { id: string }) {
   const item = useNode(id);
   if (!item) return null;
   return (
-    <UiAccordionItem value={String(item.props.id)} style={item.props.hidden ? { display: "none" } : undefined}>
+    <UiAccordionItem
+      data-node={id}
+      value={String(item.props.id)}
+      style={item.props.hidden ? { display: "none" } : undefined}
+    >
       <AccordionTrigger>{String(item.props.title ?? "")}</AccordionTrigger>
       <AccordionContent className="flex flex-col gap-3">
         {item.children.map((cid) => (
@@ -423,7 +427,7 @@ const sheetSize: Record<string, string> = {
   full: "data-[side=left]:w-full data-[side=right]:w-full data-[side=left]:sm:max-w-none data-[side=right]:sm:max-w-none",
 };
 
-export const Sheet: Renderer = ({ props, children, emit }) => {
+export const Sheet: Renderer = ({ node, props, children, emit }) => {
   const status = useStatus();
   return (
   <UiSheet
@@ -433,7 +437,7 @@ export const Sheet: Renderer = ({ props, children, emit }) => {
       if (!open && props.dismissable !== false && props.on_close) emit("close");
     }}
   >
-    <SheetContent side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], props.cls as string)}>
+    <SheetContent data-node={node.id} side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], props.cls as string)}>
       {props.title || props.description ? (
         <SheetHeader>
           {props.title ? <SheetTitle>{String(props.title)}</SheetTitle> : null}

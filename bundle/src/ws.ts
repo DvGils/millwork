@@ -13,6 +13,7 @@ import { ensureTailwindRuntime, needsRuntime, runtimeLoaded } from "./tailwind-r
 import { markdownLoaded, needsMarkdown, preloadMarkdown } from "./components/markdown";
 import { keepScrollInHistory, restoreScroll, scrollFromHistory, watchScroll } from "./scroll";
 import { focusNode } from "./pointing";
+import { marks, parseMarks } from "./marks";
 
 interface Boot {
   path: string;
@@ -24,7 +25,7 @@ interface Boot {
 }
 
 type ServerMessage =
-  | { type: "mount"; root: string; nodes: Record<string, Node>; title: string | null }
+  | { type: "mount"; root: string; nodes: Record<string, Node>; title: string | null; marks?: unknown }
   | { type: "patch"; ops: PatchOp[] }
   | { type: "stream"; node: string; chunk: Record<string, unknown> }
   | { type: "command"; name: string; args: Record<string, unknown> }
@@ -413,6 +414,8 @@ function apply(m: ServerMessage) {
         lastSeq = 0;
         queue.length = 0;
         if (sessionId !== null) forgetFiles();
+        // The marks were the other session's.
+        marks.set([]);
       }
       sessionId = m.id;
       resumeToken = m.resume;
@@ -440,6 +443,8 @@ function apply(m: ServerMessage) {
         break;
       }
       store.mount(m.root, m.nodes, m.title);
+      // A page brings its marks. The ones there were are the last page's.
+      marks.set(parseMarks(m.marks));
       const hash = pendingHash ?? (window.location.hash ? window.location.hash.slice(1) : null);
       pendingHash = null;
       if (hash) window.setTimeout(() => scrollToHash(hash), 50);
@@ -584,13 +589,17 @@ function command(name: string, args: Record<string, unknown>) {
     case "reset":
       store.reset(Array.isArray(args.ids) ? args.ids.map(String) : []);
       break;
+    case "marks":
+      marks.set(parseMarks(args.list));
+      break;
     case "focus": {
       // After two frames: the drawing that came just before is on the page
       // by then, a dialog it opened included.
       const id = String(args.id);
+      const field = typeof args.field === "string" ? args.field : undefined;
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
-          if (!focusNode(id)) console.warn("millwork: nothing in", id, "takes the keyboard");
+          if (!focusNode(id, field)) console.warn("millwork: nothing in", id, field ?? "", "takes the keyboard");
         }),
       );
       break;

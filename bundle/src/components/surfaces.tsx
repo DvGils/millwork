@@ -92,7 +92,7 @@ function TabTrigger({ id }: { id: string }) {
   if (!tab || tab.props.hidden) return null;
   const Icon = icon(tab.props.icon);
   return (
-    <TabsTrigger value={String(tab.props.id)} disabled={Boolean(tab.props.disabled)}>
+    <TabsTrigger data-node={id} value={String(tab.props.id)} disabled={Boolean(tab.props.disabled)}>
       {Icon ? <Icon /> : null}
       {String(tab.props.label ?? "")}
       {tab.props.badge ? <UiBadge variant="secondary">{String(tab.props.badge)}</UiBadge> : null}
@@ -140,7 +140,7 @@ const dialogSize: Record<string, string> = {
   full: "sm:max-w-[calc(100%-2rem)]",
 };
 
-export const Dialog: Renderer = ({ props, children, emit }) => {
+export const Dialog: Renderer = ({ node, props, children, emit }) => {
   const status = useStatus();
   return (
   <UiDialog
@@ -151,6 +151,9 @@ export const Dialog: Renderer = ({ props, children, emit }) => {
     }}
   >
     <DialogContent
+      // The window is drawn outside the page's own elements, so it carries
+      // the node's id itself, for what points at the dialog.
+      data-node={node.id}
       // A column no taller than the window: the title and the footer stay, and
       // the body between them scrolls when what it holds is taller or wider.
       className={cn("flex max-h-[calc(100dvh-2rem)] flex-col", dialogSize[String(props.size ?? "md")], props.cls as string)}

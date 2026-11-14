@@ -172,6 +172,8 @@ the keyboard from a handler, into a field or into the first thing that
 takes it inside any other component. It happens once the page has been
 drawn again, so a handler can open a dialog and name a field in it, and
 one that calls `s.navigate` first names a field of the page it goes to.
+A field of a `ui.Form` is named by the form's key, a slash and the
+field's name, as `s.focus("order/amount")`.
 
 ```python live
 def example(s):
