@@ -36,6 +36,9 @@ versions; a release says so here when it does.
 
 - Development has a section on deprecations, with the pytest setting that
   makes a test fail on one.
+- The hosting checklist says what happens to a tab whose connection drops
+  when there is more than one replica, and that cookie affinity in the
+  load balancer brings it back to its session.
 
 ## 0.3.3
 
