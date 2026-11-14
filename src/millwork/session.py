@@ -808,7 +808,7 @@ class Session[S]:
     def highlight(
         self,
         name: str | None,
-        color: str | None = "ring",
+        color: str | None = "blue",
         *,
         style: str = "solid",
         step: int | None = None,
@@ -822,7 +822,8 @@ class Session[S]:
         form's name, a slash and a field's, as ``order/amount``.
 
         ``color`` is ``red``, ``orange``, ``yellow``, ``green``, ``blue``,
-        ``pink`` or ``primary``, each a color of the theme, or a hex code.
+        ``pink``, ``primary`` or ``ring``, each a color of the theme, or a
+        hex code. Without one it is blue.
         ``style`` is ``solid``, ``pulse`` or ``trace``, a light that goes
         around the component. Marks with a ``step`` show one step after the
         other, each when the ones before it are done, and the others show

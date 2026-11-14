@@ -136,7 +136,7 @@ def example(s):
 
 The color is `red`, `orange`, `yellow`, `green`, `blue`, `pink` or
 `primary`, each a color of the theme, or a hex code for a brand's own.
-Without one it is the color the theme rings a field with.
+Without one it is blue.
 `style=` is `solid`, `pulse` or `trace`, and someone who asked their
 system for less motion gets `solid`. `label=` puts a short word on the
 frame.

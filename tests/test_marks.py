@@ -111,9 +111,10 @@ async def test_a_mark_is_given_to_the_tab_with_how_it_looks() -> None:
     async with TestApp(make_app()).open("/") as page:
         assert page.marks == []
         s = page.session
+        # Without a color it is blue.
         s.highlight("export")
         await page.settle()
-        assert page.marks == [{"n": 1, "id": "root/export", "color": "ring", "style": "solid"}]
+        assert page.marks == [{"n": 1, "id": "root/export", "color": "blue", "style": "solid"}]
         s.highlight("new", "#0A7D5C", style="pulse", seconds=10, label="Here", scroll=True)
         await page.settle()
         assert page.marks[1] == {
@@ -187,14 +188,14 @@ async def test_steps_show_one_after_the_other() -> None:
         assert brief(page.marks) == [
             ("root/new", None, "blue", 1, False),
             (form, "/amount", "orange", 2, True),
-            ("root/dlg/@footer", None, "ring", 3, True),
+            ("root/dlg/@footer", None, "blue", 3, True),
         ]
         assert page.marks[1]["style"] == "trace"
         # Getting to the first shows the second.
         await page.touch("new")
         assert brief(page.marks) == [
             (form, "/amount", "orange", 2, False),
-            ("root/dlg/@footer", None, "ring", 3, True),
+            ("root/dlg/@footer", None, "blue", 3, True),
         ]
         # Using the component of a later step ends the ones before it.
         await page.click("tour")
@@ -207,7 +208,7 @@ async def test_steps_show_one_after_the_other() -> None:
         await page.settle()
         await page.touch("order/amount")
         assert brief(page.marks) == [
-            ("root/dlg/@footer", None, "ring", 3, False),
+            ("root/dlg/@footer", None, "blue", 3, False),
             ("root/export", None, "pink", None, False),
         ]
         # What the tab says of a mark that is gone changes nothing, nor
@@ -236,7 +237,7 @@ async def test_a_step_that_is_nowhere_yet_keeps_the_later_ones_waiting() -> None
                 "step": 2,
                 "waits": True,
             },
-            {"n": 3, "id": "root/tour", "color": "ring", "style": "solid", "label": "x" * 24},
+            {"n": 3, "id": "root/tour", "color": "blue", "style": "solid", "label": "x" * 24},
         ]
         await page.click("more")
         assert brief(page.marks)[0] == ("root/later", None, "blue", 1, False)
@@ -253,7 +254,7 @@ async def test_a_mark_with_a_time_goes_when_it_runs_out() -> None:
         await page.time_out("new")
         assert brief(page.marks) == [
             ("root/export", None, "red", 1, False),
-            ("root/tour", None, "ring", 2, True),
+            ("root/tour", None, "blue", 2, True),
         ]
         with pytest.raises(LookupError):
             await page.time_out("export")
