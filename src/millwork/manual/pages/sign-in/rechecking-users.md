@@ -6,6 +6,7 @@ related: /sign-in/admitting-users, /sign-in/sign-out-and-cookies, /pages/session
 ---
 
 # Rechecking users
+<!-- keywords: revoke, ban, deactivate, role change, session expiry -->
 
 A cookie holds the `User` as `on_login` made it, and holds it until it
 expires. A person whose role changed, or who should no longer get in,

@@ -6,6 +6,7 @@ related: /quickstart, /state/state-and-handlers, /running/development
 ---
 
 # Pages and routes
+<!-- keywords: routing, url, route, endpoint, page function, multi-page -->
 
 An app is a `mw.App` with pages on it. A page is a path and a function of
 the session that returns the component tree for that path. When the

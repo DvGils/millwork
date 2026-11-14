@@ -10,6 +10,7 @@ Controls the user types into or picks from. Each one tells Python what
 happened through an `on_change` handler, and most can be owned by either side.
 
 ## Who owns the value
+<!-- keywords: controlled, uncontrolled, two-way binding, value or default -->
 
 A control with `default=` keeps its own value in the browser and reports
 changes. A control with `value=` shows what Python says and only changes
@@ -50,6 +51,7 @@ def example(s):
 ```
 
 ## Button
+<!-- keywords: click, submit, action -->
 
 `ui.Button` takes a label, a `variant`, a `size`, an `icon` before the
 label or after it with `icon_position="end"`, `loading`, `disabled` and a
@@ -121,6 +123,7 @@ ui.ButtonGroup(
 ```
 
 ## Input
+<!-- keywords: text field, textbox, search box, debounce, typing, on change -->
 
 `ui.Input` is a single line of text. `kind` chooses the keyboard and the
 validation, from `text`, `password`, `email`, `number`, `search` and
@@ -236,6 +239,7 @@ ui.Textarea(
 ```
 
 ## NumberInput
+<!-- keywords: numeric, stepper -->
 
 `ui.NumberInput` takes a number within `min` and `max`, stepping by `step`,
 with an optional `suffix`. It reports on blur and on Enter.
@@ -263,6 +267,7 @@ ui.Stack(
 ```
 
 ## Switch and Checkbox
+<!-- keywords: toggle, boolean, tick -->
 
 Both are a yes or no with a `label` and an optional `description`. Use
 `checked` or `default_checked`.
@@ -281,6 +286,7 @@ ui.Stack(
 ```
 
 ## Select
+<!-- keywords: dropdown, picker, option, choice -->
 
 `ui.Select` picks one from `options`. Options are strings, `(value, label)`
 pairs, or `ui.Option` objects with an `icon`, `disabled` and a `group`.
@@ -317,6 +323,7 @@ ui.Row(
 ```
 
 ## Combobox
+<!-- keywords: autocomplete, typeahead, searchable dropdown -->
 
 `ui.Combobox` is a Select with a search box. With `options` it filters in
 the browser. With `on_search`, Python answers each search over the
@@ -351,6 +358,7 @@ def example(s):
 ```
 
 ## MultiSelect
+<!-- keywords: tags, chips, multiple choice -->
 
 `ui.MultiSelect` picks several, shown as chips. `max` stops further picks.
 Typing narrows the list to what can still be added, with the first match
@@ -428,6 +436,7 @@ ui.Stack(
 ```
 
 ## DatePicker
+<!-- keywords: calendar, date range -->
 
 `ui.DatePicker` picks a date from a calendar, and `range=True` picks a
 span. Values are ISO strings on the wire, and `date` objects are accepted.
@@ -445,6 +454,7 @@ ui.Row(
 ```
 
 ## DropdownMenu
+<!-- keywords: context menu, actions, kebab, more options -->
 
 `ui.DropdownMenu` opens a menu behind a `trigger` button. Items carry an
 `icon`, `disabled`, `destructive` and `separator_after`, and `on_select`
@@ -468,6 +478,7 @@ ui.DropdownMenu(
 ```
 
 ## Field
+<!-- keywords: label, help text, error message, validation -->
 
 `ui.Field` puts a `label`, `help` and an `error` around one control, for a
 form built by hand rather than from a model.

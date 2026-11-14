@@ -5,6 +5,7 @@ description: Your own React component in a .jsx file, driven from Python.
 ---
 
 # Custom components
+<!-- keywords: react, javascript, jsx, typescript, extend, plugin, own component -->
 
 When the catalog has no component for something, an app writes one in
 JSX. The file lives in the app's `components/` folder, gets compiled in

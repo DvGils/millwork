@@ -66,4 +66,6 @@ one group at a time, with each component in its states and the Python
 that makes it. For a lookup rather than a page, every component's props
 with their types and defaults are listed at [/llms.txt](/llms.txt), which
 `millwork reference` prints as well. The search box finds a section by
-its heading or its words.
+its heading or its words, and by what the thing is called elsewhere, a
+dialog by "modal". `millwork reference modal` does the same in a
+terminal, and prints what the reference and this manual say of it.

@@ -6,6 +6,7 @@ related: /sign-in/providers, /theming
 ---
 
 # The login page
+<!-- keywords: sign in screen, branding -->
 
 millwork has a login page of its own. A visitor who opens a gated page
 lands on it and comes back to that page after signing in. Left alone, it

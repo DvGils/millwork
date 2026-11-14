@@ -11,6 +11,7 @@ state and emit no events. Children are positional, so a page reads like
 the screen it makes.
 
 ## Page
+<!-- keywords: shell, frame, root layout -->
 
 `ui.Page` is the root of every page. It is as high as the viewport,
 scrolls its body under a fixed header, and lays itself out around a
@@ -35,6 +36,7 @@ This manual is a `Page` with a `Sidebar`, so the page itself is not
 shown inline. The sidebar is.
 
 ## Sidebar
+<!-- keywords: navigation, nav, menu, drawer -->
 
 `ui.Sidebar` holds the places to go. A `ui.Link` in it is drawn as a row
 to press, with its `icon` in front and the one marked `active=True` set
@@ -65,6 +67,7 @@ ui.Sidebar(
 ```
 
 ## Floating
+<!-- keywords: draggable window, popover, overlay -->
 
 `ui.Floating` pins its children over the page in a bottom corner, where
 they stay while the page scrolls, for a status chip or a small panel that
@@ -98,6 +101,7 @@ def example(s):
 ```
 
 ## Stack and Row
+<!-- keywords: flex, horizontal, vertical, side by side, align, spacing, gap -->
 
 `ui.Stack` lays children out vertically and `ui.Row` horizontally. Both
 take `gap`, `align` and `justify`, and a `Row` can `wrap`.
@@ -118,6 +122,7 @@ ui.Stack(ui.Text("First"), ui.Text("Second"), ui.Text("Third"), divided=True, ga
 ```
 
 ## Grid
+<!-- keywords: columns, two columns, side by side, responsive, breakpoints -->
 
 `ui.Grid` places children in columns. `cols` is a count from 1 to 12, or a
 mapping of counts by width. `sm` is the count on the narrowest screens, a
@@ -134,6 +139,7 @@ ui.Grid(
 ```
 
 ## Card
+<!-- keywords: panel, box, container, tile -->
 
 `ui.Card` frames content with an optional `title`, `description` and
 `footer`. `tone` colors its edge, and `on_click` makes the whole card a
@@ -176,6 +182,7 @@ ui.Stack(
 ```
 
 ## Split
+<!-- keywords: resizable panes, splitter -->
 
 `ui.Split` puts its children in resizable panes. `sizes` are the starting
 percentages, `min_sizes` the smallest each may be dragged to, and
@@ -193,6 +200,7 @@ ui.Split(
 ```
 
 ## Tabs
+<!-- keywords: tab strip, tabbed -->
 
 `ui.Tabs` holds `ui.Tab` children, each with an `id` and a `label`, and
 an optional `icon` or `badge`. The chosen tab is the tab's own business
@@ -210,6 +218,7 @@ ui.Tabs(
 ```
 
 ## Lazy parts
+<!-- keywords: performance, lazy load, defer rendering, render only what shows -->
 
 A page function builds the whole page at every render, the tabs nobody is
 looking at included. `ui.lazy` marks a function whose part of the page is
@@ -293,6 +302,7 @@ does without `ui.lazy`.
   the page as it is now.
 
 ## Accordion and Collapsible
+<!-- keywords: collapse, expand, faq, details -->
 
 `ui.Accordion` opens one `ui.AccordionItem` at a time, or several with
 `multiple=True`. `ui.Collapsible` is a single section with a `title`.

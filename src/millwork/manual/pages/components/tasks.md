@@ -5,6 +5,7 @@ description: Work that runs beyond a handler, with progress, steps and cancel.
 ---
 
 # Tasks
+<!-- keywords: background job, async, worker, long running, cancel -->
 
 Work that takes longer than a click goes in a task. The session owns it, the
 page shows its progress, and the user can cancel it. A handler that awaits a
@@ -127,6 +128,7 @@ def example(s):
 ```
 
 ## Later and threads
+<!-- keywords: timer, delay, run later, blocking, sync -->
 
 `s.later(seconds, work)` runs work after a delay. `s.thread(fn, *args)`
 runs a blocking function in the thread pool, which is what `s.task` does

@@ -5,6 +5,7 @@ description: A chat with streamed replies, parts, tools and feedback.
 ---
 
 # Chat
+<!-- keywords: llm, ai, chatbot, conversation, messages, openai, anthropic -->
 
 `ui.Chat` is a conversation, with messages, a composer that takes
 attachments and commands, and a streamed reply from Python. It needs a
@@ -18,6 +19,7 @@ section below says. `tools=[...]` puts your own buttons in the composer.
 The section below and the [Custom](/components/custom) page show what goes there.
 
 ## A streamed reply
+<!-- keywords: streaming, tokens, generator -->
 
 `turn.text`, `turn.files` and `turn.command` are what the user sent. A
 command chosen in the composer goes with the message, and is a message
@@ -70,6 +72,7 @@ ui.Card(
 ```
 
 ## The thread
+<!-- keywords: history, memory, persist messages -->
 
 `s.chat(key)` is the thread. `messages` holds what was said, `clear()`
 empties it, and `load(messages)` restores a stored conversation. `busy` is
@@ -98,6 +101,7 @@ ui.Row(
 ```
 
 ## A floating assistant
+<!-- keywords: copilot, widget, bubble, helper -->
 
 `ui.Assistant` is a round button in a corner of the page that becomes a
 window, for a chat that should be at hand wherever the reader is. It
@@ -165,6 +169,7 @@ points at a component with `s.highlight`, which
 [Feedback](/components/feedback) shows.
 
 ## Parts a reply can carry
+<!-- keywords: tool calls, reasoning, sources, citations -->
 
 | Call | Shows as |
 | --- | --- |

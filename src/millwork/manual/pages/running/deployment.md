@@ -6,6 +6,7 @@ related: /running/hosting-checklist, /sign-in/providers
 ---
 
 # Deployment
+<!-- keywords: deploy, production, docker, container, hosting, server, uvicorn, nginx, systemd, cloud -->
 
 In production one process serves one app behind a reverse proxy that
 ends TLS and passes the websocket upgrade through.
@@ -77,6 +78,7 @@ else at the path stops the start. The health route is reached the same
 way, with `curl --unix-socket /run/sales/app.sock http://app/_mw/health`.
 
 ## Under a path prefix
+<!-- keywords: subpath, base url, root path -->
 
 An app can live under a path on a shared host, say
 `https://apps.example/sales/`, next to other apps. The proxy strips the

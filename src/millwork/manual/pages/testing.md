@@ -6,6 +6,7 @@ related: /state/state-and-handlers, /running/development
 ---
 
 # Testing
+<!-- keywords: pytest, unit test, end to end, automation, assert -->
 
 A page is a function of state, handlers change state, and the wire is a
 list of messages. That lets a test run the real session, dispatcher, tasks

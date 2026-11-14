@@ -17,6 +17,25 @@ versions; a release says so here when it does.
   not marked as one: `s.outline(*, within=None, ...)` read as if
   `within` could be given by place.
 
+### Features
+
+- `millwork reference <words>` looks one thing up. It prints the entry
+  of the reference and the sections of the manual that are about it,
+  examples included, up to a few thousand characters, and names what
+  else matched with the command that gives each whole.
+  `millwork reference ui.Table` asks by name,
+  `millwork reference shared data` by what it is about, and
+  `millwork reference modal` or `st.button` by what a thing is called
+  elsewhere. A mistyped word is read as the one it is close to.
+  `components/feedback#toast` gives one section and
+  `components/feedback.md` a page. `--chars` sets how much is printed,
+  and `--index` lists every name without what is said of it.
+  `millwork reference` alone prints the whole reference, as before.
+- The manual's search box finds a section by what the thing is called
+  elsewhere, and by a word in another of its forms, as "shared" for
+  "share". It looks for whole words now, with the last one found while
+  it is still being typed, so "load" no longer finds "upload".
+
 ### The manual
 
 - The Welcome page's first sentence reads as it should.

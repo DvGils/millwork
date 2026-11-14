@@ -138,7 +138,20 @@ def main(argv: list[str] | None = None) -> int:
     routes.add_argument(
         "target", help="the App as module:attribute or file.py:attribute, for example app:app"
     )
-    sub.add_parser("reference", help="print the catalogue as a Markdown reference")
+    ref = sub.add_parser(
+        "reference",
+        help="print the catalogue as Markdown, or what it and the manual say of one thing",
+    )
+    ref.add_argument(
+        "words", nargs="*", help="what to look up: a name such as ui.Table, or words to search for"
+    )
+    ref.add_argument("--index", action="store_true", help="list the names without what is said")
+    ref.add_argument(
+        "--chars",
+        type=int,
+        default=None,
+        help="how much to print for one lookup: 4000 by default for a search, 500 at least",
+    )
     sub.add_parser("secret", help="print a signing secret for App(secret=...)")
     hp = sub.add_parser("hash-password", help="hash a password for a Password provider")
     hp.add_argument("--user", default="", help="prefix the line with the user name")
@@ -178,9 +191,29 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{kind:<5}  {path:<{wide}}  {who}")
         return 0
     if args.command == "reference":
+        from millwork import lookup
         from millwork.reference import reference
 
-        print(reference())
+        if args.index and args.words:
+            parser.error("--index lists every name, and takes no words")
+        if args.chars is not None and (not args.words or args.chars < lookup.LEAST):
+            parser.error(f"--chars goes with words to look up, and is {lookup.LEAST} at least")
+        if args.index:
+            print(lookup.names(), end="")
+            return 0
+        query = " ".join(args.words).strip()
+        if not query:
+            print(reference())
+            return 0
+        found = lookup.find(query, args.chars)
+        if found is None:
+            print(
+                f"nothing in the reference or the manual is about {query!r};"
+                " `millwork reference --index` lists what there is",
+                file=sys.stderr,
+            )
+            return 1
+        print(found, end="")
         return 0
     if args.command == "secret":
         print(secrets.token_urlsafe(48))

@@ -5,6 +5,7 @@ description: Bar, line, area and pie charts from rows, and a sparkline on a stat
 ---
 
 # Charts
+<!-- keywords: chart, graph, plot, visualization, dashboard -->
 
 A chart takes rows, like the Table does. `x` names the category or time
 column and `y` the value column, or several of them. Each series takes the
@@ -287,6 +288,7 @@ ui.Grid(
 `on_click` receives the slice, with its `x`, `value` and `share`.
 
 ## Plotly and other libraries
+<!-- keywords: matplotlib, altair, echarts, d3, vega -->
 
 The catalog draws the forms most pages need. For anything else, an app
 brings its own library through a custom component. Plotly is the common
@@ -358,6 +360,7 @@ A click on a bar or a point can come back the same way as in the Hello
 component. Register a Plotly event on the div and call `emit`.
 
 ## Images from Python
+<!-- keywords: matplotlib, png, svg, figure -->
 
 Any library that renders to SVG or PNG works without a component at all.
 The session keeps the bytes and `ui.Image` shows them. There is no

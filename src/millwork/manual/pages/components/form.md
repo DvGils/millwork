@@ -5,6 +5,7 @@ description: A form from a Pydantic model, with issues by field.
 ---
 
 # Form
+<!-- keywords: pydantic, model, validation, schema, fields -->
 
 `ui.Form` renders a Pydantic model as fields and hands `on_submit` a
 validated instance. The types choose the controls. A `str` becomes an
@@ -56,6 +57,7 @@ def example(s):
 ```
 
 ## Labels and overrides
+<!-- keywords: customize a field, widget, placeholder -->
 
 `labels` maps a field's pointer, or its name, to a `label`, `help`,
 `placeholder` and `choices`, so the model stays free of interface copy.
@@ -109,6 +111,7 @@ ui.Form(
 ```
 
 ## Rejecting a valid draft
+<!-- keywords: server-side validation, custom error message -->
 
 A handler that finds something wrong raises `ui.FormIssues` with a list
 of `(pointer, message)` pairs. The form shows each at its field and keeps

@@ -6,6 +6,7 @@ related: /state/lists-and-keys, /testing
 ---
 
 # Organizing your app
+<!-- keywords: project structure, modules, files, large app, reusable component -->
 
 A session's state is one Pydantic model, named once on the `App`. In an
 app of two pages it is a few fields. In an app of ten features it is

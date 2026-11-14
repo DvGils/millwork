@@ -26,12 +26,14 @@ def example(s):
 ```
 
 ## A render from outside a handler
+<!-- keywords: rerender, background update, push to the browser -->
 
 `s.refresh()` asks for a render from code that is not a handler, such as
 work spawned on the loop that changes state on its own. Many calls in one
 tick become one render.
 
 ## Data that sessions share
+<!-- keywords: multi-user, shared state, realtime, live updates, broadcast, pubsub, collaborate, polling -->
 
 A session's state is its own. What several people see together, a list of
 orders or who is on a page, is kept outside the sessions, in an object of
@@ -125,6 +127,7 @@ Either way it is one listener for the process, however many tabs are
 open.
 
 ## The page as data
+<!-- keywords: agent, llm context, dom, accessibility tree, read what is on screen -->
 
 `s.outline()` gives the page as the person sees it, as data. An assistant
 in the app reads it to answer what is on the page and where. It is a dict

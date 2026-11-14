@@ -32,6 +32,7 @@ from starlette.responses import PlainTextResponse, RedirectResponse
 import millwork as mw
 from millwork import ui
 from millwork.reference import reference
+from millwork.search import SMALL, Doc, forms, rank, terms, tokens
 
 log = logging.getLogger("millwork.manual")
 
@@ -105,17 +106,34 @@ class Page:
     group: str = ""
     description: str = ""
     related: list[str] = field(default_factory=list)
+    # Words a section is found by that are not in it, by the section's
+    # anchor: what the thing is called elsewhere.
+    keywords: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class Section:
-    """A heading and what sits under it, for search: the prose and the live code."""
+    """A heading and what sits under it, for search: the prose and the live
+    code, the two in the order they stand in as Markdown, and the words the
+    section is found by that are not in it."""
 
     page: Page
     heading: str
     anchor: str
     text: str
     code: str
+    body: str = ""
+    keywords: str = ""
+    # Which of the sections of its page with this anchor it is, from 1.
+    nth: int = 1
+
+    @property
+    def address(self) -> str:
+        """Where the section is, as a lookup takes it: its page's path and
+        its anchor, with a number behind it for a second section of the
+        page that is called the same."""
+        again = f"-{self.nth}" if self.nth > 1 else ""
+        return f"{self.page.slug.strip('/') or 'index'}#{self.anchor}{again}"
 
 
 @dataclass
@@ -131,6 +149,48 @@ def slugify(text: str) -> str:
 
 
 _HEADING = re.compile(r"^(#{1,3}) +(.+?)\s*$", re.M)
+# Code in a page's prose that is shown and not run. A line in it that
+# begins with ``#`` is a comment of the code and no heading of the page.
+_SHOWN_CODE = re.compile(r"^```.*?^```[ \t]*$", re.M | re.S)
+
+
+def _in_prose(pattern: re.Pattern[str], text: str) -> list[re.Match[str]]:
+    """Where a pattern is found in a page's prose, outside the code in it."""
+    code = [m.span() for m in _SHOWN_CODE.finditer(text)]
+    return [m for m in pattern.finditer(text) if not any(a <= m.start() < b for a, b in code)]
+
+
+# Under a heading, in a page's source: the words its section is found by
+# that it does not use itself. They are no part of the page as it is shown.
+_KEYWORDS = re.compile(r"^[ \t]*<!-- *keywords: *(.*?) *-->[ \t]*\n?", re.M | re.I)
+
+
+def _take_keywords(segments: list[Segment]) -> tuple[list[Segment], dict[str, str]]:
+    """A page's segments without their keyword lines, and those words by the
+    anchor of the heading each line stands under."""
+    found: dict[str, str] = {}
+    kept: list[Segment] = []
+    anchor = ""
+    for seg in segments:
+        if not isinstance(seg, str):
+            kept.append(seg)
+            continue
+        lines = _in_prose(_KEYWORDS, seg)
+        marks = sorted(
+            [(m.start(), "heading", m) for m in _in_prose(_HEADING, seg)]
+            + [(m.start(), "keywords", m) for m in lines]
+        )
+        for _, kind, m in marks:
+            if kind == "heading":
+                anchor = slugify(m.group(2))
+            else:
+                found[anchor] = ", ".join(w for w in (found.get(anchor, ""), m.group(1)) if w)
+        text = seg
+        for m in reversed(lines):
+            text = text[: m.start()] + text[m.end() :]
+        if text.strip():
+            kept.append(text)
+    return kept, found
 
 
 def index(pages: list[Page]) -> list[Section]:
@@ -142,17 +202,24 @@ def index(pages: list[Page]) -> list[Section]:
             if not isinstance(seg, str):
                 if isinstance(seg, Live) and current is not None:
                     current.code += "\n" + seg.source
+                    current.body += f"\n\n```python\n{seg.source}\n```\n"
                 continue
             pos = 0
-            for m in _HEADING.finditer(seg):
+            for m in _in_prose(_HEADING, seg):
                 if current is not None:
                     current.text += "\n" + seg[pos : m.start()]
+                    current.body += "\n" + seg[pos : m.start()]
                 heading = m.group(2)
-                current = Section(page, heading, slugify(heading), "", "")
+                anchor = slugify(heading)
+                nth = 1 + sum(1 for s in sections if s.page is page and s.anchor == anchor)
+                current = Section(
+                    page, heading, anchor, "", "", keywords=page.keywords.get(anchor, ""), nth=nth
+                )
                 sections.append(current)
                 pos = m.end()
             if current is not None:
                 current.text += "\n" + seg[pos:]
+                current.body += "\n" + seg[pos:]
     return sections
 
 
@@ -162,40 +229,70 @@ def sections() -> list[Section]:
     return index(load())
 
 
+def docs(sections: list[Section]) -> list[Doc]:
+    """The sections as something to search: a word in the heading or among
+    the section's keywords counts most, in the page's title next, then in
+    the prose, and in the code last."""
+    return [
+        Doc(
+            section,
+            (
+                (4.0, section.heading),
+                (4.0, [words.strip() for words in section.keywords.split(",")]),
+                (3.0, section.page.title),
+                (2.0, section.text),
+                (1.0, section.code),
+            ),
+        )
+        for section in sections
+    ]
+
+
+# The lists of sections that were searched, each with what was made of it.
+_DOCS: dict[int, tuple[list[Section], list[Doc]]] = {}
+
+
+def _docs_for(sections: list[Section]) -> list[Doc]:
+    kept = _DOCS.get(id(sections))
+    if kept is None or kept[0] is not sections or len(kept[1]) != len(sections):
+        if len(_DOCS) > 4:
+            _DOCS.clear()
+        kept = _DOCS[id(sections)] = (sections, docs(sections))
+    return kept[1]
+
+
 def search(sections: list[Section], query: str, limit: int = 10) -> list[Hit]:
-    """Sections where every word of the query appears, best first. A word in the
-    heading or the page title counts most, in the prose next, in the code last."""
-    terms = [t for t in query.lower().split() if t]
-    if not terms:
-        return []
-    hits: list[Hit] = []
-    for sec in sections:
-        heading, title = sec.heading.lower(), sec.page.title.lower()
-        text, code = sec.text.lower(), sec.code.lower()
-        score = 0
-        for term in terms:
-            where = (
-                (4 if term in heading else 0)
-                + (3 if term in title else 0)
-                + (2 if term in text else 0)
-                + (1 if term in code else 0)
-            )
-            if where == 0:
-                score = 0
-                break
-            score += where
-        if score:
-            hits.append(Hit(sec, score, _snippet(sec.text, terms)))
-    hits.sort(key=lambda h: -h.score)
-    return hits[:limit]
+    """Sections that have every word of the query, best first, for the
+    search box. A word is found as a whole word, in the form it was asked
+    in or another, and among the words a section is known by elsewhere.
+    The last word is found while it is still being typed, a name made of
+    several as it stands: ``FileUp``, ``clear_on_sub``."""
+    typed = query.split()
+    asked = terms(" ".join(typed[:-1]))
+    if typed:
+        # What is being typed is one word, begun: of a dotted name its
+        # last part.
+        last = "".join(re.findall(r"[a-z0-9_]+", typed[-1].lower().rpartition(".")[2]))
+        if last and (last not in SMALL or not asked):
+            asked = [term for term in asked if term != last] + [last]
+    found = rank(_docs_for(sections), asked, every=True, typing=True)
+    return [Hit(f.what, round(f.score), _snippet(f.what.text, asked)) for f in found[:limit]]
 
 
 def _snippet(text: str, terms: list[str], width: int = 110) -> str:
+    """The first line of a section that has one of the words, or its first
+    line when it was found by a keyword."""
+    first = ""
     for line in text.splitlines():
         plain = line.strip()
-        if plain and not plain.startswith("#") and any(t in plain.lower() for t in terms):
-            return plain if len(plain) <= width else plain[: width - 1] + "…"
-    return ""
+        if not plain or plain.startswith(("#", "```")):
+            continue
+        first = first or plain
+        said = {form for word in tokens(plain) for form in forms(word)}
+        if any(not forms(term).isdisjoint(said) for term in terms):
+            first = plain
+            break
+    return first if len(first) <= width else first[: width - 1] + "…"
 
 
 def parse(text: str, slug: str) -> tuple[dict[str, str], list[Segment]]:
@@ -259,6 +356,7 @@ def load(root: Path = PAGES) -> list[Page]:
         parts = list(rel.parts)
         slug = "/" if parts == ["index"] else "/" + "/".join(parts)
         meta, segments = parse(path.read_text(encoding="utf-8"), slug)
+        segments, keywords = _take_keywords(segments)
         group = parts[0] if len(parts) > 1 else ""
         related = [r.strip() for r in meta.get("related", "").split(",") if r.strip()]
         pages.append(
@@ -271,6 +369,7 @@ def load(root: Path = PAGES) -> list[Page]:
                 group=group,
                 description=meta.get("description", ""),
                 related=related,
+                keywords=keywords,
             )
         )
     keys = [key for key, _ in NAV]

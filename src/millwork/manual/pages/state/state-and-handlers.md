@@ -6,6 +6,7 @@ related: /quickstart, /pages/sessions, /components/inputs
 ---
 
 # State and handlers
+<!-- keywords: state management, reactive, callback, event handler, onclick, store, update, useState -->
 
 A session has one state. It is a Pydantic model the app declares, it lives
 for as long as the session does, and every page is a function of it. A
@@ -66,6 +67,7 @@ to ask first uses `s.confirm` or `s.ask`, both on the
 [Feedback](/components/feedback) page.
 
 ## One state for the session
+<!-- keywords: keep data between pages, persist, session state, global state -->
 
 The app names the model once. Every page reads from the same instance,
 and it stays as the tab moves from page to page, so what one page set is
@@ -100,6 +102,7 @@ one long class, and [Organizing your app](/state/organizing) shows how it
 splits.
 
 ## Who owns a value
+<!-- keywords: controlled, uncontrolled, two-way binding -->
 
 A control shows either what Python says or what the browser holds. With
 `value=`, every change is reported through `on_change` and Python decides

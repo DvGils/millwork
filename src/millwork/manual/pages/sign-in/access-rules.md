@@ -6,6 +6,7 @@ related: /pages/path-parameters, /pages/routes-and-middleware, /pages/error-page
 ---
 
 # Access rules
+<!-- keywords: permissions, roles, rbac, authorization, protect a page, guard, admin only -->
 
 Being signed in gets a person into every page that is not public. A page
 for fewer people says so with `allow=`, a rule about the user.

@@ -6,6 +6,7 @@ related: /sign-in/access-rules, /sign-in/rechecking-users
 ---
 
 # Admitting users
+<!-- keywords: authorization, roles, groups, allowlist, who may sign in -->
 
 After a provider has identified the visitor, `on_login(identity)` decides
 whether they get in.

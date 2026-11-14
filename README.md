@@ -91,6 +91,17 @@ manual serves the same text at
 [millwork-ui.com/llms.txt](https://millwork-ui.com/llms.txt), for a model
 that needs easy lookup.
 
+With words behind it, the command looks one thing up in the reference
+and in the manual, and prints the few parts that are about it:
+
+```sh
+millwork reference ui.Table        # an entry, and the manual's section on it
+millwork reference shared data     # by what it is about
+millwork reference modal           # by what it is called elsewhere
+millwork reference testing.md      # a page of the manual
+millwork reference --index         # every name, and nothing more
+```
+
 ## Status
 
 millwork is still in beta.

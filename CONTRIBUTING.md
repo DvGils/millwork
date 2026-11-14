@@ -76,7 +76,10 @@ CI=1 pnpm -C bundle build
 - **The manual.** A new component or prop gets a live example in a page
   under `src/millwork/manual/pages`. A test checks that every component
   has one. The manual says what a thing is and shows it working, in plain
-  American English.
+  American English. Under a heading, `<!-- keywords: modal, popup -->`
+  holds other words its section should be found by, such as what the
+  thing is called in other frameworks. Several words between two commas
+  are one name. They are not shown.
 - **A deprecation, for a spelling that changes.** The old spelling keeps
   working for at least one minor release and warns.
   `src/millwork/deprecation.py` has the pieces. A component's renamed

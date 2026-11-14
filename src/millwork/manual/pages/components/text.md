@@ -41,6 +41,7 @@ ui.Stack(
 ```
 
 ## Markdown
+<!-- keywords: rich text, formatted text -->
 
 `ui.Markdown` renders GitHub-flavored Markdown as real elements, with
 headings, lists, tables, links and code. `tight=True` removes the outer
@@ -63,6 +64,7 @@ Text with **bold**, *italic*, `code` and a [link](https://example.com).
 ```
 
 ## Code
+<!-- keywords: syntax highlighting, snippet -->
 
 `ui.Code` shows a block of code with a `language` for highlighting, an
 optional `title`, a copy button that `copyable` controls and is on by
@@ -77,6 +79,7 @@ ui.Code(
 ```
 
 ## Badge
+<!-- keywords: chip, tag, pill, status -->
 
 `ui.Badge` is a small label with a `tone` and an optional `icon`.
 
@@ -95,6 +98,7 @@ ui.Row(
 ```
 
 ## Icon
+<!-- keywords: lucide, svg -->
 
 `ui.Icon` places an icon on its own, in a row next to text or anywhere a
 component goes. `size` is `sm`, `md` or `lg`, and `tone` colors it. `label`
@@ -154,6 +158,7 @@ ui.Row(
 ```
 
 ## Link
+<!-- keywords: anchor, href, url -->
 
 `ui.Link` is a hyperlink. `active=True` marks the link to the page the
 session is on, as `aria-current="page"`, which a sidebar styles with
@@ -171,6 +176,7 @@ ui.Row(
 ```
 
 ## Stat
+<!-- keywords: kpi, metric, number card -->
 
 `ui.Stat` is a number with a `label`, an optional `hint`, a `tone` and an
 `icon`, for telemetry and summaries.
@@ -185,6 +191,7 @@ ui.Grid(
 ```
 
 ## Tooltip
+<!-- keywords: hint, hover -->
 
 `ui.Tooltip` wraps one child and shows `content` on hover or focus.
 
