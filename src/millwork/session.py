@@ -14,6 +14,7 @@ grace period, so a reload or a dropped connection keeps its state.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hmac
 import logging
 import re
@@ -45,6 +46,7 @@ from millwork.protocol import (
     pack,
 )
 from millwork.scope import Scope, Timer
+from millwork.signal import Signal
 from millwork.tasks import Task
 from millwork.turn import Turn
 from millwork.ui import Button, Dialog, DropdownMenu, Input, Sheet, Tabs, Text, Textarea
@@ -138,7 +140,9 @@ class Session[S]:
         self.outbox = Outbox()
         self.conn: Connection | None = None
         self._wanted: deque[Want] = deque([Want(path, first=True)])
-        self._previous: tuple[PageDef, dict[str, str], str, Tree | None] | None = None
+        self._previous: tuple[PageDef, dict[str, str], str, Tree | None, set[Signal]] | None = None
+        # The signals the page the session is on follows.
+        self._following: set[Signal] = set()
         self._wake: asyncio.Future[None] = self._loop.create_future()
         self.ended: asyncio.Future[None] = self._loop.create_future()
         """Done when the session is over."""
@@ -341,6 +345,7 @@ class Session[S]:
         if self.over:
             return
         self.over = True
+        self._unfollow()
         self.end_reason, self.end_to = message, to
         self._end_asking, self._end_code = asking, code
         self.app.sessions.pop(self.id, None)
@@ -546,7 +551,7 @@ class Session[S]:
     def enter(self, page: PageDef, params: dict[str, str], path: str) -> None:
         """Step onto the page a navigation leads to, for its connect to run.
         What the session was on is kept, to go back to if that fails."""
-        self._previous = (self.page, self.params, self.path, self.tree)
+        self._previous = (self.page, self.params, self.path, self.tree, self._unfollow())
         self.page, self.params, self.path = page, params, path
         self.tree = None
         self._slow_builds = 0
@@ -555,6 +560,9 @@ class Session[S]:
         """Land on the app's page for a page that refused, under the path
         that was asked for."""
         self.page, self.params = self.app.fallback(kind, self.path, message)
+        # What the page that refused followed before it did is not this
+        # page's to follow.
+        self._unfollow()
 
     def take_owed(self) -> PageDef | None:
         """The page that is owed a close, which it is not after this."""
@@ -599,7 +607,14 @@ class Session[S]:
             # The tab keeps the page it came from, already closed. What the
             # failed connect wrote to the state stays.
             assert self._previous is not None
-            self.page, self.params, self.path, self.tree = self._previous
+            self._unfollow()
+            self.page, self.params, self.path, self.tree, following = self._previous
+            for signal in following:
+                self.follow(signal)
+            if following:
+                # What fired while the session was on its way followed
+                # nothing here, and the page may show what is no longer so.
+                self._render_due = True
             self._stays()
             self.post(ServerError(message=self.text("page_failed"), fatal=False))
         self._previous = None
@@ -1077,6 +1092,40 @@ class Session[S]:
         self._render_due = True
         if self._render_timer is None:
             self._render_timer = self.scope.later(RENDER_COALESCE_SECONDS, self._render_tick)
+
+    def follow(self, signal: Signal) -> None:
+        """Draw the page again whenever ``signal`` fires, for as long as the
+        session is on the page it is on now. Said in the page's ``connect``
+        hook, or in a handler. Leaving the page ends it, and so does the
+        end of the session."""
+        if not isinstance(signal, Signal):
+            raise TypeError(f"s.follow() takes a millwork.Signal, not {type(signal).__name__}")
+        if self.over:
+            return
+        self._following.add(signal)
+        signal._add(self)
+
+    def _unfollow(self) -> set[Signal]:
+        """Follow nothing any more. What was followed, for a page the
+        session may come back to."""
+        following, self._following = self._following, set()
+        for signal in following:
+            signal._drop(self)
+        return following
+
+    def _nudge(self) -> None:
+        """``refresh()`` for whoever is not on the session's loop: a thread,
+        or code of another loop."""
+        try:
+            here = asyncio.get_running_loop()
+        except RuntimeError:
+            here = None
+        if here is self._loop:
+            self.refresh()
+            return
+        # The loop is closed when the app has stopped, and nothing is drawn.
+        with contextlib.suppress(RuntimeError):
+            self._loop.call_soon_threadsafe(self.refresh)
 
     def _refresh_now(self) -> None:
         """Draw the page for what a person is waiting on: the end of a

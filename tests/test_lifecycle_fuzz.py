@@ -117,6 +117,10 @@ def test_the_oracle_notices_when_the_session_is_broken_on_purpose(
         broken.setattr(session.Session, "_turn_free", lambda self: None)
         assert found("left undrawn")
     with monkeypatch.context() as broken:
+        # A signal that is fired and tells nobody.
+        broken.setattr(session.Session, "_nudge", lambda self: None)
+        assert found("stale")
+    with monkeypatch.context() as broken:
         broken.setattr(outbox.Outbox, "seal", lambda self: None)
         broken.setattr(connection.Connection, "close", lambda self, end=None, code=1000: None)
         assert found("sent after the end")

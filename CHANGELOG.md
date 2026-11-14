@@ -39,6 +39,16 @@ versions; a release says so here when it does.
   `s.reset` does so a round trip later, on top of what was typed in
   that time: at 100 ms between entries and a round trip of 120 ms,
   codes came through cut short or joined.
+- `mw.Signal`, for data that sessions share. The data stays where the
+  app keeps it, in an object of its own or in a database. A page
+  follows a signal with `s.follow(signal)`, the code that changes the
+  data fires it with `signal.fire()`, and every session that follows is
+  drawn again. Following lasts while the session is on the page. A
+  signal carries nothing, can be fired from a handler, a task or a
+  thread, and reaches the sessions of its own process.
+- `app.spawn(coroutine)` runs work for as long as the app does, a
+  listener on a database for one. It is stopped before the shutdown
+  hooks run, and `TestApp.shutdown()` stops it in a test.
 - A way to retire a spelling without breaking an app. The old spelling
   keeps working for one minor release and warns with a
   `MillworkDeprecationWarning` that points at the app's line, names the
@@ -49,6 +59,9 @@ versions; a release says so here when it does.
 
 - Development has a section on deprecations, with the pytest setting that
   makes a test fail on one.
+- Accessing the session has a section on data that sessions share. Its
+  example listens to a database once for the process, where it had a
+  listener for every session. Testing shows two sessions in one test.
 - The hosting checklist says what happens to a tab whose connection drops
   when there is more than one replica, and that cookie affinity in the
   load balancer brings it back to its session.

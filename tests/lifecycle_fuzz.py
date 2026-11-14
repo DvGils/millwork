@@ -263,6 +263,9 @@ class World:
     # with a handler in the middle of a change it has not lent its turn for.
     connecting: set[str] = field(default_factory=set)
     halfway: set[str] = field(default_factory=set)
+    # A number every session sees, and the signal that says it changed.
+    shared: int = 0
+    signal: mw.Signal = field(default_factory=mw.Signal)
     people: dict[str, dict[str, Any]] = field(
         default_factory=lambda: {
             "ada": {"role": "admin", "active": True},
@@ -453,9 +456,19 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
 
         return wrap
 
+    def shared_changed() -> None:
+        # What every session sees changes, and whoever shows it is told.
+        world.shared += 1
+        world.signal.fire()
+
     @handler("bump")
     async def bump(s: mw.Session[State], _: Any) -> None:
         s.state.n += 1
+        shared_changed()
+
+    @handler("share")
+    async def share(s: mw.Session[State], _: Any) -> None:
+        shared_changed()
 
     @handler("slow")
     async def slow(s: mw.Session[State], _: Any) -> None:
@@ -714,6 +727,8 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
 
         return ui.Page(
             ui.Text(f"{mark} n={s.state.n}", key="mark"),
+            ui.Text(f"shared={world.shared}", key="shared"),
+            ui.Button("share", key="share", on_click=share),
             ui.Button("await_task", key="await_task", on_click=await_task),
             ui.Button("flood", key="flood", on_click=flood),
             ui.Button("big_file", key="big_file", on_click=big_file),
@@ -754,6 +769,9 @@ def make_app(world: World, files: Path, threads: bool = False) -> mw.App:
         span = world.begin("connect", s)
         world.connecting.add(s.id)
         ok = False
+        # Before anything that can fail: a page that does not come must not
+        # leave the session following for it.
+        s.follow(world.signal)
         try:
             await asyncio.sleep(knobs["connect_delay"])
             if knobs["connect_does"] == "task":
@@ -1917,6 +1935,17 @@ def at_rest(sim: Sim, session: Any, sid: str) -> None:
     if not quiet or session._render_due:
         return
     sim.world.counts["pages looked at, at rest"] += 1
+    if sim.world.signal in session._following:
+        # A page that follows the signal shows what is shared as it is now:
+        # every fire since reached it, wherever the session was then.
+        shows = next(
+            (n.props["content"] for i, n in tree.nodes.items() if i.endswith("/shared")), None
+        )
+        if shows is not None:
+            sim.world.counts["... that follow the signal"] += 1
+            if shows != f"shared={sim.world.shared}":
+                why = f"{sid} shows {shows} and it is shared={sim.world.shared}"
+                sim.world.broken.append(("stale", why))
     tabs = {
         node_id: component
         for node_id, component in tree.components.items()

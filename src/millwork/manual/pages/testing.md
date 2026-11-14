@@ -206,6 +206,25 @@ at the cause rather than at a failure page or a toast. `TestApp(app,
 strict=False)` leaves such failures in the log and in `page.failures`,
 which is how a running app treats them.
 
+## Two sessions
+
+One `TestApp` opens as many pages as the test asks for, each a session
+of its own. What one of them changes for the others, with a
+[signal](/state/accessing-the-session), is there once they have settled.
+
+```python
+async def test_an_order_shows_for_everyone(app):
+    t = TestApp(app)
+    async with t.open("/orders") as ada, t.open("/orders") as cy:
+        await ada.submit("new", {"customer": "Kestrel Books", "amount": 980})
+        await cy.settle()
+        assert len(cy.find("orders").rows) == 1
+```
+
+A page opened with `state=` skips its `connect` hook and so follows
+nothing. `await t.shutdown()` stops what the app spawned for itself and
+then runs its shutdown hooks, as a served app does when it stops.
+
 ## Running one here
 
 The manual can run a test on itself. The button below builds a small app,

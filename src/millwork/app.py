@@ -573,6 +573,22 @@ class App:
         self._startup.append(fn)
         return fn
 
+    def spawn(self, coro: Any, what: str = "work") -> asyncio.Task[Any] | None:
+        """Run a coroutine for as long as the app runs: one that listens to
+        a database for changes, say. Called from a startup hook. It is
+        stopped when the app stops, before the shutdown hooks run, and a
+        failure it lets out is logged. On an app that is stopping it does
+        not run at all, and there is no task to return."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            coro.close()
+            raise RuntimeError(
+                "app.spawn() runs work once the app is running: call it from a function"
+                " registered with @app.on_startup"
+            ) from None
+        return self.background.start(coro, what)
+
     def on_shutdown(self, fn: Callable[[], Any]) -> Callable[[], Any]:
         """Decorator: runs once when the server stops."""
         self._shutdown.append(fn)

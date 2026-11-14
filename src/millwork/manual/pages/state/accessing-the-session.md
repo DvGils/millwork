@@ -1,7 +1,7 @@
 ---
 title: Accessing the session
 order: 3
-description: mw.session() for code that is not a handler, and s.refresh() for changes made outside one.
+description: mw.session() for code that is not a handler, s.refresh() for changes made outside one, and a signal for data that sessions share.
 related: /components/tasks, /pages/sessions
 ---
 
@@ -31,29 +31,95 @@ def example(s):
 work spawned on the loop that changes state on its own. Many calls in one
 tick become one render.
 
-Data that several visitors share lives in a database, not in the session,
-and a page that should follow changes made elsewhere runs a task that
-waits for them and calls `s.refresh()` when one arrives. The task is
-started in the page's `connect` hook, which [Sessions](/pages/sessions)
-describes, and dies with the session.
+## Data that sessions share
+
+A session's state is its own. What several people see together, a list of
+orders or who is on a page, is kept outside the sessions, in an object of
+the app's or in a database, and each page function reads it there. A
+`mw.Signal` stands next to that data. A page follows it, the code that
+changes the data fires it, and every session that follows is drawn again.
 
 ```python
-@app.page("/notices")
-def notices(s: mw.Session[State]) -> ui.Component:
-    return ui.Page(*(ui.Text(notice.text, key=notice.id) for notice in s.state.notices))
+ORDERS: list[Order] = []
+orders_changed = mw.Signal()
 
 
-@notices.connect
-async def follow(s: mw.Session[State]) -> None:
-    s.state.notices = await db.notices()
-    s.task(watch_notices(s), label="Following notices", quiet=True)
+@app.page("/orders")
+def orders(s: mw.Session[State]) -> ui.Component:
+    return ui.Page(
+        ui.Table(rows=ORDERS, key="orders"),
+        ui.Form(Order, key="new", on_submit=add),
+    )
 
 
-async def watch_notices(s: mw.Session[State]) -> None:
-    async for notice in db.listen("notices"):
-        s.state.notices.append(notice)
-        s.refresh()
+@orders.connect
+def follow_orders(s: mw.Session[State]) -> None:
+    s.follow(orders_changed)
+
+
+def add(s: mw.Session[State], order: Order) -> None:
+    ORDERS.append(order)
+    orders_changed.fire()
 ```
 
-`s.task` runs the work beyond the handler, reports its progress and can
-be canceled, as the [Tasks](/components/tasks) page shows.
+`s.follow(signal)` lasts for as long as the session is on the page, so
+nothing has to undo it. It is said in the page's `connect` hook, which
+[Sessions](/pages/sessions) describes and which gets the page's
+parameters. Said in a handler it lasts until the next navigation, one to
+the same page included, since `connect` runs again there and a handler
+does not. A signal carries nothing. Firing it says
+"look again", and the page function reads what it always reads. It can be
+fired from a handler, a task or a thread, and many fires close together
+are one drawing for each follower.
+
+Make a signal for each thing that changes by itself. A signal that every
+page follows draws every session at each fire. With one for the list of
+orders and one for each order, a change to one order draws the pages that
+show that order and no others.
+
+A signal reaches the sessions of its own process. Data in a database is
+also changed from elsewhere, by another replica of the app or by a job.
+The process listens to the database once and fires the signal for its own
+sessions. `app.spawn` runs that listener for as long as the app runs.
+
+```python
+@app.on_startup
+def listen() -> None:
+    app.spawn(forward_orders(), "listening for orders")
+
+
+async def forward_orders() -> None:
+    while True:
+        try:
+            async for _ in db.listen("orders"):
+                orders_changed.fire()
+        except OSError:
+            await asyncio.sleep(5)
+        orders_changed.fire()
+```
+
+Work that was spawned and fails is logged and not started again, so the
+listener goes back to listening by itself when the connection drops. It
+fires once as it does, for what changed while nobody listened.
+
+A database that cannot tell of its changes is asked, for something small
+such as a counter or the time of the last change, and the signal is fired
+when that has moved.
+
+```python
+@app.on_startup
+def watch() -> None:
+    app.spawn(watch_orders(), "watching the orders")
+
+
+async def watch_orders() -> None:
+    seen = await db.orders_version()
+    while True:
+        await asyncio.sleep(5)
+        if (now := await db.orders_version()) != seen:
+            seen = now
+            orders_changed.fire()
+```
+
+Either way it is one listener for the process, however many tabs are
+open.

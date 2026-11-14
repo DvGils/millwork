@@ -17,6 +17,7 @@ from millwork.files import FileRef, Files
 from millwork.icons import ICONS
 from millwork.nodes import Component
 from millwork.session import Session
+from millwork.signal import Signal
 from millwork.tasks import Cancelled, Step, Task, progress
 from millwork.visitors import Visitor
 
@@ -38,6 +39,7 @@ __all__ = [
     "PageDef",
     "Reply",
     "Session",
+    "Signal",
     "Step",
     "Task",
     "UIMessage",

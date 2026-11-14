@@ -598,6 +598,10 @@ class TestApp:
                 await result
 
     async def shutdown(self) -> None:
+        """Stop what the app spawned for itself and run its shutdown hooks,
+        in the order a served app does."""
+        self.app.background.cancel()
+        await self.app.background.wait(1.0)
         for fn in self.app._shutdown:
             result = fn()
             if asyncio.iscoroutine(result):
