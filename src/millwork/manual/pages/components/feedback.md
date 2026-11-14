@@ -65,6 +65,105 @@ ui.Row(
 )
 ```
 
+## Highlight
+
+`s.highlight(name, color)` puts a frame around a component so the person
+finds it. An assistant in the app answers a question about how something
+is done with it, by pointing at where it is done. The name is a key or an
+id, and `form/field` names a field of a form. Unlike a toast it stays:
+the session holds it until the person gets to the component.
+
+```python live
+from pydantic import BaseModel
+
+
+class Invite(BaseModel):
+    name: str = ""
+    email: str = ""
+
+
+class Inviting(BaseModel):
+    open: bool = False
+
+
+def three(s, _):
+    s.highlight("hl-solid", "blue")
+    s.highlight("hl-pulse", "orange", style="pulse", label="New")
+    s.highlight("hl-trace", "#0a7d5c", style="trace", seconds=8)
+
+
+def steps(s, _):
+    s.highlight("hl-invite", "blue", step=1)
+    s.highlight("hl-form/email", "orange", step=2, style="trace")
+    s.highlight("hl-send", "green", step=3)
+
+
+def inviting(open):
+    def handler(s, _):
+        s.state.inviting.open = open
+
+    return handler
+
+
+def example(s):
+    return ui.Stack(
+        ui.Row(
+            ui.Button("Solid", key="hl-solid", variant="outline"),
+            ui.Button("Pulse", key="hl-pulse", variant="outline"),
+            ui.Button("Trace", key="hl-trace", variant="outline"),
+            ui.Button("Invite someone", key="hl-invite", on_click=inviting(True)),
+            gap=4,
+            wrap=True,
+        ),
+        ui.Row(
+            ui.Button("Show the three ways", variant="ghost", on_click=three),
+            ui.Button("Show how to invite", variant="ghost", on_click=steps),
+            ui.Button("Take them off", variant="ghost", on_click=lambda s, _: s.highlight(None)),
+            gap=2,
+            wrap=True,
+        ),
+        ui.Dialog(
+            ui.Form(Invite, key="hl-form", submit=None, on_submit=inviting(False)),
+            open=s.state.inviting.open,
+            title="Invite someone",
+            footer=ui.Button("Send", key="hl-send", form="hl-form"),
+            on_close=inviting(False),
+            key="hl-dialog",
+        ),
+        gap=3,
+    )
+```
+
+The color is `red`, `orange`, `yellow`, `green`, `blue`, `pink` or
+`primary`, each a color of the theme, or a hex code for a brand's own.
+Without one it is blue.
+`style=` is `solid`, `pulse` or `trace`, and someone who asked their
+system for less motion gets `solid`. `label=` puts a short word on the
+frame.
+
+Highlights with a `step=` show one after the other, each with its number
+on it. The second shows when the first is done. Using the component of a
+later step ends the ones before it, so someone who opens the dialog
+another way is not left with a frame on the button. Highlights without a
+step show together.
+
+A highlight goes when the person points at the component, presses it or
+types in it. The keyboard that a dialog puts in its first field as it
+opens does not count. `seconds=` takes it off after that long on the
+screen. `s.highlight(name, None)` takes one off and `s.highlight(None)`
+takes all off. Leaving the page ends its highlights, and a reload keeps
+them. `page="/settings"` sets one for another page, which waits until
+the person gets there. `scroll=True` brings a component that is out of
+view into it.
+
+A highlight for a component that is not on the page yet waits until it
+is, and one in a closed dialog shows when the dialog opens. One that is
+asked for by work that began on a page the person has left since, a
+reply that took its time, is not set. A field of an item in a form's
+list has no name yet. `s.outline()` says what is highlighted, so an
+assistant reads its own highlights back with the page, as
+[Accessing the session](/state/accessing-the-session) describes.
+
 ## Dialog
 
 `ui.Dialog` is open when state says so. It has a `title`, a
@@ -111,6 +210,10 @@ is closed answers None.
 
 The question is shown in a dialog. A `ui.Dialog` or a `ui.Sheet` given to
 `s.ask` is shown as it is, with its own title and size.
+
+When the question closes, the keyboard goes back to the button that asked
+it, so an Enter right after presses that button again. A handler that
+wants it elsewhere says so after the answer, with `s.focus(key)`.
 
 ```python live
 from pydantic import BaseModel, Field

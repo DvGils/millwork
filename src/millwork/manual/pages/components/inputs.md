@@ -136,6 +136,54 @@ worked out from the typed text is therefore still disabled at a press
 that comes within the pause, and the press does nothing. A send button
 stays enabled and its handler checks the text.
 
+`clear_on_submit=True` empties the field at the Enter, in the browser,
+ready for the next entry: a line for a list, a code from a scanner, a
+message. The handler gets the text and has nothing to clear, and the
+keyboard stays in the field. A handler that empties a value it holds, or
+calls `s.reset`, does so a round trip later, and what was typed in that
+time goes with it. A `Textarea` takes the same at Ctrl+Enter.
+
+```python live
+from pydantic import BaseModel
+
+
+class Lines(BaseModel):
+    taken: list[str] = []
+
+
+def take(s, text):
+    if text:
+        s.state.lines.taken.append(text)
+
+
+def example(s):
+    taken = s.state.lines.taken
+    return ui.Stack(
+        ui.Input(placeholder="A line, then Enter", clear_on_submit=True, on_submit=take),
+        ui.Text(", ".join(taken[-6:]) or "Nothing yet.", variant="muted"),
+        gap=2,
+    )
+```
+
+`autofocus=True` puts the keyboard in a field whenever the field is put
+on the page: when the page opens, after a reload, in a dialog as it opens.
+An `Input`, a `Textarea` and a `NumberInput` take it. `s.focus(key)` moves
+the keyboard from a handler, into a field or into the first thing that
+takes it inside any other component. It happens once the page has been
+drawn again, so a handler can open a dialog and name a field in it, and
+one that calls `s.navigate` first names a field of the page it goes to.
+A field of a `ui.Form` is named by the form's key, a slash and the
+field's name, as `s.focus("order/amount")`.
+
+```python live
+def example(s):
+    return ui.Row(
+        ui.Input(key="code-field", placeholder="A code"),
+        ui.Button("Put the keyboard there", variant="outline", on_click=lambda s, _: s.focus("code-field")),
+        gap=3,
+    )
+```
+
 `max_length` caps what the field takes, and `counter=True` shows under the
 field how much it holds, against the limit when there is one. The count
 takes the destructive color once the field is full. A field of the kind

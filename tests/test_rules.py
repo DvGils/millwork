@@ -71,6 +71,7 @@ def test_a_session_is_only_set_up_from_outside_never_changed() -> None:
         "client",
         "falls_back",
         "runs_connect",
+        "answers_at_once",
         "state",
         "on_failure",
         "on_unheard",

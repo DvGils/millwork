@@ -1,0 +1,376 @@
+== as it opens ==
+page  "Orders"  id=root
+  header  "Acme"  id=root/@header
+    link  "Home"  id=root/@header/@links.0  in its links  href="/"
+  sidebar  "Acme"  id=root/0:Sidebar  folded away
+    sidebargroup  "Shop"  id=root/0:Sidebar/0:SidebarGroup  may be folded
+      link  "Orders"  id=root/0:Sidebar/0:SidebarGroup/0:Link  href="/"  the page it is on
+    sidebargroup  "Depot"  id=root/0:Sidebar/1:SidebarGroup  folded
+      link  "Stock"  id=root/0:Sidebar/1:SidebarGroup/0:Link  href=/stock
+    sidebargroup  "More"  id=root/0:Sidebar/2:SidebarGroup
+      link  "Help"  id=root/0:Sidebar/2:SidebarGroup/0:Link  href=/help
+  button  "New order"  key=new
+  button  "Ask"  key=ask
+  button  "Export"  id=root/1:Stack/2:Button  disabled
+  button  "Delete the order"  key=bin
+  button  key=plus  icon=plus  asks first  busy
+  button  "Place"  key=place  submits=order
+  button  "Go"  key=go  href="/placed?x=1 2"
+  button  "Loud"  key=loud
+  download  "Get the list"  key=csv  file="orders 2026.csv"
+  dropdownmenu  key=menu
+    items: "Archive", "Drop"
+    button  "More"  key=menu-button  in its trigger
+  input  key=held  value="as typed"  suffix=kg
+  input  key=loose  placeholder "Anything"  value kept in the browser
+  input  key=secret  secret
+  input  key=mail  value=""  kind=email  read only
+  textarea  key=long  value="one two three"  disabled
+  numberinput  key=count  value=3  min=0  max=10  suffix=pcs
+  slider  key=level  value=40  min=0  max=100
+  datepicker  key=day  value="2026-01-05"  min=2026-01-01
+  select  key=who  value="Kestrel Books"
+    options: "Kestrel Books", "Juniper Press"
+  select  key=nobody  value=null
+    options: "Kestrel Books", "Juniper Press"
+  select  key=stale  holds a value that is none of the options given
+    options: "Kestrel Books", "Juniper Press"
+  combobox  key=searched  holds a value that is none of the options given
+  multiselect  key=tags  value=["Tag 1", "Tag 3"]  placeholder "Tags"
+    options: "Tag 1", "Tag 2", "Tag 3", "Tag 4", "Tag 5", "Tag 6", "Tag 7", "Tag 8", "Tag 9", "Tag 10", "Tag 11", "Tag 12", and 3 more
+  radiogroup  "Sent by"  id=root/1:Stack/23:RadioGroup  value="Courier"
+    options: "Mail", "Courier"
+  checkboxgroup  "With"  id=root/1:Stack/24:CheckboxGroup  value=["Wrap"]  holds a value that is none of the options given
+    options: "Wrap", "Card"
+  togglegroup  key=view  value="Grid"
+    options: "List", "Grid"
+  checkbox  "Rush"  key=rush  value=true  "Next day"
+  switch  "Gift"  key=gift  value=false
+  switch  "Loose"  key=loose-switch  value kept in the browser
+  fileupload  "Proof"  key=proof
+    accepts: ".pdf", "image/*"
+  field  "VAT"  id=root/1:Stack/30:Field  error "Too short"  "As on the bill"
+    input  key=vat  value kept in the browser
+  button  "Twice"  id=root/1:Stack/twice
+  button  "Leave it"  key=leave
+  table  key=orders  7 columns, 3 rows  1 selected  shown sorted by "amount" desc  2 to a page  rows can be selected  rows can be pressed  has a search box  has a filter for each column  "Open orders"
+    each row has: "Remove"
+    Customer | amount | since | paid | "" | due | "Due, exact"
+    "Kestrel, Books" | 1235 | 2026-01-05 | yes | 31.4% | "1234567.89 EUR" | 1234567.891
+    "Juniper Press" | 120 | "" | no | 5% | "" | ""
+    "Alder | Co" | 3 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx... | yes | 1200% | "0.00 EUR" | 0
+  table  key=none  1 column, 0 rows  shows "Nothing yet"
+    a
+  barchart  key=sales  3 columns, 3 rows
+    "" | north | south
+    Jan | 1234568 | 0
+    Feb | 2 | ""
+    Mar | 3 | 4
+  piechart  key=pie  2 columns, 3 rows
+    "" | value
+    Jan | 1234567.5
+    Feb | 2
+    Mar | 3
+  card  "First"  key=one  "The first card"
+    button  "Edit"  id=root/one/edit
+    button  "Done"  key=done  in its footer
+  card  "Second"  key=two
+    button  "Edit"  id=root/two/edit
+  tabs  key=which  open=Paid
+    tab  "Open"  id=root/which/0:Tab  not the open tab
+      text  "The open ones"
+    tab  "Paid"  id=root/which/1:Tab  badge=3
+      text  "The paid ones"
+    tab  "Old"  id=root/which/2:Tab  disabled  not the open tab
+      text  "The old ones"
+  tabs  key=free
+    tab  "Left"  id=root/free/0:Tab  may not be the open tab
+      text  "Left"
+    tab  "Right"  id=root/free/1:Tab  may not be the open tab
+      text  "Right"
+  collapsible  "More"  key=more  folded
+    text  "More of it"
+  collapsible  "Open"  key=open
+    text  "Out in the open"
+  collapsible  "Maybe"  key=maybe  may be folded
+    text  "Who knows"
+  accordion  key=faq
+    accordionitem  "First question"  id=root/faq/0:AccordionItem  folded
+      text  "First answer"
+    accordionitem  "Second question"  id=root/faq/1:AccordionItem
+      text  "Second answer"
+  accordion  key=loose-faq
+    accordionitem  "Loose question"  id=root/loose-faq/0:AccordionItem  may be folded
+      text  "Loose answer"
+  alert  "Late"  id=root/15:Alert  "Two orders are late."
+    button  "See them"  key=see  in its actions
+  empty  "No stock"  id=root/16:Empty  "Nothing here."
+    button  "Add"  id=root/16:Empty/@action  in its action
+  stat  "Revenue"  id=root/17:Stat  value="12,400"  delta="down 12.5%"  "this month"
+  stat  "Orders"  id=root/18:Stat  value="18"  delta="up 1234567"
+  progress  "Packing"  id=root/19:Progress  value="42%"  "5 of 12"
+  steps  id=root/20:Steps
+    items: 3 before, "Step 4 (done)", "Step 5 (done)", "Step 6 (done)", "Step 7 (done)", "Step 8 (done)", "Step 9 (done)", "Step 10 (done)", "Step 11 (done)", "Step 12 (done)", "Step 13 (done)", "Step 14 (done)", "Step 15 (pending)", and 5 more
+  steps  id=root/21:Steps
+    items: "Pick (running): aisle 4"
+  filecard  "bill.pdf"  id=root/22:FileCard  "2 pages"
+    items: "Open"
+  text  "Plain words here"
+  markdown  "# Title Some *words*."
+  code  "Example"  "print(1)"
+  kbd  "Ctrl+K"
+  badge  "New"
+  separator  "or"
+  icon  "Starred"
+  image  "A map"
+  image  id=root/33:Image  can be pressed
+  spinner  stands in for what is loading
+  skeleton  stands in for what is loading
+  tooltip  "Shown on hover"
+    button  "Hover"  key=hover
+  link  "Docs"  id=root/37:Link  href=https://example.com/docs
+  hello  key=mine
+    text  "Held by the app's own"
+  patientcard  key=theirs
+  form  key=record  read only
+    buttons: "Save"
+    field record/customer  "Customer"  input  required  value="Kestrel Books"
+    field record/amount  "Amount"  number  required  value="12.5"  "What the customer pays, without tax."
+    field record/tier  "Tier"  select  value="gold"  one of "gold", "silver"
+    field record/pin  "Pin"  password
+    field record/address  "Address"  fieldset  required
+      field record/address/street  "Street"  input  required  value="Mill Lane 1"
+      field record/address/city  "City"  input  required  value="Delft"  "Where it is sent to."
+    field record/lines  "Lines"  list
+  dialog  "New order"  key=dlg  closed  "For a customer"
+    form  key=order  values kept in the browser
+      buttons: "Place it", "Leave"
+      field order/customer  "Customer"  input  required
+      field order/amount  "Amount"  number  required  "What the customer pays, without tax."
+      field order/tier  "Tier"  select  one of "gold", "silver"
+      field order/pin  "Pin"  password
+      field order/address  "Address"  fieldset  required
+        field order/address/street  "Street"  input  required
+        field order/address/city  "City"  input  required  "Where it is sent to."
+      field order/lines  "Lines"  list
+        field sku  "Article"  input  required
+        field qty  "Qty"  number
+    button  "Save"  key=save  in its footer
+  badge  "In a row"
+  button  "One"  id=root/42:Row/1:ButtonGroup/0:Button
+  button  "Two"  id=root/42:Row/1:ButtonGroup/1:Button
+  text  "In a grid"
+  text  "Scrolled"
+  text  "Left pane"
+  text  "Right pane"
+  linechart  key=line  2 columns, 3 rows
+    "" | north
+    Jan | "1234567.50 EUR"
+    Feb | "2.00 EUR"
+    Mar | "3.00 EUR"
+  areachart  key=area  2 columns, 3 rows
+    "" | south
+    Jan | 25%
+    Feb | ""
+    Mar | 400%
+  chat  "Ask about an order"  key=chat  0 messages
+    items: "Where is it?"
+  sheet  "Details"  key=side  closed
+    text  "On the side"
+  assistant  "Ask the docs"  key=helper  minimized
+    text  "Ask away"
+
+== one row, twelve characters ==
+page  "Orders"  id=root
+  header  "Acme"  id=root/@header
+    link  "Home"  id=root/@header/@links.0  in its links  href="/"
+  sidebar  "Acme"  id=root/0:Sidebar  folded away
+    sidebargroup  "Shop"  id=root/0:Sidebar/0:SidebarGroup  may be folded
+      link  "Orders"  id=root/0:Sidebar/0:SidebarGroup/0:Link  href="/"  the page it is on
+    sidebargroup  "Depot"  id=root/0:Sidebar/1:SidebarGroup  folded
+      link  "Stock"  id=root/0:Sidebar/1:SidebarGroup/0:Link  href=/stock
+    sidebargroup  "More"  id=root/0:Sidebar/2:SidebarGroup
+      link  "Help"  id=root/0:Sidebar/2:SidebarGroup/0:Link  href=/help
+  button  "New order"  key=new
+  button  "Ask"  key=ask
+  button  "Export"  id=root/1:Stack/2:Button  disabled
+  button  "Delete the o..."  key=bin
+  button  key=plus  icon=plus  asks first  busy
+  button  "Place"  key=place  submits=order
+  button  "Go"  key=go  href="/placed?x=1..."
+  button  "Loud"  key=loud
+  download  "Get the list"  key=csv  file="orders 2026...."
+  dropdownmenu  key=menu
+    items: "Archive", "Drop"
+    button  "More"  key=menu-button  in its trigger
+  input  key=held  value="as typed"  suffix=kg
+  input  key=loose  placeholder "Anything"  value kept in the browser
+  input  key=secret  secret
+  input  key=mail  value=""  kind=email  read only
+  textarea  key=long  value="one two thre..."  disabled
+  numberinput  key=count  value=3  min=0  max=10  suffix=pcs
+  slider  key=level  value=40  min=0  max=100
+  datepicker  key=day  value="2026-01-05"  min=2026-01-01
+  select  key=who  value="Kestrel Book..."
+    options: "Kestrel Book...", "Juniper Pres..."
+  select  key=nobody  value=null
+    options: "Kestrel Book...", "Juniper Pres..."
+  select  key=stale  holds a value that is none of the options given
+    options: "Kestrel Book...", "Juniper Pres..."
+  combobox  key=searched  holds a value that is none of the options given
+  multiselect  key=tags  value=["Tag 1", "Tag 3"]  placeholder "Tags"
+    options: "Tag 1", "Tag 2", "Tag 3", "Tag 4", "Tag 5", "Tag 6", "Tag 7", "Tag 8", "Tag 9", "Tag 10", "Tag 11", "Tag 12", and 3 more
+  radiogroup  "Sent by"  id=root/1:Stack/23:RadioGroup  value="Courier"
+    options: "Mail", "Courier"
+  checkboxgroup  "With"  id=root/1:Stack/24:CheckboxGroup  value=["Wrap"]  holds a value that is none of the options given
+    options: "Wrap", "Card"
+  togglegroup  key=view  value="Grid"
+    options: "List", "Grid"
+  checkbox  "Rush"  key=rush  value=true  "Next day"
+  switch  "Gift"  key=gift  value=false
+  switch  "Loose"  key=loose-switch  value kept in the browser
+  fileupload  "Proof"  key=proof
+    accepts: ".pdf", "image/*"
+  field  "VAT"  id=root/1:Stack/30:Field  error "Too short"  "As on the bi..."
+    input  key=vat  value kept in the browser
+  button  "Twice"  id=root/1:Stack/twice
+  button  "Leave it"  key=leave
+  table  key=orders  7 columns, 3 rows  1 selected  shown sorted by "amount" desc  2 to a page  rows can be selected  rows can be pressed  has a search box  has a filter for each column  "Open orders"
+    each row has: "Remove"
+    Customer | amount | since | paid | "" | due | "Due, exact"
+    "Kestrel, Boo..." | 1235 | 2026-01-05 | yes | 31.4% | "1234567.89 EUR" | 1234567.891
+    ...
+  table  key=none  1 column, 0 rows  shows "Nothing yet"
+    a
+  barchart  key=sales  3 columns, 3 rows
+    "" | north | south
+    Jan | 1234568 | 0
+    ...
+  piechart  key=pie  2 columns, 3 rows
+    "" | value
+    Jan | 1234567.5
+    ...
+  card  "First"  key=one  "The first ca..."
+    button  "Edit"  id=root/one/edit
+    button  "Done"  key=done  in its footer
+  card  "Second"  key=two
+    button  "Edit"  id=root/two/edit
+  tabs  key=which  open=Paid
+    tab  "Open"  id=root/which/0:Tab  not the open tab
+      text  "The open one..."
+    tab  "Paid"  id=root/which/1:Tab  badge=3
+      text  "The paid one..."
+    tab  "Old"  id=root/which/2:Tab  disabled  not the open tab
+      text  "The old ones"
+  tabs  key=free
+    tab  "Left"  id=root/free/0:Tab  may not be the open tab
+      text  "Left"
+    tab  "Right"  id=root/free/1:Tab  may not be the open tab
+      text  "Right"
+  collapsible  "More"  key=more  folded
+    text  "More of it"
+  collapsible  "Open"  key=open
+    text  "Out in the o..."
+  collapsible  "Maybe"  key=maybe  may be folded
+    text  "Who knows"
+  accordion  key=faq
+    accordionitem  "First questi..."  id=root/faq/0:AccordionItem  folded
+      text  "First answer"
+    accordionitem  "Second quest..."  id=root/faq/1:AccordionItem
+      text  "Second answe..."
+  accordion  key=loose-faq
+    accordionitem  "Loose questi..."  id=root/loose-faq/0:AccordionItem  may be folded
+      text  "Loose answer"
+  alert  "Late"  id=root/15:Alert  "Two orders a..."
+    button  "See them"  key=see  in its actions
+  empty  "No stock"  id=root/16:Empty  "Nothing here..."
+    button  "Add"  id=root/16:Empty/@action  in its action
+  stat  "Revenue"  id=root/17:Stat  value="12,400"  delta="down 12.5%"  "this month"
+  stat  "Orders"  id=root/18:Stat  value="18"  delta="up 1234567"
+  progress  "Packing"  id=root/19:Progress  value="42%"  "5 of 12"
+  steps  id=root/20:Steps
+    items: 3 before, "Step 4 (done...", "Step 5 (done...", "Step 6 (done...", "Step 7 (done...", "Step 8 (done...", "Step 9 (done...", "Step 10 (don...", "Step 11 (don...", "Step 12 (don...", "Step 13 (don...", "Step 14 (don...", "Step 15 (pen...", and 5 more
+  steps  id=root/21:Steps
+    items: "Pick (runnin..."
+  filecard  "bill.pdf"  id=root/22:FileCard  "2 pages"
+    items: "Open"
+  text  "Plain words..."
+  markdown  "# Title Some..."
+  code  "Example"  "print(1)"
+  kbd  "Ctrl+K"
+  badge  "New"
+  separator  "or"
+  icon  "Starred"
+  image  "A map"
+  image  id=root/33:Image  can be pressed
+  spinner  stands in for what is loading
+  skeleton  stands in for what is loading
+  tooltip  "Shown on hov..."
+    button  "Hover"  key=hover
+  link  "Docs"  id=root/37:Link  href=https://exam...
+  hello  key=mine
+    text  "Held by the..."
+  patientcard  key=theirs
+  form  key=record  read only
+    buttons: "Save"
+    field record/customer  "Customer"  input  required  value="Kestrel Book..."
+    field record/amount  "Amount"  number  required  value="12.5"  "What the cus..."
+    field record/tier  "Tier"  select  value="gold"  one of "gold", "silver"
+    field record/pin  "Pin"  password
+    field record/address  "Address"  fieldset  required
+      field record/address/street  "Street"  input  required  value="Mill Lane 1"
+      field record/address/city  "City"  input  required  value="Delft"  "Where it is..."
+    field record/lines  "Lines"  list
+  dialog  "New order"  key=dlg  closed  "For a custom..."
+    form  key=order  values kept in the browser
+      buttons: "Place it", "Leave"
+      field order/customer  "Customer"  input  required
+      field order/amount  "Amount"  number  required  "What the cus..."
+      field order/tier  "Tier"  select  one of "gold", "silver"
+      field order/pin  "Pin"  password
+      field order/address  "Address"  fieldset  required
+        field order/address/street  "Street"  input  required
+        field order/address/city  "City"  input  required  "Where it is..."
+      field order/lines  "Lines"  list
+        field sku  "Article"  input  required
+        field qty  "Qty"  number
+    button  "Save"  key=save  in its footer
+  badge  "In a row"
+  button  "One"  id=root/42:Row/1:ButtonGroup/0:Button
+  button  "Two"  id=root/42:Row/1:ButtonGroup/1:Button
+  text  "In a grid"
+  text  "Scrolled"
+  text  "Left pane"
+  text  "Right pane"
+  linechart  key=line  2 columns, 3 rows
+    "" | north
+    Jan | "1234567.50 EUR"
+    ...
+  areachart  key=area  2 columns, 3 rows
+    "" | south
+    Jan | 25%
+    ...
+  chat  "Ask about an..."  key=chat  0 messages
+    items: "Where is it?"
+  sheet  "Details"  key=side  closed
+    text  "On the side"
+  assistant  "Ask the docs"  key=helper  minimized
+    text  "Ask away"
+
+== its dialog open, and a submit turned down ==
+dialog  "New order"  key=dlg  "For a customer"
+  form  key=order  values kept in the browser
+    buttons: "Place it", "Leave"
+    its last submit was turned down for: "/customer: No such customer."
+    field order/customer  "Customer"  input  required
+    field order/amount  "Amount"  number  required  "What the customer pays, without tax."
+    field order/tier  "Tier"  select  one of "gold", "silver"
+    field order/pin  "Pin"  password
+    field order/address  "Address"  fieldset  required
+      field order/address/street  "Street"  input  required
+      field order/address/city  "City"  input  required  "Where it is sent to."
+    field order/lines  "Lines"  list
+      field sku  "Article"  input  required
+      field qty  "Qty"  number
+  button  "Save"  key=save  in its footer
+

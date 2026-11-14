@@ -14,6 +14,7 @@ grace period, so a reload or a dropped connection keeps its state.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hmac
 import logging
 import re
@@ -21,11 +22,11 @@ import secrets
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 from urllib.parse import urlencode
 
-from millwork import context, work
+from millwork import context, marks, outline, work
 from millwork.chat import ChatTurn, Thread, UIMessage
 from millwork.connection import REPLACED, Connection, End, Pipe
 from millwork.files import FileRef, Reject, SessionFiles, content_to_file
@@ -45,9 +46,10 @@ from millwork.protocol import (
     pack,
 )
 from millwork.scope import Scope, Timer
+from millwork.signal import Signal
 from millwork.tasks import Task
 from millwork.turn import Turn
-from millwork.ui import Button, Dialog, DropdownMenu, Sheet, Tabs, Text
+from millwork.ui import Button, Dialog, DropdownMenu, Input, Sheet, Tabs, Text, Textarea
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -90,7 +92,36 @@ class Plan:
     visit: int | None = None
     """The visit of a page the handler belongs to. A handler that is not of
     a page (a task's ``on_done``, a toast's button) has none."""
+    typed: bool = False
+    """The event is what was typed into a text field. The tab shows that by
+    itself, and sends it right before a press that follows it."""
     more: dict[str, Any] = field(default_factory=dict)
+
+
+def _drawn(tree: Tree, node_id: str) -> bool:
+    """Whether a form is on the page and the tab has it drawn. One inside a
+    closed dialog is not: the tab draws what a dialog holds when it opens,
+    and a form that is drawn anew shows nothing of its last submit."""
+    if node_id not in tree.nodes:
+        return False
+    at = node_id.find("/")
+    while at != -1:
+        above = tree.nodes.get(node_id[:at])
+        if above is not None and above.type in ("Dialog", "Sheet") and not above.props.get("open"):
+            return False
+        at = node_id.find("/", at + 1)
+    return True
+
+
+def names(name: str, node_id: str, component: Component | None) -> bool:
+    """Whether a name stands for this component: its id, the end of its id
+    from a slash on, or its key. ``one/qty`` is the ``qty`` in ``one``, for a
+    key that several have."""
+    return (
+        node_id == name
+        or node_id.endswith("/" + name)
+        or (component is not None and component.key == name)
+    )
 
 
 class Session[S]:
@@ -135,7 +166,20 @@ class Session[S]:
         self.outbox = Outbox()
         self.conn: Connection | None = None
         self._wanted: deque[Want] = deque([Want(path, first=True)])
-        self._previous: tuple[PageDef, dict[str, str], str, Tree | None] | None = None
+        self._previous: (
+            tuple[
+                PageDef,
+                dict[str, str],
+                str,
+                Tree | None,
+                set[Signal],
+                list[marks.Mark],
+                dict[str, str],
+            ]
+            | None
+        ) = None
+        # The signals the page the session is on follows.
+        self._following: set[Signal] = set()
         self._wake: asyncio.Future[None] = self._loop.create_future()
         self.ended: asyncio.Future[None] = self._loop.create_future()
         """Done when the session is over."""
@@ -169,6 +213,8 @@ class Session[S]:
         # and says it again whenever the ``Tabs`` are new to it, so what it
         # said is kept until the node is gone from the page.
         self._showing: dict[str, str] = {}
+        # What each form was told is wrong with it at its last submit.
+        self._form_issues: dict[str, list[Any]] = {}
         # Lazy parts to build at the next render whether they show or not.
         self._parts_due: set[str] = set()
         # What events pass through one at a time, in the order they came in,
@@ -178,14 +224,36 @@ class Session[S]:
         self.tasks: list[Task[Any]] = []
         self._tasks_started = 0
         self._render_due = False
-        # Due, and its timer fired while a handler held the turn: it is drawn
-        # as the turn comes free.
+        # Due, and its time has come while a handler holds the turn: it is
+        # drawn as the turn comes free.
         self._render_late = False
         self._render_timer: Timer | None = None
+        # When the last drawing that came at its own time was done, on the
+        # loop's clock.
+        self._drawn_at = float("-inf")
+        # Whether what a handler did is drawn as its turn ends. The test
+        # harness turns it off: there a handler's end waits like any other
+        # change, so that what a test sees does not depend on how fast the
+        # machine runs it.
+        self.answers_at_once = True
         # The node whose `change` a handler has taken and no drawing has
         # followed yet.
         self._typed: str | None = None
         self._print_asked = False
+        # The component that is to get the keyboard once the next drawing
+        # has gone out, by the name it was asked for with, and whether that
+        # was said after another page was asked for, and so is for that one.
+        self._focus_asked: str | None = None
+        self._focus_is_for_next = False
+        # The highlights the session holds, and the list the tab has of them.
+        self._marks: list[marks.Mark] = []
+        # What each name stands for on the page as it is, kept from one
+        # drawing to the next.
+        self._places: dict[str, tuple[str, str | None] | None] = {}
+        self._places_ids: tuple[str, ...] = ()
+        self._places_of: Tree | None = None
+        self._marks_sent: list[dict[str, Any]] = []
+        self._mark_serial = 0
         self._asks: dict[str, _Ask] = {}
         self._toast_actions: dict[str, Callable[..., Any]] = {}
         # Requests in flight by id, each with the connection it came in on.
@@ -330,6 +398,7 @@ class Session[S]:
         if self.over:
             return
         self.over = True
+        self._unfollow()
         self.end_reason, self.end_to = message, to
         self._end_asking, self._end_code = asking, code
         self.app.sessions.pop(self.id, None)
@@ -382,6 +451,8 @@ class Session[S]:
         # first connect hook says before the page is drawn reaches it.
         if last_seq <= 0:
             last_seq = 0 if self.outbox.seq == 0 else -1
+            # Its forms are drawn anew, with nothing of their last submit.
+            self._form_issues = {}
         conn.bind(self, last_seq)
         if self.tree is not None and self.tree is self._failure:
             # A reload is how a person tries a page that failed again.
@@ -415,8 +486,14 @@ class Session[S]:
         tree = self.tree
         if tree is None or self.stage != READY:
             return None
+        # With the marks the tab was last given, which are the ones of the
+        # page as it was last drawn. What changed since is said behind the
+        # next drawing, to this tab as to any.
         return pack(
-            self.outbox.seq, Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown)
+            self.outbox.seq,
+            Mount(
+                root=tree.root, nodes=tree.nodes, title=self._title_shown, marks=self._marks_sent
+            ),
         )
 
     # ----------------------------------------------------------- sign-in
@@ -489,6 +566,9 @@ class Session[S]:
             done.set_result(None)
             return done
         self._wanted.append(Want(path, done=done))
+        # Work that asks for another page goes there with it: what it
+        # says from here on is not for the page it began on.
+        context.on_visit(None)
         if not self._wake.done():
             self._wake.set_result(None)
         return done
@@ -519,14 +599,50 @@ class Session[S]:
         page, params = self.app.locate(path) or self.app.fallback("not_found", path)
         if self.app.auth is not None and not page.public and self.user is None:
             self.post(ServerError(message=self.text("sign_in_hint"), fatal=True))
-            self.stage = READY
+            self._stays()
             return None
         return page, params, path, fragment
+
+    def _stays(self) -> None:
+        """The page that was asked for does not come: the session is on the
+        page it has, which is ready again. What was not drawn while it was
+        on its way out is drawn now: what a handler changed before it asked
+        for the other page, and a tab that was opened meanwhile."""
+        self.stage = READY
+        if self._showing or self._render_due:
+            self.refresh()
 
     def enter(self, page: PageDef, params: dict[str, str], path: str) -> None:
         """Step onto the page a navigation leads to, for its connect to run.
         What the session was on is kept, to go back to if that fails."""
-        self._previous = (self.page, self.params, self.path, self.tree)
+        self._previous = (
+            self.page,
+            self.params,
+            self.path,
+            self.tree,
+            self._unfollow(),
+            self._marks,
+            self._showing,
+        )
+        if marks.bare(path) != marks.bare(self.path):
+            # On another page the tab's strips start over, on their first
+            # tab, so what they were on is not what this page is drawn by.
+            self._showing = {}
+        # A mark is for one visit of a page: this one's are over, the ones
+        # that waited for the page that comes are its own now, and the ones
+        # for another page wait on.
+        here = marks.bare(path)
+        self._marks = [
+            replace(m, page=None) if m.page == here else m
+            for m in self._marks
+            if m.page is not None
+        ]
+        # What was asked of the page that is left is not asked of this one.
+        # The keyboard asked for after this page was is.
+        self._print_asked = False
+        if not self._focus_is_for_next:
+            self._focus_asked = None
+        self._focus_is_for_next = False
         self.page, self.params, self.path = page, params, path
         self.tree = None
         self._slow_builds = 0
@@ -535,6 +651,12 @@ class Session[S]:
         """Land on the app's page for a page that refused, under the path
         that was asked for."""
         self.page, self.params = self.app.fallback(kind, self.path, message)
+        # Nor is the keyboard it asked for, or a mark that was for it.
+        self._focus_asked = None
+        self._marks = [m for m in self._marks if m.page is not None]
+        # What the page that refused followed before it did is not this
+        # page's to follow.
+        self._unfollow()
 
     def take_owed(self) -> PageDef | None:
         """The page that is owed a close, which it is not after this."""
@@ -579,11 +701,29 @@ class Session[S]:
             # The tab keeps the page it came from, already closed. What the
             # failed connect wrote to the state stays.
             assert self._previous is not None
-            self.page, self.params, self.path, self.tree = self._previous
-            self.stage = READY
-            if self._showing:
-                # A tab that was opened while the page was away is drawn now.
-                self.refresh()
+            self._unfollow()
+            # The keyboard was asked for in a page that did not come.
+            self._focus_asked = None
+            said = self._showing
+            (
+                self.page,
+                self.params,
+                self.path,
+                self.tree,
+                following,
+                self._marks,
+                self._showing,
+            ) = self._previous
+            # What the tab said of its strips meanwhile was said of the
+            # page it is still on.
+            self._showing = {**self._showing, **said}
+            for signal in following:
+                self.follow(signal)
+            if following:
+                # What fired while the session was on its way followed
+                # nothing here, and the page may show what is no longer so.
+                self._render_due = True
+            self._stays()
             self.post(ServerError(message=self.text("page_failed"), fatal=False))
         self._previous = None
 
@@ -607,6 +747,12 @@ class Session[S]:
 
     def command(self, name: str, **args: Any) -> None:
         """An instruction to the tab: toast, navigate, clipboard."""
+        if name == "form_issues":
+            # Kept for the page as data, which says what a form shows.
+            if args.get("issues"):
+                self._form_issues[str(args.get("node"))] = list(args["issues"])
+            else:
+                self._form_issues.pop(str(args.get("node")), None)
         self.post(Command(name=name, args=args))
 
     def toast(
@@ -643,10 +789,246 @@ class Session[S]:
         where the app's ``on_logout`` says."""
         self.command("logout")
 
+    def named(self, name: str) -> list[str]:
+        """The ids of the components a name stands for, in the order they
+        are on the page: every component with that key, or the one with
+        that id. The one rule for whatever takes a component's name."""
+        tree = self.tree
+        if tree is None:
+            return []
+        return [i for i in tree.nodes if names(name, i, tree.components.get(i))]
+
+    def place(self, name: str) -> tuple[str, str | None] | None:
+        """Where a name points: the id of the first component it stands
+        for, or the id of a form and the pointer of a field of it, for a
+        name that is the form's, a slash, and the field's. None for a name
+        that stands for nothing on the page."""
+        tree = self.tree
+        if tree is None:
+            return None
+        if self._places_of is not tree:
+            # What a name stands for holds for as long as the page has the
+            # same components, which it does through most drawings.
+            ids = tuple(tree.nodes)
+            if ids != self._places_ids or len(self._places) > 256:
+                self._places, self._places_ids = {}, ids
+            self._places_of = tree
+        if name not in self._places:
+            self._places[name] = self._place(tree, name)
+        return self._places[name]
+
+    def _place(self, tree: Tree, name: str) -> tuple[str, str | None] | None:
+        ids = self.named(name)
+        if ids:
+            return ids[0], None
+        at = name.rfind("/")
+        while at > 0:
+            pointer = name[at:]
+            for form in self.named(name[:at]):
+                node = tree.nodes[form]
+                if node.type == "Form" and outline.has_field(node.props, pointer):
+                    return form, pointer
+            at = name.rfind("/", 0, at)
+        return None
+
+    def highlight(
+        self,
+        name: str | None,
+        color: str | None = "blue",
+        *,
+        style: str = "solid",
+        step: int | None = None,
+        seconds: float | None = None,
+        label: str | None = None,
+        scroll: bool = False,
+        page: str | None = None,
+    ) -> None:
+        """Mark a component for the person to find: a border around it, in
+        a color, drawn over the page. ``name`` is a key or an id, or a
+        form's name, a slash and a field's, as ``order/amount``.
+
+        ``color`` is ``red``, ``orange``, ``yellow``, ``green``, ``blue``,
+        ``pink``, ``primary`` or ``ring``, each a color of the theme, or a
+        hex code. Without one it is blue.
+        ``style`` is ``solid``, ``pulse`` or ``trace``, a light that goes
+        around the component. Marks with a ``step`` show one step after the
+        other, each when the ones before it are done, and the others show
+        together. ``label`` is a word on a mark that has no step.
+
+        A mark goes when the person points at its component, presses it or
+        types in it, after ``seconds`` on the screen when that is given,
+        and when the page is left. ``s.highlight(name, None)``
+        takes it off, and ``s.highlight(None)`` takes all off. One for a
+        component that is not on the page yet, a field of a dialog that is
+        closed, shows when it is. ``page`` is the path of another page,
+        for a mark that shows when the person gets there. ``scroll=True``
+        brings the component into view when the mark shows.
+
+        A mark asked for by work that began on a page the person has left
+        since, a reply that took its time, is not set: the component it
+        means is not one of the page they are on."""
+        if name is None:
+            self._marks = []
+        elif color is None:
+            self._marks = [m for m in self._marks if m.name != name]
+        else:
+            if not isinstance(name, str) or not name:
+                raise TypeError("s.highlight() takes the key or the id of a component")
+            color, style, step, seconds, label, page = marks.checked(
+                color, style, step, seconds, label, page
+            )
+            began = context.visit()
+            if page is None and began is not None and began != self.visit:
+                # Asked by work that began on a page the person has left
+                # since, a reply that was still being written: the component
+                # it means is not one of this page.
+                return
+            if page is None and self._wanted:
+                # Set behind a navigation: for the page that was asked for.
+                page = marks.bare(self._wanted[-1].path)
+            elif page == marks.bare(self.path) and not self._wanted:
+                page = None
+            self._mark_serial += 1
+            mark = marks.Mark(
+                self._mark_serial, name, color, style, step, seconds, label, scroll, page
+            )
+            # One mark for a name on a page: a new one takes the old one's place.
+            kept = [m for m in self._marks if (m.name, m.page) != (name, page)]
+            self._marks = [*kept, mark][-marks.KEPT :]
+        # Sent behind the next drawing, which shows what a handler that
+        # set it opened as well.
+        self.refresh()
+
+    def marked(self, event: Event) -> None:
+        """The tab says a mark is done: the person got to its component, or
+        its time ran out. The mark goes, and with it the steps before it:
+        someone who used the field of step two has done step one. No
+        handler of the app's hears of it."""
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        n = payload.get("n")
+        mark = next((m for m in self._marks if type(n) is int and m.n == n), None)
+        if self.over or mark is None or mark.page is not None:
+            return
+        gone = {mark.n}
+        if payload.get("what") == "touched" and mark.step is not None:
+            gone |= {
+                m.n
+                for m in self._marks
+                if m.page is None and m.step is not None and m.step < mark.step
+            }
+        self._marks = [m for m in self._marks if m.n not in gone]
+        self._send_marks()
+
+    def _send_marks(self) -> None:
+        """Give the tab the marks of this page as they stand, when they are
+        other than the ones it has."""
+        if self.tree is None or self.tree is self._failure or self.stage != READY:
+            return
+        if not self._marks and not self._marks_sent:
+            return
+        found, _ = marks.now(self._marks, self.place)
+        if found != self._marks_sent:
+            self._marks_sent = found
+            self.command("marks", list=found)
+
+    @overload
+    def outline(
+        self,
+        *,
+        within: str | None = ...,
+        as_text: Literal[False] = ...,
+        rows: int = ...,
+        chars: int = ...,
+    ) -> dict[str, Any] | None: ...
+    @overload
+    def outline(
+        self, *, within: str | None = ..., as_text: Literal[True], rows: int = ..., chars: int = ...
+    ) -> str: ...
+    @overload
+    def outline(
+        self, *, within: str | None = ..., as_text: bool, rows: int = ..., chars: int = ...
+    ) -> dict[str, Any] | str | None: ...
+    def outline(
+        self,
+        *,
+        within: str | None = None,
+        as_text: bool = False,
+        rows: int = 5,
+        chars: int = 200,
+    ) -> dict[str, Any] | str | None:
+        """The page as data: what it holds for the person in front of it,
+        said by each of its components. For an assistant in the app, which
+        reads it to answer what is on the page and where.
+
+        A dict for each component, with its id, its type, its key when it
+        has one, and what a person reads on it: a label, a text, a value
+        the page holds, a table's columns and first rows, a form's fields.
+        What it holds is under ``children``. ``as_text=True`` gives it as
+        text, a line for each component, for a model's prompt.
+
+        It is made from what was sent to the tab and holds less: nothing of
+        a hidden component, of a table's fields that have no column, of a
+        password, or of the props of an app's own component. What a press
+        would bring up is in it and says that it does not show now, as a
+        closed dialog does, or that it may not, where the browser keeps
+        whether a group is folded. It is the page as it was last drawn, so
+        a handler reads it before what it changed itself is in it.
+
+        ``within`` names the component to start at, by key or id, and
+        gives None, or no text, for a name that finds nothing or only what
+        is hidden. So does a session that has no page drawn yet, as in a
+        ``connect`` hook.
+        ``rows`` is how many rows of a table or a chart and how many of a
+        chat's last messages are given, and ``chars`` where a text is
+        cut."""
+        ids = None
+        if within is not None:
+            # Of several with that name, the first that shows.
+            ids = self.named(within)
+            if not ids:
+                return "" if as_text else None
+        shown, nowhere = marks.now(self._marks, self.place)
+        found = outline.outline(
+            self.tree,
+            within=ids,
+            rows=rows,
+            chars=chars,
+            showing=self._showing,
+            issues=self._form_issues,
+            currency=self.app.theme.currency,
+            marks=shown,
+            nowhere=nowhere,
+        )
+        if not as_text:
+            return found
+        return outline.as_text(found, outline.pointed(self.tree) if self.tree else {})
+
     def reset(self, key: str) -> None:
         """Put the component with this key back to its default: the draft an
         input holds, a form's fields, a tab strip's choice."""
-        self.command("reset", key=key)
+        ids = self.named(key)
+        # A form that is put back shows nothing of its last submit.
+        self._form_issues = {
+            k: v
+            for k, v in self._form_issues.items()
+            if not any(k == i or k.startswith(i + "/") for i in ids)
+        }
+        self.command("reset", ids=ids)
+
+    def focus(self, name: str) -> None:
+        """Put the keyboard in a component, named by its key or its id, or
+        in the first thing in it that takes the keyboard. Of several with
+        that key it is the first on the page.
+
+        It happens once the next drawing has gone out. So a handler can open
+        a dialog and name a field in it, and one that asks for another page
+        first names a field of that page. The last one asked for before that
+        drawing is the one that gets it. A field the keyboard should be in
+        whenever the page is put on a tab says so itself, with
+        ``autofocus=True``."""
+        self._focus_asked = name
+        self._focus_is_for_next = bool(self._wanted)
+        self._refresh_now()
 
     def download(self, filename: str, content: Any, mime: str | None = None) -> FileRef:
         """Send a file to the tab without a button: the tab fetches it over the
@@ -973,13 +1355,13 @@ class Session[S]:
             asked = Dialog(asked, open=True, on_close=_noop)
         ask = _Ask(request=request, component=asked, future=self._loop.create_future())
         self._asks[request] = ask
-        self.refresh()
+        self._refresh_now()
         return ask
 
     def close_ask(self, ask: _Ask) -> None:
         if self._asks.get(ask.request) is ask:
             del self._asks[ask.request]
-        self.refresh()
+        self._refresh_now()
 
     def _confirm_dialog(
         self,
@@ -1051,17 +1433,82 @@ class Session[S]:
     # ------------------------------------------------------------- rendering
 
     def refresh(self) -> None:
-        """Render soon. Coalesced: many calls in one tick are one patch."""
+        """Draw the page within ``RENDER_COALESCE_SECONDS``, together with
+        whatever else changes it in that time: many calls are one patch.
+        For what happens beside a handler, a task's report or news from
+        another session."""
         if self.over:
             return
         self._render_due = True
         if self._render_timer is None:
             self._render_timer = self.scope.later(RENDER_COALESCE_SECONDS, self._render_tick)
 
+    def follow(self, signal: Signal) -> None:
+        """Draw the page again whenever ``signal`` fires, for as long as the
+        session is on the page it is on now. Said in the page's ``connect``
+        hook, or in a handler. Leaving the page ends it, and so does the
+        end of the session."""
+        if not isinstance(signal, Signal):
+            raise TypeError(f"s.follow() takes a millwork.Signal, not {type(signal).__name__}")
+        if self.over:
+            return
+        self._following.add(signal)
+        signal._add(self)
+
+    def _unfollow(self) -> set[Signal]:
+        """Follow nothing any more. What was followed, for a page the
+        session may come back to."""
+        following, self._following = self._following, set()
+        for signal in following:
+            signal._drop(self)
+        return following
+
+    def _nudge(self) -> None:
+        """``refresh()`` for whoever is not on the session's loop: a thread,
+        or code of another loop."""
+        try:
+            here = asyncio.get_running_loop()
+        except RuntimeError:
+            here = None
+        if here is self._loop:
+            self.refresh()
+            return
+        # The loop is closed when the app has stopped, and nothing is drawn.
+        with contextlib.suppress(RuntimeError):
+            self._loop.call_soon_threadsafe(self.refresh)
+
+    def _refresh_now(self) -> None:
+        """Draw the page for what a person is waiting on: the end of a
+        handler, a question put to them. That is as the turn comes free,
+        with no timer to wait out, unless the page was drawn less than
+        ``RENDER_COALESCE_SECONDS`` ago. Then it is drawn when that time is
+        over, counted from the end of that drawing, so events that come
+        without a pause are still twenty drawings a second at most."""
+        if not self.answers_at_once:
+            self.refresh()
+            return
+        if self.over:
+            return
+        self._render_due = True
+        wait = self._drawn_at + RENDER_COALESCE_SECONDS - self._loop.time()
+        if wait > 0:
+            if self._render_timer is None:
+                self._render_timer = self.scope.later(wait, self._render_tick)
+        elif self.turn.free:
+            # Nobody is going to give the turn back: the loop's next step
+            # draws.
+            if self._render_timer is not None:
+                self._render_timer.cancel()
+            self._render_timer = self.scope.later(0, self._render_tick)
+        else:
+            # No timer here. One with no delay would run before or after
+            # the turn is given back, as the loop happens to order the two.
+            self._render_late = True
+
     def _render_tick(self) -> None:
         self._render_timer = None
         if self.turn.free:
-            self.render()
+            self._draw()
         else:
             # A handler is in the middle of its turn. The page is drawn when
             # it is done, and never from state it has half changed.
@@ -1069,7 +1516,26 @@ class Session[S]:
 
     def _turn_free(self) -> None:
         if self._render_late:
-            self.render()
+            self._draw()
+
+    def _draw(self) -> None:
+        """Draw what is due, at its own time: its timer fired or a handler
+        ended, and the turn is free."""
+        if self._render_timer is not None:
+            self._render_timer.cancel()
+            self._render_timer = None
+        # Whatever comes of it, nothing is late after this: a turn given
+        # back later on finds no drawing left to make at that moment.
+        self._render_late = False
+        if self._wanted or not self._render_due:
+            # Another page is asked for: the handler that asked may have
+            # left state this page has no way to show, and the page that is
+            # coming is drawn from it anyway. Or the page was drawn
+            # meanwhile, by a handler that needed it as it stood.
+            return
+        self.render()
+        if not self._render_due:
+            self._drawn_at = self._loop.time()
 
     def _before_handler(self, event: Event | None) -> None:
         """Draw the page before a handler that follows a value typed into a
@@ -1104,6 +1570,8 @@ class Session[S]:
         """Put the page on a tab that has nothing of it: no page yet, or the
         failure page."""
         self._render_due = self._render_late = False
+        # What the forms of the page before were told is not this page's.
+        self._form_issues = {}
         failed_before = self.tree is not None and self.tree is self._failure
         try:
             tree = self._page_tree()
@@ -1132,7 +1600,36 @@ class Session[S]:
             self._failure = None
         self.tree = tree
         self._title_shown = self._title(tree)
-        self.post(Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown))
+        # The marks of this page go with it: the ones the tab had were the
+        # last page's.
+        self._marks_sent = [] if self._failure else marks.now(self._marks, self.place)[0]
+        self.post(
+            Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown, marks=self._marks_sent)
+        )
+        if self._failure is None:
+            self._after_drawing()
+
+    def _after_drawing(self) -> None:
+        """What was asked for the page as it is now, sent behind the
+        drawing that made it so: the patch, or the whole page."""
+        if self._focus_asked is not None:
+            name, self._focus_asked = self._focus_asked, None
+            place = self.place(name)
+            if place is not None and place[1] is not None:
+                self.command("focus", id=place[0], field=place[1])
+            elif place is not None:
+                self.command("focus", id=place[0])
+            else:
+                self.warn(
+                    f"focus:{name}",
+                    f"s.focus({name!r}) names nothing on the page: no component has"
+                    " that key or that id",
+                )
+        if self._print_asked:
+            # The page the handler meant to print.
+            self._print_asked = False
+            self.command("print")
+        self._send_marks()
 
     def _title(self, tree: Tree) -> str | None:
         """The tab's title: the root ``Page``'s own when it has one, else the page's."""
@@ -1152,6 +1649,8 @@ class Session[S]:
             return
         tree = self._build()
         if tree is None:
+            # Not at some later drawing that works, whenever that is.
+            self._focus_asked = None
             return
         ops = diff(self.tree, tree)
         self._check_keyless(self.tree, tree)
@@ -1159,10 +1658,7 @@ class Session[S]:
         self._typed = None
         if ops:
             self.post(Patch(ops=ops))
-        if self._print_asked:
-            # After the patch, which is the page the handler meant to print.
-            self._print_asked = False
-            self.command("print")
+        self._after_drawing()
         title = self._title(tree)
         if title != self._title_shown:
             self._title_shown = title
@@ -1293,6 +1789,8 @@ class Session[S]:
                 )
             if self._showing:
                 self._showing = {k: v for k, v in self._showing.items() if k in tree.nodes}
+            if self._form_issues:
+                self._form_issues = {k: v for k, v in self._form_issues.items() if _drawn(tree, k)}
             return tree
         finally:
             context.unbind(token)
@@ -1348,7 +1846,7 @@ class Session[S]:
         self._showing[event.node] = event.payload
         if before != event.payload:
             # Other than what the page was drawn by, so it is drawn again.
-            self.refresh()
+            self._refresh_now()
 
     def kept_part(self, node_id: str) -> str | None:
         """The lazy part that holds this node as it was at an earlier render."""
@@ -1479,6 +1977,7 @@ class Session[S]:
             question=_confirmation(component, event),
             form=form,
             visit=self.visit,
+            typed=event.name == "change" and isinstance(component, Input | Textarea),
         )
 
     def _form_file(self, node: str) -> Callable[[str], FileRef | None]:

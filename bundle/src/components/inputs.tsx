@@ -12,7 +12,7 @@ import { has, placed } from "../lib";
 import { icon } from "../icons";
 import { optionLabel } from "./option-label";
 import { typedOption } from "./typed-option";
-import { caughtUp, type Told } from "../owned";
+import { answerDue, caughtUp, type Told } from "../owned";
 import { t } from "../theme";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import {
@@ -118,8 +118,9 @@ export function useOwned<T>(controlled: boolean, value: T, initial: T): [T, (v: 
   const tell = useCallback(
     (v: T) => {
       const sent = JSON.stringify(v);
+      const now = performance.now();
       // What the server holds already it will not send back.
-      if (controlled && sent !== seen.current) told.current.push({ key: sent, at: performance.now() });
+      if (controlled && answerDue(told.current, seen.current, sent, now)) told.current.push({ key: sent, at: now });
     },
     [controlled],
   );
@@ -310,6 +311,7 @@ export const Textarea: Renderer = ({ props, emit }) => {
       placeholder={props.placeholder ? String(props.placeholder) : undefined}
       disabled={Boolean(props.disabled)}
       readOnly={Boolean(props.readonly)}
+      autoFocus={Boolean(props.autofocus)}
       aria-describedby={counted ? countId : undefined}
       // In the box the field takes the height there is, for a box that was
       // given more than the field asks for.
@@ -327,6 +329,16 @@ export const Textarea: Renderer = ({ props, emit }) => {
         if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && props.on_submit) {
           later.flush();
           emit("submit", current);
+          if (props.clear_on_submit) {
+            // Emptied here and now, for the next entry: a handler that
+            // cleared the value would do it a round trip later, on top of
+            // what was typed meanwhile.
+            setDraft("");
+            if (props.on_change) {
+              tell("");
+              emit("change", "");
+            }
+          }
         }
       }}
     />
@@ -377,6 +389,7 @@ export const NumberInput: Renderer = ({ props, emit }) => {
         step={typeof props.step === "number" ? props.step : undefined}
         placeholder={props.placeholder ? String(props.placeholder) : undefined}
         disabled={Boolean(props.disabled)}
+        autoFocus={Boolean(props.autofocus)}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={report}
         onKeyDown={(e) => {

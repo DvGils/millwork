@@ -37,7 +37,7 @@ import { Badge as UiBadge } from "@/components/ui/badge";
 export const Tabs: Renderer = ({ node, props, emit }) => {
   const controlled = has(props, "value");
   const tabs = node.children;
-  const first = String(props.default ?? firstTabId(tabs));
+  const first = firstTabId(tabs, props.default);
   // The open tab, for tabs that keep their own choice. The server asks for
   // it with `track` when parts of the page under these tabs are only kept up
   // to date while their tab is open. It is said when the tabs appear and
@@ -78,17 +78,21 @@ export const Tabs: Renderer = ({ node, props, emit }) => {
   );
 };
 
-function firstTabId(ids: string[]): string {
-  const first = ids[0] ? store.get(ids[0]) : undefined;
-  return first ? String(first.props.id ?? "") : "";
+// A hidden tab is not among the tabs: it has no trigger and no panel, and
+// the strip does not open on it.
+function firstTabId(ids: string[], wanted?: unknown): string {
+  const shown = ids.map((id) => store.get(id)).filter((tab) => tab && !tab.props.hidden);
+  const named = shown.find((tab) => wanted != null && String(tab?.props.id) === String(wanted));
+  if (wanted != null && (named || shown.length === 0)) return String(wanted);
+  return shown[0] ? String(shown[0].props.id ?? "") : "";
 }
 
 function TabTrigger({ id }: { id: string }) {
   const tab = useNode(id);
-  if (!tab) return null;
+  if (!tab || tab.props.hidden) return null;
   const Icon = icon(tab.props.icon);
   return (
-    <TabsTrigger value={String(tab.props.id)} disabled={Boolean(tab.props.disabled)}>
+    <TabsTrigger data-node={id} value={String(tab.props.id)} disabled={Boolean(tab.props.disabled)}>
       {Icon ? <Icon /> : null}
       {String(tab.props.label ?? "")}
       {tab.props.badge ? <UiBadge variant="secondary">{String(tab.props.badge)}</UiBadge> : null}
@@ -99,8 +103,15 @@ function TabTrigger({ id }: { id: string }) {
 function TabPanel({ id }: { id: string }) {
   const tab = useNode(id);
   if (!tab) return null;
+  // A hidden tab keeps what is in it, as any hidden component does, and
+  // shows none of it, whatever the strip is told to be on.
   return (
-    <TabsContent value={String(tab.props.id)} keepMounted className="flex flex-col gap-4">
+    <TabsContent
+      value={String(tab.props.id)}
+      keepMounted
+      className="flex flex-col gap-4"
+      style={tab.props.hidden ? { display: "none" } : undefined}
+    >
       <SlotChildren ids={tab.children} />
     </TabsContent>
   );
@@ -129,7 +140,7 @@ const dialogSize: Record<string, string> = {
   full: "sm:max-w-[calc(100%-2rem)]",
 };
 
-export const Dialog: Renderer = ({ props, children, emit }) => {
+export const Dialog: Renderer = ({ node, props, children, emit }) => {
   const status = useStatus();
   return (
   <UiDialog
@@ -140,6 +151,9 @@ export const Dialog: Renderer = ({ props, children, emit }) => {
     }}
   >
     <DialogContent
+      // The window is drawn outside the page's own elements, so it carries
+      // the node's id itself, for what points at the dialog.
+      data-node={node.id}
       // A column no taller than the window: the title and the footer stay, and
       // the body between them scrolls when what it holds is taller or wider.
       className={cn("flex max-h-[calc(100dvh-2rem)] flex-col", dialogSize[String(props.size ?? "md")], props.cls as string)}

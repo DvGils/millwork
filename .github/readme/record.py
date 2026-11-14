@@ -1,5 +1,5 @@
-"""Record the README's GIFs from ``demo.py``: twelve seconds of the app being
-used, once in the light and once in the dark, for a reader in either. Run
+"""Record the README's GIFs from ``demo.py``: some nineteen seconds of the app
+being used, once in the light and once in the dark, for a reader in either. Run
 from the repository root:
 
     uv run python .github/readme/record.py
@@ -30,6 +30,10 @@ PORT = 8031
 CDP = 9344
 WIDTH, HEIGHT = 1200, 836
 FPS = 10
+# The GIF plays half again as fast as the app was used, so what is pressed
+# and typed goes by briskly, and it rests between one thing and the next
+# for the reader to look around.
+SPEED = 1.5
 
 # A pointer drawn on the page, since a screenshot has none: an arrow that
 # glides to what is pressed next and a ring where it presses. It is no part
@@ -147,15 +151,20 @@ class Tab:
         await self.eval(f"(() => {{ const e = {js_element}; e.focus(); e.select(); }})()")
 
     async def capture(self, seconds: float) -> None:
-        """Frames at FPS for this long, the app running meanwhile."""
-        end = time.monotonic() + seconds
-        while True:
+        """Frames for this long of the app's own time, the app running
+        meanwhile. They are taken at an even pace, each when it falls due,
+        so the GIF moves as evenly as the app did."""
+        start = time.monotonic()
+        made, total = 0, max(1, round(seconds * FPS / SPEED))
+        while made < total:
             r = await self.call("Page.captureScreenshot", format="png")
             self.frames.append(base64.b64decode(r["data"]))
-            left = end - time.monotonic()
-            if left <= 0:
-                break
-            await asyncio.sleep(min(1 / FPS, left))
+            made += 1
+            await asyncio.sleep(max(0.0, start + made * SPEED / FPS - time.monotonic()))
+
+    async def rest(self, seconds: float) -> None:
+        """A moment of the GIF's own time in which nothing is pressed."""
+        await self.capture(seconds * SPEED)
 
 
 def browser() -> str:
@@ -175,41 +184,45 @@ async def record(tab: Tab) -> None:
     await tab.nav(url, settle=2.5)
     await tab.eval(POINTER)
 
+    add = "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add')"
+
     # 1. A new order: refused once, then saved.
-    await tab.capture(0.8)
+    await tab.rest(0.7)
     customer = "document.getElementById('f_customer')"
     amount = "document.getElementById('f_amount')"
     await tab.click(customer)
     await tab.type("Kestrel Books")
     await tab.click(amount)
     await tab.type("-20")
-    await tab.capture(0.3)
-    await tab.click(
-        "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add')"
-    )
-    await tab.capture(1.1)
+    await tab.rest(0.4)
+    await tab.click(add)
+    # What the form says of the amount, long enough to read.
+    await tab.rest(1.3)
     await tab.select_all(amount)
     await tab.type("980")
-    await tab.capture(0.3)
-    await tab.click(
-        "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add')"
-    )
-    await tab.capture(1.0)
+    await tab.rest(0.4)
+    await tab.click(add)
+    # The order in the table, the figures and the chart, and the toast.
+    await tab.rest(1.3)
 
     # 2. An import with progress, the table and the chart following it.
     await tab.click(
         "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Import')"
     )
     await tab.capture(3.9)
+    await tab.rest(1.0)
 
     # 3. A question in the assistant's window, answered by a reply that streams.
     await tab.click("document.querySelector('button[aria-label=\"Ask about the orders\"]')")
-    await tab.capture(0.5)
+    await tab.rest(0.7)
     await tab.click("document.querySelector('textarea')")
-    await tab.type("Who still has to pay?")
+    await tab.type("How much is still open?")
+    await tab.rest(0.3)
     await tab.key("Enter")
-    # The answer, and a moment on the finished page before the loop starts over.
-    await tab.capture(4.3)
+    # The answer and the highlight it sets around the figure it is about.
+    await tab.capture(3.0)
+    # And a while on the finished page before the loop starts over.
+    await tab.rest(2.3)
 
 
 def gif(frames: list[bytes], out: Path) -> None:

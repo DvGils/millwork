@@ -40,6 +40,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import to_jsonable_python
 
 from millwork import context
+from millwork.deprecation import Renamed, Renames, adopt_old_names, move_old_names
 from millwork.icons import check_icon
 from millwork.protocol import (
     AddOp,
@@ -92,6 +93,8 @@ class Component(BaseModel):
     children: list[Any] = []
 
     def __init__(self, *children: Any, **props: Any) -> None:
+        if self.renames:
+            move_old_names(type(self), self.renames, props)
         if children and "children" in props:
             raise TypeError("children are positional or keyword, not both")
         if children:
@@ -116,6 +119,18 @@ class Component(BaseModel):
     # talks to Python over the socket whatever its handlers are. A page drawn
     # before anyone has signed in cannot hold one.
     needs_session: ClassVar[bool] = False
+    # Keywords that went by another name, by that name. A call with the old
+    # name still works and warns, until the release its ``Renamed`` names.
+    old_names: ClassVar[dict[str, Renamed]] = {}
+    # The old names of the class and its bases, each with the name it has
+    # now. Worked out when the class is made.
+    renames: ClassVar[Renames] = {}
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        adopt_old_names(cls)
+
     # True for a component that shows some of its children at a time, and
     # says which through ``showing``.
     shows_some: ClassVar[bool] = False
@@ -161,6 +176,10 @@ class Component(BaseModel):
         """The node type on the wire; a custom component names its own."""
         return self.type
 
+
+# The hook above runs for subclasses. The base's own old names, the keywords
+# every component shares, are taken here.
+adopt_old_names(Component)
 
 Tone = Literal["default", "muted", "primary", "accent", "success", "warning", "destructive"]
 TextVariant = Literal["body", "muted", "caption", "label", "title", "heading", "subheading", "mono"]

@@ -3,6 +3,115 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.4.0
+
+### Bug fixes
+
+- What a handler did was drawn about 50 ms late. The page was drawn
+  50 ms after any change, so that changes close together became one
+  patch, and a press waited that out like everything else. The page is
+  now drawn as the handler ends, or 50 ms after the end of the drawing
+  before it when that was more recent. What is typed into a `ui.Input`
+  or a `ui.Textarea` is drawn within 50 ms as it was, since the field
+  shows it already, and so are a task's reports and `s.refresh()`. A
+  task that a handler starts shows as running at once, where one that
+  was done within 50 ms showed nothing before. A test sees what it saw:
+  in `millwork.testing` the end of a handler waits like any other
+  change.
+- A page that a handler left with `s.navigate()` could be drawn once
+  more on its way out, and failed when the handler had left state the
+  page could not show. It happened when a drawing came due while the
+  handler was still running: a question, a task or `s.refresh()` more
+  than 50 ms before it left.
+- `s.reset(key)` took the keyboard out of the field it reset. A field
+  that its own `on_submit` reset got the first entry and none after.
+  The keyboard now stays where it was.
+- An Enter that takes a word from an input method, as in Chinese,
+  Japanese and Korean, submitted a `ui.Input` with the text as it stood.
+  It is left to the input method now.
+- `s.reset(key)` did nothing for a keyed component in a slot, a button
+  in a dialog's footer for one. The server now works out what a key
+  names, by the rule the test harness has, and tells the tab.
+- `s.print()` from a page's `connect` hook opened the print dialog only
+  after the next press. It follows the page now.
+- `hidden=True` on a `ui.Tab`, a `ui.AccordionItem` and a page's
+  `ui.Sidebar` hides it. A tab strip, an accordion and a page drew those
+  themselves and showed a hidden one all the same. A hidden tab has no
+  place in the strip, which does not open on it, and keeps what is in
+  it.
+- A form, an input or a tab strip that stands in the same place on two
+  pages carried what the browser kept of it from one to the other: text
+  typed into a form on `/orders/1` showed on `/orders/2`. The body of a
+  page starts over on another path now. A sidebar, an assistant and the
+  header keep how they are, and a navigation to the same path with
+  another query keeps everything.
+
+### Features
+
+- `ui.Input(clear_on_submit=True)`, and the same on `ui.Textarea`,
+  empties the field in the browser at the Enter that submits it, for
+  entries that follow each other: codes from a scanner, lines for a
+  list, messages. A handler that empties a held value or calls
+  `s.reset` does so a round trip later, on top of what was typed in
+  that time: at 100 ms between entries and a round trip of 120 ms,
+  codes came through cut short or joined.
+- `s.focus(key)` puts the keyboard in a component, or in the first thing
+  in it that takes the keyboard. It happens once the page has been drawn
+  again, so a handler can open a dialog and name a field in it, and one
+  that calls `s.navigate` first names a field of the page it goes to.
+  After `s.ask` or `s.confirm` it keeps the keyboard from going back to
+  the button that asked. `s.named(name)` gives the ids a name stands
+  for: a key, an id, or the end of an id such as `one/qty` for one of
+  several with the same key.
+- `s.highlight(name, color)` puts a frame around a component for the
+  person to find it, for an assistant that answers how something is done
+  by pointing at it. A color of the theme or a hex code, `style=` solid,
+  pulse or trace, `step=` for highlights that show one after the other,
+  `seconds=`, `label=`, `scroll=` and `page=` for one on another page. It
+  goes when the person gets to the component. `page.marks`,
+  `page.touch()` and `page.time_out()` in a test.
+- A field of a `ui.Form` has a name, the form's key, a slash and the
+  field's, as `order/amount`, which `s.focus` and `s.highlight` take.
+- `s.outline()` gives the page as data: what it holds for the person,
+  said by each of its components, as a structure or with
+  `as_text=True` as text, for an assistant in the app to read. Each
+  kind of component says what a person reads on it and nothing else it
+  was sent: a table the columns it shows and the first rows it was
+  given, a chosen option its label. A hidden component is not in it,
+  nor a password, nor the props of an app's own component. A
+  closed dialog is in it and says so, and a group says that it is
+  folded, or that it may be where the browser keeps that.
+  `page.outline()` is the same in a test.
+- `autofocus=True` on `ui.Input`, `ui.Textarea` and `ui.NumberInput`
+  puts the keyboard in the field whenever it is put on the page: when
+  the page opens, after a reload, in a dialog as it opens.
+- `mw.Signal`, for data that sessions share. The data stays where the
+  app keeps it, in an object of its own or in a database. A page
+  follows a signal with `s.follow(signal)`, the code that changes the
+  data fires it with `signal.fire()`, and every session that follows is
+  drawn again. Following lasts while the session is on the page. A
+  signal carries nothing, can be fired from a handler, a task or a
+  thread, and reaches the sessions of its own process.
+- `app.spawn(coroutine)` runs work for as long as the app does, a
+  listener on a database for one. It is stopped before the shutdown
+  hooks run, and `TestApp.shutdown()` stops it in a test.
+- A way to retire a spelling without breaking an app. The old spelling
+  keeps working for one minor release and warns with a
+  `MillworkDeprecationWarning` that points at the app's line, names the
+  release that drops it and says what to write now. `millwork run` logs
+  each one, once for every line that causes it. Nothing is deprecated yet.
+
+### The manual
+
+- Development has a section on deprecations, with the pytest setting that
+  makes a test fail on one.
+- Accessing the session has a section on data that sessions share. Its
+  example listens to a database once for the process, where it had a
+  listener for every session. Testing shows two sessions in one test.
+- The hosting checklist says what happens to a tab whose connection drops
+  when there is more than one replica, and that cookie affinity in the
+  load balancer brings it back to its session.
+
 ## 0.3.3
 
 ### Bug fixes

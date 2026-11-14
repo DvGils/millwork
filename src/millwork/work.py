@@ -236,6 +236,9 @@ async def event(s: Session[Any], event: Event, visit: int) -> None:
         if event.name == "show":
             s.shown(event)
             return
+        if event.name == "mark":
+            s.marked(event)
+            return
         if s.kept_part(event.node) is not None:
             # A lazy part that does not show stays in the tab as it was last
             # drawn, and something in it can still speak: an upload that was
@@ -266,6 +269,7 @@ async def turn(s: Session[Any], plan: Plan) -> None:
         # The page it was meant for has been left.
         return
     token = context.bind(s)
+    began = context.on_visit(s.visit)
     rejected = False
     try:
         if plan.question is not None:
@@ -290,11 +294,18 @@ async def turn(s: Session[Any], plan: Plan) -> None:
     except Exception as exc:
         _report(s, plan, exc)
     finally:
+        context.off_visit(began)
         context.unbind(token)
     if plan.form is not None and not rejected:
         # The empty issue list is the form's acknowledgement: the draft was accepted.
         s.command("form_issues", node=plan.form, issues=[])
-    s.refresh()
+    if plan.typed:
+        # The field shows what was typed already, and a press may be right
+        # behind it: the page follows, and leaves the next drawing to that.
+        s.refresh()
+    else:
+        # What the handler did is what the person is looking at the page for.
+        s._refresh_now()
 
 
 def _report(s: Session[Any], plan: Plan, exc: Exception) -> None:

@@ -54,6 +54,21 @@ sessions go with it, and their tabs start fresh sessions elsewhere, as
 they would on a reload. The cookie is valid on every replica that has the
 same `secret`, and so is the one that names a [visitor](/pages/visitors).
 
+A connection that drops for a moment is where sticky routing helps. The
+session waits for its tab, for as long as `session_grace` says, on the
+replica that holds it. A router that sends the returning tab to any
+replica reaches that one by chance, one time in three with three
+replicas. On another replica the tab starts a fresh session, and what was
+typed, a running task and uploaded files stay behind with the old one
+until it ends.
+
+Cookie affinity in the load balancer settles this, with nothing changed
+in the app. The socket's handshake carries the browser's cookies like any
+request, so a balancer that pins a browser to a replica with a cookie of
+its own brings a returning tab back to its session. Check that the
+balancer picks another replica when the one a cookie names is gone.
+Affinity pins a browser, so all of its tabs are on one replica.
+
 Replicas serve the same version. A page names the files of its own
 version, so while two versions run side by side a browser has to get its
 page, its files and its socket from one of them. A new version takes the

@@ -122,7 +122,28 @@ def example(s):
     )
 ```
 
-A key is also how `s.reset(key)` returns a browser-owned control to its
-`default`, and how `ui.Button(form=key)` finds its form. `hidden=True`
-keeps a component in the tree without showing it, so its browser-side
-state survives. `cls` adds Tailwind classes for a spacing or sizing tweak.
+A key is also a component's name. `s.reset(key)` returns a browser-owned
+control to its `default`, with the keyboard still in it when it was.
+`s.focus(key)` puts the keyboard in a component, as
+[Inputs](/components/inputs) shows, and `s.highlight(key)` puts a frame
+around one, as [Feedback](/components/feedback) shows.
+`ui.Button(form=key)` finds its form.
+A key that several components have names them all: a reset reaches each
+of them, and the keyboard goes to the first on the page.
+
+`hidden=True` keeps a component in the tree without showing it, so its
+browser-side state survives. It is sent to the browser all the same, so
+it is no way to keep something from the person: what they may not see is
+left out of the page. `cls` adds Tailwind classes for a spacing or sizing
+tweak.
+
+What the browser keeps of a page ends when the person goes to another
+path: the text typed into a form, an input the page does not hold, the
+open tab of a strip, how a table is sorted. `/orders/1` and `/orders/2`
+are two paths, though one page function draws both. A sidebar, an
+assistant and the page's header keep theirs.
+
+Everything is kept when the path is the same and only its query changed.
+So a list that should stay sorted while the detail beside it changes
+names the detail in the query. A draft that should outlive its page is
+kept in state.

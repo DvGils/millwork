@@ -43,6 +43,10 @@ export function splice(list: unknown, edits: [number, number, unknown[]][]): unk
   return out;
 }
 
+// What goes with every page and keeps what the browser holds of it from
+// one page to the next: how a sidebar is folded, an assistant's window.
+const STAYS = new Set(["Sidebar", "Assistant"]);
+
 class Store {
   root: NodeId | null = null;
   title: string | null = null;
@@ -55,10 +59,26 @@ class Store {
   private rootListeners = new Set<Listener>();
   private snapshots = new Map<NodeId, Node>();
   private epochs = new Map<NodeId, number>();
+  // The page each part of the page body was first put here with. A part
+  // that is there again on another page, under the same id, is another
+  // part, and starts over: what was typed into a form on one page is not
+  // on the next. The parts that go with every page are left as they are,
+  // wherever in the page they stand.
+  private pages = new Map<NodeId, number>();
+  private page = 0;
 
-  mount(root: NodeId, nodes: Record<NodeId, Node>, title: string | null) {
+  // `another` says the person went to another page, where a tab that was
+  // given the page it already had says nothing.
+  mount(root: NodeId, nodes: Record<NodeId, Node>, title: string | null, another = false) {
     const previous = [...this.nodes.keys()];
     this.nodes = new Map(Object.entries(nodes));
+    if (another) {
+      this.page += 1;
+      this.pages.clear();
+      this.startOver(root, true);
+    } else {
+      for (const id of [...this.pages.keys()]) if (!this.nodes.has(id)) this.pages.delete(id);
+    }
     this.snapshots.clear();
     this.epochs.clear();
     this.root = root;
@@ -67,6 +87,27 @@ class Store {
     if (title && typeof document !== "undefined") document.title = title;
     for (const id of new Set([...previous, ...this.nodes.keys()])) this.notify(id);
     for (const l of this.rootListeners) l();
+  }
+
+  // Give the parts of a page that start over the number of the page. A
+  // `Page` is the frame around them and is kept, and so is whatever holds
+  // a part that stays, which is looked into for the parts beside it. A
+  // page whose root is something else, a form or a chat, starts over whole.
+  private startOver(id: NodeId, top: boolean) {
+    const node = this.nodes.get(id);
+    if (!node || STAYS.has(node.type)) return;
+    if ((top && node.type === "Page") || this.holdsWhatStays(node)) {
+      for (const child of node.children) this.startOver(child, false);
+      return;
+    }
+    this.pages.set(id, this.page);
+  }
+
+  private holdsWhatStays(node: Node): boolean {
+    return node.children.some((id) => {
+      const child = this.nodes.get(id);
+      return child !== undefined && (STAYS.has(child.type) || this.holdsWhatStays(child));
+    });
   }
 
   patch(ops: PatchOp[]) {
@@ -125,11 +166,12 @@ class Store {
     }
   }
 
-  // Remount the subtrees of every node whose key is `key`: client state goes back to default.
-  reset(key: string): number {
+  // Remount the subtrees of these nodes: client state goes back to default.
+  // The server names them, by the one rule it has for what a key stands for.
+  reset(ids: string[]): number {
     let count = 0;
-    for (const id of this.nodes.keys()) {
-      if (id.endsWith(`/${key}`)) {
+    for (const id of ids) {
+      if (this.nodes.has(id)) {
         this.epochs.set(id, (this.epochs.get(id) ?? 0) + 1);
         this.notify(id);
         count += 1;
@@ -140,6 +182,11 @@ class Store {
 
   epoch(id: NodeId): number {
     return this.epochs.get(id) ?? 0;
+  }
+
+  // The page a part of the page body came with, or 0 for anything else.
+  pageOf(id: NodeId): number {
+    return this.pages.get(id) ?? 0;
   }
 
   get(id: NodeId): Node | undefined {
@@ -200,6 +247,14 @@ export function useResetEpoch(id: NodeId): number {
     (l) => store.subscribe(id, l),
     () => store.epoch(id),
     () => store.epoch(id),
+  );
+}
+
+export function usePageOf(id: NodeId): number {
+  return useSyncExternalStore(
+    (l) => store.subscribe(id, l),
+    () => store.pageOf(id),
+    () => store.pageOf(id),
   );
 }
 

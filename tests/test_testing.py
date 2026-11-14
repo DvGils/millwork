@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 import millwork as mw
 from millwork import progress, ui
+from millwork.protocol import Event
 from millwork.testing import TestApp
 
 
@@ -122,6 +123,22 @@ async def test_open_click_and_patch(tmp_path: Path) -> None:
         with pytest.raises(LookupError):
             page.find("nope")
     assert app.sessions == {}
+
+
+async def test_a_test_sees_one_drawing_for_what_happened_before_it_settles(
+    tmp_path: Path,
+) -> None:
+    # A served session draws as a handler ends. A test's waits for the test
+    # to settle, so what a test sees is the same on a fast machine and a
+    # slow one.
+    async with TestApp(make_app(tmp_path)).open("/") as page:
+        assert page.session.answers_at_once is False
+        before = len(page.patches)
+        for _ in range(3):
+            page.session.event(Event(node="root/more", name="click"))
+        await page.settle()
+        assert page.find("count").props["content"] == "count 3"
+        assert len(page.patches) == before + 1
 
 
 async def test_state_skips_connect_and_navigate(tmp_path: Path) -> None:

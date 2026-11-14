@@ -243,6 +243,24 @@ def test_a_part_of_another_function_in_the_same_place_is_built() -> None:
     assert two.nodes["root/1:Tab/0:Text"].props["content"] == "new"
 
 
+def test_a_hidden_tab_is_not_among_the_tabs() -> None:
+    def tabs(**props: object) -> ui.Tabs:
+        return ui.Tabs(
+            ui.Tab(ui.Text("a"), id="a", label="A", hidden=True),
+            ui.Tab(ui.Text("b"), id="b", label="B"),
+            ui.Tab(ui.Text("c"), id="c", label="C"),
+            **props,
+        )
+
+    # The strip opens on the first tab that is there, and a hidden one is
+    # not one the browser can have said or the page can open on.
+    assert tabs().tab_ids() == ["b", "c"] and tabs().open_tabs() == ["b", "c"]
+    assert tabs().shown(None) == "b"
+    assert tabs().shown("a") == "b"
+    assert tabs(default="a").shown(None) == "b"
+    assert tabs(default="c").shown(None) == "c"
+
+
 def test_parts_inside_a_part_and_tabs_inside_a_tab() -> None:
     calls: list[str] = []
 
@@ -368,6 +386,39 @@ async def test_a_part_is_drawn_first_and_then_only_while_its_tab_is_open(tmp_pat
         assert s.state.calls == {"first": 4, "second": 3}
 
 
+async def test_the_open_tab_is_forgotten_on_another_page(tmp_path: Path) -> None:
+    app = mw.App("t", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/orders/{n}")
+    def order(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(own_tabs(s))
+
+    @app.page("/shut")
+    def shut(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("never"))
+
+    @shut.connect
+    def refuse(s: mw.Session[State]) -> None:
+        raise RuntimeError("no way in")
+
+    async with TestApp(app, strict=False).open("/orders/1") as page:
+        s = page.session
+        await page.change("tabs", "b")
+        assert s._showing == {"root/tabs": "b"}
+        # The same page with another query: the tab keeps its strip as it is.
+        await page.navigate("/orders/1?x=1")
+        assert s._showing == {"root/tabs": "b"}
+        # A page that does not come leaves it too.
+        await page.navigate("/shut")
+        assert s.path == "/orders/1?x=1" and s._showing == {"root/tabs": "b"}
+        # On another page the strip starts over in the tab, on its first
+        # tab, and that is the one the page is drawn by.
+        calls = dict(s.state.calls)
+        await page.navigate("/orders/2")
+        assert s._showing == {}
+        assert s.state.calls["first"] == calls["first"] + 1
+
+
 async def test_tabs_the_page_owns_need_no_word_from_the_browser(tmp_path: Path) -> None:
     def to(s: mw.Session[State], tab: str) -> None:
         s.state.tab = tab
@@ -487,7 +538,7 @@ async def test_a_kept_part_that_cannot_be_built_is_not_called(tmp_path: Path) ->
         assert go in page.tree
 
 
-async def test_what_the_tab_said_holds_on_a_page_whose_tabs_go_by_the_same_id(
+async def test_what_the_tab_said_is_not_for_another_page_whose_tabs_go_by_the_same_id(
     tmp_path: Path,
 ) -> None:
     app = make(tmp_path, own_tabs)
@@ -503,14 +554,16 @@ async def test_what_the_tab_said_holds_on_a_page_whose_tabs_go_by_the_same_id(
     async with TestApp(app).open("/") as page:
         s = page.session
         await page.change("tabs", "b")
-        # The browser keeps its tabs through the move and stays on B.
+        # On another page the browser draws the page's body anew, and its
+        # tabs are on their first tab again.
         await page.navigate("/other")
-        assert s._showing == {"root/tabs": "b"}
+        assert s._showing == {}
         await page.click("bump")
         await page.click("bump")
-        assert page.find("second").props["content"] == "second 2"
-        assert page.find("first").props["content"] == "first 0"
+        assert page.find("first").props["content"] == "first 2"
+        assert page.find("second").props["content"] == "second 0"
         # Where the tabs are gone, so is what was said about them.
+        await page.change("tabs", "b")
         await page.navigate("/plain")
         assert s._showing == {}
 

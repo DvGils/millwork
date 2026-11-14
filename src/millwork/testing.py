@@ -20,9 +20,9 @@ from millwork.auth import Forbidden
 from millwork.connection import Connection
 from millwork.files import FileRef, Reject, _read_chunks, fits
 from millwork.nodes import Component
-from millwork.protocol import Command, Event, Patch, ServerError, Stream, server_message
+from millwork.protocol import Command, Event, Mount, Patch, ServerError, Stream, server_message
 from millwork.scope import Scope
-from millwork.session import Session
+from millwork.session import Session, names
 from millwork.ui import Button, Checkbox, Custom, Link, Switch, Tabs
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
@@ -149,11 +149,7 @@ class Page:
                 continue
             component = tree.components.get(node_id)
             if isinstance(what, str):
-                hit = (
-                    node_id == what
-                    or node_id.rsplit("/", 1)[-1] == what
-                    or (component is not None and component.key == what)
-                )
+                hit = names(what, node_id, component)
             else:
                 hit = isinstance(component, what) or node.type == what.type
             if hit and all(_has(node, component, k, v) for k, v in props.items()):
@@ -177,6 +173,10 @@ class Page:
             where = "on the page" if within is None else f"in {within!r}"
             raise LookupError(f"no {name}{having} {where}")
         return found[0]
+
+    def outline(self, **how: Any) -> Any:
+        """The page as data, as ``s.outline()`` gives it to the app."""
+        return self.session.outline(**how)
 
     def text(self) -> str:
         """Every string prop of the tree, for a quick "is it there" check. A
@@ -424,6 +424,45 @@ class Page:
         """Press stop on a chat's running reply."""
         await self.event(chat, "stop")
 
+    @property
+    def marks(self) -> list[dict[str, Any]]:
+        """The highlights the tab has, as it was last given them. Each has
+        the ``id`` of its component, the ``field`` of a form when it is on
+        one, its ``color`` and ``style``, and its ``step`` when it has one.
+        One that waits for the steps before it has ``waits``."""
+        for message in reversed(self.messages):
+            if isinstance(message, Command) and message.name == "marks":
+                return [dict(mark) for mark in message.args.get("list") or []]
+            if isinstance(message, Mount):
+                # A page that is put on the tab brings its marks.
+                return [dict(mark) for mark in message.marks]
+        return []
+
+    def _mark(self, name: str) -> dict[str, Any]:
+        place = self.session.place(name)
+        for mark in self.marks:
+            if place == (mark["id"], mark.get("field")):
+                return mark
+        raise LookupError(f"nothing is highlighted at {name!r}")
+
+    async def touch(self, name: str) -> None:
+        """Get to a highlighted component as a person does: point at it,
+        press it or type in it. Its highlight goes, with the steps before
+        it. On one that waits for the steps before it, this is the press."""
+        mark = self._mark(name)
+        payload = {"n": mark["n"], "what": "touched"}
+        self.session.event(Event(node=mark["id"], name="mark", payload=payload))
+        await self.settle()
+
+    async def time_out(self, name: str) -> None:
+        """Let the time of a highlight that has ``seconds`` run out."""
+        mark = self._mark(name)
+        if "seconds" not in mark or mark.get("waits"):
+            raise LookupError(f"the highlight at {name!r} has no time running")
+        payload = {"n": mark["n"], "what": "timed out"}
+        self.session.event(Event(node=mark["id"], name="mark", payload=payload))
+        await self.settle()
+
     async def answer(self, payload: Any = None) -> None:
         """Answer the open ``ask``: ``True``/``False`` press OK or Cancel, a dict
         or model submits the form inside, ``None`` closes the dialog."""
@@ -598,6 +637,10 @@ class TestApp:
                 await result
 
     async def shutdown(self) -> None:
+        """Stop what the app spawned for itself and run its shutdown hooks,
+        in the order a served app does."""
+        self.app.background.cancel()
+        await self.app.background.wait(1.0)
         for fn in self.app._shutdown:
             result = fn()
             if asyncio.iscoroutine(result):
@@ -638,6 +681,9 @@ class TestApp:
         # What a page refuses with is raised in the test, where a running app
         # would land on its page for that.
         session.falls_back = False
+        # Drawings wait for the test to settle, and are not made as a handler
+        # ends: what a test sees does not depend on how fast it runs.
+        session.answers_at_once = False
         page = Page(session, strict=self.strict)
         if state is not None:
             session.state = state
