@@ -22,6 +22,7 @@ from millwork.forms import WIDGETS
 from millwork.icons import ICONS
 from millwork.nodes import Component
 from millwork.session import Session
+from millwork.signal import Signal
 from millwork.tasks import Reporter, StepHandle, Task
 from millwork.testing import Page
 from millwork.theme import Theme
@@ -48,7 +49,12 @@ SESSION_API = (
     "download",
     "logout",
     "reset",
+    "focus",
+    "highlight",
+    "outline",
+    "named",
     "refresh",
+    "follow",
     "connected",
     "task",
     "thread",
@@ -69,6 +75,7 @@ APP_API = (
     "middleware",
     "on_startup",
     "on_shutdown",
+    "spawn",
 )
 TASK_API = ("done", "ok", "cancelled", "result", "cancel")
 REPORTER_API = ("set", "plan", "step", "log", "check")
@@ -91,6 +98,10 @@ PAGE_API = (
     "event",
     "settle",
     "stream",
+    "outline",
+    "marks",
+    "touch",
+    "time_out",
 )
 
 
@@ -157,6 +168,9 @@ def reference() -> str:
     ]
     for name in SESSION_API:
         out.append(_call(f"s.{name}", getattr(Session, name)))
+    signal = (inspect.getdoc(Signal) or "").split("\n\n")[0].replace("\n", " ")
+    out.append(f"- `mw.Signal()`: {signal}")
+    out.append(_call("signal.fire", Signal.fire))
     out += [
         "",
         "## Tasks",
@@ -392,13 +406,21 @@ def _call(name: str, fn: Callable[..., Any] | property) -> str:
 
 def _signature(fn: Callable[..., Any], skip_self: bool) -> str:
     params = list(inspect.signature(fn).parameters.values())
-    if skip_self and params and params[0].name in ("self", "cls"):
+    # A session's method that is a function of its own module takes the
+    # session as ``s``.
+    if skip_self and params and params[0].name in ("self", "cls", "s"):
         params = params[1:]
     parts = []
+    starred = False
     for p in params:
         text = p.name
+        if p.kind is p.KEYWORD_ONLY and not starred:
+            # What follows is given by name.
+            parts.append("*")
+            starred = True
         if p.kind is p.VAR_POSITIONAL:
             text = "*" + text
+            starred = True
         elif p.kind is p.VAR_KEYWORD:
             text = "**" + text
         elif p.default is not p.empty:

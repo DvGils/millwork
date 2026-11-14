@@ -5,6 +5,18 @@ versions; a release says so here when it does.
 
 ## 0.4.1
 
+### Bug fixes
+
+- `millwork reference` left out what 0.4.0 added: `s.highlight`,
+  `s.outline`, `s.focus`, `s.named`, `s.follow`, `mw.Signal`, `app.spawn`
+  and, for a test, `page.outline`, `page.marks`, `page.touch` and
+  `page.time_out`. They are in it now.
+- In the reference, `s.ask`, `s.confirm`, `s.navigate_to` and `s.end`
+  were written with the session as their first argument, as
+  `s.ask(s, component)`. And an argument that is given by name only was
+  not marked as one: `s.outline(*, within=None, ...)` read as if
+  `within` could be given by place.
+
 ### The manual
 
 - The Welcome page's first sentence reads as it should.
