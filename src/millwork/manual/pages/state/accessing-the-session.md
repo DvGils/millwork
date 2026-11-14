@@ -126,15 +126,11 @@ open.
 
 ## The page as data
 
-`s.outline()` gives what the page holds for the person in front of it,
-said by each of its components. It is a dict for the page with one for
-each component under `children`: its `id`, its `type`, its `key` when it
-has one, and what a person reads on it, such as a label, a text, a value,
-a table's columns and first rows or a form's fields.
-`s.outline(as_text=True)` gives it as text, a line for a component with
-what it holds indented under it. An assistant in the app puts that in
-its model's prompt to answer what is on the page and where. `within=`
-names the component to start at.
+`s.outline()` gives the page as the person sees it, as data. An assistant
+in the app reads it to answer what is on the page and where. It is a dict
+for the page, with one for each component under `children`.
+`s.outline(as_text=True)` gives the same as text for a model's prompt,
+a line for a component with what it holds indented under it.
 
 ```python live
 from pydantic import BaseModel
@@ -160,57 +156,38 @@ def example(s):
                 key="orders",
             ),
             ui.Input(key="note", placeholder="A note"),
-            ui.Button("Export", key="export", disabled=True),
+            ui.Button("Export", key="export", variant="outline", disabled=True),
             title="Orders",
             key="outlined",
         ),
-        ui.Button("Read the card", variant="outline", on_click=look),
+        ui.Button("Read the card", on_click=look),
         ui.Code(s.state.looked.text, language="text"),
         gap=3,
     )
 ```
 
-It is made from what was sent to the tab, and holds less than that.
-Each kind of component says what a person reads on it and nothing else
-it was sent. A table gives the columns it shows and not the fields of a
-row that have no column, as `margin` above, nor the keys its rows are
-picked by. A number is given to the digits its column shows, in plain
-digits with a point, and an amount of money with the theme's currency
-after it. A date is given without its time of day. A chosen option is
-said by its label. A hidden component is not in it, nor a password, nor
-the props of an app's own component, though the components that one
-holds are. A field whose value the browser keeps says so and gives
-none, and so does a form, unless it is one that cannot be typed in.
+It says what a person reads on each component, and nothing else that was
+sent to the browser.
 
-What a press would bring up is in it, and says whether it shows now. A
-closed dialog says that it is closed. A group, a sidebar or an accordion
-says that it is folded where the page holds that with `open=` or
-`value=`, and that it may be where the browser keeps it. A tab says the
-same of being the open one. What a model should not read is kept out of
-such a place too, or left out with `hidden=True`. Only `hidden=True` is
-known here: what a class or a style of the app's takes off the screen
-is in it.
+| In it | Not in it |
+| --- | --- |
+| Labels, texts and the values the page holds | A hidden component and what is inside it |
+| The columns a table shows and its first rows | A row's fields that have no column, as `margin` above |
+| A form's fields, by name | What is typed into a form, which the browser keeps |
+| A chosen option, by its label | The value behind an option, and a password |
+| A closed dialog and a folded group, marked as that | The props of an app's own component |
+| What is highlighted | |
+
+`within=` starts at one component and gives `None` when it is not on the
+page. `rows=` is how many rows of a table, a chart or a chat are given,
+and `chars=` is where a text is cut. A page with hundreds of components
+is long as text, so an assistant on one reads a part of it.
+
+A component that can be pointed at has a name on its line, `key=` or
+`id=`, and a field of a form is named as `order/amount`. `s.focus` and
+`s.highlight` take those names.
 
 It is the page as it was last drawn, so a handler that changes state
-reads the page from before the change. A table's rows are the first it
-was given, and it says how it shows them: sorted by a column, so many
-to a page. What a form's last submit was turned down for is in it,
-until the form is drawn anew. In a `connect` hook no page is drawn yet,
-and there is nothing to give.
-
-`rows=` is how many rows of a table or a chart are given, and how many
-of a chat's last messages, and `chars=` is where a text is cut. A page
-that has the assistant's own chat on it has that conversation in it as
-well. `within=` reads the part of the page the question is about, and
-gives `None`, or no text, for a name that finds nothing or only what is
-hidden. No one component makes the text long, and a page with hundreds
-of them does, so an assistant on such a page reads a part.
-
-In the text, what the app gave stands in quotes, or bare where it is one
-plain word, so that a label or a cell cannot be read as a line of the
-outline. A component that can be pointed at has a name on its line:
-`key=` when its key finds no other component on the page, and `id=`
-otherwise. A field of a form is named by its form and where it is in it,
-as `order/amount`. Each is a name `s.focus` and `s.highlight` take. What
-is highlighted says so on its line. Keys and ids are in it as they are,
-and so is whatever a key was made from.
+reads the page from before the change. Only `hidden=True` keeps a
+component out of it. What a class or a style of the app's takes off the
+screen is still in it.

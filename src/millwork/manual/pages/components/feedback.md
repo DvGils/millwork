@@ -73,6 +73,8 @@ is done with it, by pointing at where it is done. The name is a key or an
 id, and `form/field` names a field of a form. Unlike a toast it stays:
 the session holds it until the person gets to the component.
 
+The buttons on top set highlights on the card under them.
+
 ```python live
 from pydantic import BaseModel
 
@@ -108,19 +110,23 @@ def inviting(open):
 def example(s):
     return ui.Stack(
         ui.Row(
-            ui.Button("Solid", key="hl-solid", variant="outline"),
-            ui.Button("Pulse", key="hl-pulse", variant="outline"),
-            ui.Button("Trace", key="hl-trace", variant="outline"),
-            ui.Button("Invite someone", key="hl-invite", on_click=inviting(True)),
-            gap=4,
-            wrap=True,
-        ),
-        ui.Row(
-            ui.Button("Show the three ways", variant="ghost", on_click=three),
-            ui.Button("Show how to invite", variant="ghost", on_click=steps),
-            ui.Button("Take them off", variant="ghost", on_click=lambda s, _: s.highlight(None)),
+            ui.Button("Show the three styles", on_click=three),
+            ui.Button("Show how to invite", on_click=steps),
+            ui.Button("Take them off", variant="outline", on_click=lambda s, _: s.highlight(None)),
             gap=2,
             wrap=True,
+        ),
+        ui.Card(
+            ui.Grid(
+                ui.Stat(label="Solid", value="128", hint="members", key="hl-solid"),
+                ui.Stat(label="Pulse", value="12", hint="invited", key="hl-pulse"),
+                ui.Stat(label="Trace", value="3", hint="teams", key="hl-trace"),
+                cols={"sm": 1, "md": 3},
+            ),
+            title="Members",
+            footer=ui.Button(
+                "Invite someone", key="hl-invite", variant="outline", on_click=inviting(True)
+            ),
         ),
         ui.Dialog(
             ui.Form(Invite, key="hl-form", submit=None, on_submit=inviting(False)),
@@ -130,7 +136,7 @@ def example(s):
             on_close=inviting(False),
             key="hl-dialog",
         ),
-        gap=3,
+        gap=4,
     )
 ```
 

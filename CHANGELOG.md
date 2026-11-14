@@ -3,6 +3,17 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.4.1
+
+### The manual
+
+- The Welcome page's first sentence reads as it should.
+- In Feedback, the example for highlights has the buttons that set a
+  highlight on top, as buttons, and what they point at in a card under
+  them.
+- In Accessing the session, the section on the page as data is a third
+  of its length, with what is in the outline and what is not in a table.
+
 ## 0.4.0
 
 ### Bug fixes

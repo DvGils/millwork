@@ -6,7 +6,7 @@ description: What millwork is and how this manual works.
 
 # millwork
 
-millwork is UI framework  for Python to easily create web applications with a professional feel. 
+millwork is a UI framework for Python to easily create web applications with a professional feel.
 The browser runs one prebuilt React bundle, and Python describes the page and
 handles what happens on it. You write Python only. There is no JavaScript
 to build, and every piece of state lives on the server.
