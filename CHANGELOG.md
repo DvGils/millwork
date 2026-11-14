@@ -34,6 +34,11 @@ versions; a release says so here when it does.
   names, by the rule the test harness has, and tells the tab.
 - `s.print()` from a page's `connect` hook opened the print dialog only
   after the next press. It follows the page now.
+- `hidden=True` on a `ui.Tab`, a `ui.AccordionItem` and a page's
+  `ui.Sidebar` hides it. A tab strip, an accordion and a page drew those
+  themselves and showed a hidden one all the same. A hidden tab has no
+  place in the strip, which does not open on it, and keeps what is in
+  it.
 
 ### Features
 

@@ -130,5 +130,7 @@ A key that several components have names them all: a reset reaches each
 of them, and the keyboard goes to the first on the page.
 
 `hidden=True` keeps a component in the tree without showing it, so its
-browser-side state survives. `cls` adds Tailwind classes for a spacing or
-sizing tweak.
+browser-side state survives. It is sent to the browser all the same, so
+it is no way to keep something from the person: what they may not see is
+left out of the page. `cls` adds Tailwind classes for a spacing or sizing
+tweak.

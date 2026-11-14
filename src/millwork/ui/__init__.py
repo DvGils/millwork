@@ -352,11 +352,14 @@ class Tabs(_Owned):
         return self
 
     def tab_ids(self) -> list[str]:
-        return [c.id for c in self.children if isinstance(c, Tab)]
+        """The ids of the tabs that are there. A hidden one is not."""
+        return [c.id for c in self.children if isinstance(c, Tab) and not c.hidden]
 
     def open_tabs(self) -> list[str]:
         """The ids of the tabs that can be chosen."""
-        return [c.id for c in self.children if isinstance(c, Tab) and not c.disabled]
+        return [
+            c.id for c in self.children if isinstance(c, Tab) and not c.disabled and not c.hidden
+        ]
 
     def shown(self, told: str | None) -> str | None:
         """The id of the open tab. With ``value`` the page says which it is.

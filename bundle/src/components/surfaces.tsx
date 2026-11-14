@@ -37,7 +37,7 @@ import { Badge as UiBadge } from "@/components/ui/badge";
 export const Tabs: Renderer = ({ node, props, emit }) => {
   const controlled = has(props, "value");
   const tabs = node.children;
-  const first = String(props.default ?? firstTabId(tabs));
+  const first = firstTabId(tabs, props.default);
   // The open tab, for tabs that keep their own choice. The server asks for
   // it with `track` when parts of the page under these tabs are only kept up
   // to date while their tab is open. It is said when the tabs appear and
@@ -78,14 +78,18 @@ export const Tabs: Renderer = ({ node, props, emit }) => {
   );
 };
 
-function firstTabId(ids: string[]): string {
-  const first = ids[0] ? store.get(ids[0]) : undefined;
-  return first ? String(first.props.id ?? "") : "";
+// A hidden tab is not among the tabs: it has no trigger and no panel, and
+// the strip does not open on it.
+function firstTabId(ids: string[], wanted?: unknown): string {
+  const shown = ids.map((id) => store.get(id)).filter((tab) => tab && !tab.props.hidden);
+  const named = shown.find((tab) => wanted != null && String(tab?.props.id) === String(wanted));
+  if (wanted != null && (named || shown.length === 0)) return String(wanted);
+  return shown[0] ? String(shown[0].props.id ?? "") : "";
 }
 
 function TabTrigger({ id }: { id: string }) {
   const tab = useNode(id);
-  if (!tab) return null;
+  if (!tab || tab.props.hidden) return null;
   const Icon = icon(tab.props.icon);
   return (
     <TabsTrigger value={String(tab.props.id)} disabled={Boolean(tab.props.disabled)}>
@@ -99,8 +103,15 @@ function TabTrigger({ id }: { id: string }) {
 function TabPanel({ id }: { id: string }) {
   const tab = useNode(id);
   if (!tab) return null;
+  // A hidden tab keeps what is in it, as any hidden component does, and
+  // shows none of it, whatever the strip is told to be on.
   return (
-    <TabsContent value={String(tab.props.id)} keepMounted className="flex flex-col gap-4">
+    <TabsContent
+      value={String(tab.props.id)}
+      keepMounted
+      className="flex flex-col gap-4"
+      style={tab.props.hidden ? { display: "none" } : undefined}
+    >
       <SlotChildren ids={tab.children} />
     </TabsContent>
   );

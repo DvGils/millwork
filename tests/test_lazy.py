@@ -243,6 +243,24 @@ def test_a_part_of_another_function_in_the_same_place_is_built() -> None:
     assert two.nodes["root/1:Tab/0:Text"].props["content"] == "new"
 
 
+def test_a_hidden_tab_is_not_among_the_tabs() -> None:
+    def tabs(**props: object) -> ui.Tabs:
+        return ui.Tabs(
+            ui.Tab(ui.Text("a"), id="a", label="A", hidden=True),
+            ui.Tab(ui.Text("b"), id="b", label="B"),
+            ui.Tab(ui.Text("c"), id="c", label="C"),
+            **props,
+        )
+
+    # The strip opens on the first tab that is there, and a hidden one is
+    # not one the browser can have said or the page can open on.
+    assert tabs().tab_ids() == ["b", "c"] and tabs().open_tabs() == ["b", "c"]
+    assert tabs().shown(None) == "b"
+    assert tabs().shown("a") == "b"
+    assert tabs(default="a").shown(None) == "b"
+    assert tabs(default="c").shown(None) == "c"
+
+
 def test_parts_inside_a_part_and_tabs_inside_a_tab() -> None:
     calls: list[str] = []
 
