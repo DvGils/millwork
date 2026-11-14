@@ -352,7 +352,7 @@ body.mw-dragging * {
 /* A light that goes around: a faint frame, and over it a stretch of the
    full color that turns. */
 .mw-mark-trace {
-    box-shadow: 0 0 0 2px color-mix(in oklab, var(--mw-mark) 28%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--mw-mark) 45%, transparent);
 }
 .mw-mark-trace::before {
     content: "";
@@ -362,10 +362,11 @@ body.mw-dragging * {
     border-radius: calc(var(--radius) + 3px);
     background: conic-gradient(
         from var(--mw-mark-turn),
-        transparent 0 55%,
-        var(--mw-mark) 90%,
+        transparent 0 40%,
+        var(--mw-mark) 88%,
         transparent 100%
     );
+    filter: drop-shadow(0 0 3px var(--mw-mark));
     mask:
         linear-gradient(#000 0 0) content-box exclude,
         linear-gradient(#000 0 0);
