@@ -1,5 +1,5 @@
-"""Record the README's GIFs from ``demo.py``: thirteen seconds of the app being
-used, once in the light and once in the dark, for a reader in either. Run
+"""Record the README's GIFs from ``demo.py``: twenty seconds of the app being
+used, at the pace it was used at, once in the light and once in the dark, for a reader in either. Run
 from the repository root:
 
     uv run python .github/readme/record.py
@@ -147,15 +147,22 @@ class Tab:
         await self.eval(f"(() => {{ const e = {js_element}; e.focus(); e.select(); }})()")
 
     async def capture(self, seconds: float) -> None:
-        """Frames at FPS for this long, the app running meanwhile."""
-        end = time.monotonic() + seconds
+        """Frames at FPS for this long, the app running meanwhile. A picture
+        takes a while to make, so one may have to stand for the frames that
+        fell due meanwhile: the GIF then plays as long as the recording took,
+        and not faster."""
+        start = time.monotonic()
+        made = 0
         while True:
             r = await self.call("Page.captureScreenshot", format="png")
-            self.frames.append(base64.b64decode(r["data"]))
-            left = end - time.monotonic()
-            if left <= 0:
+            frame = base64.b64decode(r["data"])
+            now = time.monotonic() - start
+            due = max(made + 1, min(int(now * FPS) + 1, round(seconds * FPS)))
+            self.frames.extend([frame] * (due - made))
+            made = due
+            if now >= seconds or made >= round(seconds * FPS):
                 break
-            await asyncio.sleep(min(1 / FPS, left))
+            await asyncio.sleep(max(0.0, made / FPS - (time.monotonic() - start)))
 
 
 def browser() -> str:
@@ -187,14 +194,14 @@ async def record(tab: Tab) -> None:
     await tab.click(
         "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add')"
     )
-    await tab.capture(1.1)
+    await tab.capture(1.3)
     await tab.select_all(amount)
     await tab.type("980")
     await tab.capture(0.3)
     await tab.click(
         "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add')"
     )
-    await tab.capture(1.0)
+    await tab.capture(1.2)
 
     # 2. An import with progress, the table and the chart following it.
     await tab.click(
@@ -210,7 +217,7 @@ async def record(tab: Tab) -> None:
     await tab.key("Enter")
     # The answer, the highlight it sets around the figure it is about, and a
     # moment on the finished page before the loop starts over.
-    await tab.capture(6.3)
+    await tab.capture(5.8)
 
 
 def gif(frames: list[bytes], out: Path) -> None:
