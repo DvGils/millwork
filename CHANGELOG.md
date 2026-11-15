@@ -16,6 +16,15 @@ versions; a release says so here when it does.
   `s.ask(s, component)`. And an argument that is given by name only was
   not marked as one: `s.outline(*, within=None, ...)` read as if
   `within` could be given by place.
+- Work that a handler started with `app.spawn` ran as that handler's
+  session for as long as it ran. `mw.session()` in it gave that session,
+  also after the session had ended, and the session stayed in memory
+  until the work was done. Work started inside a task reported its
+  progress as that task. The work is the app's now, whoever started
+  it, and has no session and no task. `app.spawn` said it was called
+  from a startup hook, and says now that a handler may call it too.
+- A handler that did nothing but start work with `s.spawn` or
+  `app.spawn` was warned that it had changed nothing.
 
 ### Features
 

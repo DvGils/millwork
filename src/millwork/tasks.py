@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, GetCoreSchemaHandler
 from pydantic_core import core_schema
 
+from millwork.context import says_whose
+
 if TYPE_CHECKING:
     from millwork.scope import Timer
     from millwork.session import Session
@@ -538,8 +540,8 @@ class _NoStep:
         pass
 
 
-_reporter: ContextVar[Reporter | None] = ContextVar("millwork_progress", default=None)
-_steps: ContextVar[tuple[Step, ...]] = ContextVar("millwork_steps", default=())
+_reporter: ContextVar[Reporter | None] = says_whose(ContextVar("millwork_progress", default=None))
+_steps: ContextVar[tuple[Step, ...]] = says_whose(ContextVar("millwork_steps", default=()))
 _none = _NoReporter()
 
 

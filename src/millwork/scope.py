@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Coroutine
+from contextvars import Context
 from typing import Any
 
 log = logging.getLogger("millwork.scope")
@@ -62,8 +63,10 @@ class Scope:
         coro: Coroutine[Any, Any, Any],
         name: str,
         done: Callable[[asyncio.Task[Any] | None], None] | None = None,
+        context: Context | None = None,
     ) -> asyncio.Task[Any] | None:
-        """Run ``coro`` as a child of this scope.
+        """Run ``coro`` as a child of this scope, in ``context`` when one
+        is given and in a copy of the caller's otherwise.
 
         ``done`` is called once when the child is finished, cancelled, or was
         never started because the scope was cancelled already. It gets the
@@ -75,7 +78,9 @@ class Scope:
             if done is not None:
                 done(None)
             return None
-        task = asyncio.get_running_loop().create_task(coro, name=f"{self.name}: {name}")
+        task = asyncio.get_running_loop().create_task(
+            coro, name=f"{self.name}: {name}", context=context
+        )
         self._children.add(task)
 
         def finished(t: asyncio.Task[Any]) -> None:
@@ -86,7 +91,9 @@ class Scope:
             if done is not None:
                 done(t)
 
-        task.add_done_callback(finished)
+        # A task keeps the context its callback was added in, for as long as
+        # the task lives.
+        task.add_done_callback(finished, context=context)
         return task
 
     def later(

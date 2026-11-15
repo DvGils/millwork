@@ -2,13 +2,16 @@
 shows it."""
 
 import asyncio
+import gc
+import weakref
+from contextvars import ContextVar
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
 import millwork as mw
-from millwork import ui
+from millwork import context, ui
 from millwork.testing import TestApp
 
 
@@ -214,8 +217,129 @@ def test_work_is_spawned_once_the_app_runs() -> None:
     async def listen() -> None:
         pass
 
-    with pytest.raises(RuntimeError, match=r"@app\.on_startup"):
+    with pytest.raises(RuntimeError, match=r"@app\.on_startup, from a handler"):
         app.spawn(listen())
+
+
+def spawning_app(
+    work: Any, hold: asyncio.Event | None = None
+) -> tuple[mw.App, list[asyncio.Task[Any] | None]]:
+    """An app whose button starts ``work`` for the app, and another that
+    starts it from inside a task, which then waits for ``hold``."""
+    app = mw.App("clocks", state=State, public=None)
+    started: list[asyncio.Task[Any] | None] = []
+
+    def start(s: mw.Session[State], _: Any) -> None:
+        started.append(app.spawn(work(), "a clock"))
+
+    async def in_a_task() -> None:
+        started.append(app.spawn(work(), "a clock"))
+        if hold is not None:
+            await hold.wait()
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Button("start", key="start", on_click=start),
+            ui.Button("task", key="task", on_click=lambda s, _: s.task(in_a_task)),
+            ui.Button("mine", key="mine", on_click=lambda s, _: s.spawn(work(), "mine")),
+        )
+
+    return app, started
+
+
+async def test_work_a_handler_spawns_for_the_app_is_no_session_s() -> None:
+    saw: list[Any] = []
+    go_on = asyncio.Event()
+
+    async def clock() -> None:
+        saw.append((context.current(), context.visit(), mw.progress()))
+        await go_on.wait()
+        saw.append((context.current(), context.visit(), mw.progress()))
+
+    app, started = spawning_app(clock)
+    t = TestApp(app)
+    async with t.open("/") as ada:
+        await ada.click("start")
+        await asyncio.sleep(0)
+        gone = weakref.ref(ada.session)
+        assert gone() is not None
+    del ada
+    gc.collect()
+    # The clock runs on, and it does not keep the session that started it.
+    assert started[0] is not None and not started[0].done()
+    assert gone() is None
+    go_on.set()
+    await asyncio.sleep(0)
+    nobody = type(mw.progress())
+    assert [(s, visit, type(p)) for s, visit, p in saw] == [(None, None, nobody)] * 2
+    await t.shutdown()
+
+
+async def test_work_a_task_spawns_for_the_app_is_not_that_task_s() -> None:
+    saw: list[Any] = []
+    hold, ran, go_on = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def clock() -> None:
+        saw.append(context.current())
+        mw.progress().set(0.5, "from the clock")
+        ran.set()
+        await go_on.wait()
+
+    app, started = spawning_app(clock, hold)
+    t = TestApp(app)
+    async with t.open("/") as ada:
+        # A click is over when the task it started is.
+        clicking = asyncio.ensure_future(ada.click("task"))
+        await asyncio.wait_for(ran.wait(), 1)
+        task = ada.session.tasks[0]
+        # The task still runs, and the clock's report was not one of its own.
+        assert saw == [None]
+        assert not task.done and task.message is None and task.progress is None
+        hold.set()
+        await clicking
+        gone = weakref.ref(ada.session)
+    del ada, task, clicking
+    gc.collect()
+    # Neither is the session kept through the task the clock was started in.
+    assert started[0] is not None and not started[0].done()
+    assert gone() is None
+    go_on.set()
+    await t.shutdown()
+
+
+async def test_work_for_the_app_keeps_what_the_app_put_in_its_own_context() -> None:
+    tenant: ContextVar[str] = ContextVar("tenant", default="none")
+    saw: list[str] = []
+
+    async def clock() -> None:
+        saw.append(tenant.get())
+
+    app, _ = spawning_app(clock)
+
+    @app.on_startup
+    def start() -> None:
+        tenant.set("acme")
+        app.spawn(clock(), "a clock")
+
+    t = TestApp(app)
+    async with t.open("/"):
+        await asyncio.sleep(0)
+    assert saw == ["acme"]
+    await t.shutdown()
+
+
+@pytest.mark.parametrize("button", ["start", "mine"])
+async def test_a_handler_that_only_spawns_work_did_something(button: str) -> None:
+    async def clock() -> None:
+        await asyncio.sleep(0)
+
+    app, _ = spawning_app(clock)
+    t = TestApp(app)
+    async with t.open("/") as ada:
+        await ada.click(button)
+        assert not any(key.startswith("noop:") for key in ada.session._warned)
+    await t.shutdown()
 
 
 async def test_what_fired_while_a_page_did_not_come_is_drawn_when_the_session_is_back() -> None:

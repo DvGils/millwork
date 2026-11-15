@@ -8,7 +8,7 @@ the context, so it is visible from a sync task's thread too.
 
 from __future__ import annotations
 
-from contextvars import ContextVar
+from contextvars import Context, ContextVar, copy_context
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -66,6 +66,29 @@ def on_visit(number: int | None) -> object:
 
 def off_visit(token: object) -> None:
     _visit.reset(token)  # type: ignore[arg-type]
+
+
+# The variables that say whose the running work is: a session's, a visit's,
+# a task's.
+_whose: list[ContextVar[Any]] = [_session, _auth, _visit]
+
+
+def says_whose[V: ContextVar[Any]](var: V) -> V:
+    """Count a variable among the ones that say whose the running work is.
+    It has a default, which is what it says of work that is nobody's."""
+    _whose.append(var)
+    return var
+
+
+def of_nobody() -> Context:
+    """The current context for work that is nobody's: a copy in which no
+    session, visit or task is the current one. Work started in a handler
+    for the app would otherwise run as that handler's session for as long
+    as it runs, and keep the session from being let go when it has ended."""
+    apart = copy_context()
+    for var in _whose:
+        apart.run(var.set, Context().run(var.get))
+    return apart
 
 
 def bind(s: Session[Any] | None) -> object:

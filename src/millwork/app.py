@@ -35,7 +35,7 @@ from starlette.responses import (
 from starlette.routing import Mount, Route, WebSocketRoute, compile_path
 from starlette.staticfiles import StaticFiles
 
-from millwork import __version__
+from millwork import __version__, context
 from millwork.access import ALLOWED, REFUSED, Rule, Verdict, ask, rule_for
 from millwork.auth import Auth, _same_origin
 from millwork.files import Files
@@ -575,19 +575,28 @@ class App:
 
     def spawn(self, coro: Any, what: str = "work") -> asyncio.Task[Any] | None:
         """Run a coroutine for as long as the app runs: one that listens to
-        a database for changes, say. Called from a startup hook. It is
-        stopped when the app stops, before the shutdown hooks run, and a
-        failure it lets out is logged. On an app that is stopping it does
-        not run at all, and there is no task to return."""
+        a database for changes, say, or the clock of a game that several
+        sessions play. Called from a startup hook, or from a handler for
+        work that begins later. The work is the app's, whoever started it.
+        It runs on when the session that started it has ended, and
+        ``mw.session()`` has no session in it. It is stopped when the app
+        stops, before the shutdown hooks run, and a failure it lets out is
+        logged. On an app that is stopping it does not run at all, and
+        there is no task to return."""
         try:
             asyncio.get_running_loop()
         except RuntimeError:
             coro.close()
             raise RuntimeError(
-                "app.spawn() runs work once the app is running: call it from a function"
-                " registered with @app.on_startup"
+                "app.spawn() starts work on the app's event loop, which is not running"
+                " here: call it from a function registered with @app.on_startup, from a"
+                " handler or from an async task, and not from a thread or before the app"
+                " runs"
             ) from None
-        return self.background.start(coro, what)
+        started_by = context.current()
+        if started_by is not None:
+            started_by._tasks_started += 1
+        return self.background.start(coro, what, context=context.of_nobody())
 
     def on_shutdown(self, fn: Callable[[], Any]) -> Callable[[], Any]:
         """Decorator: runs once when the server stops."""

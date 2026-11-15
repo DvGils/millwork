@@ -126,6 +126,11 @@ async def watch_orders() -> None:
 Either way it is one listener for the process, however many tabs are
 open.
 
+A handler can call `app.spawn` as well, for work that begins later, such
+as the clock of a game that one visitor opens and several play. That work
+is the app's, not that of the session whose handler started it, so it
+runs on when that session has ended.
+
 ## The page as data
 <!-- keywords: agent, llm context, dom, accessibility tree, read what is on screen -->
 
