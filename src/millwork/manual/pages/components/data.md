@@ -112,7 +112,10 @@ def example(s):
 `tones` colors rows. It is a function of the row returning a tone, or a
 mapping from column key to a function of the row and the cell, called as
 `fn(row, value)`. The row is the one given in `rows`, so a model is still
-a model there, and returning `None` leaves the row or cell as it is. A row's
+a model there. The value is the cell as it goes to the tab, before the
+column's `format`. A number is a number, a date is its ISO text, a
+`Decimal` is its text and an `Enum` its value, and the row has each as it
+was given. Returning `None` leaves the row or cell as it is. A row's
 tone tints the row, and a cell's tone colors the cell's text, or the
 badge when the column is one.
 

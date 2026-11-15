@@ -85,6 +85,9 @@ versions; a release says so here when it does.
   reaches, what the handler may return, and that the page is not drawn
   for it. Another says how a component with many rows stays fast.
 - Testing says how to read the file a download sent.
+- A table's `tones` function was said to get "the cell as the table
+  shows it". It gets the value before the column's `format`, and Data
+  and the reference say so.
 - Form says what `layout` takes.
 
 ## 0.4.0
