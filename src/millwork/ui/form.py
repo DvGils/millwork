@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Type  # noqa: UP035
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from millwork.forms import Issue, choice, field_spec
 from millwork.nodes import Component
@@ -28,6 +28,9 @@ class Form(Component):
     submit: str | None = "Save"
     cancel: str | None = None
     layout: Literal["vertical", "horizontal"] | int = "vertical"
+    """Where a field's label stands, above it or beside it, or a number of
+    columns from 1 to 12 that the fields are laid out in, labels above. On
+    a narrow screen the columns are one."""
     fields: list[str] | None = None
     labels: Mapping[str, Mapping[str, Any]] | None = None
     # pointer (or field name) to spec keys: widget, choices, placeholder, min, max, step, rows...
@@ -38,6 +41,13 @@ class Form(Component):
     dense: bool = False
     on_submit: Any = None
     on_cancel: Any = None
+
+    @field_validator("layout")
+    @classmethod
+    def _columns(cls, layout: str | int) -> str | int:
+        if isinstance(layout, int) and not 1 <= layout <= 12:
+            raise ValueError(f"a form has 1 to 12 columns, not {layout}")
+        return layout
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 

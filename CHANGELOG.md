@@ -38,6 +38,9 @@ versions; a release says so here when it does.
   read-only, and a button's `on_click` ran while another handler was
   at work. A request now reaches a `Combobox`'s `on_search` and the
   handlers in a custom component's `events`, and no other.
+- `ui.Form(layout=5)` drew one column. A form took any number and had
+  columns for 2, 3 and 4 only. It now has 1 to 12, as `ui.Grid` has, and
+  another number is refused when the form is made.
 
 ### Features
 
@@ -82,6 +85,7 @@ versions; a release says so here when it does.
   reaches, what the handler may return, and that the page is not drawn
   for it. Another says how a component with many rows stays fast.
 - Testing says how to read the file a download sent.
+- Form says what `layout` takes.
 
 ## 0.4.0
 

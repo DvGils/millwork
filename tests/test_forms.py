@@ -297,6 +297,21 @@ async def test_forms_over_the_wire_nested_lists_unions_and_rejections(tmp_path) 
         assert len(page.commands) == before and not any(isinstance(v, Strict) for v in got)
 
 
+def test_a_form_has_one_to_twelve_columns() -> None:
+    from millwork.nodes import build
+
+    for columns in (1, 5, 12):
+        assert (
+            build(ui.Form(Strict, key="f", layout=columns)).nodes["root"].props["layout"] == columns
+        )
+    for columns in (0, -2, 13):
+        with pytest.raises(ValueError, match=f"a form has 1 to 12 columns, not {columns}"):
+            ui.Form(Strict, key="f", layout=columns)
+    assert build(ui.Form(Strict, key="f", layout="horizontal")).nodes["root"].props["layout"] == (
+        "horizontal"
+    )
+
+
 def test_form_initial_must_be_a_model_or_a_mapping() -> None:
     from millwork.nodes import build
 

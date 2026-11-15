@@ -24,6 +24,10 @@ with `issue_`, so it is in the app's language. A validator of the model's
 own is shown with the words it raised, whether that is a `ValueError` or
 a `PydanticCustomError`.
 
+`layout` is `"vertical"` with each label above its field,
+`"horizontal"` with the label beside it, or a number of columns from 1
+to 12. On a narrow screen the columns are one.
+
 ```python live
 import datetime as dt
 from typing import Literal
