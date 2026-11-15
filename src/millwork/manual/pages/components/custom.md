@@ -90,6 +90,45 @@ is `"Ada"`, and there is no `props["props"]`.
 `await page.event("hello", "wave", 3)` sends one of its events by name.
 [Testing](/testing) has more.
 
+## Asking a handler
+<!-- keywords: request, promise, fetch, rpc, load on demand, lookup -->
+
+`emit` says that something happened, and the page is drawn again when
+its handler is done. `request(name, payload)` asks for something the
+component wants to know, such as the rows behind a preview or whether a
+name is free. It reaches the handler that `events` has under that name
+and gives a promise of what the handler returns.
+
+```jsx
+const rows = await request("preview", { table: "orders" });
+```
+
+```python
+ui.Custom("Preview", key="orders", events={"preview": lambda s, asked: load_rows(asked["table"])})
+```
+
+The answer goes to the component as the handler gave it. That is a
+dict, a list, a string, a number or `None`, and a model, a dataclass, a
+date or a `Decimal` as the JSON it makes, the last two as text. The page
+is not drawn for a request and other handlers do not wait for it, so the
+handler reads and leaves state alone. A handler that raises rejects the
+promise. So does an answer that cannot be made into JSON, and a name
+that `events` does not have. In a test,
+`await page.request("orders", "preview", {"table": "orders"})` gives the
+answer.
+
+## A large component
+<!-- keywords: performance, memo, slow, re-render, many rows -->
+
+A component is drawn again when one of its props changes. Python sends
+only the props that changed, and of a prop that is a list of sixteen
+rows or more, only the rows that changed, as long as that is under half
+of them. The rows that were not sent are the same objects in the browser
+as they were. In a list of two hundred rows where one changed, the other
+rows are the objects they were. So a component with many rows gets them
+as a prop of their own, draws each row in a component of its own wrapped
+in React's `memo`, and a change to one row draws that row.
+
 ## In a chat's composer
 
 `ui.Chat(tools=[...])` puts components in the composer, left of Send.

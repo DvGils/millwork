@@ -97,6 +97,13 @@ message's actions, and a disabled or read-only `Form` still takes
 A click on a `Button` with `form=` submits that form in a browser. The
 draft is the test's to give, so the test calls `submit(form, draft)`.
 
+`request(node, name, payload)` asks a handler and returns its answer as
+the tab would get it. That is what a custom component does with
+`request`, and what a `Combobox` with `on_search` does as someone types,
+under the name `"search"` with the text typed.
+`await page.request("who", "search", "ad")` is the list of options the
+search found. A request the page does not take raises `LookupError`.
+
 A file that is refused raises `millwork.files.Reject`, whose message is
 the reason. A `FileUpload` with `on_reject` is told first, with the
 reason a browser would show. What a browser could not send is refused
@@ -129,8 +136,10 @@ async def test_the_form_rejects_a_short_name(app):
 
 ## Questions and tasks
 
-A click on a `Download` is the download its button starts. A handler that
-calls `s.confirm` or `s.ask` stops and waits. The test sees
+A click on a `Download` is the download its button starts. The file is
+in the session by the id the tab was told, so its text is
+`page.session.files.get(page.commands[-1].args["id"]).path.read_text()`.
+A handler that calls `s.confirm` or `s.ask` stops and waits. The test sees
 the dialog on the page and answers it with `page.answer(value)`, `False`,
 or `None` for a dismissal. A task started by a handler has run by the time
 the action returns, and `page.session.tasks[-1]` has its `ok`, `result`

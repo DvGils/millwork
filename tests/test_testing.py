@@ -1,6 +1,7 @@
 """millwork.testing: a session driven without a socket, observed on its wire."""
 
 import asyncio
+import datetime as dt
 from pathlib import Path
 from typing import Any
 
@@ -988,3 +989,124 @@ async def test_a_question_that_is_no_dialog_is_asked_in_one(tmp_path: Path) -> N
         (form,) = page.find_all(ui.Form, within=asked())
         await page.event(form, "cancel")
         assert page.state.got[3:] == ["Bo", "Cy", "Di", "None"]
+
+
+class Hit(BaseModel):
+    id: int
+    on: dt.date
+
+
+def answering_app() -> mw.App:
+    """A custom component with handlers to ask, and three boxes to search in."""
+    app = mw.App("t", state=State, public=None)
+
+    def count(s: mw.Session[State], _: Any) -> int:
+        s.state.count += 1
+        return s.state.count
+
+    def fail(s: mw.Session[State], _: Any) -> None:
+        raise ValueError("no such table")
+
+    def heard(s: mw.Session[State], _: Any) -> None:
+        s.state.count += 100
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Text(f"count {s.state.count}", key="count"),
+            ui.Custom(
+                "Grid",
+                key="grid",
+                events={
+                    "numbers": lambda s, _: [1, 2, 3],
+                    "rows": lambda s, _: [{"id": 7, "name": "Ada", "score": 9.5}],
+                    "names": lambda s, _: ["a", "b"],
+                    "pair": lambda s, asked: (asked, 2),
+                    "found": lambda s, _: [Hit(id=1, on=dt.date(2026, 1, 2))],
+                    "nothing": lambda s, _: None,
+                    "count": count,
+                    "fail": fail,
+                },
+            ),
+            ui.Custom("Grid", key="unseen", hidden=True, events={"numbers": lambda s, _: [4]}),
+            ui.Combobox(key="who", on_search=lambda s, q: [("a1", "Ada"), "bob", {"value": q}]),
+            ui.Combobox(key="nobody", on_search=lambda s, q: None),
+            ui.Combobox(key="off", disabled=True, on_search=lambda s, q: []),
+            ui.Combobox(key="away", hidden=True, on_search=lambda s, q: []),
+            ui.Form(Settings, key="settings", on_submit=heard),
+            ui.Button("more", key="more", on_click=heard),
+            ui.Select(key="pick", options=["a", "b"], on_change=heard),
+        )
+
+    return app
+
+
+async def test_what_a_custom_component_asks_for_comes_as_the_handler_gave_it() -> None:
+    async with TestApp(answering_app()).open("/") as page:
+        assert await page.request("grid", "numbers") == [1, 2, 3]
+        assert await page.request("grid", "rows") == [{"id": 7, "name": "Ada", "score": 9.5}]
+        assert await page.request("grid", "names") == ["a", "b"]
+        assert await page.request("grid", "pair", "x") == ["x", 2]
+        assert await page.request("grid", "found") == [{"id": 1, "on": "2026-01-02"}]
+        assert await page.request("grid", "nothing") is None
+        # One that does not show goes on running in a tab, and asks.
+        assert await page.request("unseen", "numbers") == [4]
+
+
+async def test_what_a_search_finds_comes_as_options() -> None:
+    async with TestApp(answering_app()).open("/") as page:
+        assert await page.request("who", "search", "cy") == [
+            {"value": "a1", "label": "Ada"},
+            {"value": "bob", "label": "bob"},
+            {"value": "cy"},
+        ]
+        assert await page.request("nobody", "search", "cy") == []
+
+
+async def test_a_request_draws_nothing() -> None:
+    async with TestApp(answering_app()).open("/") as page:
+        before = len(page.messages)
+        assert await page.request("grid", "count") == 1
+        # The answer is all the tab is sent, also when the handler changed state.
+        assert len(page.messages) == before + 1
+        assert page.find("count").props["content"] == "count 0"
+
+
+async def test_a_request_the_page_does_not_take_fails_the_test() -> None:
+    async with TestApp(answering_app()).open("/") as page:
+        with pytest.raises(LookupError, match="takes no 'sums' request"):
+            await page.request("grid", "sums")
+        with pytest.raises(LookupError, match="is disabled"):
+            await page.request("off", "search", "a")
+        with pytest.raises(LookupError, match="is hidden"):
+            await page.request("away", "search", "a")
+        with pytest.raises(LookupError, match="takes no 'search' request"):
+            await page.request("count", "search", "a")
+
+
+async def test_a_handler_for_an_event_is_not_one_to_ask() -> None:
+    # Asked, a handler runs outside the turn and its payload is not checked:
+    # a form's would get a draft that nothing validated.
+    async with TestApp(answering_app()).open("/") as page:
+        for node, name, payload in (
+            ("settings", "submit", {"project_name": 5}),
+            ("more", "click", None),
+            ("pick", "change", "c"),
+            ("grid", "event", ["numbers", None]),
+        ):
+            with pytest.raises(LookupError, match=f"takes no '{name}' request"):
+                await page.request(node, name, payload)
+        assert page.state.count == 0
+        # The event itself is taken as it always was.
+        await page.click("more")
+        assert page.state.count == 100
+
+
+async def test_a_handler_that_raises_when_asked_fails_the_test_or_the_request() -> None:
+    with pytest.raises(ValueError, match="no such table"):
+        async with TestApp(answering_app()).open("/") as page:
+            await page.request("grid", "fail")
+    async with TestApp(answering_app(), strict=False).open("/") as page:
+        with pytest.raises(RuntimeError, match="The request failed"):
+            await page.request("grid", "fail")
+        assert [type(exc) for _, exc in page.failures] == [ValueError]

@@ -99,6 +99,7 @@ PAGE_API = (
     "toast_action",
     "navigate",
     "event",
+    "request",
     "settle",
     "stream",
     "outline",

@@ -115,6 +115,11 @@ class Component(BaseModel):
     handler_args: ClassVar[dict[str, tuple[str, ...]]] = {}
     # What the payload is, per handler prop, in the reference's words.
     payloads: ClassVar[dict[str, str]] = {}
+    # The names a tab may ask this component's handlers by, each with what
+    # is made of the answer before it goes to the tab. A handler that is
+    # asked runs outside the turn, with nothing about its payload checked,
+    # so a handler for an event is not one to ask.
+    answers: ClassVar[dict[str, Callable[[Any], Any]]] = {}
     # True for a component that does nothing without a session behind it: it
     # talks to Python over the socket whatever its handlers are. A page drawn
     # before anyone has signed in cannot hold one.
@@ -139,6 +144,11 @@ class Component(BaseModel):
         """Which children show now, for a component that shows some of them
         at a time. ``told`` is what the tab last said it shows."""
         return None
+
+    def asked(self, name: str) -> Callable[[Any], Any] | None:
+        """What is made of a handler's answer to a request by this name, or
+        None when the component is not one to ask by it."""
+        return self.answers.get(name)
 
     def wire_extra(self) -> dict[str, Any]:
         """Extra props computed at render time. Override in components that need it."""
