@@ -53,6 +53,14 @@ versions; a release says so here when it does.
   them.
 - In Accessing the session, the section on the page as data is a third
   of its length, with what is in the outline and what is not in a table.
+- Where a handler waits on a task or on `s.ask`, the manual and the
+  reference say what happens meanwhile, that other handlers run and the
+  page stays live, where they said that the handler "lends its turn".
+  `s.navigate_to` said the same and says now that the handler goes on
+  once the session is on the next page.
+- Custom components and the reference say what a test sees of one: the
+  props it was given in `props=` are the node's own props, and
+  `page.event` sends one of its events.
 
 ## 0.4.0
 

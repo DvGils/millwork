@@ -8,8 +8,9 @@ description: Work that runs beyond a handler, with progress, steps and cancel.
 <!-- keywords: background job, async, worker, long running, cancel -->
 
 Work that takes longer than a click goes in a task. The session owns it, the
-page shows its progress, and the user can cancel it. A handler that awaits a
-task lends the handler's turn, so the page stays live meanwhile.
+page shows its progress, and the user can cancel it. The page stays live
+while a handler awaits a task. It is drawn as the task reports, and other
+handlers run.
 
 ## Starting one
 
@@ -87,7 +88,7 @@ stops at its next check.
 
 ## Waiting for a result
 
-A handler can `await` the task to use its result, and lends its turn
+A handler can `await` the task to use its result. Other handlers run
 while it waits. When the task was canceled the `await` raises
 `mw.Cancelled`, which the handler can catch, and when the task failed it
 raises what the task raised. A failure that comes while a handler is

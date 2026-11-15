@@ -71,6 +71,7 @@ def example(s):
         ui.Text("Children from Python render inside the custom component.", variant="muted"),
         props={"who": "Ada", "count": st.count},
         events={"wave": waved},
+        key="hello",
     )
 ```
 
@@ -82,9 +83,12 @@ drawn, and says which icon it asked for. An icon of your own is an SVG
 file under `public/`. Tailwind classes work, and
 ones the bundle never saw are compiled in the browser on first use.
 
-A test does not run the JSX. It sees the component as a node with the
-props it was given and sends its events by name, as
-[Testing](/testing) shows.
+A test does not run the JSX. It sees the component as a node whose
+props are the ones it was given in `props=`, with `on_<name>: True` for
+each of its events. So for the one above `page.find("hello").props["who"]`
+is `"Ada"`, and there is no `props["props"]`.
+`await page.event("hello", "wave", 3)` sends one of its events by name.
+[Testing](/testing) has more.
 
 ## In a chat's composer
 

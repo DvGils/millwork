@@ -578,7 +578,7 @@ def _lender(s: Session[Any]) -> asyncio.Task[Any] | None:
 async def ask(s: Session[Any], component: Component, timeout: float | None = None) -> Any:  # noqa: ASYNC109
     """Render a component, wait for its submit or close, return the answer or None.
 
-    The turn is lent while waiting, so other handlers run. A ``Form`` inside
+    Other handlers run while this one waits, and the page stays live. A ``Form`` inside
     answers with its validated model; a ``Dialog``'s close, a cancel, or a
     timeout answers ``None``. So does a question with no page to show it on:
     from a connect or a close hook, or on a session that is over. The session
@@ -652,8 +652,8 @@ async def stream(s: Session[Any], node: str, chunk: dict[str, Any]) -> None:
 
 async def navigate_to(s: Session[Any], path: str) -> None:
     """Switch this session to another page and wait until it is there. The
-    state stays; the page left is closed before the next one connects. A
-    handler that awaits this lends its turn meanwhile.
+    state stays; the page left is closed before the next one connects, and
+    a handler that awaits this goes on once the session is there.
 
     From a connect or a close hook the page is only asked for, and this
     returns at once: the session goes there once the hook has returned,
