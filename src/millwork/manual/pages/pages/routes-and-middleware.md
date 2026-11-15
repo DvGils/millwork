@@ -6,6 +6,7 @@ related: /sign-in/access-rules, /running/deployment
 ---
 
 # Routes and middleware
+<!-- keywords: api, rest, endpoint, webhook, fastapi, starlette, asgi, cors, http -->
 
 An `App` holds a Starlette application and adds to it the Starlette way.
 The `App` itself is not what a server runs. That is `app.asgi`, the ASGI
@@ -39,6 +40,7 @@ path to the app. The `public/` folder next to the app is served at
 [Deployment](/running/deployment) describes.
 
 ## Hooks around the process
+<!-- keywords: startup, shutdown, lifespan, background worker, database pool -->
 
 `app.on_startup` and `app.on_shutdown` register functions, sync or async,
 that run once around the process, to warm a cache or open and close a
@@ -60,7 +62,8 @@ At a stop every session closes before the shutdown hooks run, so a page's
 `close` hook still has the pool these hooks close.
 
 `app.spawn(coroutine)` runs work for as long as the app does, a listener
-on a database for one. It is called from a startup hook, it is stopped
-before the shutdown hooks run, and a failure it lets out is logged.
+on a database for one. It is called from a startup hook, or from a
+handler for work that begins later. It is stopped before the shutdown
+hooks run, and a failure it lets out is logged.
 [Accessing the session](/state/accessing-the-session) uses it for data
 that sessions share.

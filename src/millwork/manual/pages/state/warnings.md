@@ -6,6 +6,7 @@ related: /running/development, /components/tasks
 ---
 
 # Framework warnings
+<!-- keywords: debug, slow, performance, lint, console, log -->
 
 Some mistakes the framework can see, and it says so once per session, as a
 log line with the page's path, and in debug mode as a toast as well.

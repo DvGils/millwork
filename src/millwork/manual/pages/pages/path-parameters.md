@@ -6,6 +6,7 @@ related: /pages/sessions, /sign-in/access-rules
 ---
 
 # Path parameters
+<!-- keywords: url params, dynamic route, slug, id in the url, query string -->
 
 A path can carry parameters in Starlette's syntax. `{name}` takes one
 segment as a string. `{name:int}`, `{name:float}` and `{name:uuid}` convert

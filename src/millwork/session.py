@@ -1247,6 +1247,7 @@ class Session[S]:
         stopped when the session ends, and a failure it lets out is logged.
         On a session that is over it does not run at all, and there is no
         task to return."""
+        self._tasks_started += 1
         return self.scope.start(coro, what)
 
     # ------------------------------------------------------------- tasks

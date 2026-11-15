@@ -6,6 +6,7 @@ related: /running/deployment, /running/app-options, /components/custom
 ---
 
 # Hosting checklist
+<!-- keywords: production, security, https, tls, websocket proxy, load balancer -->
 
 Any host that runs one process and routes HTTPS to it can serve a
 millwork app. It provides:
@@ -45,6 +46,7 @@ CMD ["/app/.venv/bin/millwork", "run", "app.py", "--host", "0.0.0.0", "--port", 
 ```
 
 ## More than one replica
+<!-- keywords: scale, scaling, horizontal, replicas, workers, sticky sessions, kubernetes -->
 
 HTTP is stateless and the socket is the session. Identity comes from the
 cookie, and everything a session owns, its state, its files and its tasks,
@@ -76,6 +78,7 @@ old one's place in one go, or a browser is kept on one replica until the
 old ones are gone.
 
 ## The page's security headers
+<!-- keywords: csp, content security policy, iframe, embed -->
 
 Every page carries a Content Security Policy. Scripts come from the app's
 origin with a nonce, connections go to the app's origin, images and media

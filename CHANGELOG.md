@@ -3,6 +3,93 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.4.1
+
+### Bug fixes
+
+- `millwork reference` left out what 0.4.0 added: `s.highlight`,
+  `s.outline`, `s.focus`, `s.named`, `s.follow`, `mw.Signal`, `app.spawn`
+  and, for a test, `page.outline`, `page.marks`, `page.touch` and
+  `page.time_out`. They are in it now.
+- In the reference, `s.ask`, `s.confirm`, `s.navigate_to` and `s.end`
+  were written with the session as their first argument, as
+  `s.ask(s, component)`. And an argument that is given by name only was
+  not marked as one: `s.outline(*, within=None, ...)` read as if
+  `within` could be given by place.
+- Work that a handler started with `app.spawn` ran as that handler's
+  session for as long as it ran. `mw.session()` in it gave that session,
+  also after the session had ended, and the session stayed in memory
+  until the work was done. Work started inside a task reported its
+  progress as that task. The work is the app's now, whoever started
+  it, and has no session and no task. `app.spawn` said it was called
+  from a startup hook, and says now that a handler may call it too.
+- A handler that did nothing but start work with `s.spawn` or
+  `app.spawn` was warned that it had changed nothing.
+- What a custom component asked for with `request` came back wrong when
+  the handler returned a list. Every list was read as the options of a
+  `ui.Combobox`, so a list of numbers or of rows failed with "The
+  request failed.", and a list of strings came back as
+  `{"value", "label"}` objects. A list now comes back as the handler
+  gave it, and only what a `Combobox`'s `on_search` returns is made
+  into options.
+- A tab could ask any handler on a page with a request, which ran it
+  outside its turn with nothing checked. A form's `on_submit` got the
+  draft as the tab sent it, not validated, also on a form that was
+  read-only, and a button's `on_click` ran while another handler was
+  at work. A request now reaches a `Combobox`'s `on_search` and the
+  handlers in a custom component's `events`, and no other.
+- `ui.Form(layout=5)` drew one column. A form took any number and had
+  columns for 2, 3 and 4 only. It now has 1 to 12, as `ui.Grid` has, and
+  another number is refused when the form is made.
+
+### Features
+
+- `millwork reference <words>` looks one thing up. It prints the entry
+  of the reference and the sections of the manual that are about it,
+  examples included, up to a few thousand characters, and names what
+  else matched with the command that gives each whole.
+  `millwork reference ui.Table` asks by name,
+  `millwork reference shared data` by what it is about, and
+  `millwork reference modal` or `st.button` by what a thing is called
+  elsewhere. A mistyped word is read as the one it is close to.
+  `components/feedback#toast` gives one section and
+  `components/feedback.md` a page. `--chars` sets how much is printed,
+  and `--index` lists every name without what is said of it.
+  `millwork reference` alone prints the whole reference, as before.
+- The manual's search box finds a section by what the thing is called
+  elsewhere, and by a word in another of its forms, as "shared" for
+  "share". It looks for whole words now, with the last one found while
+  it is still being typed, so "load" no longer finds "upload".
+- In a test, `page.request(node, name, payload)` asks a handler and
+  returns its answer as the tab would get it. That is what a custom
+  component does with `request`, and a `ui.Combobox` with `on_search`
+  under the name `"search"`.
+
+### The manual
+
+- The Welcome page's first sentence reads as it should.
+- In Feedback, the example for highlights has the buttons that set a
+  highlight on top, as buttons, and what they point at in a card under
+  them.
+- In Accessing the session, the section on the page as data is a third
+  of its length, with what is in the outline and what is not in a table.
+- Where a handler waits on a task or on `s.ask`, the manual and the
+  reference say what happens meanwhile, that other handlers run and the
+  page stays live, where they said that the handler "lends its turn".
+  `s.navigate_to` said the same and says now that the handler goes on
+  once the session is on the next page.
+- Custom components and the reference say what a test sees of one: the
+  props it was given in `props=` are the node's own props, and
+  `page.event` sends one of its events.
+- Custom components has a section on `request`, with which handler it
+  reaches, what the handler may return, and that the page is not drawn
+  for it. Another says how a component with many rows stays fast.
+- Testing says how to read the file a download sent.
+- A table's `tones` function was said to get "the cell as the table
+  shows it". It gets the value before the column's `format`, and Data
+  and the reference say so.
+- Form says what `layout` takes.
+
 ## 0.4.0
 
 ### Bug fixes

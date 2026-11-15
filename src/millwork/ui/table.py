@@ -157,7 +157,9 @@ class Table(Component):
     ``tones`` is one function ``(row) -> tone`` for a row's tone, or a mapping
     from column key to ``(row, value) -> tone`` for a cell's. ``row`` is the
     row as it is in ``rows``, a model still a model, and ``value`` is the
-    cell as the table shows it. A tone is one of ``muted``, ``primary``,
+    cell as it goes to the tab, before the column's ``format``. A number is
+    a number, a date is its ISO text, a ``Decimal`` its text and an ``Enum``
+    its value. A tone is one of ``muted``, ``primary``,
     ``accent``, ``success``, ``warning`` and ``destructive``, or ``None``."""
 
     type: ClassVar[str] = "Table"

@@ -25,7 +25,6 @@ from millwork.files import Reject, fits
 from millwork.forms import FormIssues
 from millwork.protocol import Event, Head, Reply, Request, Stream, pack_frame
 from millwork.tasks import Cancelled
-from millwork.ui import as_options
 
 if TYPE_CHECKING:
     from millwork.app import PageDef
@@ -380,17 +379,17 @@ async def _ask_handler(s: Session[Any], conn: Connection, msg: Request) -> None:
     tree = s.tree
     component = tree.components.get(msg.node) if tree is not None else None
     handler = tree.handler(msg.node, msg.name) if tree is not None and component else None
-    if handler is None or getattr(component, "disabled", False) or msg.size is not None:
+    # Only what a component says it is asked by. Any other handler is for
+    # an event, which is checked and takes its turn.
+    made = component.asked(msg.name) if component is not None else None
+    refused = getattr(component, "disabled", False) or msg.size is not None
+    if handler is None or made is None or refused:
         conn.say(Reply(request=msg.request, error="unknown request"))
         return
     token = context.bind(s)
     try:
         result = await _call(handler, s, msg.payload)
-        if isinstance(result, list):
-            result = [
-                o.model_dump(exclude_none=True, exclude_defaults=True) for o in as_options(result)
-            ]
-        conn.say(Reply(request=msg.request, payload=result))
+        conn.say(Reply(request=msg.request, payload=made(result)))
     except Exception as exc:
         log.exception("request %s on %s failed", msg.name, msg.node)
         s._failed(f"the {msg.name} handler on {msg.node}", exc)
@@ -578,7 +577,7 @@ def _lender(s: Session[Any]) -> asyncio.Task[Any] | None:
 async def ask(s: Session[Any], component: Component, timeout: float | None = None) -> Any:  # noqa: ASYNC109
     """Render a component, wait for its submit or close, return the answer or None.
 
-    The turn is lent while waiting, so other handlers run. A ``Form`` inside
+    Other handlers run while this one waits, and the page stays live. A ``Form`` inside
     answers with its validated model; a ``Dialog``'s close, a cancel, or a
     timeout answers ``None``. So does a question with no page to show it on:
     from a connect or a close hook, or on a session that is over. The session
@@ -652,8 +651,8 @@ async def stream(s: Session[Any], node: str, chunk: dict[str, Any]) -> None:
 
 async def navigate_to(s: Session[Any], path: str) -> None:
     """Switch this session to another page and wait until it is there. The
-    state stays; the page left is closed before the next one connects. A
-    handler that awaits this lends its turn meanwhile.
+    state stays; the page left is closed before the next one connects, and
+    a handler that awaits this goes on once the session is there.
 
     From a connect or a close hook the page is only asked for, and this
     returns at once: the session goes there once the hook has returned,

@@ -20,7 +20,17 @@ from millwork.auth import Forbidden
 from millwork.connection import Connection
 from millwork.files import FileRef, Reject, _read_chunks, fits
 from millwork.nodes import Component
-from millwork.protocol import Command, Event, Mount, Patch, ServerError, Stream, server_message
+from millwork.protocol import (
+    Command,
+    Event,
+    Mount,
+    Patch,
+    Reply,
+    Request,
+    ServerError,
+    Stream,
+    server_message,
+)
 from millwork.scope import Scope
 from millwork.session import Session, names
 from millwork.ui import Button, Checkbox, Custom, Link, Switch, Tabs
@@ -71,6 +81,7 @@ class Page:
         session.on_failure = self._failed
         session.on_unheard = self._unheard
         self._deaf: list[tuple[str, str]] = []
+        self._requests = 0
 
     def _said_goodbye(self) -> bool:
         return self._tab is None or self._tab.done()
@@ -284,6 +295,40 @@ class Page:
             return
         name = "download" if isinstance(found.component, Download) else "click"
         await self.event(found, name)
+
+    async def request(self, node: Found | str, name: str, payload: Any = None) -> Any:
+        """Ask a handler of a node and give its answer as the tab would get
+        it: what a custom component does with ``request(name, payload)``,
+        and a ``Combobox`` with ``"search"`` and the text typed. The page is
+        not drawn for it.
+
+        A request the page does not take raises ``LookupError``: one for a
+        node that has no handler by that name, or that is disabled or
+        hidden. A handler that raises fails the test, and in a harness that
+        is not strict it raises ``RuntimeError`` here with what the tab is
+        told."""
+        found = node if isinstance(node, Found) else self.find(node)
+        if found.props.get("hidden") and not isinstance(found.component, Custom):
+            raise LookupError(f"{found!r} is hidden")
+        if getattr(found.component, "disabled", False):
+            raise LookupError(f"{found!r} is disabled")
+        conn = self.session.conn
+        if conn is None:
+            raise LookupError("the session has no tab to answer")
+        self._requests += 1
+        asked = f"test-{self._requests}"
+        self.session.request(
+            conn, Request(node=found.id, name=name, request=asked, payload=payload), None
+        )
+        await self.settle()
+        for message in reversed(self.messages):
+            if isinstance(message, Reply) and message.request == asked:
+                if message.error == "unknown request":
+                    raise LookupError(f"{found!r} takes no {name!r} request")
+                if message.error is not None:
+                    raise RuntimeError(message.error)
+                return message.payload
+        raise RuntimeError(f"the {name!r} request to {found!r} got no answer")
 
     async def toast_action(self, label: str) -> None:
         """Press the button of the latest toast that has one with this label."""

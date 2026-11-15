@@ -5,6 +5,7 @@ description: A form from a Pydantic model, with issues by field.
 ---
 
 # Form
+<!-- keywords: pydantic, model, validation, schema, fields -->
 
 `ui.Form` renders a Pydantic model as fields and hands `on_submit` a
 validated instance. The types choose the controls. A `str` becomes an
@@ -22,6 +23,10 @@ when a field is wrong comes from the theme's strings, the ones that start
 with `issue_`, so it is in the app's language. A validator of the model's
 own is shown with the words it raised, whether that is a `ValueError` or
 a `PydanticCustomError`.
+
+`layout` is `"vertical"` with each label above its field,
+`"horizontal"` with the label beside it, or a number of columns from 1
+to 12. On a narrow screen the columns are one.
 
 ```python live
 import datetime as dt
@@ -56,6 +61,7 @@ def example(s):
 ```
 
 ## Labels and overrides
+<!-- keywords: customize a field, widget, placeholder -->
 
 `labels` maps a field's pointer, or its name, to a `label`, `help`,
 `placeholder` and `choices`, so the model stays free of interface copy.
@@ -109,6 +115,7 @@ ui.Form(
 ```
 
 ## Rejecting a valid draft
+<!-- keywords: server-side validation, custom error message -->
 
 A handler that finds something wrong raises `ui.FormIssues` with a list
 of `(pointer, message)` pairs. The form shows each at its field and keeps

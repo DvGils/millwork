@@ -6,6 +6,7 @@ related: /state/organizing, /components/data
 ---
 
 # Lists and keys
+<!-- keywords: loop, for each, foreach, map over a list, dynamic list, render items, conditional rendering, key prop -->
 
 A page does not always know how many components it needs. A button adds
 a card with inputs each time it is pressed, a file arrives with one input
@@ -80,6 +81,7 @@ of any list a visitor can grow: a page that renders on every keystroke
 should not be asked to render a thousand cards.
 
 ## Keys
+<!-- keywords: name a component, show and hide, conditional, visibility -->
 
 Every component takes a `key`, which is its identity across renders. A
 keyed node keeps its browser-side state when the tree around it changes,

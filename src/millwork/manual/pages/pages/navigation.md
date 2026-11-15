@@ -6,6 +6,7 @@ related: /components/layout, /pages/error-pages
 ---
 
 # Navigation
+<!-- keywords: redirect, router, go to a page, switch page, history, menu, links -->
 
 A `ui.Link` whose `href` is a path inside the app navigates over the
 session. Nothing reloads, the tab's history gets an entry, and the back

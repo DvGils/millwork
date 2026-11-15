@@ -13,6 +13,7 @@ The bytes live for as long as the session does and travel to the browser
 over the session's own socket, so a file has no URL and needs no signing.
 
 ## FileUpload
+<!-- keywords: upload, dropzone, attach, drag and drop -->
 
 `ui.FileUpload` is a drop zone, or a button with `dropzone=False`.
 `accept` lists extensions, `multiple` and `max_files` allow more than one,
@@ -87,6 +88,7 @@ def example(s):
 ```
 
 ## Image and Pdf
+<!-- keywords: picture, preview, viewer -->
 
 `ui.Image` and `ui.Pdf` take a `FileRef` or an outside URL. An image has
 a `size` and a `fit`, and with `on_click` it is a target that takes focus
@@ -176,6 +178,7 @@ def example(s):
 ```
 
 ## Download
+<!-- keywords: export, save, csv -->
 
 `ui.Download` is a button that saves a file. `content` is bytes, text, a
 path, a callable that makes any of those on click, or a `FileRef`, which

@@ -6,6 +6,7 @@ related: /pages/pages-and-routes, /state/state-and-handlers, /components/layout
 ---
 
 # Quickstart
+<!-- keywords: getting started, install, hello world, first app, tutorial, setup -->
 
 millwork is on PyPI and needs Python 3.12 or newer.
 

@@ -10,6 +10,7 @@ Telling the user what is going on, with alerts, toasts, dialogs, progress
 and the empty and loading states.
 
 ## Alert
+<!-- keywords: banner, callout, notice, warning -->
 
 `ui.Alert` is a banner with a `title`, a `description`, a `tone`, an `icon`,
 `actions` and, with `dismissable`, a close button that fires `on_dismiss`.
@@ -37,6 +38,7 @@ ui.Stack(
 ```
 
 ## Toast
+<!-- keywords: notification, snackbar, flash message -->
 
 A toast is a command rather than a component. Call `s.toast(message,
 tone=, title=)` from any handler. `action=(label, handler)` puts a button
@@ -66,12 +68,15 @@ ui.Row(
 ```
 
 ## Highlight
+<!-- keywords: spotlight, tour, onboarding, coach mark, guide, walkthrough, point at -->
 
 `s.highlight(name, color)` puts a frame around a component so the person
 finds it. An assistant in the app answers a question about how something
 is done with it, by pointing at where it is done. The name is a key or an
 id, and `form/field` names a field of a form. Unlike a toast it stays:
 the session holds it until the person gets to the component.
+
+The buttons on top set highlights on the card under them.
 
 ```python live
 from pydantic import BaseModel
@@ -108,19 +113,23 @@ def inviting(open):
 def example(s):
     return ui.Stack(
         ui.Row(
-            ui.Button("Solid", key="hl-solid", variant="outline"),
-            ui.Button("Pulse", key="hl-pulse", variant="outline"),
-            ui.Button("Trace", key="hl-trace", variant="outline"),
-            ui.Button("Invite someone", key="hl-invite", on_click=inviting(True)),
-            gap=4,
-            wrap=True,
-        ),
-        ui.Row(
-            ui.Button("Show the three ways", variant="ghost", on_click=three),
-            ui.Button("Show how to invite", variant="ghost", on_click=steps),
-            ui.Button("Take them off", variant="ghost", on_click=lambda s, _: s.highlight(None)),
+            ui.Button("Show the three styles", on_click=three),
+            ui.Button("Show how to invite", on_click=steps),
+            ui.Button("Take them off", variant="outline", on_click=lambda s, _: s.highlight(None)),
             gap=2,
             wrap=True,
+        ),
+        ui.Card(
+            ui.Grid(
+                ui.Stat(label="Solid", value="128", hint="members", key="hl-solid"),
+                ui.Stat(label="Pulse", value="12", hint="invited", key="hl-pulse"),
+                ui.Stat(label="Trace", value="3", hint="teams", key="hl-trace"),
+                cols={"sm": 1, "md": 3},
+            ),
+            title="Members",
+            footer=ui.Button(
+                "Invite someone", key="hl-invite", variant="outline", on_click=inviting(True)
+            ),
         ),
         ui.Dialog(
             ui.Form(Invite, key="hl-form", submit=None, on_submit=inviting(False)),
@@ -130,7 +139,7 @@ def example(s):
             on_close=inviting(False),
             key="hl-dialog",
         ),
-        gap=3,
+        gap=4,
     )
 ```
 
@@ -165,6 +174,7 @@ assistant reads its own highlights back with the page, as
 [Accessing the session](/state/accessing-the-session) describes.
 
 ## Dialog
+<!-- keywords: modal, popup, overlay, window -->
 
 `ui.Dialog` is open when state says so. It has a `title`, a
 `description`, a `footer` and a `size` from `sm` to `full`. `on_close`
@@ -201,6 +211,7 @@ def example(s):
 ```
 
 ## Confirm and ask
+<!-- keywords: are you sure, prompt, modal question, yes or no -->
 
 Two session calls wait for the user from inside a handler. `await s.confirm(
 title, description=, destructive=)` shows a dialog and returns True or
@@ -250,6 +261,7 @@ def example(s):
 ```
 
 ## Sheet
+<!-- keywords: drawer, side panel, slide-over -->
 
 `ui.Sheet` slides a panel in from a `side`. Like a dialog it is open when
 state says so and `on_close` lets the handler close it. `size` is how wide
@@ -282,6 +294,7 @@ def example(s):
 ```
 
 ## Spinner and Skeleton
+<!-- keywords: loading state, busy, pending, placeholder, shimmer, wait -->
 
 `ui.Spinner` shows work in progress with an optional `label`. `ui.Skeleton`
 stands in for content still loading, shaped like `text`, a `card` or a
@@ -306,6 +319,7 @@ ui.Stack(
 ```
 
 ## Empty
+<!-- keywords: empty state, no data -->
 
 `ui.Empty` is the state before there is anything, with a `title`, a
 `description`, an `icon` and an `action`.
@@ -320,6 +334,7 @@ ui.Empty(
 ```
 
 ## Progress and Steps
+<!-- keywords: progress bar, stepper, wizard, percentage -->
 
 `ui.Progress` is a bar for a `value` from 0 to 1 with a `label` and a
 `description`, or for a running task, as the [Tasks](/components/tasks) page shows.

@@ -6,6 +6,7 @@ related: /sign-in/providers, /sign-in/admitting-users, /running/app-options
 ---
 
 # Setting up sign-in
+<!-- keywords: authentication, auth, login, users, password, oauth, sso -->
 
 Without auth, every page is open to anyone who reaches the server. With
 auth, every page asks for a login first, except a page marked

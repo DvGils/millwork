@@ -6,6 +6,7 @@ related: /components/custom, /sign-in/login-page
 ---
 
 # Theming
+<!-- keywords: theme, dark mode, light mode, colors, branding, css, style, palette, design -->
 
 An app's look is one JSON file, either `public/theme.json`, which is found
 on its own, or any path given as `App(theme=...)`. It holds the color
@@ -31,6 +32,7 @@ flash of the default look. Without a file the app looks like stock shadcn.
 ```
 
 ## Tokens
+<!-- keywords: color variables, primary color, palette -->
 
 The tokens are shadcn's. There are `background`, `foreground`, `card`,
 `popover`, `primary`, `secondary`, `muted`, `accent` and `destructive`,
@@ -73,6 +75,7 @@ The five chart tokens are read in order by the charts. Pick them as a set
 that stays apart for color-blind readers in both schemes.
 
 ## Fonts
+<!-- keywords: typography, typeface -->
 
 A font is a file under `public/`, served by the app, described by
 `family`, `src`, `weights` (one weight or a range) and `style`. It becomes
@@ -104,6 +107,7 @@ and `currency` is the ISO code the `currency` format uses, `EUR` unless
 the theme says otherwise.
 
 ## A stylesheet of the app's own
+<!-- keywords: custom css, tailwind, override styles -->
 
 `stylesheet` is the path of a CSS file under `/public/`, loaded on every
 page after the theme. It holds what tokens cannot say, such as a class
@@ -121,6 +125,7 @@ wins.
 ```
 
 ## Strings
+<!-- keywords: translation, i18n, localization, language, wording -->
 
 Interface copy comes from the app's own Python, in its own language. The
 framework has a few strings of its own, for the bundle's controls (`send`,

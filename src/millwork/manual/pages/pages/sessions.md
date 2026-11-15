@@ -6,6 +6,7 @@ related: /pages/visitors, /state/state-and-handlers, /components/tasks, /running
 ---
 
 # Sessions
+<!-- keywords: websocket, connection, lifecycle, reconnect, disconnect -->
 
 A session is one tab. It starts when the tab connects, holds the state,
 the files, the identity and the tasks, and it outlives the page, since
@@ -14,6 +15,7 @@ two sessions with two states, and nothing is shared by being in the same
 browser or signed in as the same person.
 
 ## Connect
+<!-- keywords: on load, on mount, init, load data, fetch when the page opens, useEffect -->
 
 A page can have a `connect` hook. It runs once each time the page is
 opened, before the first render, with the path parameters as keyword
@@ -45,6 +47,7 @@ toast, and the tab keeps the page it came from, already closed, with
 whatever the failed connect wrote to the state.
 
 ## Close
+<!-- keywords: cleanup, on unmount, teardown -->
 
 The `close` hook runs once per visit, when the session is done with the
 page, with the state still as the page left it. That is when the tab
@@ -75,6 +78,7 @@ user in an app with sign-in, and the browser that [Visitors](/pages/visitors)
 describes in an app without.
 
 ## When a tab goes away
+<!-- keywords: offline, timeout, grace period, reload -->
 
 A session does not end when its tab closes. The server cannot tell a
 closed tab from a reload or a dropped network, so the session waits for

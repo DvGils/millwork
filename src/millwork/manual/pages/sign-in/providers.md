@@ -16,6 +16,7 @@ through the app's `on_login` hook, which [Admitting users](/sign-in/admitting-us
 describes.
 
 ## OAuth
+<!-- keywords: google, github, microsoft, azure, entra, okta, sso, oidc -->
 
 `auth.AzureAD(tenant=, client_id=, client_secret=)` is Microsoft Entra ID,
 single tenant unless you pass `single_tenant=False`. `auth.Google(client_id=,
@@ -30,6 +31,7 @@ those, the path of an image under `public/`, or the name of one of
 millwork's icons.
 
 ## Passwords
+<!-- keywords: username, password, hash, credentials -->
 
 `auth.Password(verify)` takes a callable `(username, password) -> bool`,
 sync or async, and millwork runs it off the event loop. Hashes are scrypt
@@ -47,11 +49,13 @@ def verify(username: str, password: str) -> bool:
 ```
 
 ## While developing
+<!-- keywords: fake login, dev user, local -->
 
 `auth.Dev(user)` signs every visitor in as that user. It is allowed with
 `--debug` and refused otherwise.
 
 ## Behind an authenticating proxy
+<!-- keywords: reverse proxy, headers, oauth2-proxy, iap, cloudflare access -->
 
 Sometimes a proxy in front of the app does the signing in, whether that is
 oauth2-proxy, a platform's built-in authentication or an access gateway.

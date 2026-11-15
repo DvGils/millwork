@@ -6,6 +6,7 @@ related: /pages/sessions, /pages/routes-and-middleware, /sign-in/sign-out-and-co
 ---
 
 # Visitors
+<!-- keywords: anonymous, guest, cookie, browser id, remember without login -->
 
 A session is one tab, and what an app keeps outside the session needs an
 owner. In an app with sign-in the owner is `s.user.id`. In an app without

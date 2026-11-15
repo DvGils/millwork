@@ -8,7 +8,7 @@ Stateful components take ``value`` (server-owned) or ``default``
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -63,6 +63,15 @@ def as_options(values: Any) -> list[Option]:
         else:
             raise TypeError(f"not an option: {v!r}")
     return out
+
+
+def _as_given(answer: Any) -> Any:
+    return answer
+
+
+def _options_for_the_tab(values: Any) -> list[dict[str, Any]]:
+    """What a search handler found, as the options a tab lists."""
+    return [o.model_dump(exclude_none=True, exclude_defaults=True) for o in as_options(values)]
 
 
 class _Owned(Component):
@@ -1278,6 +1287,7 @@ class Combobox(_Owned):
         "on_change": "the chosen value, or None",
         "on_search": "the text typed; the handler returns the options to show",
     }
+    answers: ClassVar[dict[str, Callable[[Any], Any]]] = {"search": _options_for_the_tab}
     options: list[Option] = []
     value: str | None = None
     default: str | None = None
@@ -1670,6 +1680,11 @@ class Custom(Component):
 
     def wire_extra(self) -> dict[str, Any]:
         return dict(self.props)
+
+    def asked(self, name: str) -> Callable[[Any], Any] | None:
+        # Its events are its own to send or to ask, and the answer is the
+        # component's to read as the handler gave it.
+        return _as_given if name in self.events else None
 
 
 # ------------------------------------------------------------------ data

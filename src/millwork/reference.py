@@ -7,8 +7,11 @@ chapter about it."""
 
 from __future__ import annotations
 
+import functools
 import inspect
+import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from types import UnionType
 from typing import Any, Literal, Union, get_args, get_origin
 
@@ -22,6 +25,7 @@ from millwork.forms import WIDGETS
 from millwork.icons import ICONS
 from millwork.nodes import Component
 from millwork.session import Session
+from millwork.signal import Signal
 from millwork.tasks import Reporter, StepHandle, Task
 from millwork.testing import Page
 from millwork.theme import Theme
@@ -48,7 +52,12 @@ SESSION_API = (
     "download",
     "logout",
     "reset",
+    "focus",
+    "highlight",
+    "outline",
+    "named",
     "refresh",
+    "follow",
     "connected",
     "task",
     "thread",
@@ -69,6 +78,7 @@ APP_API = (
     "middleware",
     "on_startup",
     "on_shutdown",
+    "spawn",
 )
 TASK_API = ("done", "ok", "cancelled", "result", "cancel")
 REPORTER_API = ("set", "plan", "step", "log", "check")
@@ -89,9 +99,172 @@ PAGE_API = (
     "toast_action",
     "navigate",
     "event",
+    "request",
     "settle",
     "stream",
+    "outline",
+    "marks",
+    "touch",
+    "time_out",
 )
+
+
+# What a thing is called elsewhere, by its name here: the words someone
+# who knows another framework, or the web, looks for it by. Several words
+# between two commas are one name, found whole.
+ALIASES = {
+    "The reference": "cls, key, hidden, children, positional, handler, payload, tailwind classes",
+    "ui.Accordion": "collapse, expand, faq, disclosure",
+    "ui.Alert": "banner, callout, notice, warning message",
+    "ui.Assistant": "chat bubble, floating chat, copilot, helper widget",
+    "ui.Badge": "chip, tag, pill, status",
+    "ui.BarChart": "chart, graph, plot, histogram, visualization",
+    "ui.AreaChart": "chart, graph, plot, visualization",
+    "ui.LineChart": "chart, graph, plot, time series, visualization",
+    "ui.PieChart": "chart, graph, donut, visualization",
+    "ui.Button": "click, action, submit, cta",
+    "ui.Card": "panel, box, tile, container",
+    "ui.Chat": "llm, assistant, messages, conversation, streaming, prompt, chatbot",
+    "ui.Checkbox": "tick, check, boolean",
+    "ui.Code": "code block, snippet, syntax highlighting, pre",
+    "ui.Collapsible": "expand, collapse, disclosure, details, expander",
+    "ui.Combobox": "autocomplete, typeahead, searchable dropdown",
+    "ui.Custom": "react component, javascript, jsx, plugin, extension",
+    "ui.DatePicker": "calendar, date range, date input",
+    "ui.Dialog": "modal, popup, overlay, lightbox",
+    "ui.Download": "export, save a file, csv",
+    "ui.DropdownMenu": "context menu, actions menu, kebab, more options",
+    "ui.Empty": "empty state, no data, nothing here, blank slate",
+    "ui.FileUpload": "upload, dropzone, attach, drag and drop, file uploader",
+    "ui.Form": "pydantic, model, validation, fields, schema",
+    "ui.Grid": "columns, responsive layout",
+    "ui.Header": "navbar, top bar, app bar",
+    "ui.Image": "picture, img, photo",
+    "ui.Input": "text field, textbox, text input, search box, debounce",
+    "ui.Kbd": "keycap, keyboard key, key hint",
+    "ui.Link": "anchor, href, url",
+    "ui.Markdown": "rich text, formatted text",
+    "ui.MultiSelect": "multi select, tags, chips, several choices",
+    "ui.NumberInput": "number, stepper, numeric",
+    "ui.Page": "layout, shell, frame, root",
+    "ui.Progress": "progress bar, loading, percentage",
+    "ui.RadioGroup": "radio buttons, single choice",
+    "ui.Row": "horizontal, flex, inline",
+    "ui.ScrollArea": "scroll, overflow",
+    "ui.Select": "dropdown, picker, selectbox, choice, option",
+    "ui.Sheet": "drawer, side panel, slide-over",
+    "ui.Sidebar": "navigation, nav, menu, drawer",
+    "ui.Skeleton": "loading placeholder, shimmer",
+    "ui.Slider": "range",
+    "ui.Spinner": "loading, busy, wait",
+    "ui.Split": "resizable panes, splitter",
+    "ui.Stack": "vertical, flex, column, div, container",
+    "ui.Stat": "kpi, metric, big number, dashboard number, tile",
+    "ui.Steps": "stepper, wizard, timeline",
+    "ui.Switch": "toggle, on off, boolean",
+    "ui.Table": "grid, datatable, dataframe, data editor, rows, sort, filter, pagination",
+    "ui.Tabs": "tab strip, tabbed",
+    "ui.Text": "label, paragraph, write, span, heading",
+    "ui.Textarea": "multiline, long text",
+    "ui.ToggleGroup": "segmented control, button group",
+    "ui.Tooltip": "hint, hover, title",
+    "s.toast": "notification, notify, snackbar, flash message, sonner",
+    "s.confirm": "are you sure, yes no, alert dialog, confirmation",
+    "s.ask": "prompt, modal, question, input dialog",
+    "s.highlight": "spotlight, tour, point at, coach mark, onboarding, guide",
+    "s.outline": "page content, dom, accessibility tree, agent context",
+    "s.focus": "cursor, keyboard, autofocus",
+    "s.navigate": "redirect, route, go to, switch page, location",
+    "s.navigate_to": "redirect, route, go to, await",
+    "s.refresh": "rerender, rerun, update, redraw",
+    "s.follow": "subscribe, live update, realtime",
+    "mw.Signal": "broadcast, pubsub, publish, subscribe, realtime, other sessions, shared",
+    "s.task": "background job, async, worker, long running",
+    "s.thread": "background, blocking, sync, freezing the page",
+    "s.later": "timer, delay, timeout, interval",
+    "s.download": "export, save a file",
+    "s.clipboard": "copy, paste, copied",
+    "s.logout": "sign out, log out",
+    "app.route": "api, endpoint, rest, http, webhook",
+    "app.mount": "asgi, fastapi, starlette, sub app, static files",
+    "app.middleware": "request hook, cors",
+    "app.spawn": "background listener, startup worker",
+    "app.on_startup": "lifespan, init, boot",
+    "app.on_shutdown": "lifespan, cleanup, exit",
+}
+
+
+# The names a part of the reference speaks of in its own words, and that
+# have no entry of their own: asked for by one of them, the part is given.
+NAMED_IN = {
+    "The app": ("mw.App", "mw.NotFound", "mw.Forbidden"),
+    "The session": ("mw.session", "s.state", "s.user", "s.path", "s.params", "s.files", "s.tasks"),
+    "Tasks": ("mw.Task", "mw.progress", "mw.Cancelled"),
+    "Lazy parts": ("ui.lazy",),
+    "Forms": ("ui.FormIssues",),
+    "Testing": ("TestApp",),
+    "Models components take": ("ui.Tone",),
+}
+# What stands before the first part: how a page, a handler and a
+# component are written.
+OPENING = "The reference"
+
+
+@dataclass(frozen=True)
+class Entry:
+    """One thing the reference has: a component, a model, a call, or what a
+    part says before its list. ``names`` are the other names it is asked
+    for by."""
+
+    name: str
+    part: str
+    text: str
+    aliases: str = ""
+    names: tuple[str, ...] = ()
+
+
+# The calls the reference lists, by the name each is listed under.
+_CALLS: dict[str, Callable[..., Any] | property] = {}
+_BULLET = re.compile(r"- `([A-Za-z_][\w.]*)[(`]")
+
+
+@functools.lru_cache(maxsize=1)
+def entries() -> list[Entry]:
+    """The reference cut into what can be looked up by name. A call comes
+    with all its docstring says, where the reference has its first words."""
+    out: list[Entry] = []
+    part = name = OPENING
+    block: list[str] = []
+
+    def close() -> None:
+        text = "\n".join(block).strip()
+        if text:
+            names = NAMED_IN.get(name, ()) if name == part else ()
+            out.append(Entry(name, part, text, ALIASES.get(name, ""), names))
+        block.clear()
+
+    for line in reference().splitlines():
+        call = _BULLET.match(line)
+        said = call.group(1) if call else ""
+        listed = part not in ("Components", "Models components take")
+        if line.startswith("## "):
+            close()
+            part = name = line[3:]
+        elif line.startswith("### "):
+            close()
+            name = line[4:]
+        elif said in _CALLS:
+            fn = _CALLS[said]
+            doc = inspect.getdoc(fn.fget if isinstance(fn, property) else fn) or ""
+            signature = "" if isinstance(fn, property) else _signature(fn, skip_self=True)
+            out.append(Entry(said, part, f"`{said}{signature}`\n\n{doc}", ALIASES.get(said, "")))
+        elif listed and "." in said:
+            # A call the reference writes out itself: a sign-in provider.
+            out.append(Entry(said, part, line[2:], ALIASES.get(said, "")))
+        elif not line.startswith("# "):
+            block.append(line)
+    close()
+    return out
 
 
 def reference() -> str:
@@ -109,6 +282,8 @@ def reference() -> str:
         "`key`, `hidden` and `cls` (Tailwind classes). A prop a component does not",
         "have is refused, and so is an icon name lucide does not have. The manual at",
         "millwork-ui.com explains each chapter; this is the table of what exists.",
+        "`millwork reference <words>` gives what this table and the manual say of",
+        "one thing, and `millwork reference --index` lists the names.",
         "",
         "## Components",
         "",
@@ -157,6 +332,10 @@ def reference() -> str:
     ]
     for name in SESSION_API:
         out.append(_call(f"s.{name}", getattr(Session, name)))
+    signal = (inspect.getdoc(Signal) or "").split("\n\n")[0].replace("\n", " ")
+    out.append(f"- `mw.Signal()`: {signal}")
+    _CALLS["mw.Signal"] = Signal
+    out.append(_call("signal.fire", Signal.fire))
     out += [
         "",
         "## Tasks",
@@ -243,7 +422,9 @@ def reference() -> str:
         "user=) as page` opens a page as a session with no socket; what the app's",
         "code raises is raised in the test, or with `strict=False` collected in",
         "`page.failures`. `page.find(key or type, within=, **props)` gives a node with",
-        "`.props`, and `.rows` on a table. `page.state`, `page.toasts`, `page.commands` and",
+        "`.props`, and `.rows` on a table. On a `ui.Custom` what was given in `props=` is",
+        "in `.props` itself, as `.props['zoom']`, and `page.event(node, name, payload)`",
+        "sends one of its events. `page.state`, `page.toasts`, `page.commands` and",
         "`page.stream` are what the tab would have seen. A handler that calls",
         "`s.confirm` or `s.ask` waits for `page.answer(value)`. `open(path,",
         "visitor=)` opens the page from a browser with that visitor id, and two",
@@ -380,6 +561,7 @@ def _fields(
 
 def _call(name: str, fn: Callable[..., Any] | property) -> str:
     """A method as `name(args)`, a property as `name`, each with its docstring's first paragraph."""
+    _CALLS[name] = fn
     if isinstance(fn, property):
         doc = inspect.getdoc(fn.fget)
         call = ""
@@ -392,13 +574,21 @@ def _call(name: str, fn: Callable[..., Any] | property) -> str:
 
 def _signature(fn: Callable[..., Any], skip_self: bool) -> str:
     params = list(inspect.signature(fn).parameters.values())
-    if skip_self and params and params[0].name in ("self", "cls"):
+    # A session's method that is a function of its own module takes the
+    # session as ``s``.
+    if skip_self and params and params[0].name in ("self", "cls", "s"):
         params = params[1:]
     parts = []
+    starred = False
     for p in params:
         text = p.name
+        if p.kind is p.KEYWORD_ONLY and not starred:
+            # What follows is given by name.
+            parts.append("*")
+            starred = True
         if p.kind is p.VAR_POSITIONAL:
             text = "*" + text
+            starred = True
         elif p.kind is p.VAR_KEYWORD:
             text = "**" + text
         elif p.default is not p.empty:

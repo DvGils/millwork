@@ -6,6 +6,7 @@ related: /pages/sessions, /components/files, /running/hosting-checklist
 ---
 
 # App options
+<!-- keywords: configuration, settings, config, environment variables, secret -->
 
 Everything the app needs is said on the `App`, in Python, with values
 from wherever the app keeps its secrets. Every option has a default, so

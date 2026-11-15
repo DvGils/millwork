@@ -1,6 +1,6 @@
 // The Form: a field spec from Python, a draft kept here, issues by JSON pointer.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import type { Renderer } from "../render";
 import { cn } from "cn";
 import { icon } from "../icons";
@@ -10,6 +10,7 @@ import { t } from "../theme";
 import { onStatus } from "../ws";
 import { formatSize, upload, type FileRef } from "./files";
 import { DatePickerControl, MultiSelectControl } from "./choices";
+import { gridColumns } from "./surfaces";
 import {
   Field,
   FieldDescription,
@@ -217,6 +218,8 @@ export const Form: Renderer = ({ node, props, emit }) => {
 
   const layout = props.layout;
   const orientation = layout === "horizontal" ? "horizontal" : "vertical";
+  // A count of columns is for a screen wide enough to hold them. Below
+  // that the fields are under each other.
   const gridCols = typeof layout === "number" ? layout : 0;
   const ctx: Ctx = { node: node.id, draft, update, issueFor, disabled: disabled || readOnly, readOnly, orientation, dense: Boolean(props.dense) };
 
@@ -229,7 +232,7 @@ export const Form: Renderer = ({ node, props, emit }) => {
         submit();
       }}
     >
-      <FieldGroup className={cn(gridCols > 0 && "grid gap-4", gridCols === 2 && "md:grid-cols-2", gridCols === 3 && "md:grid-cols-3", gridCols === 4 && "md:grid-cols-4")}>
+      <FieldGroup className={cn(gridCols > 0 && "mw-grid grid gap-4")} style={gridCols > 0 ? (gridColumns({ sm: 1, md: gridCols }) as CSSProperties) : undefined}>
         <Fields fields={schema.fields} base="" schemaBase="" ctx={ctx} />
       </FieldGroup>
       {issueFor("").length ? <FieldError errors={issueFor("")} /> : null}

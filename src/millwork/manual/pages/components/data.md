@@ -5,6 +5,7 @@ description: Tables with sorting, filtering, selection and actions, and stats.
 ---
 
 # Data
+<!-- keywords: table, grid, datatable, dataframe, pandas, rows -->
 
 `ui.Table` shows rows, which can be dicts, Pydantic models or
 dataclasses. Columns come from the rows unless `columns` names them, each
@@ -36,6 +37,7 @@ ui.Table(rows=ROWS)
 ```
 
 ## Columns and formats
+<!-- keywords: currency, number format, date format, column header -->
 
 `format` renders a value as `text`, `number`, `integer`, `percent`,
 `currency`, `date`, `datetime`, `bool`, `badge`, `link` or `code`.
@@ -57,6 +59,7 @@ ui.Table(
 ```
 
 ## Search, filters and pages
+<!-- keywords: pagination, paging, filter, sort, search -->
 
 `search=True` adds a box that matches any column. `filters=True` adds a
 filter row whose kind follows each column's values, and `page_size` pages
@@ -67,6 +70,7 @@ ui.Table(rows=ROWS, search=True, filters=True, page_size=3, summary="People in t
 ```
 
 ## Selection and row actions
+<!-- keywords: select rows, bulk actions, click a row, checkbox -->
 
 `selection="row"` or `"rows"` lets the user pick, and `on_select`
 receives the keys. `row_actions` adds a menu per row, and `on_action`
@@ -108,7 +112,10 @@ def example(s):
 `tones` colors rows. It is a function of the row returning a tone, or a
 mapping from column key to a function of the row and the cell, called as
 `fn(row, value)`. The row is the one given in `rows`, so a model is still
-a model there, and returning `None` leaves the row or cell as it is. A row's
+a model there. The value is the cell as it goes to the tab, before the
+column's `format`. A number is a number, a date is its ISO text, a
+`Decimal` is its text and an `Enum` its value, and the row has each as it
+was given. Returning `None` leaves the row or cell as it is. A row's
 tone tints the row, and a cell's tone colors the cell's text, or the
 badge when the column is one.
 
@@ -136,6 +143,7 @@ ui.Table(
 ```
 
 ## Long tables
+<!-- keywords: virtual scroll, performance, many rows -->
 
 Every row is in the browser, and a table of thousands stays quick.
 `height` gives the table a box of its own to scroll in, with the header

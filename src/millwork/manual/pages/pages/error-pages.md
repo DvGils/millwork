@@ -6,6 +6,7 @@ related: /pages/sessions, /sign-in/access-rules, /theming
 ---
 
 # Error pages
+<!-- keywords: 404, not found, 403, forbidden, 500, exception, crash, traceback -->
 
 A path no page matches lands on the app's not-found page. Over HTTP that
 is a 404 that still serves the shell. Over the session, when a link or

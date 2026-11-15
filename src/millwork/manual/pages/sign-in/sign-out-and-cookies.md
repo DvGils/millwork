@@ -6,6 +6,7 @@ related: /sign-in/rechecking-users, /running/hosting-checklist
 ---
 
 # Sign-out and cookies
+<!-- keywords: logout, log out, cookie, session lifetime, expiry -->
 
 The sign-out in the header's user menu and `s.logout()` from a handler do
 the same thing. The cookie is cleared, the person's other sessions on this
