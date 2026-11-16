@@ -75,6 +75,7 @@ draft)` with a dict or a model instance, `select(table, keys)`,
 `choose(menu, item)` for an item of a `DropdownMenu` by its id or label,
 `action(node, id, key)` for a row or card action, `upload(node, path,
 field=)`, which runs every check an upload gets and returns the `FileRef`,
+which for a form is the value of its file field in the draft,
 `send(chat, text, files=)`, `stop(chat)`, `navigate(path)`, and `event(node,
 name, payload)` for anything else. A draft that fails validation produces
 the same `form_issues` command the tab would get, at the same pointers.

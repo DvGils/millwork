@@ -175,7 +175,8 @@ points at a component with `s.highlight`, which
 | --- | --- |
 | `await reply.text(chunk)` | streamed Markdown |
 | `async with reply.reasoning() as r` | a folded thinking block, `r.text(...)` inside |
-| `async with reply.step(label) as step` | a tool step with `step.output(...)` |
+| `async with reply.step(label) as step` | a tool step with `await step.output(...)` |
+| `call = await reply.tool(name, input)` | a tool call with its name and input, ended by `await call.output(...)` or `await call.error(text)` |
 | `await reply.source(title, url, snippet)` | a source chip |
 | `await reply.file(ref)` and `reply.image(ref)` | an attachment, an inline image |
 | `await reply.status(text)` | a marker that disappears when the reply ends |
@@ -192,6 +193,13 @@ exception's own words. A handler that has something to tell the reader
 catches the exception and calls `reply.error` with it. The error line is
 kept with the message, as a part of the type `error`, so it is there
 after a reload as well.
+
+A picture in a reply's Markdown is fetched from its address, which can
+carry what the model read. An app whose model reads text it does not
+trust gives `App(csp=...)` a policy with `img-src 'self'`, which keeps
+pictures to its own origin. The
+[hosting checklist](/running/hosting-checklist#the-page-s-security-headers)
+says what such a policy has to hold.
 
 ## Reading aids
 

@@ -120,6 +120,10 @@ versions; a release says so here when it does.
   such a frame.
 - Feedback's section on highlights ends with one on a bar of a chart and
   one on a row of a table.
+- Chat's table of the parts of a reply has `reply.tool`, and the chapter
+  says that a picture in a reply's Markdown is fetched from its address.
+- Testing says that the `FileRef` from `page.upload` on a form is the
+  value of its file field in the draft.
 
 ## 0.4.1
 
