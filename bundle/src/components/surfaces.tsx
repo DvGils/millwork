@@ -8,6 +8,7 @@ import { t } from "../theme";
 import { store, useMounts, useNode } from "../store";
 import { has, linkLook } from "../lib";
 import { anchorProps, InSidebar } from "./anchor";
+import { useStickToEnd } from "../stick";
 import { ScrollArea as UiScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "cn";
 import { icon } from "../icons";
@@ -458,8 +459,18 @@ export function useOwnedOpen(open: unknown, defaultOpen: unknown): [boolean, (v:
   return [controlled ? Boolean(open) : local, setLocal];
 }
 
-export const ScrollArea: Renderer = ({ props, children }) => (
-  <UiScrollArea className={cn("min-h-0", props.cls as string)} style={props.height ? { height: String(props.height) } : undefined}>
-    <div className="flex flex-col gap-4">{children}</div>
-  </UiScrollArea>
-);
+export const ScrollArea: Renderer = ({ props, children }) => {
+  const holder = useStickToEnd<HTMLDivElement>(Boolean(props.stick_to_end));
+  return (
+    <UiScrollArea
+      ref={holder}
+      // One that fills is a column of its own, so its viewport is given the
+      // height the area came to and scrolls inside it. It keeps a few rows
+      // of height where its neighbors leave it none, and the page scrolls.
+      className={cn("min-h-0", props.fill && "mw-fill flex min-h-24 grow flex-col", props.cls as string)}
+      style={props.height ? { height: String(props.height) } : undefined}
+    >
+      <div className="flex flex-col gap-4">{children}</div>
+    </UiScrollArea>
+  );
+};

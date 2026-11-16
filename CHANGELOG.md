@@ -22,8 +22,20 @@ versions; a release says so here when it does.
   zone. The warning is now for a press, which is a click, a submit, a
   row or card action, a click on a table's row and a choice from a menu.
 
+- A `ui.ScrollArea` printed only the rows in view. It prints its whole
+  content now, as a table with a `height` does.
+
 ### Features
 
+- A page can be a frame that fills the window, with a bar on top, a list
+  that scrolls in the middle and a field that stays at the bottom.
+  `ui.Stack(fill=True)` is as high as the window has room and no higher,
+  and `ui.ScrollArea(fill=True)` in it takes the height that is left and
+  scrolls inside it. Before, only a `ui.Chat` and a `ui.Split` filled a
+  page, and `Stack(grow=True)` grew with its content.
+- `ui.ScrollArea(stick_to_end=True)` opens at its end and stays there as
+  rows arrive, for messages or a log. A reader who scrolls up is left
+  where they are.
 - `page.submit(field, text)` in a test types text into an `Input` or a
   `Textarea` and enters it, with Enter or with Ctrl+Enter in a
   `Textarea`. The field gets what a tab sends then. That is the text to
@@ -37,6 +49,8 @@ versions; a release says so here when it does.
 - Inputs says that a field with `clear_on_submit` and an `on_change`
   reports its empty value after the Enter, so a draft kept in state is
   emptied without the handler doing it.
+- Layout has a new section, "A page that fills the window", that builds
+  such a frame.
 
 ## 0.4.1
 

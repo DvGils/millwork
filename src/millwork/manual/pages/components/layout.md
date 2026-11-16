@@ -121,6 +121,9 @@ ui.Stack(
 ui.Stack(ui.Text("First"), ui.Text("Second"), ui.Text("Third"), divided=True, gap=2)
 ```
 
+`fill=True` makes a `Stack` as high as the window has room, for
+[a page that fills the window](#a-page-that-fills-the-window).
+
 ## Grid
 <!-- keywords: columns, two columns, side by side, responsive, breakpoints -->
 
@@ -322,6 +325,7 @@ ui.Stack(
 ```
 
 ## ScrollArea
+<!-- keywords: overflow, scrollable, auto scroll, scroll to bottom, stick to bottom, follow, log, tail -->
 
 `ui.ScrollArea` scrolls its children inside a fixed `height`.
 
@@ -331,3 +335,67 @@ ui.ScrollArea(
     height="8rem",
 )
 ```
+
+`stick_to_end=True` is for a list that grows at its end, such as
+messages or a log. The area opens at its end and stays there as rows
+arrive. A reader who scrolls up is left where they are, and the area
+stays at its end again once they are back there.
+
+```python live
+from pydantic import BaseModel
+
+
+class Feed(BaseModel):
+    lines: list[str] = [f"Line {i + 1}" for i in range(30)]
+
+
+def more(s, _):
+    lines = s.state.feed.lines
+    lines.append(f"Line {len(lines) + 1}")
+
+
+def example(s):
+    return ui.Stack(
+        ui.ScrollArea(
+            ui.Stack(*(ui.Text(line, key=line) for line in s.state.feed.lines), gap=1),
+            height="8rem",
+            stick_to_end=True,
+        ),
+        ui.Button("Add a line", variant="outline", on_click=more),
+        gap=2,
+    )
+```
+
+## A page that fills the window
+<!-- keywords: full height, viewport height, 100vh, fixed footer, sticky footer, composer, message list, chat layout, app shell, frame -->
+
+A page is as long as its content and scrolls as a whole. Some pages are
+a frame instead, with a bar on top, a list that scrolls in the middle
+and a field that stays at the bottom. `ui.Stack(fill=True)` makes that
+frame. The stack is as high as the window has room under the header, and
+no higher, so what is in it has to fit. The part that is long goes in a
+`ui.ScrollArea(fill=True)`, which takes the height the other children
+leave and scrolls inside it.
+
+```python
+@app.page("/channel")
+def channel(s: mw.Session[State]) -> ui.Component:
+    return ui.Page(
+        ui.Stack(
+            ui.Text("# general", variant="subheading"),
+            ui.ScrollArea(
+                ui.Stack(*(ui.Text(m.text, key=m.id) for m in s.state.messages), gap=1),
+                fill=True,
+                stick_to_end=True,
+            ),
+            ui.Input(placeholder="Message", clear_on_submit=True, on_submit=post),
+            fill=True,
+        ),
+    )
+```
+
+`fill` works on a child of the `Page` and on a child of a `Stack` that
+fills. Anywhere else there is no height to take, and the stack or the
+area is as high as its content. `padding=False` on the `Page` takes the
+frame to the edges of the window. A `ui.Chat` and a `ui.Split` fill a
+page the same way without being told.

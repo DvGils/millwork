@@ -289,6 +289,13 @@ def test_a_grid_takes_the_widths_it_knows_and_counts_it_can_draw() -> None:
     props = build(ui.Grid(cols={"sm": 1, "md": 2, "xl": 7})).nodes["root"].props
     assert props["cols"] == {"sm": 1, "md": 2, "xl": 7}
     assert build(ui.Grid(cols=12)).nodes["root"].props["cols"] == 12
+    # What makes a frame of a page is there only where it is asked for.
+    assert build(ui.Stack()).nodes["root"].props["fill"] is False
+    assert build(ui.Stack(fill=True)).nodes["root"].props["fill"] is True
+    area = build(ui.ScrollArea(height="8rem")).nodes["root"].props
+    assert area["fill"] is False and area["stick_to_end"] is False
+    area = build(ui.ScrollArea(fill=True, stick_to_end=True)).nodes["root"].props
+    assert area["fill"] is True and area["stick_to_end"] is True
     for bad in ({"xxl": 2}, {"md": 0}, 13):
         with pytest.raises(ValidationError):
             ui.Grid(cols=bad)  # type: ignore[arg-type]

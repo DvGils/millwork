@@ -284,6 +284,13 @@ body.mw-dragging * {
   }
   .mw-fill {
     max-height: none;
+    flex-basis: auto !important;
+  }
+  [data-slot="scroll-area"] {
+    height: auto !important;
+  }
+  [data-slot="scroll-area-viewport"] {
+    overflow: visible !important;
   }
   [data-slot="sidebar"],
   [data-slot="header"] {
