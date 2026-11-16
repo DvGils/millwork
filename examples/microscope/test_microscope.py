@@ -305,12 +305,19 @@ async def test_a_drop_that_fails_does_not_stop_the_clock_for_the_others(
     example: ModuleType, world: ModuleType, caplog: pytest.LogCaptureFixture
 ) -> None:
     example.World = partial(world.World, seed=7)
-    example.TICK = 0.01
+    # A clock that is fast and still waits. A wait shorter than a step of
+    # the loop's own clock is over at once, and that step is 16 ms on
+    # Windows before Python 3.13. A page that is moved on without a pause
+    # never comes to rest, and the harness waits for that.
+    example.TICK = 0.05
     harness = TestApp(example.app)
     async with harness.open("/") as one, harness.open("/") as two:
         broken, sound = (example.WORLDS[p.session.id] for p in (one, two))
         broken.cells[0] = None  # what no drop holds, and no step gets past
-        await asyncio.sleep(0.2)
+        for _ in range(200):
+            if sound.time > 0.5:
+                break
+            await asyncio.sleep(0.05)
         # The broken one is first in line, and the other still gets its turn.
         assert "a drop could not be moved on" in caplog.text
         assert sound.time > 0.5 and sound.cells
