@@ -11,6 +11,9 @@ picture of it in use.
 - [Analyst](analyst/): a chat that answers questions about a table of
   orders, pins charts to a board and points at them. It runs on a script,
   or on a model when it has a key.
+- [Microscope](microscope/): a drop of water in which cells eat, divide
+  and change over the generations, seen through a microscope whose lamp
+  feeds what it shows.
 
 An example runs from the repository root:
 

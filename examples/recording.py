@@ -272,7 +272,7 @@ async def served(app: Path, port: int) -> AsyncIterator[str]:
         shutil.rmtree(profile, ignore_errors=True)
 
 
-def gif(
+def picture(
     out: Path,
     placed: list[tuple[Window, int, int, int]],
     size: tuple[int, int] = (1200, 800),
@@ -280,7 +280,11 @@ def gif(
 ) -> None:
     """Write a GIF of a few windows side by side on a backdrop. Each is
     given with where its corner goes and how wide it is drawn, and gets a
-    thin frame around it: ``(window, x, y, width)``."""
+    thin frame around it: ``(window, x, y, width)``.
+
+    A name that ends in ``.webp`` gets an animated WebP. A picture of soft
+    light and blur needs more than the 256 colors a GIF has, and is a
+    third of the size this way."""
     with tempfile.TemporaryDirectory() as tmp:
         inputs: list[str] = []
         parts = [f"color=c={backdrop}:s={size[0]}x{size[1]}:r={FPS}[p0]"]
@@ -301,6 +305,13 @@ def gif(
         last = f"[p{len(placed)}]"
         palette = str(Path(tmp) / "palette.png")
         quiet = ["ffmpeg", "-y", "-loglevel", "error"]
+        if out.suffix == ".webp":
+            how = ["-c:v", "libwebp_anim", "-quality", "60", "-loop", "0", "-an"]
+            subprocess.run(
+                [*quiet, *inputs, "-filter_complex", picture, "-map", last, *how, str(out)],
+                check=True,
+            )
+            return
         subprocess.run(
             [
                 *quiet,

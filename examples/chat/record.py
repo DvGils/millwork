@@ -13,7 +13,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from recording import Recording, Window, gif, served  # noqa: E402
+from recording import Recording, Window, picture, served  # noqa: E402
 
 PORT = 8032
 FIELD = "document.querySelector('input[placeholder^=\"Message\"]')"
@@ -92,7 +92,7 @@ async def record(base: str) -> None:
         await ada.close()
     out = HERE / "chat.gif"
     # The screen at the left, the phone beside it at two thirds of its size.
-    gif(out, [(ada, 24, 29, 860), (sam, 908, 134, 260)])
+    picture(out, [(ada, 24, 29, 860), (sam, 908, 134, 260)])
     print(f"{len(ada.frames)} frames, {out.name} {out.stat().st_size / 1e6:.2f} MB")
 
 

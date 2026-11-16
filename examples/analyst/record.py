@@ -16,7 +16,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from recording import Recording, Window, gif, served  # noqa: E402
+from recording import Recording, Window, picture, served  # noqa: E402
 
 PORT = 8034
 FIELD = "document.querySelector('textarea')"
@@ -65,7 +65,7 @@ async def record(base: str) -> None:
     finally:
         await desk.close()
     out = HERE / "analyst.gif"
-    gif(out, [(desk, 23, 23, 1152)], backdrop="0x05070a")
+    picture(out, [(desk, 23, 23, 1152)], backdrop="0x05070a")
     print(f"{len(desk.frames)} frames, {out.name} {out.stat().st_size / 1e6:.2f} MB")
 
 

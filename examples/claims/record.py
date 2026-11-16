@@ -13,7 +13,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from recording import Recording, Window, gif, served  # noqa: E402
+from recording import Recording, Window, picture, served  # noqa: E402
 
 PORT = 8033
 
@@ -80,7 +80,7 @@ async def record(base: str) -> None:
         await nora.close()
         await priya.close()
     out = HERE / "claims.gif"
-    gif(out, [(priya, 24, 29, 860), (nora, 908, 134, 260)], backdrop="0xe4e7e2")
+    picture(out, [(priya, 24, 29, 860), (nora, 908, 134, 260)], backdrop="0xe4e7e2")
     print(f"{len(priya.frames)} frames, {out.name} {out.stat().st_size / 1e6:.2f} MB")
 
 
