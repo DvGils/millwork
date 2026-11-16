@@ -5,6 +5,9 @@ picture of it in use.
 
 - [Team chat](chat/): channels, messages that arrive as they are sent,
   who is typing and who is here.
+- [Expense claims](claims/): sign-in for three kinds of people, a claim
+  with its receipt that is filed, reviewed and paid, and a report that
+  prints.
 
 An example runs from the repository root:
 

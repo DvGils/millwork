@@ -127,6 +127,14 @@ class Window:
         )
         return r.get("result", {}).get("value")
 
+    async def attach(self, field: str, file: Path) -> None:
+        """Choose a file in the file field the JavaScript expression finds,
+        as someone picks one from their device."""
+        found = await self.call("Runtime.evaluate", expression=field)
+        await self.call(
+            "DOM.setFileInputFiles", files=[str(file)], objectId=found["result"]["objectId"]
+        )
+
     async def shot(self) -> bytes:
         r = await self.call("Page.captureScreenshot", format="png")
         return base64.b64decode(r["data"])
@@ -166,6 +174,8 @@ class Recording:
             raise RuntimeError(f"no element for {element}")
         x, y = box["x"], box["y"]
         if not window.phone:
+            # A page that was loaded since has no pointer yet.
+            await window.eval(f"document.getElementById('pointer') || {POINTER.strip()}")
             await window.eval(
                 "document.getElementById('pointer').style.transform ="
                 f" 'translate({x - 2}px, {y - 2}px)'"
