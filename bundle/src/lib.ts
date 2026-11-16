@@ -138,6 +138,16 @@ export function has(props: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(props, key);
 }
 
+// A number that was typed, held to the range of its field as the field's
+// arrows hold it. A browser lets any number be typed. The number the page
+// put there is left as it is, also where it is outside the range.
+export function inRange(typed: number | null, min: unknown, max: unknown, start: number | null): number | null {
+  if (typed === null || typed === start) return typed;
+  if (typeof min === "number" && typed < min) return min;
+  if (typeof max === "number" && typed > max) return max;
+  return typed;
+}
+
 // Above this many characters a text field stops being spellchecked. The
 // browser's spellchecker marks every word of a change, and on a long paste
 // that takes seconds and freezes the tab; a field this long is not prose

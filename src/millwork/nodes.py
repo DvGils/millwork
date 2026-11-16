@@ -371,6 +371,9 @@ class Tree:
         self.kept: list[Part] = []
         # Seconds spent in lazy functions while it was built.
         self.spent = 0.0
+        # The nodes that take no events, in something closed and in
+        # something hidden. Worked out at the first event that asks.
+        self.veiled: tuple[frozenset[str], frozenset[str]] | None = None
 
     def handler(self, node_id: str, event: str) -> Handler | None:
         return self.handlers.get((node_id, event))

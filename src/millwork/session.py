@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
-from millwork import context, marks, outline, work
+from millwork import context, marks, offers, outline, work
 from millwork.chat import ChatTurn, Thread, UIMessage
 from millwork.connection import REPLACED, Connection, End, Pipe
 from millwork.files import FileRef, Reject, SessionFiles, content_to_file
@@ -223,6 +223,9 @@ class Session[S]:
         # and says it again whenever the ``Tabs`` are new to it, so what it
         # said is kept until the node is gone from the page.
         self._showing: dict[str, str] = {}
+        # What the search of a Combobox last answered with, by node: the
+        # choices it has on offer that are not on the page.
+        self._found: dict[str, deque[frozenset[str]]] = {}
         # What each form was told is wrong with it at its last submit.
         self._form_issues: dict[str, list[Any]] = {}
         # Lazy parts to build at the next render whether they show or not.
@@ -1861,6 +1864,8 @@ class Session[S]:
                 )
             if self._showing:
                 self._showing = {k: v for k, v in self._showing.items() if k in tree.nodes}
+            if self._found:
+                self._found = {k: v for k, v in self._found.items() if k in tree.nodes}
             if self._form_issues:
                 self._form_issues = {k: v for k, v in self._form_issues.items() if _drawn(tree, k)}
             return tree
@@ -1920,6 +1925,19 @@ class Session[S]:
             # Other than what the page was drawn by, so it is drawn again.
             self._refresh_now()
 
+    def _searched(self, node_id: str, options: Any) -> None:
+        """A search answered with these options, which its field now has
+        on offer. A tab shows the answer to its last search, and one that
+        crossed a newer search on the way, so a few are kept."""
+        if not isinstance(options, list):
+            return
+        values = frozenset(
+            o["value"]
+            for o in options
+            if isinstance(o, dict) and type(o.get("value")) is str and not o.get("disabled")
+        )
+        self._found.setdefault(node_id, deque(maxlen=FOUND_KEPT)).append(values)
+
     def kept_part(self, node_id: str) -> str | None:
         """The lazy part that holds this node as it was at an earlier render."""
         return self.tree.kept_part(node_id) if self.tree is not None else None
@@ -1971,6 +1989,11 @@ class Session[S]:
             return None
         if self._asks and self._answer_ask(event, component):
             return None
+        veil = offers.veiled(self.tree, event.node, isinstance(component, Custom))
+        if veil is not None:
+            log.debug("event %s on node %s dropped, which %s", event.name, event.node, veil)
+            self._unheard(event, veil)
+            return None
         if getattr(component, "disabled", False) and not _despite_disabled(component, event):
             log.debug("event %s on disabled node %s dropped", event.name, event.node)
             self._unheard(event, "is disabled")
@@ -2012,6 +2035,19 @@ class Session[S]:
         if handler is None:
             log.warning("no handler for %s on %s", event.name, event.node)
             self._unheard(event, f"has no handler for {event.name}")
+            return None
+
+        try:
+            drawn = self.tree.nodes.get(event.node)
+            # A component of the app's own is drawn under its own name,
+            # which may be one of the catalog's.
+            if drawn is not None and not isinstance(component, Custom):
+                found = frozenset().union(*self._found.get(event.node, ()))
+                payload = offers.given(self.tree, drawn, event.name, payload, found)
+        except offers.Refused as refused:
+            # No tab of the bundle's sends this, so it is worth a line.
+            log.warning("%s on %s %s", event.name, event.node, refused)
+            self._unheard(event, str(refused))
             return None
 
         if event.name == "upload" and isinstance(component, FileUpload):
@@ -2153,6 +2189,9 @@ class Session[S]:
         component = self.tree.components.get(node_id) if self.tree is not None else None
         accept: list[str] | None
         max_mb: int | None
+        if self.tree is not None and offers.veiled(self.tree, node_id) is not None:
+            # Closed or hidden, it shows no way to send a file.
+            raise Reject("no upload component for this node")
         if isinstance(component, FileUpload) and not component.disabled:
             accept, max_mb = component.accept, component.max_size_mb
         elif isinstance(component, Chat) and component.attachments and not component.disabled:
@@ -2317,6 +2356,8 @@ SLOW_PAGE_MS = 20
 # How many open tabs the session keeps on a tab's word while it has no page
 # to check them against.
 SHOWING_KEPT = 64
+# The answers of a field's search whose options count as on offer.
+FOUND_KEPT = 4
 # Requests in flight per session, of any kind, and files streaming out at once.
 MAX_REQUESTS = 32
 FILE_SLOTS = 4

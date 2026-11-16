@@ -4,6 +4,7 @@ import { type CSSProperties, useContext, useEffect, useState } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
+import { useHiddenAbove } from "../veil";
 import { t } from "../theme";
 import { store, useMounts, useNode } from "../store";
 import { has, linkLook } from "../lib";
@@ -143,9 +144,12 @@ const dialogSize: Record<string, string> = {
 
 export const Dialog: Renderer = ({ node, props, children, emit }) => {
   const status = useStatus();
+  // Hidden, or in something hidden, it does not open: it is drawn at the
+  // top of the page, where the wrapper that hides a node does not reach.
+  const hidden = useHiddenAbove();
   return (
   <UiDialog
-    open={Boolean(props.open) && status !== "closed"}
+    open={Boolean(props.open) && status !== "closed" && !hidden}
     disablePointerDismissal={props.dismissable === false}
     onOpenChange={(open) => {
       if (!open && props.dismissable !== false && props.on_close) emit("close");

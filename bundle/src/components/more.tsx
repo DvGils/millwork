@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
 import { Render, Slot } from "../render";
+import { useHiddenAbove } from "../veil";
 import { useStatus } from "../ws";
 import { useMounts, useNode } from "../store";
 import { cn } from "cn";
@@ -429,9 +430,11 @@ const sheetSize: Record<string, string> = {
 
 export const Sheet: Renderer = ({ node, props, children, emit }) => {
   const status = useStatus();
+  // As a dialog: hidden, or in something hidden, it does not open.
+  const hidden = useHiddenAbove();
   return (
   <UiSheet
-    open={Boolean(props.open) && status !== "closed"}
+    open={Boolean(props.open) && status !== "closed" && !hidden}
     disablePointerDismissal={props.dismissable === false}
     onOpenChange={(open) => {
       if (!open && props.dismissable !== false && props.on_close) emit("close");

@@ -91,8 +91,10 @@ a test cannot read it, so the test says what it turns to with `change`.
 
 An action the page does not take fails the test with a `LookupError`
 that names the node. That is an event for a node that has no handler for
-it, anything sent to a node that is disabled or hidden, a click on a
-button that is loading, and a submit of a read-only form. In a browser
+it, anything sent to a node that is disabled, hidden, in something
+hidden or in a closed dialog or sheet, a value its component could not
+have sent, a click on a button that is loading, and a submit of a
+read-only form. In a browser
 such an action does nothing, so a test that passed on one would have
 checked nothing. A custom component is the exception to hidden. A tab
 keeps it running while it does not show, so `page.event` with an event

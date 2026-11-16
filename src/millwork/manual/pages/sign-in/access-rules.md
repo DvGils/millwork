@@ -54,7 +54,10 @@ ui.Link(label="Review", href="/review") if s.can("/review") else None
 
 What a page draws is what its user can do. A handler exists only on the
 page of the session that drew it, so a button left out for someone is a
-handler they cannot reach.
+handler they cannot reach. A component that is hidden, or in a dialog or
+a sheet that is closed, takes no events either. A folded section and a
+tab that is not open still take them, so what someone may not do has to
+be left out.
 
 ## Routes and mounts
 

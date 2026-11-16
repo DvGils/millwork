@@ -8,7 +8,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type React from "react";
 import type { Renderer } from "../render";
 import { cn } from "cn";
-import { has, placed } from "../lib";
+import { has, inRange, placed } from "../lib";
 import { icon } from "../icons";
 import { optionLabel } from "./option-label";
 import { typedOption } from "./typed-option";
@@ -370,9 +370,12 @@ export const NumberInput: Renderer = ({ props, emit }) => {
   useEffect(() => {
     sent.current = undefined;
   }, [props.value]);
+  const start = controlled ? props.value : props.default;
   const report = () => {
     if (!props.on_change) return;
-    const value = parse(current);
+    const typed = parse(current);
+    const value = inRange(typed, props.min, props.max, typeof start === "number" ? start : null);
+    if (value !== typed) setDraft(String(value));
     if (sent.current !== undefined && sent.current === value) return;
     sent.current = value;
     // As the server's value reads here: a number as text, none as no text.

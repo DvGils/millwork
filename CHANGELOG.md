@@ -66,12 +66,33 @@ versions; a release says so here when it does.
   day.
 - A `ui.ScrollArea` printed only the rows in view. It prints its whole
   content now, as a table with a `height` does.
+- A number typed into a `ui.NumberInput` outside its `min` and `max` was
+  sent as typed. It becomes the nearest end on Enter and when the field
+  is left.
+- A `ui.Dialog` or a `ui.Sheet` that was open and hidden, or in
+  something hidden, still showed. It stays closed.
+- A table's handler got a rounded number for a row whose key is a whole
+  number past 2^53, which is how a browser reads it. It gets the key as
+  the page gave it.
 - A `ui.Row` as the `footer` of a `ui.Card` kept its children together,
   whatever its `justify` said. A row, a stack or a grid in a card's
   footer is now as wide as the footer.
 
 ### Features
 
+- A handler gets a value its component could have sent. The session
+  holds what a tab sends against the component as the page drew it. A
+  choice has to be on offer and not disabled, a number inside `min` and
+  `max`, text within `max_length`, and a table's row one of its rows.
+  Anything else is not heard, and a line in the log says why. From a
+  list, a choice or a row the page has taken away since is left out and
+  the rest is heard. A handler that checked its payload no longer has
+  to. What a `ui.Custom` emits is still its handler's to check.
+- A component that is hidden or in something hidden takes no events,
+  and neither does anything in a `ui.Dialog` or a `ui.Sheet` that is
+  closed. Before, a tab could submit a form in a closed sheet. A test
+  is as strict as a tab, so one that acts on such a component now fails
+  with a `LookupError`.
 - A page can be a frame that fills the window, with a bar on top, a list
   that scrolls in the middle and a field that stays at the bottom.
   `ui.Stack(fill=True)` is as high as the window has room and no higher,
@@ -124,6 +145,8 @@ versions; a release says so here when it does.
   says that a picture in a reply's Markdown is fetched from its address.
 - Testing says that the `FileRef` from `page.upload` on a form is the
   value of its file field in the draft.
+- Inputs has a section, "What a handler gets". Access rules says that
+  hidden and closed take no events and that folded still does.
 
 ## 0.4.1
 

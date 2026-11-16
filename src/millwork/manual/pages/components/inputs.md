@@ -50,6 +50,17 @@ def example(s):
     )
 ```
 
+## What a handler gets
+<!-- keywords: payload, validation, untrusted, tampering, crafted -->
+
+A handler gets a value its component could have sent. A choice is one
+that was on offer and not disabled, a number is inside `min` and `max`,
+and text is no longer than `max_length`. A tab that sends anything else
+is not heard, so a handler reads its value without checking it again. A
+value the page itself gave the component passes as well, also when it is
+no longer among the choices. From a list, a choice or a row that the
+page has taken away since is left out and the rest is heard.
+
 ## Button
 <!-- keywords: click, submit, action -->
 
@@ -244,7 +255,8 @@ ui.Textarea(
 <!-- keywords: numeric, stepper -->
 
 `ui.NumberInput` takes a number within `min` and `max`, stepping by `step`,
-with an optional `suffix`. It reports on blur and on Enter.
+with an optional `suffix`. It reports on blur and on Enter, and a number
+typed outside the range becomes its nearest end then.
 
 ```python live
 ui.Row(

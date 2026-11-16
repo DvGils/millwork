@@ -287,7 +287,9 @@ async def test_table_events_reach_handlers_as_sent(tmp_path) -> None:
 
     async with TestApp(app).open("/") as page:
         t = page.find("t")
-        await page.select(t, ["b", "zzz"])  # keys are the tab's claim; the handler decides
+        # A key is the tab's claim. One that names no row is left out, as a
+        # tab still holds a row that the table has no more.
+        await page.select(t, ["b", "zzz"])
         await page.event(t, "row_click", "a")
         await page.action(t, "open", "a")
         await page.event(t, "sort", [["id", "asc"]])
@@ -297,7 +299,7 @@ async def test_table_events_reach_handlers_as_sent(tmp_path) -> None:
         assert page.find(ui.Dialog).props["title"] == "Remove?"
         await page.answer(False)
         assert seen == [
-            ("select", ["b", "zzz"]),
+            ("select", ["b"]),
             ("row", "a"),
             ("action", ["open", "a"]),
             ("sort", [["id", "asc"]]),
