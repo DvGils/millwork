@@ -362,7 +362,7 @@ export function gridColumns(cols: unknown): Record<string, number | string> {
 export const Grid: Renderer = ({ props, children }) => {
   const gap = typeof props.gap === "number" ? props.gap : 4;
   return (
-    <div className={cn("mw-grid grid", `gap-${gap}`, props.cls as string)} style={gridColumns(props.cols) as CSSProperties}>
+    <div data-box="" className={cn("mw-grid grid", `gap-${gap}`, props.cls as string)} style={gridColumns(props.cols) as CSSProperties}>
       {children}
     </div>
   );

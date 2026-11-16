@@ -232,7 +232,9 @@ export const Card: Renderer = ({ props, children, emit }) => (
         footer sits at the bottom of every card in a row. */}
     <CardContent className={cn("flex grow flex-col gap-4", props.padding === false && "p-0")}>{children}</CardContent>
     {props.footer ? (
-      <CardFooter>
+      // A row, a stack or a grid in the footer is as wide as the footer, so
+      // its own justify has room to work in. Anything else keeps its size.
+      <CardFooter className="[&>[data-node]>[data-box]]:min-w-0 [&>[data-node]>[data-box]]:grow">
         <Slot value={props.footer} />
       </CardFooter>
     ) : null}

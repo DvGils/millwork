@@ -52,6 +52,7 @@ export const Page: Renderer = ({ node, props, children }) => {
 
 export const Stack: Renderer = ({ props, children }) => (
   <div
+    data-box=""
     className={cn(
       "flex flex-col",
       gapClass(props.gap),
@@ -73,6 +74,7 @@ export const Stack: Renderer = ({ props, children }) => (
 
 export const Row: Renderer = ({ props, children }) => (
   <div
+    data-box=""
     className={cn(
       "flex flex-row",
       gapClass(props.gap),

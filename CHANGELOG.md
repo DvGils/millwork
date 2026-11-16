@@ -66,6 +66,9 @@ versions; a release says so here when it does.
   day.
 - A `ui.ScrollArea` printed only the rows in view. It prints its whole
   content now, as a table with a `height` does.
+- A `ui.Row` as the `footer` of a `ui.Card` kept its children together,
+  whatever its `justify` said. A row, a stack or a grid in a card's
+  footer is now as wide as the footer.
 
 ### Features
 
