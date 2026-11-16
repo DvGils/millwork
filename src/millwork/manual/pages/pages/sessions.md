@@ -109,9 +109,8 @@ Both functions above then go by the server's zone. A test gives one
 with `TestApp(app).open("/", timezone="Asia/Tokyo")`.
 
 Python reads time zones from the system it runs on. Windows has none to
-read, and neither has a container image that leaves them out. There the
-`tzdata` package brings them. Without it `s.timezone` is `None` and the
-log says so once.
+read, and neither has a container image that leaves them out. millwork
+installs the `tzdata` package, which Python reads in their place.
 
 A `ui.Table` column with the `datetime` format is formatted in the
 browser, which shows a time that carries its offset in the viewer's

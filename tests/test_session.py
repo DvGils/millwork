@@ -979,17 +979,6 @@ async def test_a_literal_path_wins_over_a_parameter_in_either_order(tmp_path: Pa
         assert page.find("t").props["content"] == "first"
 
 
-def a_zone(name: str) -> Any:
-    """A time zone by its name, or the test is skipped where Python has no
-    time zones to read."""
-    from zoneinfo import ZoneInfo
-
-    try:
-        return ZoneInfo(name)
-    except Exception:
-        pytest.skip("this Python has no time zone data")
-
-
 def zoned_app(tmp_path: Path, seen: list[Any]) -> mw.App:
     """A page that shows its viewer's time zone, and tells what its connect
     hook found."""
@@ -1012,7 +1001,9 @@ def shown(mount: dict[str, Any]) -> str:
 
 
 def test_a_session_has_the_time_zone_its_tab_named(tmp_path: Path) -> None:
-    tokyo, lima = a_zone("Asia/Tokyo"), a_zone("America/Lima")
+    from zoneinfo import ZoneInfo
+
+    tokyo, lima = ZoneInfo("Asia/Tokyo"), ZoneInfo("America/Lima")
     seen: list[Any] = []
     app = zoned_app(tmp_path, seen)
     with TestClient(app.asgi) as client:
@@ -1060,9 +1051,11 @@ def test_a_zone_longer_than_a_name_is_no_hello(tmp_path: Path) -> None:
 
 
 async def test_a_test_gives_its_page_a_time_zone(tmp_path: Path) -> None:
+    from zoneinfo import ZoneInfo
+
     from millwork.testing import TestApp
 
-    tokyo = a_zone("Asia/Tokyo")
+    tokyo = ZoneInfo("Asia/Tokyo")
     seen: list[Any] = []
     app = zoned_app(tmp_path, seen)
     async with TestApp(app).open("/", timezone="Asia/Tokyo") as page:

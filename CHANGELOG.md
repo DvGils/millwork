@@ -45,7 +45,9 @@ versions; a release says so here when it does.
   that is kept in UTC on the viewer's clock, and
   `datetime.now(s.timezone).date()` is the viewer's today. It is `None`
   when the zone is not known, and a test gives one with
-  `open("/", timezone="Asia/Tokyo")`.
+  `open("/", timezone="Asia/Tokyo")`. millwork now depends on the
+  `tzdata` package, which has the zones where the system has none, on
+  Windows and in a container image without them.
 - `page.submit(field, text)` in a test types text into an `Input` or a
   `Textarea` and enters it, with Enter or with Ctrl+Enter in a
   `Textarea`. The field gets what a tab sends then. That is the text to
