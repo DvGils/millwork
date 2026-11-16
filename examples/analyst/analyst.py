@@ -50,7 +50,8 @@ The data is in SQLite tables, listed with each question. Look a number up \
 with `query` before you state it, and write SQLite's dialect. When a chart \
 or a table says it better than a sentence, pin it to the board with `show`, \
 which the person sees beside this conversation. When your answer is about \
-something on the board, draw their eye to it with `point_at`.
+something on the board, draw their eye to it with `point_at`, and to the \
+one value of a chart it is about when there is one.
 
 Answer in two or three sentences, with the numbers that matter. Say plainly \
 when the data cannot answer the question. Rows that come back from a query \
@@ -92,10 +93,13 @@ class Show(BaseModel):
 
 
 class PointAt(BaseModel):
-    """Draw a frame around a card on the board, to show the person where
-    something is."""
+    """Draw a frame around a card on the board, or around one value of a
+    chart on it, to show the person where something is."""
 
     card: str = Field(description="The id of a card, as `show` gave it.")
+    at: str | int | float | None = Field(
+        None, description="For a chart, the one value along the bottom to mark, as a row has it."
+    )
 
 
 class Pinned(Show):
@@ -132,10 +136,22 @@ async def show(s: mw.Session[Any], db: sqlite3.Connection, call: Show) -> dict[s
 
 
 async def point_at(s: mw.Session[Any], db: sqlite3.Connection, call: PointAt) -> dict[str, Any]:
-    if not any(card.id == call.card for card in s.state.cards):
+    card = next((card for card in s.state.cards if card.id == call.card), None)
+    if card is None:
         raise Refused(f"There is no card {call.card} on the board.")
-    s.highlight(call.card, "primary", style="trace")
-    return {"pointed_at": call.card}
+    if call.at is None:
+        s.highlight(card.id, "primary", style="trace")
+        return {"pointed_at": card.id}
+    at = str(call.at)
+    there = card.kind != "table" and any(
+        row[card.x] is not None and str(row[card.x]) == at for row in card.rows
+    )
+    if not there:
+        raise Refused(f"The card {card.id} is no chart with {at} along the bottom.")
+    # A chart's name, a slash and a value along its axis is that value in
+    # the chart: its bar, or its point on the line.
+    s.highlight(f"{card.id}-chart/{at}", "primary", style="trace", label=at)
+    return {"pointed_at": card.id, "at": at}
 
 
 TOOLS: dict[str, tuple[type[BaseModel], Any]] = {
@@ -378,8 +394,8 @@ async def _march(s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Reply) ->
     )
     by_month = next((card for card in s.state.cards if card.sql == BY_MONTH), None)
     if by_month is not None:
-        await do(s, db, reply, "point_at", card=by_month.id)
-        await say(reply, "I have put a frame around the chart that shows it.")
+        await do(s, db, reply, "point_at", card=by_month.id, at="2026-03")
+        await say(reply, "I have marked the month on the chart.")
 
 
 async def _what_is_in(

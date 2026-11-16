@@ -176,7 +176,10 @@ def pinned(card: Pinned) -> ui.Component:
         shown: ui.Component = ui.Table(rows=card.rows, height=260, summary=False)
     else:
         chart = {"bar": ui.BarChart, "line": ui.LineChart, "area": ui.AreaChart}[card.kind]
-        shown = chart(card.rows, x=card.x, y=card.y, legend=False, height=220)
+        # The chart has a name of its own, for the analyst to point into it.
+        shown = chart(
+            card.rows, x=card.x, y=card.y, legend=False, height=220, key=f"{card.id}-chart"
+        )
     return ui.Card(
         shown,
         title=card.title,

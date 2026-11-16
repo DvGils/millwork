@@ -1,6 +1,6 @@
 # Analyst
 
-![Three questions about a shop's orders. Each answer comes with the query that was run, a chart of it is pinned to a board beside the chat, and for the third the analyst puts a frame around the chart it is talking about. Then a CSV file is attached to a message and asked about.](analyst.gif)
+![Three questions about a shop's orders. Each answer comes with the query that was run, a chart of it is pinned to a board beside the chat, and for the third the analyst marks the month it is talking about on the chart. Then a CSV file is attached to a message and asked about.](analyst.gif)
 
 A chat that answers questions about a table of orders. The answer shows
 the query it ran, a chart or a table it wants you to see is pinned to
@@ -31,7 +31,7 @@ question is a few requests to it, which the key's account pays for.
 | The query that was run, as a step of the answer | `reply.tool(name, input)` and its `output`, which `reply.step` is the plain form of | [Parts a reply can carry](https://millwork-ui.com/components/chat#parts-a-reply-can-carry) |
 | A chart that appears while the answer is still coming | A tool that changes the session's state and calls `s.refresh()`, since a handler's own render comes when it ends | [A render from outside a handler](https://millwork-ui.com/state/accessing-the-session#a-render-from-outside-a-handler) |
 | The analyst knows what is on the board | `s.outline(within="board", as_text=True)`, the page as data | [The page as data](https://millwork-ui.com/state/accessing-the-session#the-page-as-data) |
-| A frame around the chart the answer is about | `s.highlight` | [Highlight](https://millwork-ui.com/components/feedback#highlight) |
+| A mark on the month the answer is about | `s.highlight("card-2-chart/2026-03")`, a chart's name and a value along its axis | [Highlight](https://millwork-ui.com/components/feedback#highlight) |
 | A CSV file that becomes a table | `ui.Chat(attachments=ui.Accept(...))` and the turn's `files` | [Chat](https://millwork-ui.com/components/chat) |
 | The board beside the chat, as high as the window | `ui.Stack(fill=True)` | [A page that fills the window](https://millwork-ui.com/components/layout#a-page-that-fills-the-window) |
 | A dark look by default | `public/theme.json` with `"mode": "dark"` | [Theming](https://millwork-ui.com/theming) |
@@ -57,10 +57,11 @@ question is a few requests to it, which the key's account pays for.
 
 The analyst can do three things. `query` runs a SELECT and gives the
 rows back, `show` pins a chart or a table of a query to the board, and
-`point_at` puts a frame around a card. Each is a Pydantic model of what
-it takes and a function of the same name that does it. The model's
-docstring and fields are what the language model reads, and the same
-model checks what the language model sends before the function runs.
+`point_at` puts a frame around a card or around one value of a chart on
+it. Each is a Pydantic model of what it takes and a function of the same
+name that does it. The model's docstring and fields are what the
+language model reads, and the same model checks what the language model
+sends before the function runs.
 What does not fit, or a tool that fails, goes back to it in words, and
 it tries again.
 

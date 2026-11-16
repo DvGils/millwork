@@ -37,6 +37,18 @@ def steps(page: Page) -> list[tuple[str, str]]:
     return [(p["type"].removeprefix("tool-"), p["state"]) for p in parts if "toolCallId" in p]
 
 
+async def _nothing(*_: Any) -> None:
+    return None
+
+
+async def _step(name: str, given: dict[str, Any]) -> Any:
+    return SimpleNamespace(output=_nothing, error=_nothing)
+
+
+# A reply that shows nothing, for using a tool by hand.
+QUIET: Any = SimpleNamespace(tool=_step)
+
+
 def told(page: Page, words: str) -> bool:
     """Whether the last answer ended with an error that says this."""
     return any(c.get("type") == "error" and words in c["errorText"] for c in page.stream)
@@ -62,7 +74,38 @@ async def test_the_analyst_points_at_what_its_answer_is_about(page: Page) -> Non
     await page.send("analyst", "What happened in March 2026?")
     assert "The West sold no stoves and no tarps in March 2026" in said(page)
     assert steps(page) == [("query", "output-available"), ("point_at", "output-available")]
-    assert [mark["id"] for mark in page.marks] == [page.find("card-1").id]
+    # The mark is on the month in the chart, not on the card around it.
+    assert [(mark["id"], mark["part"]) for mark in page.marks] == [
+        (page.find("card-1-chart").id, "2026-03")
+    ]
+
+
+async def test_pointing_is_at_a_card_or_at_a_value_a_chart_has(
+    page: Page, example: ModuleType
+) -> None:
+    brain, db = example.analyst, example.DATA[page.session.id]
+    await page.send("analyst", "Show revenue by month")
+    await page.send("analyst", "What is in this?", files=[SAMPLES / "returns.csv"])
+    gaps = "SELECT NULL AS x, 1 AS y UNION ALL SELECT 3, 2"
+    chart = {"title": "Gaps", "sql": gaps, "kind": "bar", "x": "x", "y": "y"}
+    await brain.use(page.session, db, QUIET, "show", chart)
+    for given, words in (
+        ({"card": "card-1", "at": "2031-01"}, "no chart with 2031-01"),
+        ({"card": "card-2", "at": "0"}, "no chart with 0"),
+        # A value that is nothing has no place in a chart to mark.
+        ({"card": "card-3", "at": "None"}, "no chart with None"),
+    ):
+        result, failed = await brain.use(page.session, db, QUIET, "point_at", given)
+        assert failed and words in result
+    # A number along the bottom is named as a number or as its text.
+    for given in ({"card": "card-2"}, {"card": "card-3", "at": 3}):
+        _, failed = await brain.use(page.session, db, QUIET, "point_at", given)
+        assert not failed
+    await page.settle()
+    assert [(mark["id"], mark.get("part")) for mark in page.marks] == [
+        (page.find("card-2").id, None),
+        (page.find("card-3-chart").id, 3),
+    ]
 
 
 async def test_a_question_the_script_does_not_know_says_so(page: Page) -> None:
@@ -175,10 +218,6 @@ def test_a_page_takes_pictures_from_the_app_alone(example: ModuleType) -> None:
 async def test_a_tool_is_held_to_what_it_takes(page: Page, example: ModuleType) -> None:
     brain, db = example.analyst, example.DATA[page.session.id]
 
-    async def as_step(name: str, given: dict[str, Any]) -> Any:
-        return SimpleNamespace(output=_nothing, error=_nothing)
-
-    reply = SimpleNamespace(tool=as_step)
     by_region = "SELECT region, product FROM orders LIMIT 5"
     chart = {"title": "t", "sql": by_region, "kind": "bar", "x": "region", "y": "revenue"}
     for name, given, words in (
@@ -191,13 +230,9 @@ async def test_a_tool_is_held_to_what_it_takes(page: Page, example: ModuleType) 
         ("point_at", {"card": "card-9"}, "no card card-9"),
         ("query", {"sql": "DELETE FROM orders"}, "not authorized"),
     ):
-        result, failed = await brain.use(page.session, db, reply, name, given)
+        result, failed = await brain.use(page.session, db, QUIET, name, given)
         assert failed and words in result, name
     assert page.state.cards == []
-
-
-async def _nothing(*_: Any) -> None:
-    return None
 
 
 # -------------------------------------------------------------- the model
