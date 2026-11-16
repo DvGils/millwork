@@ -132,7 +132,7 @@ def me(s: mw.Session[State]) -> Person:
 
 def this_claim(s: mw.Session[State]) -> Claim:
     """The claim the page is about."""
-    return CLAIMS.all[int(s.params["claim_id"])]
+    return CLAIMS.all[s.params["claim_id"]]
 
 
 def today(s: mw.Session[State]) -> date:

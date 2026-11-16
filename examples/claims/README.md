@@ -86,9 +86,8 @@ browser may keep the picture, and asks the route again each time before
 it shows it.
 
 What the receipt field takes, a picture of 5 MB at most, is said on the
-model, with `json_schema_extra`. That is where the server reads it, so
-an upload that did not come through the form's own button is held to it
-as well.
+model, with `json_schema_extra`. The server holds every upload to it,
+also one that did not come through the form's own button.
 
 ## What it leaves out
 

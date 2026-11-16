@@ -50,8 +50,10 @@ QUIET: Any = SimpleNamespace(tool=_step)
 
 
 def told(page: Page, words: str) -> bool:
-    """Whether the last answer ended with an error that says this."""
-    return any(c.get("type") == "error" and words in c["errorText"] for c in page.stream)
+    """Whether the last answer has an error that says this. It is kept
+    with the message, so it is there after a reload as well."""
+    parts = page.session.chat("analyst").messages[-1].parts
+    return any(p["type"] == "error" and words in p["errorText"] for p in parts)
 
 
 # ------------------------------------------------------------- the script
