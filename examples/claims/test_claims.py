@@ -214,7 +214,8 @@ async def test_an_open_form_does_not_follow_someone_to_another_page(
         await nora.navigate("/mine")
         assert not nora.state.filing
         # A row's click goes to that claim, and to nowhere a tab makes up.
-        await nora.event("claims", "row_click", f"{claims['dinner'].id}/../../payments")
+        with pytest.raises(LookupError, match="which it does not have"):
+            await nora.event("claims", "row_click", f"{claims['dinner'].id}/../../payments")
         assert nora.session.path == "/mine"
 
 

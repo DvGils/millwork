@@ -186,9 +186,8 @@ def send_again(s: mw.Session[State], draft: Draft) -> None:
     tell(s, CLAIMS.send_again(this_claim(s), me(s), details, receipt), "Sent again.")
 
 
-def look_at(s: mw.Session[State], claim_id: object) -> None:
-    if isinstance(claim_id, int):
-        s.navigate(f"/claims/{claim_id}")
+def look_at(s: mw.Session[State], claim_id: int) -> None:
+    s.navigate(f"/claims/{claim_id}")
 
 
 def approve(s: mw.Session[State], _: object) -> None:

@@ -295,11 +295,11 @@ async def test_a_reaction_is_counted_for_everyone_and_taken_back(
         await ada.click(ada.find("heart", within=ada.find(f"m{message.id}")))
         assert message.reactions == {}
         assert not ada.find_all("heart", within=ada.find(f"m{message.id}"))
-        # A tab can send what the menu never offered, and that is no reaction.
+        # A tab can send what the menu never offered, and that is not heard.
+        menu = sam.find(ui.DropdownMenu, within=sam.find(f"m{message.id}"))
         for sent in ("confetti", ["heart"], None):
-            await sam.event(
-                sam.find(ui.DropdownMenu, within=sam.find(f"m{message.id}")), "select", sent
-            )
+            with pytest.raises(LookupError):
+                await sam.event(menu, "select", sent)
         assert message.reactions == {}
         await ada.settle()
         assert "New empty states are up." in ada.text()
@@ -310,5 +310,10 @@ async def test_a_message_is_held_to_its_length_whatever_sends_it(
 ) -> None:
     async with t.open("/c/general", visitor="ada") as ada:
         await join(ada, "Ada Park")
-        await ada.event("say-general", "submit", "y" * (example.LONGEST + 500))
+        said = len(example.CHAT.channels["general"].messages)
+        await ada.event("say-general", "submit", "y" * example.LONGEST)
         assert len(example.CHAT.channels["general"].messages[-1].text) == example.LONGEST
+        # The field takes no more than that, and neither does the session.
+        with pytest.raises(LookupError, match="it takes 2000"):
+            await ada.event("say-general", "submit", "y" * (example.LONGEST + 500))
+        assert len(example.CHAT.channels["general"].messages) == said + 1

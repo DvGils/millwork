@@ -31,7 +31,7 @@ SHOWN = 200
 REACTIONS = {"thumbs-up": "Agree", "heart": "Love it", "eye": "Seen", "rocket": "Ship it"}
 
 # How long a message may be. The field stops there in a browser, and the
-# handler holds to it whatever sends the text.
+# session takes no longer text for it from anything else.
 LONGEST = 2000
 
 
@@ -94,18 +94,15 @@ def typed(s: mw.Session[State], text: str) -> None:
 
 def say(s: mw.Session[State], text: str) -> None:
     # The field empties itself and says so to ``typed``, which drops the draft.
-    text = text.strip()[:LONGEST]
+    text = text.strip()
     if text:
         CHAT.post(CHAT.channels[s.params["name"]], CHAT.people[s.visitor.id], text)
 
 
 def react(s: mw.Session[State], chosen: object, *, to: Message, reaction: str = "") -> None:
     """A reaction to a message, the one a pill stands for or the one chosen
-    from the menu. A tab can send what the menu never offered, so only
-    one of the reactions there are is taken."""
-    reaction = reaction or str(chosen)
-    if reaction in REACTIONS:
-        CHAT.react(CHAT.channels[s.params["name"]], to, s.visitor.id, reaction)
+    from the menu."""
+    CHAT.react(CHAT.channels[s.params["name"]], to, s.visitor.id, reaction or str(chosen))
 
 
 def new_channel(s: mw.Session[State], _: object) -> None:

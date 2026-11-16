@@ -61,9 +61,10 @@ async def run() -> None:
 
 # -------------------------------------------------------------- handlers
 #
-# What reaches a handler is what a tab sent, so each reads it as that. A
-# place is two numbers and a setting is one the microscope has, or the
-# handler does nothing.
+# The scope is a component of the app's own, so what it emits is read
+# here before it is used: a place is two numbers, or the handler does
+# nothing. The controls are the framework's, and a handler of theirs gets
+# a value its control could have sent.
 
 
 def number(value: Any) -> float | None:
@@ -96,46 +97,47 @@ def zoom(s: mw.Session[State], by: Any) -> None:
     view.objective = steps[min(len(steps) - 1, max(0, at))]
 
 
-def turn_to(s: mw.Session[State], objective: Any) -> None:
-    for n in OBJECTIVES:
-        if objective == str(n):
-            WORLDS[s.id].view.objective = n
+# A group of toggles says nothing when the one that is on is pressed
+# again, which leaves the setting as it is.
 
 
-def focus(s: mw.Session[State], depth: Any) -> None:
-    if (to := number(depth)) is not None:
-        world = WORLDS[s.id]
-        world.view.focus = min(1.0, max(0.0, to / 100))
-        # The focus is the person's again, and not the followed cell's.
-        world.followed = None
+def turn_to(s: mw.Session[State], objective: str | None) -> None:
+    if objective is not None:
+        WORLDS[s.id].view.objective = int(objective)
 
 
-def lamp(s: mw.Session[State], light: Any) -> None:
-    if (to := number(light)) is not None:
-        WORLDS[s.id].view.lamp = min(1.0, max(0.1, to / 100))
+def focus(s: mw.Session[State], depth: float) -> None:
+    world = WORLDS[s.id]
+    world.view.focus = depth / 100
+    # The focus is the person's again, and not the followed cell's.
+    world.followed = None
 
 
-def field(s: mw.Session[State], kind: Any) -> None:
-    if kind == "bright" or kind == "dark":
+def lamp(s: mw.Session[State], light: float) -> None:
+    WORLDS[s.id].view.lamp = light / 100
+
+
+def field(s: mw.Session[State], kind: Literal["bright", "dark"] | None) -> None:
+    if kind is not None:
         s.state.field = kind
 
 
-def stain(s: mw.Session[State], by: Any) -> None:
-    if isinstance(by, str) and by in STAINS:
+def stain(s: mw.Session[State], by: str | None) -> None:
+    if by is not None:
         s.state.stain = by
 
 
-def pace(s: mw.Session[State], times: Any) -> None:
-    if times == "0" or times == "1" or times == "4":
+def pace(s: mw.Session[State], times: str | None) -> None:
+    if times is not None:
         WORLDS[s.id].pace = int(times)
 
 
-def pipette(s: mw.Session[State], what: Any) -> None:
+def pipette(s: mw.Session[State], what: str) -> None:
     world = WORLDS[s.id]
     if what == "grazers":
         world.add(GRAZER, 12)
         world.note("Twelve grazers were added from the pipette.")
-    elif what == "hunters":
+    else:
         world.add(HUNTER, 3)
         world.note("Three hunters were added from the pipette.")
 

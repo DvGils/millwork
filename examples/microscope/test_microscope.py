@@ -207,7 +207,7 @@ async def test_the_controls_set_the_microscope(page: Page, example: ModuleType) 
     for by, objective in ((1, 40), (-1, 10), (-1, 4), (-1, 4)):
         await page.event("scope", "zoom", by)
         assert view.objective == objective
-    # What is no setting of a microscope changes nothing, and fails nothing.
+    # What is no setting of a microscope is not heard by a control.
     for node, payload in (
         ("objective", "7"),
         ("objective", [10]),
@@ -220,7 +220,9 @@ async def test_the_controls_set_the_microscope(page: Page, example: ModuleType) 
         ("lamp", float("nan")),
         ("pace", 4),
     ):
-        await page.event(node, "change", payload)
+        with pytest.raises(LookupError):
+            await page.event(node, "change", payload)
+    # The scope's own events are the app's to read, and it fails on none.
     await page.event("scope", "pan", {"x": "left", "y": None})
     await page.event("scope", "pan", [1, 2])
     await page.event("scope", "pick", {"x": float("nan"), "y": 0})
