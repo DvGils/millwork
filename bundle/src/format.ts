@@ -25,6 +25,16 @@ function dateFormats() {
   return dates;
 }
 
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A date or a time as it came over the wire. A day without a time is that
+ * day wherever it is read, where the browser would take it for midnight in
+ * UTC, which is the day before in every zone west of it. */
+export function asDate(value: unknown): Date {
+  const text = String(value);
+  return new Date(DAY.test(text) ? `${text}T00:00` : text);
+}
+
 export const dateFormat = { format: (d: Date) => dateFormats().date.format(d) };
 export const dateTimeFormat = { format: (d: Date) => dateFormats().dateTime.format(d) };
 

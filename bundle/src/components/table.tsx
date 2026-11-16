@@ -2,7 +2,7 @@
 // selection reported to the server, tones instead of styles. A long table
 // draws the rows in view, and a row is drawn again only when it changed.
 
-import { dateFormat, dateTimeFormat, formatNumber } from "../format";
+import { asDate, dateFormat, dateTimeFormat, formatNumber } from "../format";
 import { t } from "../theme";
 import { type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
@@ -156,7 +156,7 @@ function formatCell(value: unknown, format: string, tone?: string) {
     case "date":
     case "datetime": {
       // What is not a date is shown as it came: formatting it would throw.
-      const when = new Date(String(value));
+      const when = asDate(value);
       if (Number.isNaN(when.getTime())) return String(value);
       return (format === "date" ? dateFormat : dateTimeFormat).format(when);
     }

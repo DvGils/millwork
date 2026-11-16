@@ -22,6 +22,9 @@ versions; a release says so here when it does.
   zone. The warning is now for a press, which is a click, a submit, a
   row or card action, a click on a table's row and a choice from a menu.
 
+- A table's `date` column showed a day without a time as the day
+  before, in every time zone west of UTC. A `date` from Python is such a
+  day.
 - A `ui.ScrollArea` printed only the rows in view. It prints its whole
   content now, as a table with a `height` does.
 
