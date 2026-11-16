@@ -4,18 +4,23 @@
 // The wrapper every node is drawn in carries the node's id. It takes no
 // room on the page itself, so what is acted on is inside it. A part that
 // its parent draws itself, a tab's trigger or an accordion's item, carries
-// the id on its own element. A field of a form carries its pointer.
+// the id on its own element. A field of a form carries its pointer, and a
+// row of a table or a mark of a chart the name of the part it is.
 
 // What the keyboard can be in.
 export const FOCUSABLE = "input, textarea, select, button, a[href], [tabindex]:not([tabindex='-1'])";
 
-// The elements a node is on the page as, or a field of a form in it. None
-// for a node that is hidden or not on the page.
-export function elementsOf(id: string, field?: string): HTMLElement[] {
+// The elements a node is on the page as, or a field of a form in it, or a
+// part of it by its name. None for a node that is hidden or not on the
+// page, and for a part that is not drawn. A part of a chart is drawn in
+// SVG, which is measured and brought into view as any element is.
+export function elementsOf(id: string, field?: string, part?: string): HTMLElement[] {
   const out: HTMLElement[] = [];
   for (const holder of Array.from(document.querySelectorAll<HTMLElement>(`[data-node="${CSS.escape(id)}"]`))) {
     if (holder.style.display === "none") continue;
-    if (field !== undefined) {
+    if (part !== undefined) {
+      out.push(...Array.from(holder.querySelectorAll<HTMLElement>(`[data-part="${CSS.escape(part)}"]`)));
+    } else if (field !== undefined) {
       const inside = holder.querySelector<HTMLElement>(`[data-field="${CSS.escape(field)}"]`);
       if (inside) out.push(inside);
     } else if (holder.style.display === "contents") {

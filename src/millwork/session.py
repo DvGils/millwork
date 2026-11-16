@@ -259,8 +259,11 @@ class Session[S]:
         self._marks: list[marks.Mark] = []
         # What each name stands for on the page as it is, kept from one
         # drawing to the next.
-        self._places: dict[str, tuple[str, str | None] | None] = {}
-        self._places_ids: tuple[str, ...] = ()
+        self._places: dict[str, tuple[str, str | None, Any] | None] = {}
+        # The parts of the tables and charts a mark was looked up in, for
+        # the tree they were read from.
+        self._part_index: dict[str, dict[str, Any]] = {}
+        self._places_ids: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
         self._places_of: Tree | None = None
         self._marks_sent: list[dict[str, Any]] = []
         self._mark_serial = 0
@@ -822,34 +825,57 @@ class Session[S]:
         """Where a name points: the id of the first component it stands
         for, or the id of a form and the pointer of a field of it, for a
         name that is the form's, a slash, and the field's. None for a name
-        that stands for nothing on the page."""
+        that stands for nothing on the page, and for one that names a row
+        of a table or a value of a chart, which only a highlight takes."""
+        spot = self._spot(name)
+        return None if spot is None or spot[2] is not None else spot[:2]
+
+    def _spot(self, name: str) -> tuple[str, str | None, Any] | None:
+        """A place with the part of it a name points at: a row of a table
+        by its key, or a value along a chart's axis, for a name that is
+        the component's, a slash, and that. None for a whole component."""
         tree = self.tree
         if tree is None:
             return None
         if self._places_of is not tree:
             # What a name stands for holds for as long as the page has the
-            # same components, which it does through most drawings.
-            ids = tuple(tree.nodes)
+            # same components, which it does through most drawings. One
+            # that became another kind under the same key, a placeholder
+            # that is a table now, is not the same.
+            ids = (tuple(tree.nodes), tuple(node.type for node in tree.nodes.values()))
             if ids != self._places_ids or len(self._places) > 256:
                 self._places, self._places_ids = {}, ids
-            self._places_of = tree
-        if name not in self._places:
-            self._places[name] = self._place(tree, name)
-        return self._places[name]
+            self._places_of, self._part_index = tree, {}
+        if name in self._places:
+            return self._places[name]
+        spot, of_data = self._place(tree, name)
+        if not of_data:
+            # A row or a value is of the data, which the next drawing may
+            # have changed under the same components.
+            self._places[name] = spot
+        return spot
 
-    def _place(self, tree: Tree, name: str) -> tuple[str, str | None] | None:
+    def _place(self, tree: Tree, name: str) -> tuple[tuple[str, str | None, Any] | None, bool]:
+        """Where a name points in this tree, and whether that hangs on the
+        rows of a table or the points of a chart."""
         ids = self.named(name)
         if ids:
-            return ids[0], None
+            return (ids[0], None, None), False
+        of_data = False
         at = name.rfind("/")
         while at > 0:
-            pointer = name[at:]
-            for form in self.named(name[:at]):
-                node = tree.nodes[form]
-                if node.type == "Form" and outline.has_field(node.props, pointer):
-                    return form, pointer
+            for holder in self.named(name[:at]):
+                node = tree.nodes[holder]
+                if node.type == "Form" and outline.has_field(node.props, name[at:]):
+                    return (holder, name[at:], None), of_data
+                if node.type in marks.OF_DATA:
+                    of_data = True
+                    if holder not in self._part_index:
+                        self._part_index[holder] = marks.parts(node.type, node.props)
+                    if name[at + 1 :] in self._part_index[holder]:
+                        return (holder, None, self._part_index[holder][name[at + 1 :]]), True
             at = name.rfind("/", 0, at)
-        return None
+        return None, of_data
 
     def highlight(
         self,
@@ -865,7 +891,11 @@ class Session[S]:
     ) -> None:
         """Mark a component for the person to find: a border around it, in
         a color, drawn over the page. ``name`` is a key or an id, or a
-        form's name, a slash and a field's, as ``order/amount``.
+        form's name, a slash and a field's, as ``order/amount``. A table's
+        name, a slash and a row's key is that row, as ``orders/1042``, and
+        a chart's name, a slash and a value along its axis is what the
+        chart shows for it, as ``sales/2026-03``: the bars, the points or
+        the slice.
 
         ``color`` is ``red``, ``orange``, ``yellow``, ``green``, ``blue``,
         ``pink``, ``primary`` or ``ring``, each a color of the theme, or a
@@ -946,7 +976,7 @@ class Session[S]:
             return
         if not self._marks and not self._marks_sent:
             return
-        found, _ = marks.now(self._marks, self.place)
+        found, _ = marks.now(self._marks, self._spot)
         if found != self._marks_sent:
             self._marks_sent = found
             self.command("marks", list=found)
@@ -1007,7 +1037,7 @@ class Session[S]:
             ids = self.named(within)
             if not ids:
                 return "" if as_text else None
-        shown, nowhere = marks.now(self._marks, self.place)
+        shown, nowhere = marks.now(self._marks, self._spot)
         found = outline.outline(
             self.tree,
             within=ids,
@@ -1624,7 +1654,7 @@ class Session[S]:
         self._title_shown = self._title(tree)
         # The marks of this page go with it: the ones the tab had were the
         # last page's.
-        self._marks_sent = [] if self._failure else marks.now(self._marks, self.place)[0]
+        self._marks_sent = [] if self._failure else marks.now(self._marks, self._spot)[0]
         self.post(
             Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown, marks=self._marks_sent)
         )

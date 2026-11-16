@@ -55,11 +55,11 @@ export function chartHeight(props: Record<string, unknown>): number {
 }
 
 function chart(kind: ChartKind): Renderer {
-  return ({ props, emit }) => {
+  return ({ node, props, emit }) => {
     const code = useCharts();
     return (
       <div className={cn("w-full", props.cls as string)}>
-        {code ? <code.Chart kind={kind} props={props} emit={emit} /> : <Skeleton className="w-full" style={{ height: chartHeight(props) }} />}
+        {code ? <code.Chart id={node.id} kind={kind} props={props} emit={emit} /> : <Skeleton className="w-full" style={{ height: chartHeight(props) }} />}
       </div>
     );
   };

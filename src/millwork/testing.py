@@ -503,9 +503,9 @@ class Page:
         return []
 
     def _mark(self, name: str) -> dict[str, Any]:
-        place = self.session.place(name)
+        spot = self.session._spot(name)
         for mark in self.marks:
-            if place == (mark["id"], mark.get("field")):
+            if spot == (mark["id"], mark.get("field"), mark.get("part")):
                 return mark
         raise LookupError(f"nothing is highlighted at {name!r}")
 

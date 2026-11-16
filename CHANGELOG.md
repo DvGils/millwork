@@ -36,6 +36,16 @@ versions; a release says so here when it does.
   and `ui.ScrollArea(fill=True)` in it takes the height that is left and
   scrolls inside it. Before, only a `ui.Chat` and a `ui.Split` filled a
   page, and `Stack(grow=True)` grew with its content.
+- A highlight can be on one row of a table or one value of a chart.
+  `s.highlight("orders/1042")` frames the row with that key, and
+  `s.highlight("sales/2026-03")` frames what the chart draws for that
+  value along its axis, which is the bars, the points of the lines or
+  the slice of a pie. It follows the data, so it waits for a row that is not there
+  yet, and with `scroll=True` a table turns to the row's page and
+  scrolls to it. `s.outline()` says which rows and values are
+  highlighted. Before, a highlight was on a whole component or a field
+  of a form, so an assistant could point at a chart and not at the month
+  it was talking about.
 - `ui.ScrollArea(stick_to_end=True)` opens at its end and stays there as
   rows arrive, for messages or a log. A reader who scrolls up is left
   where they are.
@@ -66,6 +76,8 @@ versions; a release says so here when it does.
   emptied without the handler doing it.
 - Layout has a new section, "A page that fills the window", that builds
   such a frame.
+- Feedback's section on highlights ends with one on a bar of a chart and
+  one on a row of a table.
 
 ## 0.4.1
 

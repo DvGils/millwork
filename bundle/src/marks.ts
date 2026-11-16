@@ -3,7 +3,7 @@
 // of them show now. Here they are kept as the session last gave them, for
 // the layer in marks-layer.tsx to draw.
 
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 export interface Mark {
   // Its number in the session, which a mark is said by.
@@ -11,6 +11,9 @@ export interface Mark {
   // The node it is on, and the pointer of a form's field when it is on one.
   id: string;
   field?: string;
+  // A part of the node it is on instead of the whole: the key of a table's
+  // row, or a value along a chart's axis.
+  part?: string | number | boolean;
   color: string;
   style: "solid" | "pulse" | "trace";
   step?: number;
@@ -40,6 +43,7 @@ export function parseMarks(raw: unknown): Mark[] {
     const style = typeof m.style === "string" && STYLES.includes(m.style) ? (m.style as Mark["style"]) : "solid";
     const mark: Mark = { n: m.n, id: m.id, color, style };
     if (typeof m.field === "string") mark.field = m.field;
+    if (typeof m.part === "string" || typeof m.part === "number" || typeof m.part === "boolean") mark.part = m.part;
     if (typeof m.step === "number") mark.step = m.step;
     if (typeof m.label === "string" && m.label) mark.label = m.label;
     if (typeof m.seconds === "number" && m.seconds > 0) mark.seconds = m.seconds;
@@ -97,3 +101,20 @@ export const marks = {
 export function useMarks(): Mark[] {
   return useSyncExternalStore(marks.subscribe, marks.get);
 }
+
+// What a part goes by on the page: a row of a table and a mark of a chart
+// carry it as `data-part`, and a mark on one finds it by that.
+export function partName(part: unknown): string {
+  return JSON.stringify(part ?? null);
+}
+
+// The marks on parts of one node, for the table or the chart that draws
+// them. The same list for as long as the session sent no other.
+export function usePartMarks(id: string): Mark[] {
+  const all = useMarks();
+  return useMemo(() => {
+    const on = all.filter((m) => m.id === id && m.part !== undefined);
+    return on.length ? on : NONE;
+  }, [all, id]);
+}
+const NONE: Mark[] = [];

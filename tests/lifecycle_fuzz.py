@@ -2059,7 +2059,7 @@ def at_rest(sim: Sim, session: Any, sid: str) -> None:
         what = "nodes on one side only" if ids else "nodes that differ"
         sim.problems.append(("page differs", f"{tab.label} and {sid}: {what}, {other[:3]}"))
     # And exactly the highlights the session holds for this page.
-    held = json.loads(json.dumps(marks.now(session._marks, session.place)[0]))
+    held = json.loads(json.dumps(marks.now(session._marks, session._spot)[0]))
     if held:
         sim.world.counts["... that have highlights"] += 1
     if tab.marks != held:

@@ -1,6 +1,7 @@
 """Highlights: marks the session holds for the tab to draw over components."""
 
 import asyncio
+import datetime
 import json
 from typing import Any
 
@@ -465,3 +466,157 @@ async def test_the_page_as_data_says_what_is_highlighted() -> None:
         assert whole["marks_nowhere"] == ["gone"]
         new = next(c for c in whole["children"] if c.get("key") == "new")
         assert new["marked"] == {"color": "blue", "step": 1}
+
+
+class Shop(BaseModel):
+    orders: list[dict[str, Any]] = [
+        {"id": 1041, "customer": "Kestrel", "amount": 120.0},
+        {"id": 1042, "customer": "Alder", "amount": 80.0},
+    ]
+    sales: list[dict[str, Any]] = [
+        {"month": "2026-02", "units": 4},
+        {"month": "2026-03", "units": 9},
+    ]
+
+
+def shop_app() -> mw.App:
+    app = mw.App("shop", state=Shop, public=None)
+
+    @app.page("/")
+    def home(s: mw.Session[Shop]) -> ui.Component:
+        return ui.Page(
+            ui.Table(rows=s.state.orders, key="orders"),
+            # Rows without the key column go by their place, from 0.
+            ui.Table(rows=[{"n": "a"}, {"n": "b"}], key="plain"),
+            ui.BarChart(s.state.sales, x="month", y="units", key="sales"),
+            ui.PieChart(s.state.sales, x="month", y="units", key="share"),
+            ui.Form(Order, key="order"),
+        )
+
+    return app
+
+
+async def test_a_row_of_a_table_and_a_value_of_a_chart_have_names() -> None:
+    async with TestApp(shop_app()).open("/") as page:
+        s = page.session
+        s.highlight("orders/1042", "blue")
+        s.highlight("plain/1", "green")
+        s.highlight("sales/2026-03", "orange", style="trace")
+        s.highlight("share/2026-02", "pink")
+        await page.settle()
+        by_id = {(mark["id"], mark.get("part")): mark for mark in page.marks}
+        # The part is the key or the value itself, as the tab has it, so
+        # a number is a number there.
+        assert set(by_id) == {
+            (page.find("orders").id, 1042),
+            (page.find("plain").id, 1),
+            (page.find("sales").id, "2026-03"),
+            (page.find("share").id, "2026-02"),
+        }
+        assert all("field" not in mark for mark in page.marks)
+        # A row is a place for a highlight only: the keyboard is put in
+        # a component or a field.
+        assert s.place("orders/1042") is None and s.place("orders") is not None
+        # A whole table can be marked beside one of its rows.
+        s.highlight("orders", "red")
+        await page.settle()
+        assert len(page.marks) == 5
+        # Getting to a row takes its mark off, and leaves the others.
+        await page.touch("orders/1042")
+        assert (page.find("orders").id, 1042) not in {
+            (mark["id"], mark.get("part")) for mark in page.marks
+        }
+        assert len(page.marks) == 4
+        # A form's field is still a field, and a name that is neither is nowhere.
+        s.highlight("order/amount")
+        s.highlight("orders/customer")
+        await page.settle()
+        assert any(mark.get("field") == "/amount" for mark in page.marks)
+        with pytest.raises(LookupError):
+            page._mark("orders/customer")
+
+
+async def test_a_mark_on_a_row_follows_the_rows() -> None:
+    async with TestApp(shop_app()).open("/") as page:
+        s = page.session
+        # A row that is not there yet: the mark waits for it.
+        s.highlight("orders/1043", "blue")
+        s.highlight("sales/2026-04", "blue")
+        await page.settle()
+        assert page.marks == []
+        s.state.orders = [*s.state.orders, {"id": 1043, "customer": "Rowan", "amount": 5.0}]
+        s.state.sales = [*s.state.sales, {"month": "2026-04", "units": 2}]
+        s.refresh()
+        await page.settle()
+        assert {mark["part"] for mark in page.marks} == {1043, "2026-04"}
+        # And it goes from the tab when the row does, while the session
+        # holds it for a row that comes back.
+        s.state.orders = s.state.orders[:1]
+        s.refresh()
+        await page.settle()
+        assert {mark["part"] for mark in page.marks} == {"2026-04"}
+        s.state.orders = [*s.state.orders, {"id": 1043, "customer": "Rowan", "amount": 5.0}]
+        s.refresh()
+        await page.settle()
+        assert {mark["part"] for mark in page.marks} == {1043, "2026-04"}
+
+
+async def test_the_page_as_data_says_which_row_is_highlighted() -> None:
+    async with TestApp(shop_app()).open("/") as page:
+        s = page.session
+        s.highlight("orders/1042", "blue", label="Late")
+        s.highlight("sales/2026-03", "orange")
+        s.highlight("orders/9999")
+        await page.settle()
+        table = s.outline(within="orders")
+        assert table is not None and "marked" not in table
+        assert table["marked_parts"] == [{"at": "1042", "color": "blue", "label": "Late"}]
+        text = s.outline(as_text=True)
+        assert '"1042" highlighted blue, labeled "Late"' in text
+        assert '"2026-03" highlighted orange' in text
+        # What stands for no row is said as a mark that is nowhere.
+        assert s.outline()["marks_nowhere"] == ["orders/9999"]  # type: ignore[index]
+
+
+class Loading(BaseModel):
+    loaded: bool = False
+    rows: list[dict[str, Any]] = [{"id": 7, "d": "x"}, {"id": 7, "d": "y"}, {"id": 9, "d": "z"}]
+
+
+async def test_a_mark_waits_for_a_table_that_is_a_placeholder_yet() -> None:
+    app = mw.App("loading", state=Loading, public=None)
+
+    @app.page("/")
+    def home(s: mw.Session[Loading]) -> ui.Component:
+        days = [{"day": datetime.datetime(2026, 3, 1, 9), "n": 1}]
+        orders: ui.Component = ui.Skeleton(key="orders")
+        if s.state.loaded:
+            orders = ui.Table(rows=[{"id": 1042}], key="orders")
+        return ui.Page(
+            orders,
+            # Two rows share a key, so the tab has these by their places.
+            ui.Table(rows=s.state.rows, key="shared"),
+            ui.LineChart(days, x="day", y="n", key="days"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        s = page.session
+        s.highlight("orders/1042")
+        # A place is not a name for a row of a table that has keys.
+        s.highlight("shared/2")
+        s.highlight("shared/9")
+        # A time is named as the tab is given it, which is its ISO form.
+        s.highlight("days/2026-03-01 09:00:00")
+        s.highlight("days/2026-03-01T09:00:00")
+        await page.settle()
+        assert [mark["part"] for mark in page.marks] == ["2026-03-01T09:00:00"]
+        # The same key is a table now, and has the row.
+        s.state.loaded = True
+        s.refresh()
+        await page.settle()
+        assert {mark["part"] for mark in page.marks} == {1042, "2026-03-01T09:00:00"}
+        # And rows that are told apart again are named by their keys.
+        s.state.rows = [{"id": 7, "d": "x"}, {"id": 9, "d": "z"}]
+        s.refresh()
+        await page.settle()
+        assert {mark["part"] for mark in page.marks} == {1042, 9, "2026-03-01T09:00:00"}

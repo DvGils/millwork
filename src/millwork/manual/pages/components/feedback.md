@@ -73,8 +73,10 @@ ui.Row(
 `s.highlight(name, color)` puts a frame around a component so the person
 finds it. An assistant in the app answers a question about how something
 is done with it, by pointing at where it is done. The name is a key or an
-id, and `form/field` names a field of a form. Unlike a toast it stays:
-the session holds it until the person gets to the component.
+id, and `form/field` names a field of a form. A row of a table and a
+value in a chart have names too, which the end of this section shows.
+Unlike a toast it stays: the session holds it until the person gets to
+the component.
 
 The buttons on top set highlights on the card under them.
 
@@ -172,6 +174,57 @@ reply that took its time, is not set. A field of an item in a form's
 list has no name yet. `s.outline()` says what is highlighted, so an
 assistant reads its own highlights back with the page, as
 [Accessing the session](/state/accessing-the-session) describes.
+
+A highlight can be on one row of a table or on one value of a chart. The
+name is the table's, a slash and the row's key, as `orders/1042`, or the
+chart's, a slash and the value along its axis, as `sales/Mar`. On a chart
+the frame is around what the chart draws for that value, which is the
+bars, the points of the lines or the slice. A number or a text is
+written as Python prints it, so `f"orders/{order.id}"` names the row. A
+date or a time is written in its ISO form, as `day.isoformat()` gives
+it. In a table whose rows have no `row_key` column a row goes by its
+place, from 0.
+
+```python live
+HL_SALES = [
+    {"month": "Jan", "sales": 82},
+    {"month": "Feb", "sales": 95},
+    {"month": "Mar", "sales": 41},
+    {"month": "Apr", "sales": 104},
+]
+HL_ORDERS = [
+    {"id": 1041, "customer": "Kestrel Books", "month": "Mar", "amount": 1240},
+    {"id": 1042, "customer": "Alder & Sons", "month": "Mar", "amount": 380},
+    {"id": 1043, "customer": "Rowan Supply", "month": "Apr", "amount": 2150},
+]
+
+
+def the_dip(s, _):
+    s.highlight("hl-sales/Mar", "orange", label="The dip")
+    s.highlight("hl-orders/1042", "orange", style="trace")
+
+
+def example(s):
+    return ui.Stack(
+        ui.Row(
+            ui.Button("Point at March", on_click=the_dip),
+            ui.Button("Take them off", variant="outline", on_click=lambda s, _: s.highlight(None)),
+            gap=2,
+        ),
+        ui.Grid(
+            ui.Card(ui.BarChart(HL_SALES, x="month", y="sales", height=180, key="hl-sales")),
+            ui.Card(ui.Table(rows=HL_ORDERS, summary=False, key="hl-orders")),
+            cols={"sm": 1, "md": 2},
+        ),
+        gap=4,
+    )
+```
+
+Such a highlight follows the data. It waits for a row that is not in the
+table yet, goes from the screen when the row does, and with
+`scroll=True` a table turns to the row's page and scrolls to it. A row
+that a filter or the search box hides shows no frame. Pointing at the
+row or the bar takes the highlight off, as it does on a component.
 
 ## Dialog
 <!-- keywords: modal, popup, overlay, window -->
