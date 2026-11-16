@@ -48,6 +48,47 @@ uv add millwork  # or `pip install millwork`
 uv run millwork run app.py
 ```
 
+## Examples
+
+Four whole apps are in [`examples/`](https://github.com/DvGils/millwork/tree/main/examples). Each has a
+look of its own, tests, and a page that shows it in use and says how it
+is made.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="https://github.com/DvGils/millwork/tree/main/examples/chat"><img src="https://raw.githubusercontent.com/DvGils/millwork/main/examples/chat/chat.png" alt="A team chat on a desk screen and on a phone, with channels in a sidebar, messages, a reaction and a count of unread messages." width="100%"></a>
+      <br>
+      <b><a href="https://github.com/DvGils/millwork/tree/main/examples/chat">Team chat</a></b>
+      <br>
+      Channels with messages that arrive as they are sent, who is typing, unread counts and reactions, on a desk and on a phone.
+    </td>
+    <td width="50%" valign="top">
+      <a href="https://github.com/DvGils/millwork/tree/main/examples/claims"><img src="https://raw.githubusercontent.com/DvGils/millwork/main/examples/claims/claims.png" alt="A manager's screen with an expense claim open beside the photo of its receipt, and the phone of the person who filed it." width="100%"></a>
+      <br>
+      <b><a href="https://github.com/DvGils/millwork/tree/main/examples/claims">Expense claims</a></b>
+      <br>
+      Sign-in for three kinds of people, a claim filed with its receipt, reviewed beside it and paid, and a report that prints.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="https://github.com/DvGils/millwork/tree/main/examples/analyst"><img src="https://raw.githubusercontent.com/DvGils/millwork/main/examples/analyst/analyst.png" alt="A dark page with charts pinned to a board at the left and a chat at the right, where an answer about a month is marked on the line chart." width="100%"></a>
+      <br>
+      <b><a href="https://github.com/DvGils/millwork/tree/main/examples/analyst">Analyst</a></b>
+      <br>
+      A chat that answers questions about data, pins charts to a board and marks what an answer is about. It runs on a script, or on Claude with a key.
+    </td>
+    <td width="50%" valign="top">
+      <a href="https://github.com/DvGils/millwork/tree/main/examples/microscope"><img src="https://raw.githubusercontent.com/DvGils/millwork/main/examples/microscope/microscope.png" alt="A round view through a microscope with colored cells in a drop of water, beside charts of how the cells changed over the generations." width="100%"></a>
+      <br>
+      <b><a href="https://github.com/DvGils/millwork/tree/main/examples/microscope">Microscope</a></b>
+      <br>
+      A drop of water in which cells evolve over the generations, drawn on a canvas by a component of the app's own and moved on by a clock on the server.
+    </td>
+  </tr>
+</table>
+
 ## What is included
 
 - **A catalog of components** on shadcn/ui: layout, text, inputs,

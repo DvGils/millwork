@@ -87,6 +87,7 @@ async def record(base: str) -> None:
         await film.rest(0.5)
         await film.click(ada, ITEM)
         await film.rest(2.5)
+        await film.still()
     finally:
         await sam.close()
         await ada.close()

@@ -74,6 +74,7 @@ async def record(base: str) -> None:
         await follow_a_grazer(desk)
         film = Recording(desk)
         await film.rest(3.0)
+        await film.still()
 
         # 1. The strongest objective, on the cell that is followed.
         await film.click(desk, button("objective", "40×"))

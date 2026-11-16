@@ -72,6 +72,7 @@ async def record(base: str) -> None:
         row = "[...document.querySelectorAll('td')].find(e => e.textContent.includes('Train to'))"
         await film.click(priya, row)
         await film.rest(2.0)
+        await film.still()
 
         # 5. She approves it, and Nora's phone says so.
         await film.click(priya, button("Approve"))

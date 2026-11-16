@@ -50,6 +50,7 @@ async def record(base: str) -> None:
         await film.click(desk, chip("What happened in March 2026?"))
         await film.capture(5.0)
         await film.rest(1.0)
+        await film.still()
 
         # 4. A file of the person's own, attached to a message, becomes a
         # table to ask about.

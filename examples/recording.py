@@ -28,6 +28,8 @@ import websockets
 
 CDP = 9344
 FPS = 10
+# How wide the still picture of an example is, in pixels.
+STILL = 900
 # A picture plays half again as fast as the app was used, so what is typed
 # and pressed goes by briskly, and it rests between one thing and the next
 # for the reader to look around.
@@ -67,6 +69,8 @@ class Window:
         self.width, self.height = width, height
         self.scheme, self.zone, self.phone = scheme, zone, phone
         self.frames: list[bytes] = []
+        # What it showed at the moment that was kept as the still picture.
+        self.still: bytes | None = None
         self._n = 0
 
     async def open(self) -> None:
@@ -157,6 +161,15 @@ class Recording:
                 w.frames.append(await w.shot())
             made += 1
             await asyncio.sleep(max(0.0, start + made * SPEED / FPS - time.monotonic()))
+
+    async def still(self) -> None:
+        """Keep what the windows show now, without the pointer, as the one
+        picture of the example that does not move."""
+        seen = "(p => p && (p.style.visibility = '{}'))(document.getElementById('pointer'))"
+        for w in self.windows:
+            await w.eval(seen.format("hidden"))
+            w.still = await w.shot()
+            await w.eval(seen.format(""))
 
     async def rest(self, seconds: float) -> None:
         """A moment of the picture's own time in which nothing is pressed."""
@@ -282,16 +295,23 @@ def picture(
     given with where its corner goes and how wide it is drawn, and gets a
     thin frame around it: ``(window, x, y, width)``.
 
+    When ``Recording.still`` kept a moment, that moment is written beside
+    it as a PNG of the same name, for a page that shows the example small.
+
     A name that ends in ``.webp`` gets an animated WebP. A picture of soft
     light and blur needs more than the 256 colors a GIF has, and is a
     third of the size this way."""
     with tempfile.TemporaryDirectory() as tmp:
         inputs: list[str] = []
+        stills: list[str] = []
         parts = [f"color=c={backdrop}:s={size[0]}x{size[1]}:r={FPS}[p0]"]
         for n, (window, x, y, width) in enumerate(placed):
             for i, png in enumerate(window.frames):
                 (Path(tmp) / f"w{n}-{i:05d}.png").write_bytes(png)
             inputs += ["-framerate", str(FPS), "-i", str(Path(tmp) / f"w{n}-%05d.png")]
+            if window.still is not None:
+                (Path(tmp) / f"w{n}-still.png").write_bytes(window.still)
+                stills += ["-i", str(Path(tmp) / f"w{n}-still.png")]
             # A phone gets the dark frame of a phone, a screen a hairline that
             # shows against its own scheme.
             if window.phone:
@@ -305,6 +325,11 @@ def picture(
         last = f"[p{len(placed)}]"
         palette = str(Path(tmp) / "palette.png")
         quiet = ["ffmpeg", "-y", "-loglevel", "error"]
+        if len(stills) == 2 * len(placed):
+            # The still picture, laid out as the moving one and beside it.
+            small = f"{picture};{last}scale={STILL}:-1:flags=lanczos[still]"
+            one = ["-map", "[still]", "-frames:v", "1", str(out.with_suffix(".png"))]
+            subprocess.run([*quiet, *stills, "-filter_complex", small, *one], check=True)
         if out.suffix == ".webp":
             how = ["-c:v", "libwebp_anim", "-quality", "60", "-loop", "0", "-an"]
             subprocess.run(
