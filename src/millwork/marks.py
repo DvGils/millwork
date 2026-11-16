@@ -1,9 +1,10 @@
 """Highlights: marks a session holds for the tab to draw over components.
 
-A mark names a component, or a field of a form, and says how the border
-around it looks. The session keeps the marks beside the page's tree, works
-out after each drawing which components they stand for and which of them
-show now, and sends that list when it changed. The tab draws them, takes a
+A mark names a component, a field of a form, a row of a table or a
+value along a chart's axis, and says how the border around it looks. The
+session keeps the marks beside the page's tree, works out after each
+drawing which components they stand for and which of them show now, and
+sends that list when it changed. The tab draws them, takes a
 mark off when the person gets to its component or its time runs out, and
 says so.
 """
@@ -15,11 +16,14 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["KEPT", "PRESETS", "STYLES", "Mark", "bare", "checked", "now"]
+__all__ = ["KEPT", "OF_DATA", "PRESETS", "STYLES", "Mark", "bare", "checked", "now", "parts"]
 
 # The colors that are the theme's, which hold in the light and in the dark.
 PRESETS = ("ring", "primary", "red", "orange", "yellow", "green", "blue", "pink")
 STYLES = ("solid", "pulse", "trace")
+# The components a mark can be on a part of: a row of a table, by its key,
+# or what a chart shows for one value along its axis.
+OF_DATA = ("Table", "BarChart", "LineChart", "AreaChart", "PieChart")
 # How many marks a session holds. One more drops the oldest.
 KEPT = 32
 # The longest a mark's time can be, in seconds.
@@ -85,7 +89,8 @@ def now(marks: list[Mark], find: Any) -> tuple[list[dict[str, Any]], list[str]]:
     and the names among them that stand for nothing on the page.
 
     ``find`` gives the place a name stands for: the id of a node, with the
-    pointer of a form's field when it names one, or None. A mark with a
+    pointer of a form's field or the part of a table or a chart when it
+    names one, or None. A mark with a
     step shows when no step before it is left, and waits until then. One
     that waits is given to the tab as well, which watches its component
     for a press."""
@@ -99,10 +104,12 @@ def now(marks: list[Mark], find: Any) -> tuple[list[dict[str, Any]], list[str]]:
             if mark.name not in nowhere:
                 nowhere.append(mark.name)
             continue
-        node, field = place
+        node, field, part = place
         said: dict[str, Any] = {"n": mark.n, "id": node, "color": mark.color, "style": mark.style}
         if field is not None:
             said["field"] = field
+        if part is not None:
+            said["part"] = part
         if mark.step is not None:
             said["step"] = mark.step
             if mark.step != first:
@@ -115,3 +122,27 @@ def now(marks: list[Mark], find: Any) -> tuple[list[dict[str, Any]], list[str]]:
             said["scroll"] = True
         out.append(said)
     return out, nowhere
+
+
+def parts(kind: str, props: dict[str, Any]) -> dict[str, Any]:
+    """The parts of a table or a chart a mark can be on, each by the text
+    a name says it with: a table's row keys, and a chart's values along
+    its axis. Of two that read the same, as 1 and "1", the first.
+
+    A table whose key column does not tell its rows apart goes by their
+    places in the tab. A place is no name for a row there, since it would
+    be taken for a key, so such a table has no parts."""
+    if kind == "Table":
+        values = props.get("keys")
+        rows, column = props.get("rows"), props.get("row_key", "id")
+        if isinstance(rows, list) and any(isinstance(r, dict) and column in r for r in rows):
+            if values != [r.get(column) if isinstance(r, dict) else None for r in rows]:
+                return {}
+    else:
+        data = props.get("data")
+        values = [p.get("x") for p in data if isinstance(p, dict)] if isinstance(data, list) else []
+    found: dict[str, Any] = {}
+    for value in values if isinstance(values, list) else ():
+        if value is not None:
+            found.setdefault(str(value), value)
+    return found

@@ -21,6 +21,8 @@ export interface RowWindow {
   // The heights standing in for the rows before and after the window.
   before: number;
   after: number;
+  // Scroll to where a row that is not drawn would be, so that it is.
+  bring: (index: number) => void;
 }
 
 // The part of the window the rows can show in: the browser's own, cut down by
@@ -180,7 +182,26 @@ export function useRowWindow(body: RefObject<HTMLTableSectionElement | null>, id
     };
   }, [body, soon, windowed]);
 
-  if (!windowed) return { windowed, first: 0, last: count, before: 0, after: 0 };
+  const bring = useCallback(
+    (index: number) => {
+      const el = body.current;
+      if (!el || !windowed || index < 0 || index >= count) return;
+      if (index >= drawn.current.first && index < drawn.current.last) return;
+      const view = viewOf(el);
+      const from = el.getBoundingClientRect().top + (held.current.tops[index] ?? 0);
+      const by = from - (view.top + view.bottom) / 2;
+      // The nearest box above that scrolls takes it, or the window.
+      for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+        if (getComputedStyle(a).overflowY === "visible" || a.scrollHeight <= a.clientHeight + 1) continue;
+        a.scrollTop += by;
+        return;
+      }
+      window.scrollBy(0, by);
+    },
+    [body, count, windowed],
+  );
+
+  if (!windowed) return { windowed, first: 0, last: count, before: 0, after: 0, bring };
   const { first, last } = drawn.current;
   // A list that changed since the window was chosen is drawn with what its
   // rows are known to be; the pass after this draw puts it right.
@@ -192,6 +213,7 @@ export function useRowWindow(body: RefObject<HTMLTableSectionElement | null>, id
     last,
     before: sure ? range.before : first * usual,
     after: sure ? range.after : (count - last) * usual,
+    bring,
   };
 }
 

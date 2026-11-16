@@ -193,7 +193,11 @@ is long as text, so an assistant on one reads a part of it.
 
 A component that can be pointed at has a name on its line, `key=` or
 `id=`, and a field of a form is named as `order/amount`. `s.focus` and
-`s.highlight` take those names.
+`s.highlight` take those names. `s.highlight` also takes a table's name
+with a row's key, as `orders/1042`, and a chart's with a value along its
+axis, as `sales/Mar`. The outline gives a chart's values along its axis
+and a table's rows by their columns, so an assistant can point at a row
+when the table's key is one of its columns.
 
 It is the page as it was last drawn, so a handler that changes state
 reads the page from before the change. Only `hidden=True` keeps a

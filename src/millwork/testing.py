@@ -15,7 +15,9 @@ from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
+from zoneinfo import ZoneInfo
 
+from millwork import offers
 from millwork.auth import Forbidden
 from millwork.connection import Connection
 from millwork.files import FileRef, Reject, _read_chunks, fits
@@ -33,7 +35,7 @@ from millwork.protocol import (
 )
 from millwork.scope import Scope
 from millwork.session import Session, names
-from millwork.ui import Button, Checkbox, Custom, Link, Switch, Tabs
+from millwork.ui import Button, Checkbox, Custom, Input, Link, Switch, Tabs, Textarea
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -98,14 +100,22 @@ class Page:
     def _unheard(self, event: Event, why: str) -> None:
         self._deaf.append((event.node, why))
 
+    def _in_reach(self, found: Found) -> None:
+        """Raise for a node that takes nothing: one that is hidden or in
+        something hidden, or in a dialog or a sheet that is closed. A
+        custom component goes on running while it is hidden, as a tab
+        keeps it there, and what it emits is its own doing and no press of
+        a person's. Everything else is acted on by someone who has to see it."""
+        tree = self.session.tree
+        own = isinstance(found.component, Custom)
+        why = offers.veiled(tree, found.id, own) if tree is not None else None
+        if why is not None:
+            raise LookupError(f"{found!r} {why}")
+
     async def _send(self, found: Found, *events: tuple[str, Any]) -> None:
         """Events for one node through the real dispatcher, then everything
         they set off. One the page does not take raises ``LookupError``."""
-        # A custom component goes on running while it is hidden, as a tab
-        # keeps it there, and what it emits is its own doing and no press of
-        # a person's. Everything else is acted on by someone who has to see it.
-        if found.props.get("hidden") and not isinstance(found.component, Custom):
-            raise LookupError(f"{found!r} is hidden")
+        self._in_reach(found)
         seen = len(self._deaf)
         for name, payload in events:
             self.session.event(Event(node=found.id, name=name, payload=payload))
@@ -271,7 +281,8 @@ class Page:
         ``change`` with the value, since what a tab holds is not known here."""
         found = node if isinstance(node, Found) else self.find(node)
         component = found.component
-        for off in ("disabled", "loading", "hidden"):
+        self._in_reach(found)
+        for off in ("disabled", "loading"):
             if getattr(component, off, False):
                 raise LookupError(f"{found!r} is {off}")
         if isinstance(component, Checkbox | Switch):
@@ -308,8 +319,7 @@ class Page:
         is not strict it raises ``RuntimeError`` here with what the tab is
         told."""
         found = node if isinstance(node, Found) else self.find(node)
-        if found.props.get("hidden") and not isinstance(found.component, Custom):
-            raise LookupError(f"{found!r} is hidden")
+        self._in_reach(found)
         if getattr(found.component, "disabled", False):
             raise LookupError(f"{found!r} is disabled")
         conn = self.session.conn
@@ -363,11 +373,29 @@ class Page:
             events.append(("show", value))
         await self._send(found, *events)
 
-    async def submit(self, form: Found | str, draft: Any) -> None:
-        """Submit a draft (a dict or a model instance) as the tab would."""
+    async def submit(self, node: Found | str, draft: Any) -> None:
+        """Submit a form's draft (a dict or a model instance) as the tab would.
+
+        On an ``Input`` or a ``Textarea`` the draft is the text, typed just
+        before and entered with Enter, or Ctrl+Enter in a ``Textarea``. The
+        field gets what a tab sends then. That is the text for ``on_change``
+        when there is one, the text for ``on_submit``, and from a field
+        with ``clear_on_submit`` its new, empty value for ``on_change``."""
+        found = node if isinstance(node, Found) else self.find(node)
+        field = found.component
+        if isinstance(field, Input | Textarea):
+            if not isinstance(draft, str):
+                raise TypeError(f"{found!r} is submitted with the text typed into it")
+            if field.on_submit is None:
+                # In a tab the Enter does nothing, and nothing is sent.
+                raise LookupError(f"{found!r} has no handler for submit")
+            typed = [("change", draft)] if field.on_change is not None else []
+            emptied = [("change", "")] if typed and field.clear_on_submit else []
+            await self._send(found, *typed, ("submit", draft), *emptied)
+            return
         if hasattr(draft, "model_dump"):
             draft = draft.model_dump(mode="json")
-        await self.event(form, "submit", draft)
+        await self.event(found, "submit", draft)
 
     async def select(self, table: Found | str, keys: list[Any]) -> None:
         """Select rows of a table by key."""
@@ -429,9 +457,9 @@ class Page:
         elif not isinstance(component, FileUpload | Chat):
             raise TypeError(f"{found.type} takes no uploads")
         # Before the file is stored, as a tab offers no way to send one.
-        for off in ("disabled", "hidden"):
-            if getattr(component, off, False):
-                raise LookupError(f"{found!r} is {off}")
+        self._in_reach(found)
+        if getattr(component, "disabled", False):
+            raise LookupError(f"{found!r} is disabled")
         try:
             ref = self._store(found.id, path, field)
         except Reject as refused:
@@ -455,8 +483,7 @@ class Page:
     ) -> None:
         """A chat turn: the message event with text, attachments and a command."""
         found = chat if isinstance(chat, Found) else self.find(chat)
-        if getattr(found.component, "hidden", False):
-            raise LookupError(f"{found!r} is hidden")
+        self._in_reach(found)
         refs = [self._store(found.id, p) for p in files]
         payload = {
             "text": text,
@@ -484,9 +511,9 @@ class Page:
         return []
 
     def _mark(self, name: str) -> dict[str, Any]:
-        place = self.session.place(name)
+        spot = self.session._spot(name)
         for mark in self.marks:
-            if place == (mark["id"], mark.get("field")):
+            if spot == (mark["id"], mark.get("field"), mark.get("part")):
                 return mark
         raise LookupError(f"nothing is highlighted at {name!r}")
 
@@ -700,13 +727,18 @@ class TestApp:
         user: Any = None,
         state: Any = None,
         visitor: str | None = None,
+        timezone: str | None = None,
     ) -> AsyncIterator[Page]:
         """Open a page as a new session: connect (unless ``state`` is given), mount, yield.
 
         ``visitor`` is the id of the browser the page is opened from, in an
         app that identifies visitors. Two pages opened with the same one are
         two tabs of one browser, and a page opened without is a browser of
-        its own."""
+        its own.
+
+        ``timezone`` is the time zone of that browser by its name, such as
+        ``"Asia/Tokyo"``, for ``s.timezone``. Without it the session has
+        none."""
         if visitor is not None and self.app.visitors is None:
             raise ValueError("visitor= needs App(identify_visitors=True)")
         await self.startup()
@@ -721,6 +753,8 @@ class TestApp:
             raise Forbidden(verdict.message or self.app.theme.text("forbidden_text"))
         session: Session[Any] = Session(self.app, page_def, params, path)
         session.user = user
+        if timezone is not None:
+            session.timezone = ZoneInfo(timezone)
         if visitor is not None:
             session.visitor = Visitor(visitor)
         # What a page refuses with is raised in the test, where a running app

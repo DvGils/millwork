@@ -1110,3 +1110,67 @@ async def test_a_handler_that_raises_when_asked_fails_the_test_or_the_request() 
         with pytest.raises(RuntimeError, match="The request failed"):
             await page.request("grid", "fail")
         assert [type(exc) for _, exc in page.failures] == [ValueError]
+
+
+class Desk(BaseModel):
+    heard: list[tuple[str, str]] = []
+
+
+def entering_app() -> mw.App:
+    """Fields to enter a line in, each telling what its handlers got."""
+    app = mw.App("t", state=Desk, public=None)
+
+    def hears(what: str) -> Any:
+        def handler(s: mw.Session[Desk], text: str) -> None:
+            s.state.heard.append((what, text))
+
+        return handler
+
+    @app.page("/")
+    def home(s: mw.Session[Desk]) -> ui.Component:
+        change, submit = hears("change"), hears("submit")
+        return ui.Page(
+            ui.Text(f"{len(s.state.heard)} heard"),
+            ui.Input(key="line", clear_on_submit=True, on_change=change, on_submit=submit),
+            ui.Input(key="kept", on_change=change, on_submit=submit),
+            ui.Input(key="plain", clear_on_submit=True, on_submit=submit),
+            ui.Textarea(key="note", clear_on_submit=True, on_change=change, on_submit=submit),
+            ui.Input(key="typing", on_change=change),
+            ui.Input(key="off", disabled=True, on_change=change, on_submit=submit),
+        )
+
+    return app
+
+
+async def test_a_line_entered_in_a_field_sends_what_a_tab_sends() -> None:
+    async with TestApp(entering_app()).open("/") as page:
+        # The typing, the Enter, and the field's own emptying.
+        await page.submit("line", "hello")
+        assert page.state.heard == [("change", "hello"), ("submit", "hello"), ("change", "")]
+        page.state.heard.clear()
+        # A field that keeps its text has nothing to say after the Enter.
+        await page.submit("kept", "hello")
+        assert page.state.heard == [("change", "hello"), ("submit", "hello")]
+        page.state.heard.clear()
+        # One without a change handler tells of the Enter alone.
+        await page.submit("plain", "hello")
+        assert page.state.heard == [("submit", "hello")]
+        page.state.heard.clear()
+        await page.submit(page.find("note"), "two\nlines")
+        assert page.state.heard == [
+            ("change", "two\nlines"),
+            ("submit", "two\nlines"),
+            ("change", ""),
+        ]
+
+
+async def test_a_field_that_takes_no_enter_fails_the_test() -> None:
+    async with TestApp(entering_app()).open("/") as page:
+        with pytest.raises(LookupError, match=r"<Input root/typing> has no handler for submit"):
+            await page.submit("typing", "hello")
+        with pytest.raises(LookupError, match=r"<Input root/off> is disabled"):
+            await page.submit("off", "hello")
+        # Nor was the typing sent on its own.
+        assert page.state.heard == []
+        with pytest.raises(TypeError, match="the text typed into it"):
+            await page.submit("line", {"text": "hello"})

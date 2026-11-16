@@ -1,7 +1,7 @@
 ---
 title: Framework warnings
 order: 4
-description: Four mistakes millwork can see, and how it tells you.
+description: Six mistakes millwork can see, and how it tells you.
 related: /running/development, /components/tasks
 ---
 
@@ -14,6 +14,9 @@ log line with the page's path, and in debug mode as a toast as well.
 - **A slow page function**, over 20 ms, the time in its
   [lazy parts](/components/layout#lazy-parts) included. The page function
   builds the tree, and I/O belongs in the page's `connect` hook or a task.
+  A page that is slow for its size alone, a thousand rows built one by
+  one, shows fewer of them at a time. Where the size is in tabs, `ui.lazy`
+  leaves the ones that are not open out of a render.
 - **A list without keys**, meaning four or more siblings of one type
   without a key whose number changed between renders. Children that are
   written out, one of them left out with `x if shown else None`, are no
@@ -21,8 +24,15 @@ log line with the page's path, and in debug mode as a toast as well.
 - **An icon file that is not there**, a component's `icon` given as a
   path under `/public/` whose file is not in the public folder. The
   page draws nothing in its place, which is easy to miss.
+- **A progress bar past its end**, a `ui.Progress` whose `value` is
+  above 1. The value is a share from 0 to 1, and a percentage such as 50
+  is drawn as a full bar.
 - **A handler that changed nothing**, no state, no command, no task.
-  Usually a forgotten `await`.
+  Usually a forgotten `await`. It is said of a press, which is a click, a
+  submit, a row or card action, a click on a table's row and a choice
+  from a menu. Other events tell of what the tab shows already, such as
+  a value typed or rows ticked, so a handler that only keeps that is not
+  warned about. Neither is an event a custom component emits.
 - **A sync task that changed state from its thread.** A task reports
   through `progress()` and returns a result, and the handler that awaits it
   puts the result in state, as the [Tasks](/components/tasks) page shows.

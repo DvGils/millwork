@@ -19,7 +19,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from millwork import context
+from millwork import context, offers
 from millwork.auth import Forbidden, NotFound
 from millwork.files import Reject, fits
 from millwork.forms import FormIssues
@@ -282,7 +282,7 @@ async def turn(s: Session[Any], plan: Plan) -> None:
         before = s._handler_begins(plan.event)
         await _call(plan.handler, *plan.args)
         if plan.event is not None:
-            s._handler_ended(plan.where, before, plan.event)
+            s._handler_ended(plan, before, plan.event)
     except FormIssues as exc:
         if plan.event is None:
             _report(s, plan, exc)
@@ -383,13 +383,31 @@ async def _ask_handler(s: Session[Any], conn: Connection, msg: Request) -> None:
     # an event, which is checked and takes its turn.
     made = component.asked(msg.name) if component is not None else None
     refused = getattr(component, "disabled", False) or msg.size is not None
-    if handler is None or made is None or refused:
+    if handler is None or made is None or refused or tree is None:
+        conn.say(Reply(request=msg.request, error="unknown request"))
+        return
+    # Asked of what takes no events, or with what its component cannot
+    # ask with, it is no request of a tab's either.
+    from millwork.ui import Custom
+
+    payload = msg.payload
+    own = isinstance(component, Custom)
+    try:
+        if offers.veiled(tree, msg.node, own) is not None:
+            raise offers.Refused("takes no requests")
+        if not own:
+            payload = offers.given(tree, tree.nodes[msg.node], msg.name, payload)
+    except offers.Refused as no:
+        log.warning("request %s on %s: it %s", msg.name, msg.node, no)
         conn.say(Reply(request=msg.request, error="unknown request"))
         return
     token = context.bind(s)
     try:
-        result = await _call(handler, s, msg.payload)
-        conn.say(Reply(request=msg.request, payload=made(result)))
+        result = await _call(handler, s, payload)
+        answer = made(result)
+        if msg.name == "search" and not own:
+            s._searched(msg.node, answer)
+        conn.say(Reply(request=msg.request, payload=answer))
     except Exception as exc:
         log.exception("request %s on %s failed", msg.name, msg.node)
         s._failed(f"the {msg.name} handler on {msg.node}", exc)

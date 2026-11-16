@@ -371,6 +371,9 @@ class Tree:
         self.kept: list[Part] = []
         # Seconds spent in lazy functions while it was built.
         self.spent = 0.0
+        # The nodes that take no events, in something closed and in
+        # something hidden. Worked out at the first event that asks.
+        self.veiled: tuple[frozenset[str], frozenset[str]] | None = None
 
     def handler(self, node_id: str, event: str) -> Handler | None:
         return self.handlers.get((node_id, event))
@@ -761,6 +764,16 @@ def _handler_problem(fn: Callable[..., Any], count: int) -> str | None:
 _PLAIN = frozenset({str, int, float, bool, type(None)})
 
 
+def shown_bytes(value: bytes | bytearray | memoryview) -> str:
+    """Bytes as a page can show them: the text they are, or how many there
+    are when they are no text."""
+    raw = bytes(value)
+    try:
+        return raw.decode()
+    except UnicodeDecodeError:
+        return f"{len(raw)} bytes"
+
+
 def wire_value(value: Any) -> Any:
     """Turn a prop value into JSON-ready data."""
     # The plain types first, by exact type: most of what a page sends is these,
@@ -784,6 +797,8 @@ def wire_value(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, PurePath):
         return str(value)
+    if isinstance(value, bytes | bytearray | memoryview):
+        return shown_bytes(value)
     if isinstance(value, Mapping):
         return {str(k): wire_value(v) for k, v in value.items()}
     if isinstance(value, Iterable) and not isinstance(value, bytes | bytearray):

@@ -10,6 +10,7 @@ import { emit as wsEmit } from "./ws";
 import { registry } from "./components";
 import { CustomComponent } from "./custom";
 import { ensureTailwindRuntime } from "./tailwind-runtime";
+import { HiddenAbove, useHiddenAbove } from "./veil";
 
 export interface RenderProps {
   node: Node;
@@ -35,6 +36,7 @@ export const Render = memo(function Render({ id }: { id: string }) {
   // the second input or the first button, since a reset changes what else
   // is there: a field that is emptied loses its clear button.
   const wrapper = useRef<HTMLDivElement>(null);
+  const above = useHiddenAbove();
   const drawn = useRef(epoch);
   const keyboard = useRef<{ kind: string; at: number } | null>(null);
   if (drawn.current !== epoch) {
@@ -59,9 +61,11 @@ export const Render = memo(function Render({ id }: { id: string }) {
   const hidden = Boolean(node.props.hidden);
   return (
     <div ref={wrapper} data-node={id} style={{ display: hidden ? "none" : "contents" }}>
-      <Boundary key={`${node.type}:${epoch}:${page}`} id={id}>
-        <NodeComponent node={node} />
-      </Boundary>
+      <HiddenAbove.Provider value={above || hidden}>
+        <Boundary key={`${node.type}:${epoch}:${page}`} id={id}>
+          <NodeComponent node={node} />
+        </Boundary>
+      </HiddenAbove.Provider>
     </div>
   );
 });

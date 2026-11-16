@@ -49,7 +49,8 @@ export default function Hello({ props, emit, children }) {
 
 `ui.Custom(name, props=, events=)` renders `components/<name>.jsx`. Events
 the component emits reach the handler named in `events`, or `on_event` as
-`(name, payload)`.
+`(name, payload)`. A payload is whatever the tab sent, so a handler
+checks it before using it.
 
 ```python live
 from pydantic import BaseModel

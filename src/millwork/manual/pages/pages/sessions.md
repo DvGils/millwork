@@ -77,6 +77,45 @@ session, in storage the app brings. There it needs an owner, which is the
 user in an app with sign-in, and the browser that [Visitors](/pages/visitors)
 describes in an app without.
 
+## The viewer's time zone
+<!-- keywords: timezone, tz, local time, today, date, clock, utc, zoneinfo -->
+
+`s.timezone` is the time zone of the browser the tab runs in, as a
+`zoneinfo.ZoneInfo`. The server's clock is the server's, so a time is
+kept in UTC and shown in the viewer's zone, and today's date is read
+there too. The time has to say that it is UTC, as
+`datetime.now(UTC)` does. Python reads one without a zone as the
+server's own clock.
+
+```python
+from datetime import date, datetime
+
+
+def clock(s: mw.Session[State], at: datetime) -> str:
+    return at.astimezone(s.timezone).strftime("%H:%M")
+
+
+def today(s: mw.Session[State]) -> date:
+    return datetime.now(s.timezone).date()
+```
+
+The tab names its zone when it connects, so `s.timezone` is there from
+the `connect` hook on. A tab that comes back from another zone, after a
+reload or a dropped network, has its page drawn again. Its `connect`
+hook does not run again, so what depends on the zone is worked out in
+the page function. `s.timezone` is `None` when the browser named no
+zone or one the server has no data for, and in a test that gives none.
+Both functions above then go by the server's zone. A test gives one
+with `TestApp(app).open("/", timezone="Asia/Tokyo")`.
+
+Python reads time zones from the system it runs on. Windows has none to
+read, and neither has a container image that leaves them out. millwork
+installs the `tzdata` package, which Python reads in their place.
+
+A `ui.Table` column with the `datetime` format is formatted in the
+browser, which shows a time that carries its offset in the viewer's
+zone without any of this. A time without one is shown as it is written.
+
 ## When a tab goes away
 <!-- keywords: offline, timeout, grace period, reload -->
 

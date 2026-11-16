@@ -75,9 +75,15 @@ draft)` with a dict or a model instance, `select(table, keys)`,
 `choose(menu, item)` for an item of a `DropdownMenu` by its id or label,
 `action(node, id, key)` for a row or card action, `upload(node, path,
 field=)`, which runs every check an upload gets and returns the `FileRef`,
+which for a form is the value of its file field in the draft,
 `send(chat, text, files=)`, `stop(chat)`, `navigate(path)`, and `event(node,
 name, payload)` for anything else. A draft that fails validation produces
 the same `form_issues` command the tab would get, at the same pointers.
+On an `Input` or a `Textarea`, `submit(field, text)` types the text and
+enters it, with Enter or with Ctrl+Enter in a `Textarea`, and sends what
+a tab sends then. That is the text to `on_change` when the field has
+one, the text to `on_submit`, and from a field with `clear_on_submit`
+its new, empty value to `on_change`.
 On `ui.Tabs`, `change(tabs, "history")` opens the tab with that id. A
 click on a `Checkbox` or a `Switch` with `checked` turns it to its other
 value. One with `default_checked` keeps its value in the browser, where
@@ -85,8 +91,10 @@ a test cannot read it, so the test says what it turns to with `change`.
 
 An action the page does not take fails the test with a `LookupError`
 that names the node. That is an event for a node that has no handler for
-it, anything sent to a node that is disabled or hidden, a click on a
-button that is loading, and a submit of a read-only form. In a browser
+it, anything sent to a node that is disabled, hidden, in something
+hidden or in a closed dialog or sheet, a value its component could not
+have sent, a click on a button that is loading, and a submit of a
+read-only form. In a browser
 such an action does nothing, so a test that passed on one would have
 checked nothing. A custom component is the exception to hidden. A tab
 keeps it running while it does not show, so `page.event` with an event

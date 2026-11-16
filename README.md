@@ -48,13 +48,55 @@ uv add millwork  # or `pip install millwork`
 uv run millwork run app.py
 ```
 
+## Examples
+
+Four example apps are in [`examples/`](https://github.com/DvGils/millwork/tree/main/examples). Each has a
+look of its own, tests, and a page that shows it in use and says how it
+is made.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="https://github.com/DvGils/millwork/tree/main/examples/chat"><img src="https://raw.githubusercontent.com/DvGils/millwork/main/examples/chat/chat.png" alt="A team chat on a desk screen and on a phone, with channels in a sidebar, messages, a reaction and a count of unread messages." width="100%"></a>
+      <br>
+      <b><a href="https://github.com/DvGils/millwork/tree/main/examples/chat">Team chat</a></b>
+      <br>
+      Channels with messages that arrive as they are sent, who is typing, unread counts and reactions, on a desk and on a phone.
+    </td>
+    <td width="50%" valign="top">
+      <a href="https://github.com/DvGils/millwork/tree/main/examples/claims"><img src="https://raw.githubusercontent.com/DvGils/millwork/main/examples/claims/claims.png" alt="A manager's screen with an expense claim open beside the photo of its receipt, and the phone of the person who filed it." width="100%"></a>
+      <br>
+      <b><a href="https://github.com/DvGils/millwork/tree/main/examples/claims">Expense claims</a></b>
+      <br>
+      Sign-in for three kinds of people, a claim filed with its receipt, reviewed beside it and paid, and a report that prints.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="https://github.com/DvGils/millwork/tree/main/examples/analyst"><img src="https://raw.githubusercontent.com/DvGils/millwork/main/examples/analyst/analyst.png" alt="A dark page with charts pinned to a board at the left and a chat at the right, where an answer about a month is marked on the line chart." width="100%"></a>
+      <br>
+      <b><a href="https://github.com/DvGils/millwork/tree/main/examples/analyst">Analyst</a></b>
+      <br>
+      A chat that answers questions about data, pins charts to a board and marks what an answer is about. It runs on a script, or on an LLM with an API key.
+    </td>
+    <td width="50%" valign="top">
+      <a href="https://github.com/DvGils/millwork/tree/main/examples/microscope"><img src="https://raw.githubusercontent.com/DvGils/millwork/main/examples/microscope/microscope.png" alt="A round view through a microscope with colored cells in a drop of water, beside charts of how the cells changed over the generations." width="100%"></a>
+      <br>
+      <b><a href="https://github.com/DvGils/millwork/tree/main/examples/microscope">Microscope</a></b>
+      <br>
+      A simulation game of a drop of water in which cells evolve over the generations, drawn on a canvas by a component of the app's own and moved on by a clock on the server.
+    </td>
+  </tr>
+</table>
+
 ## What is included
 
 - **A catalog of components** on shadcn/ui: layout, text, inputs,
   feedback, tables, charts, forms from Pydantic models, files, tasks with
-  progress, and a chat surface that streams replies from Python.
+  progress, a chat surface that streams replies from Python, and much more.
+  Have a look at https://millwork-ui.com --> Components.
 - **One model of state.** Python owns the state; a control is owned by
-  Python or by the browser, and the page says which.
+  Python or by the browser.
 - **Long work as tasks**, with progress, steps and cancellation drawn by
   the page, and chat replies that stream text, reasoning and tool steps.
 - **Files over the session's socket.** Uploads, downloads and inline
@@ -97,14 +139,14 @@ and in the manual, and prints the few parts that are about it:
 ```sh
 millwork reference ui.Table        # an entry, and the manual's section on it
 millwork reference shared data     # by what it is about
-millwork reference modal           # by what it is called elsewhere
+millwork reference modal           # by what it is called in other frameworks
 millwork reference testing.md      # a page of the manual
-millwork reference --index         # every name, and nothing more
+millwork reference --index         # prints every name
 ```
 
 ## Status
 
-millwork is still in beta.
+millwork is still in beta and moving fast. Version 1.0.0 will be the first stable release. 
 
 ## Contributing
 

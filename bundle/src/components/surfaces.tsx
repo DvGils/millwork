@@ -4,10 +4,12 @@ import { type CSSProperties, useContext, useEffect, useState } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
+import { useHiddenAbove } from "../veil";
 import { t } from "../theme";
 import { store, useMounts, useNode } from "../store";
 import { has, linkLook } from "../lib";
 import { anchorProps, InSidebar } from "./anchor";
+import { useStickToEnd } from "../stick";
 import { ScrollArea as UiScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "cn";
 import { icon } from "../icons";
@@ -142,9 +144,12 @@ const dialogSize: Record<string, string> = {
 
 export const Dialog: Renderer = ({ node, props, children, emit }) => {
   const status = useStatus();
+  // Hidden, or in something hidden, it does not open: it is drawn at the
+  // top of the page, where the wrapper that hides a node does not reach.
+  const hidden = useHiddenAbove();
   return (
   <UiDialog
-    open={Boolean(props.open) && status !== "closed"}
+    open={Boolean(props.open) && status !== "closed" && !hidden}
     disablePointerDismissal={props.dismissable === false}
     onOpenChange={(open) => {
       if (!open && props.dismissable !== false && props.on_close) emit("close");
@@ -361,7 +366,7 @@ export function gridColumns(cols: unknown): Record<string, number | string> {
 export const Grid: Renderer = ({ props, children }) => {
   const gap = typeof props.gap === "number" ? props.gap : 4;
   return (
-    <div className={cn("mw-grid grid", `gap-${gap}`, props.cls as string)} style={gridColumns(props.cols) as CSSProperties}>
+    <div data-box="" className={cn("mw-grid grid", `gap-${gap}`, props.cls as string)} style={gridColumns(props.cols) as CSSProperties}>
       {children}
     </div>
   );
@@ -427,6 +432,12 @@ export const Link: Renderer = ({ props }) => {
     >
       {Icon ? <Icon className={inSidebar ? "mt-0.5 size-4 shrink-0" : "size-3.5"} /> : null}
       {String(props.label ?? "")}
+      {/* In a sidebar the count stands at the row's end, where a column of them lines up. */}
+      {props.badge ? (
+        <UiBadge variant="secondary" className={inSidebar ? "ml-auto" : undefined}>
+          {String(props.badge)}
+        </UiBadge>
+      ) : null}
     </a>
   );
 };
@@ -458,8 +469,18 @@ export function useOwnedOpen(open: unknown, defaultOpen: unknown): [boolean, (v:
   return [controlled ? Boolean(open) : local, setLocal];
 }
 
-export const ScrollArea: Renderer = ({ props, children }) => (
-  <UiScrollArea className={cn("min-h-0", props.cls as string)} style={props.height ? { height: String(props.height) } : undefined}>
-    <div className="flex flex-col gap-4">{children}</div>
-  </UiScrollArea>
-);
+export const ScrollArea: Renderer = ({ props, children }) => {
+  const holder = useStickToEnd<HTMLDivElement>(Boolean(props.stick_to_end));
+  return (
+    <UiScrollArea
+      ref={holder}
+      // One that fills is a column of its own, so its viewport is given the
+      // height the area came to and scrolls inside it. It keeps a few rows
+      // of height where its neighbors leave it none, and the page scrolls.
+      className={cn("min-h-0", props.fill && "mw-fill flex min-h-24 grow flex-col", props.cls as string)}
+      style={props.height ? { height: String(props.height) } : undefined}
+    >
+      <div className="flex flex-col gap-4">{children}</div>
+    </UiScrollArea>
+  );
+};

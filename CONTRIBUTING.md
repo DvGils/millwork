@@ -46,8 +46,8 @@ It runs the tests once more with the oldest version of each dependency
 that `pyproject.toml` allows. Run them before you push.
 
 ```
-uv run ruff check src scripts tests
-uv run ruff format --check src scripts tests
+uv run ruff check src scripts tests examples
+uv run ruff format --check src scripts tests examples
 uv run mypy src
 uv run pytest -q
 ```

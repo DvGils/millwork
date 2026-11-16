@@ -739,6 +739,70 @@ async def test_development_warnings_name_the_four_mistakes(tmp_path: Path) -> No
         assert sum("changed nothing" in w for w in warnings()) == 1
 
 
+async def test_only_a_press_that_shows_nothing_is_warned_about(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    class Draft(BaseModel):
+        text: str = ""
+        sent: list[str] = []
+        zone: str = ""
+
+    app = mw.App("w", state=Draft, public=None, bundle_dir=tmp_path, debug=True)
+
+    def keep(s: mw.Session[Draft], text: str) -> None:
+        s.state.text = text
+
+    def send(s: mw.Session[Draft], text: str) -> None:
+        s.state.sent.append(text)
+        s.state.text = ""
+
+    def zone(s: mw.Session[Draft], name: str) -> None:
+        s.state.zone = name
+
+    def nothing(s: mw.Session[Draft], _: Any) -> None:
+        pass
+
+    @app.page("/")
+    def home(s: mw.Session[Draft]) -> ui.Component:
+        return ui.Page(
+            ui.Input(key="line", clear_on_submit=True, on_change=keep, on_submit=send),
+            ui.Select(key="pick", options=["a", "b"], on_change=nothing),
+            ui.Table(rows=[{"id": 1}], key="rows", selection="rows", on_select=nothing),
+            ui.Collapsible(ui.Text("more"), key="fold", title="More", on_toggle=nothing),
+            ui.Custom("Clock", key="clock", events={"zone": zone, "click": nothing}),
+            ui.Button("dead", key="dead", on_click=nothing),
+            ui.DropdownMenu(
+                key="menu",
+                trigger=ui.Button("Menu"),
+                items=[ui.MenuItem(id="go", label="Go")],
+                on_select=nothing,
+            ),
+            ui.Text(f"{len(s.state.sent)} sent"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        noops = lambda: sorted(k for k in page.session._warned if k.startswith("noop:"))  # noqa: E731
+        # A draft that is kept and drawn nowhere.
+        await page.change("line", "hel")
+        # The field's own emptying finds the draft emptied by the handler.
+        await page.submit("line", "hello")
+        assert page.state.sent == ["hello"]
+        # What a custom component tells of, and when, is its own.
+        await page.event("clock", "zone", "Europe/Amsterdam")
+        await page.event("clock", "click")
+        # What the tab shows by itself: a choice, rows ticked, a panel folded.
+        await page.change("pick", "b")
+        await page.select("rows", [1])
+        await page.event("fold", "toggle", False)
+        assert noops() == []
+        await page.click("dead")
+        await page.choose("menu", "go")
+        assert noops() == [
+            "noop:the click handler on root/dead",
+            "noop:the select handler on root/menu",
+        ]
+
+
 async def test_a_changed_custom_component_is_pushed_to_open_tabs(tmp_path: Path) -> None:
     from millwork.testing import TestApp
 
@@ -913,3 +977,88 @@ async def test_a_literal_path_wins_over_a_parameter_in_either_order(tmp_path: Pa
     app.page("/tie/{b}")(lambda s: ui.Page(ui.Text("second", key="t")))
     async with TestApp(app).open("/tie/x") as page:
         assert page.find("t").props["content"] == "first"
+
+
+def zoned_app(tmp_path: Path, seen: list[Any]) -> mw.App:
+    """A page that shows its viewer's time zone, and tells what its connect
+    hook found."""
+    app = mw.App("z", public=None, bundle_dir=tmp_path, session_grace=60)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text(str(s.timezone), key="zone"))
+
+    @home.connect
+    def connect(s: mw.Session) -> None:
+        seen.append(s.timezone)
+
+    return app
+
+
+def shown(mount: dict[str, Any]) -> str:
+    assert mount["type"] == "mount", mount
+    return mount["nodes"]["root/zone"]["props"]["content"]
+
+
+def test_a_session_has_the_time_zone_its_tab_named(tmp_path: Path) -> None:
+    from zoneinfo import ZoneInfo
+
+    tokyo, lima = ZoneInfo("Asia/Tokyo"), ZoneInfo("America/Lima")
+    seen: list[Any] = []
+    app = zoned_app(tmp_path, seen)
+    with TestClient(app.asgi) as client:
+        with client.websocket_connect("/_mw/ws") as ws:
+            info = hello(ws, timezone="Asia/Tokyo")
+            assert shown(recv(ws)) == "Asia/Tokyo"
+            # There from the connect hook on.
+            assert seen == [tokyo]
+            assert app.sessions[info["id"]].timezone is tokyo
+        # The tab comes back from somewhere else, and the session goes along.
+        with client.websocket_connect("/_mw/ws") as ws:
+            again = hello(ws, session=info["id"], resume=info["resume"], timezone="America/Lima")
+            assert again["id"] == info["id"]
+            # The page as it stood, and then as it is over there.
+            assert shown(recv(ws)) == "Asia/Tokyo"
+            patch = recv(ws)
+            assert patch["type"] == "patch" and patch["ops"][0]["props"] == {
+                "content": "America/Lima"
+            }
+            assert app.sessions[info["id"]].timezone is lima
+        # The connect hook ran once, for the session and not for the tab.
+        assert seen == [tokyo]
+
+
+@pytest.mark.parametrize(
+    "named",
+    [None, "", "Mars/Olympus", "../../etc/passwd", "/etc/localtime", "Europe", "a\x00b", "x" * 64],
+)
+def test_a_zone_that_is_none_leaves_the_session_without_one(tmp_path: Path, named: Any) -> None:
+    seen: list[Any] = []
+    app = zoned_app(tmp_path, seen)
+    with TestClient(app.asgi) as client, client.websocket_connect("/_mw/ws") as ws:
+        hello(ws, **({} if named is None else {"timezone": named}))
+        assert shown(recv(ws)) == "None"
+    assert seen == [None]
+
+
+def test_a_zone_longer_than_a_name_is_no_hello(tmp_path: Path) -> None:
+    app = zoned_app(tmp_path, [])
+    with TestClient(app.asgi) as client, client.websocket_connect("/_mw/ws") as ws:
+        send(ws, {"type": "hello", "path": "/", "timezone": "x" * 65})
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_text()
+        assert closed.value.code == 4400
+
+
+async def test_a_test_gives_its_page_a_time_zone(tmp_path: Path) -> None:
+    from zoneinfo import ZoneInfo
+
+    from millwork.testing import TestApp
+
+    tokyo = ZoneInfo("Asia/Tokyo")
+    seen: list[Any] = []
+    app = zoned_app(tmp_path, seen)
+    async with TestApp(app).open("/", timezone="Asia/Tokyo") as page:
+        assert page.session.timezone is tokyo and seen == [tokyo]
+    async with TestApp(app).open("/") as page:
+        assert page.session.timezone is None

@@ -213,6 +213,16 @@ function unpackFrame(buffer: ArrayBuffer): [string, Uint8Array] | null {
   return [new TextDecoder().decode(bytes.subarray(1, 1 + n)), bytes.subarray(1 + n)];
 }
 
+// The browser's time zone by its name, such as Europe/Amsterdam, or null
+// from one that does not say.
+function timeZone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
+
 function requestId(): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
@@ -654,6 +664,7 @@ export function connect() {
       seq: sessionId ? lastSeq : 0,
       protocol: boot.protocol,
       bundle: boot.bundle ?? null,
+      timezone: timeZone(),
     });
     // "open" comes with the session message: nothing else is sent before the
     // server has said which session this socket speaks for.

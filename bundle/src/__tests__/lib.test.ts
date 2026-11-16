@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { isInternalPath, isSameOriginPath, safeUrl, samePath, slugify, toApp, toBrowser, signOutUrl, placed } from "../lib";
+import { inRange, isInternalPath, isSameOriginPath, safeUrl, samePath, slugify, toApp, toBrowser, signOutUrl, placed } from "../lib";
 
 describe("slugify", () => {
   it("matches the server's anchor for a heading", () => {
@@ -119,5 +119,26 @@ describe("placed", () => {
   it("takes anything that is not a string as no classes", () => {
     expect(placed(undefined)).toEqual({ box: "", rest: "" });
     expect(placed("  ")).toEqual({ box: "", rest: "" });
+  });
+});
+
+describe("a number typed into a field with a range", () => {
+  it("is held to the range", () => {
+    expect(inRange(500, 0, 100, 40)).toBe(100);
+    expect(inRange(-3, 0, 100, 40)).toBe(0);
+    expect(inRange(55, 0, 100, 40)).toBe(55);
+  });
+
+  it("is any number where the field has no end on that side", () => {
+    expect(inRange(500, 0, undefined, null)).toBe(500);
+    expect(inRange(-500, null, 100, null)).toBe(-500);
+  });
+
+  it("stays nothing when the field is empty", () => {
+    expect(inRange(null, 0, 100, 40)).toBe(null);
+  });
+
+  it("is left alone when it is what the page put there", () => {
+    expect(inRange(500, 0, 100, 500)).toBe(500);
   });
 });

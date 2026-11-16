@@ -3,6 +3,155 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.5.0
+
+### Bug fixes
+
+- The warning for a slow page function said to move I/O out of it, also
+  to a page that does none and is slow for its size alone. It now names
+  that case too, and says to show fewer rows at a time or to have the
+  tabs that are not open in `ui.lazy`.
+
+- The warning for a handler that changed nothing was said of handlers
+  that had done their work. An `on_change` that keeps a draft the page
+  does not draw was one, and so was the change to an empty value that a
+  field with `clear_on_submit` sends after its Enter, when `on_submit`
+  had emptied the draft already. A table's `on_select` that keeps the
+  ticked rows for a button to use was another, and so was a custom
+  component that reports something once, such as the browser's time
+  zone. The warning is now for a press, which is a click, a submit, a
+  row or card action, a click on a table's row and a choice from a menu.
+
+- The limits of a form's file field were only held in the browser when
+  they were set with `overrides`, as `{"/receipt": {"accept": [".png"],
+  "max_size_mb": 2}}`. The server took any file up to the app's own
+  limit. It now goes by the form as it was drawn, so those limits hold,
+  and a file field that `fields` leaves out takes no upload.
+- A row with bytes that are no text in it, a blob from a database say,
+  failed the whole page with a `UnicodeDecodeError` in a table and in a
+  chart, and so did a `memoryview`, which is what some database drivers
+  give for one. Such a cell now shows how many bytes it holds, as
+  `4 bytes`.
+- `reply.error(text)` in a chat was shown and not kept, so a failed
+  answer was an empty one after a reload. It is kept with the message
+  now. A text part of a stored message was left marked as still
+  streaming, and is marked done.
+- A password check that raised gave an error page of the server's.
+  The sign-in page now says that sign-in is not working right now, and
+  the exception is in the log.
+- Nothing slowed down someone guessing passwords. Wrong passwords are
+  now counted for a minute, and after five for one name from one
+  address, or thirty from one address, the next try is turned away
+  without a check. An app behind a proxy needs `proxied=True` for this,
+  or every visitor counts as one address.
+- `ui.Progress(value=50)` drew a full bar without a word. The value is a
+  share from 0 to 1, and one above 1 is now a framework warning.
+- A file that was chosen in a form's file field, or attached in a chat,
+  and never sent stayed in the session until it ended, and counted
+  against its storage for that long. It now goes when its form or chat
+  is no longer on the page. A file that was sent, or that a
+  `ui.FileUpload` took, is the app's as before. A session that had ended
+  still listed its files, and lists none now.
+- The copy button of a code block, in a `ui.Code` and in Markdown, lay
+  over the end of a long line. The line now goes under it.
+- A chart of a few bars drew them as slivers with wide gaps between
+  them. A bar is now wider the fewer there are, up to three times what
+  it was, and a chart of twelve bars or more is as before.
+- `s.params` was typed as text for every value, so a type checker
+  refused `ITEMS[s.params["id"]]` on a page at `/items/{id:int}`, where
+  the value is a number. A value is typed as whatever its converter
+  makes of it.
+- A table's `date` column showed a day without a time as the day
+  before, in every time zone west of UTC. A `date` from Python is such a
+  day.
+- A `ui.ScrollArea` printed only the rows in view. It prints its whole
+  content now, as a table with a `height` does.
+- `ui.Custom(on_event=...)` heard nothing. The handler was only reached
+  by an event named `event`, and got its payload without the name. It
+  now gets `(name, payload)` for every event that `events` has no
+  handler for, as the manual says.
+- A number typed into a `ui.NumberInput` outside its `min` and `max` was
+  sent as typed. It becomes the nearest end on Enter and when the field
+  is left.
+- A `ui.Dialog` or a `ui.Sheet` that was open and hidden, or in
+  something hidden, still showed. It stays closed.
+- A table's handler got a rounded number for a row whose key is a whole
+  number past 2^53, which is how a browser reads it. It gets the key as
+  the page gave it.
+- A `ui.Row` as the `footer` of a `ui.Card` kept its children together,
+  whatever its `justify` said. A row, a stack or a grid in a card's
+  footer is now as wide as the footer.
+
+### Features
+
+- A handler gets a value its component could have sent. The session
+  holds what a tab sends against the component as the page drew it. A
+  choice has to be on offer and not disabled, a number inside `min` and
+  `max`, text within `max_length`, and a table's row one of its rows.
+  Anything else is not heard, and a line in the log says why. From a
+  list, a choice or a row the page has taken away since is left out and
+  the rest is heard. A handler that checked its payload no longer has
+  to. What a `ui.Custom` emits is still its handler's to check.
+- A component that is hidden or in something hidden takes no events,
+  and neither does anything in a `ui.Dialog` or a `ui.Sheet` that is
+  closed. Before, a tab could submit a form in a closed sheet. A test
+  is as strict as a tab, so one that acts on such a component now fails
+  with a `LookupError`.
+- A page can be a frame that fills the window, with a bar on top, a list
+  that scrolls in the middle and a field that stays at the bottom.
+  `ui.Stack(fill=True)` is as high as the window has room and no higher,
+  and `ui.ScrollArea(fill=True)` in it takes the height that is left and
+  scrolls inside it. Before, only a `ui.Chat` and a `ui.Split` filled a
+  page, and `Stack(grow=True)` grew with its content.
+- A highlight can be on one row of a table or one value of a chart.
+  `s.highlight("orders/1042")` frames the row with that key, and
+  `s.highlight("sales/2026-03")` frames what the chart draws for that
+  value along its axis, which is the bars, the points of the lines or
+  the slice of a pie. It follows the data, so it waits for a row that is not there
+  yet, and with `scroll=True` a table turns to the row's page and
+  scrolls to it. `s.outline()` says which rows and values are
+  highlighted. Before, a highlight was on a whole component or a field
+  of a form, so an assistant could point at a chart and not at the month
+  it was talking about.
+- `ui.ScrollArea(stick_to_end=True)` opens at its end and stays there as
+  rows arrive, for messages or a log. A reader who scrolls up is left
+  where they are.
+- `s.timezone` is the time zone of the viewer's browser, as a
+  `zoneinfo.ZoneInfo`. The tab names it when it connects. Before, an app
+  had only the server's clock. `at.astimezone(s.timezone)` shows a time
+  that is kept in UTC on the viewer's clock, and
+  `datetime.now(s.timezone).date()` is the viewer's today. It is `None`
+  when the zone is not known, and a test gives one with
+  `open("/", timezone="Asia/Tokyo")`. millwork now depends on the
+  `tzdata` package, which has the zones where the system has none, on
+  Windows and in a container image without them.
+- `ui.Link(badge=)` shows a count or a word after a link's label, at the
+  end of its row in a sidebar, as `ui.Tab` has. Unread counts had to go
+  into the label's text.
+- `page.submit(field, text)` in a test types text into an `Input` or a
+  `Textarea` and enters it, with Enter or with Ctrl+Enter in a
+  `Textarea`. The field gets what a tab sends then. That is the text to
+  `on_change` when it has one, the text to `on_submit`, and from a field
+  with `clear_on_submit` its new, empty value to `on_change`. A test that
+  sent the `submit` event alone kept a draft in state that a browser had
+  emptied.
+
+### The manual
+
+- Inputs says that a field with `clear_on_submit` and an `on_change`
+  reports its empty value after the Enter, so a draft kept in state is
+  emptied without the handler doing it.
+- Layout has a new section, "A page that fills the window", that builds
+  such a frame.
+- Feedback's section on highlights ends with one on a bar of a chart and
+  one on a row of a table.
+- Chat's table of the parts of a reply has `reply.tool`, and the chapter
+  says that a picture in a reply's Markdown is fetched from its address.
+- Testing says that the `FileRef` from `page.upload` on a form is the
+  value of its file field in the draft.
+- Inputs has a section, "What a handler gets". Access rules says that
+  hidden and closed take no events and that folded still does.
+
 ## 0.4.1
 
 ### Bug fixes

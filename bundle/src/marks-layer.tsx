@@ -17,7 +17,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { emit } from "./ws";
 import { around, common, elementsOf, type Box } from "./pointing";
-import { inkOn, markBadge, markColor, useMarks, type Mark } from "./marks";
+import { inkOn, markBadge, markColor, partName, useMarks, type Mark } from "./marks";
 
 // How far the frame stands off the component.
 const OFF = 3;
@@ -38,8 +38,10 @@ interface Known {
   // When the session was told that this one is done, or 0.
   told: number;
   // The elements it is on, the ones above them that cut what shows, and
-  // the frame they were looked up in.
+  // the frame they were looked up in. For a mark on a part of a chart,
+  // the elements of the whole chart as well.
   targets: HTMLElement[];
+  within: HTMLElement[];
   clips: HTMLElement[];
   looked: number;
 }
@@ -48,7 +50,7 @@ let frames = 0;
 
 function about(n: number): Known {
   let k = known.get(n);
-  if (!k) known.set(n, (k = { seen: false, scrolled: false, timer: null, ink: "", told: 0, targets: [], clips: [], looked: -LOOK_EVERY }));
+  if (!k) known.set(n, (k = { seen: false, scrolled: false, timer: null, ink: "", told: 0, targets: [], within: [], clips: [], looked: -LOOK_EVERY }));
   return k;
 }
 
@@ -74,7 +76,11 @@ function targetsOf(mark: Mark, k: Known): HTMLElement[] {
   const stale = frames - k.looked >= LOOK_EVERY || k.targets.length === 0 || k.targets.some((t) => !t.isConnected);
   if (stale) {
     k.looked = frames;
-    k.targets = elementsOf(mark.id, mark.field);
+    k.targets = elementsOf(mark.id, mark.field, mark.part === undefined ? undefined : partName(mark.part));
+    // What a chart draws for a value has other marks of the chart over it,
+    // the line through a point and the label on a bar, so what lies on top
+    // is held against the whole chart. A row is its own element.
+    k.within = k.targets[0] instanceof SVGElement ? elementsOf(mark.id) : k.targets;
     k.clips = [];
     for (let up = k.targets[0]?.parentElement; up && up !== document.body; up = up.parentElement) {
       const flow = getComputedStyle(up);
@@ -95,7 +101,7 @@ function shows(k: Known, box: Box): Box | null {
   }
   if (!part) return null;
   const top = document.elementFromPoint((part.left + part.right) / 2, (part.top + part.bottom) / 2);
-  if (top && !k.targets.some((t) => t.contains(top) || top.contains(t))) return null;
+  if (top && !k.within.some((t) => t.contains(top) || top.contains(t))) return null;
   return part;
 }
 

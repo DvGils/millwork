@@ -25,8 +25,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
-from millwork import context, marks, outline, work
+from millwork import context, marks, offers, outline, work
 from millwork.chat import ChatTurn, Thread, UIMessage
 from millwork.connection import REPLACED, Connection, End, Pipe
 from millwork.files import FileRef, Reject, SessionFiles, content_to_file
@@ -49,7 +50,7 @@ from millwork.scope import Scope, Timer
 from millwork.signal import Signal
 from millwork.tasks import Task
 from millwork.turn import Turn
-from millwork.ui import Button, Dialog, DropdownMenu, Input, Sheet, Tabs, Text, Textarea
+from millwork.ui import Button, Custom, Dialog, DropdownMenu, Input, Sheet, Tabs, Text, Textarea
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -95,6 +96,11 @@ class Plan:
     typed: bool = False
     """The event is what was typed into a text field. The tab shows that by
     itself, and sends it right before a press that follows it."""
+    pressed: bool = False
+    """The event is a press, which a person expects to see something of.
+    Any other event tells of what the tab shows already, a value typed, a
+    row chosen, a panel folded, and keeping that is all its handler has to
+    do. What a custom component emits is its own to mean."""
     more: dict[str, Any] = field(default_factory=dict)
 
 
@@ -125,7 +131,7 @@ def names(name: str, node_id: str, component: Component | None) -> bool:
 
 
 class Session[S]:
-    def __init__(self, app: App, page: PageDef, params: dict[str, str], path: str) -> None:
+    def __init__(self, app: App, page: PageDef, params: dict[str, Any], path: str) -> None:
         self._loop = asyncio.get_running_loop()
         self.id = secrets.token_urlsafe(16)
         self.resume_token = secrets.token_urlsafe(24)
@@ -134,6 +140,10 @@ class Session[S]:
         self.params = params
         self.path = path
         self.user: Any = None
+        # The time zone of the browser the tab runs in, as the tab named it
+        # when it last connected. None when it named none, or one this
+        # Python has no data for.
+        self.timezone: ZoneInfo | None = None
         # The browser it was opened from, when the app identifies visitors.
         # An id of its own until the socket says which browser it is, and for
         # good when the browser brought no cookie.
@@ -213,6 +223,9 @@ class Session[S]:
         # and says it again whenever the ``Tabs`` are new to it, so what it
         # said is kept until the node is gone from the page.
         self._showing: dict[str, str] = {}
+        # What the search of a Combobox last answered with, by node: the
+        # choices it has on offer that are not on the page.
+        self._found: dict[str, deque[frozenset[str]]] = {}
         # What each form was told is wrong with it at its last submit.
         self._form_issues: dict[str, list[Any]] = {}
         # Lazy parts to build at the next render whether they show or not.
@@ -249,8 +262,11 @@ class Session[S]:
         self._marks: list[marks.Mark] = []
         # What each name stands for on the page as it is, kept from one
         # drawing to the next.
-        self._places: dict[str, tuple[str, str | None] | None] = {}
-        self._places_ids: tuple[str, ...] = ()
+        self._places: dict[str, tuple[str, str | None, Any] | None] = {}
+        # The parts of the tables and charts a mark was looked up in, for
+        # the tree they were read from.
+        self._part_index: dict[str, dict[str, Any]] = {}
+        self._places_ids: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
         self._places_of: Tree | None = None
         self._marks_sent: list[dict[str, Any]] = []
         self._mark_serial = 0
@@ -458,6 +474,16 @@ class Session[S]:
             # A reload is how a person tries a page that failed again.
             self.refresh()
 
+    def in_zone(self, zone: ZoneInfo | None) -> None:
+        """The tab said which time zone it is in. A tab that comes back from
+        another one, its laptop moved or its clock set, has a page that was
+        drawn for the old one, and that is drawn again."""
+        if zone == self.timezone:
+            return
+        self.timezone = zone
+        if self.tree is not None:
+            self.refresh()
+
     def detached(self, conn: Connection) -> None:
         """A connection is gone. Only the session's current one counts."""
         if self.conn is not conn:
@@ -612,7 +638,7 @@ class Session[S]:
         if self._showing or self._render_due:
             self.refresh()
 
-    def enter(self, page: PageDef, params: dict[str, str], path: str) -> None:
+    def enter(self, page: PageDef, params: dict[str, Any], path: str) -> None:
         """Step onto the page a navigation leads to, for its connect to run.
         What the session was on is kept, to go back to if that fails."""
         self._previous = (
@@ -802,34 +828,57 @@ class Session[S]:
         """Where a name points: the id of the first component it stands
         for, or the id of a form and the pointer of a field of it, for a
         name that is the form's, a slash, and the field's. None for a name
-        that stands for nothing on the page."""
+        that stands for nothing on the page, and for one that names a row
+        of a table or a value of a chart, which only a highlight takes."""
+        spot = self._spot(name)
+        return None if spot is None or spot[2] is not None else spot[:2]
+
+    def _spot(self, name: str) -> tuple[str, str | None, Any] | None:
+        """A place with the part of it a name points at: a row of a table
+        by its key, or a value along a chart's axis, for a name that is
+        the component's, a slash, and that. None for a whole component."""
         tree = self.tree
         if tree is None:
             return None
         if self._places_of is not tree:
             # What a name stands for holds for as long as the page has the
-            # same components, which it does through most drawings.
-            ids = tuple(tree.nodes)
+            # same components, which it does through most drawings. One
+            # that became another kind under the same key, a placeholder
+            # that is a table now, is not the same.
+            ids = (tuple(tree.nodes), tuple(node.type for node in tree.nodes.values()))
             if ids != self._places_ids or len(self._places) > 256:
                 self._places, self._places_ids = {}, ids
-            self._places_of = tree
-        if name not in self._places:
-            self._places[name] = self._place(tree, name)
-        return self._places[name]
+            self._places_of, self._part_index = tree, {}
+        if name in self._places:
+            return self._places[name]
+        spot, of_data = self._place(tree, name)
+        if not of_data:
+            # A row or a value is of the data, which the next drawing may
+            # have changed under the same components.
+            self._places[name] = spot
+        return spot
 
-    def _place(self, tree: Tree, name: str) -> tuple[str, str | None] | None:
+    def _place(self, tree: Tree, name: str) -> tuple[tuple[str, str | None, Any] | None, bool]:
+        """Where a name points in this tree, and whether that hangs on the
+        rows of a table or the points of a chart."""
         ids = self.named(name)
         if ids:
-            return ids[0], None
+            return (ids[0], None, None), False
+        of_data = False
         at = name.rfind("/")
         while at > 0:
-            pointer = name[at:]
-            for form in self.named(name[:at]):
-                node = tree.nodes[form]
-                if node.type == "Form" and outline.has_field(node.props, pointer):
-                    return form, pointer
+            for holder in self.named(name[:at]):
+                node = tree.nodes[holder]
+                if node.type == "Form" and outline.has_field(node.props, name[at:]):
+                    return (holder, name[at:], None), of_data
+                if node.type in marks.OF_DATA:
+                    of_data = True
+                    if holder not in self._part_index:
+                        self._part_index[holder] = marks.parts(node.type, node.props)
+                    if name[at + 1 :] in self._part_index[holder]:
+                        return (holder, None, self._part_index[holder][name[at + 1 :]]), True
             at = name.rfind("/", 0, at)
-        return None
+        return None, of_data
 
     def highlight(
         self,
@@ -845,7 +894,11 @@ class Session[S]:
     ) -> None:
         """Mark a component for the person to find: a border around it, in
         a color, drawn over the page. ``name`` is a key or an id, or a
-        form's name, a slash and a field's, as ``order/amount``.
+        form's name, a slash and a field's, as ``order/amount``. A table's
+        name, a slash and a row's key is that row, as ``orders/1042``, and
+        a chart's name, a slash and a value along its axis is what the
+        chart shows for it, as ``sales/2026-03``: the bars, the points or
+        the slice.
 
         ``color`` is ``red``, ``orange``, ``yellow``, ``green``, ``blue``,
         ``pink``, ``primary`` or ``ring``, each a color of the theme, or a
@@ -926,7 +979,7 @@ class Session[S]:
             return
         if not self._marks and not self._marks_sent:
             return
-        found, _ = marks.now(self._marks, self.place)
+        found, _ = marks.now(self._marks, self._spot)
         if found != self._marks_sent:
             self._marks_sent = found
             self.command("marks", list=found)
@@ -987,7 +1040,7 @@ class Session[S]:
             ids = self.named(within)
             if not ids:
                 return "" if as_text else None
-        shown, nowhere = marks.now(self._marks, self.place)
+        shown, nowhere = marks.now(self._marks, self._spot)
         found = outline.outline(
             self.tree,
             within=ids,
@@ -1081,6 +1134,7 @@ class Session[S]:
         ]
         if component.attachments is not None:
             files = files[: component.attachments.max_files]
+        self.files.sent(*(ref.id for ref in files))
         # A command is a message on its own: one that takes no words is sent
         # with none.
         command = payload.get("command")
@@ -1336,8 +1390,9 @@ class Session[S]:
             self._typed = event.node
         return self._effects
 
-    def _handler_ended(self, where: str, before: int, event: Event) -> None:
-        self._noop_watch = (where, before)
+    def _handler_ended(self, plan: Plan, before: int, event: Event) -> None:
+        if plan.pressed:
+            self._noop_watch = (plan.where, before)
         if event.name == "change":
             self._typed = event.node
 
@@ -1417,6 +1472,7 @@ class Session[S]:
                         "form_issues", node=event.node, issues=[i.model_dump() for i in issues]
                     )
                     return True
+                self._files_sent(draft)
                 ask.future.set_result(instance)
                 return True
             if event.name in ("close", "cancel"):
@@ -1600,10 +1656,11 @@ class Session[S]:
         else:
             self._failure = None
         self.tree = tree
+        self.files.drop_unsent(tree.nodes)
         self._title_shown = self._title(tree)
         # The marks of this page go with it: the ones the tab had were the
         # last page's.
-        self._marks_sent = [] if self._failure else marks.now(self._marks, self.place)[0]
+        self._marks_sent = [] if self._failure else marks.now(self._marks, self._spot)[0]
         self.post(
             Mount(root=tree.root, nodes=tree.nodes, title=self._title_shown, marks=self._marks_sent)
         )
@@ -1656,6 +1713,7 @@ class Session[S]:
         ops = diff(self.tree, tree)
         self._check_keyless(self.tree, tree)
         self.tree = tree
+        self.files.drop_unsent(tree.nodes)
         self._typed = None
         if ops:
             self.post(Patch(ops=ops))
@@ -1689,6 +1747,19 @@ class Session[S]:
                     f"keyless:{node_id}",
                     f"{node_id} is a list of {kind} rows without keys; give each a key so "
                     "a change moves rows instead of redrawing them",
+                )
+
+    def _check_shares(self, tree: Tree) -> None:
+        """A progress bar's value is a share from 0 to 1. One given as a
+        percentage is drawn full, which looks like a bar that works."""
+        for node_id, node in tree.nodes.items():
+            value = node.props.get("value") if node.type == "Progress" else None
+            # A sum of shares can come out a hair above 1, which is 1.
+            if isinstance(value, int | float) and value > 1.001:
+                self.warn(
+                    f"share:{node_id}",
+                    f"{node_id} is a ui.Progress with the value {value:g}, which is drawn "
+                    "as a full bar: a value is a share from 0 to 1, so half is 0.5",
                 )
 
     def _check_icons(self, tree: Tree) -> None:
@@ -1776,6 +1847,7 @@ class Session[S]:
             tree = build(root, last=last, showing=self._showing, wanted=self._parts_due)
             if tree.icon_files:
                 self._check_icons(tree)
+            self._check_shares(tree)
             # The lazy functions are the page function in parts, so their
             # time is its time.
             ms = (took + tree.spent) * 1000
@@ -1785,11 +1857,15 @@ class Session[S]:
             if self._slow_builds >= 2:
                 self.warn(
                     "slow-page",
-                    f"the page function took {ms:.0f} ms; it should build the tree and "
-                    "nothing else, so move I/O to connect or a task",
+                    f"the page function took {ms:.0f} ms. It builds the tree and nothing "
+                    "else, so I/O belongs in connect or a task. A tree that is slow for "
+                    "its size alone shows fewer rows at a time, or has the tabs that are "
+                    "not the open one in ui.lazy",
                 )
             if self._showing:
                 self._showing = {k: v for k, v in self._showing.items() if k in tree.nodes}
+            if self._found:
+                self._found = {k: v for k, v in self._found.items() if k in tree.nodes}
             if self._form_issues:
                 self._form_issues = {k: v for k, v in self._form_issues.items() if _drawn(tree, k)}
             return tree
@@ -1849,6 +1925,19 @@ class Session[S]:
             # Other than what the page was drawn by, so it is drawn again.
             self._refresh_now()
 
+    def _searched(self, node_id: str, options: Any) -> None:
+        """A search answered with these options, which its field now has
+        on offer. A tab shows the answer to its last search, and one that
+        crossed a newer search on the way, so a few are kept."""
+        if not isinstance(options, list):
+            return
+        values = frozenset(
+            o["value"]
+            for o in options
+            if isinstance(o, dict) and type(o.get("value")) is str and not o.get("disabled")
+        )
+        self._found.setdefault(node_id, deque(maxlen=FOUND_KEPT)).append(values)
+
     def kept_part(self, node_id: str) -> str | None:
         """The lazy part that holds this node as it was at an earlier render."""
         return self.tree.kept_part(node_id) if self.tree is not None else None
@@ -1900,6 +1989,11 @@ class Session[S]:
             return None
         if self._asks and self._answer_ask(event, component):
             return None
+        veil = offers.veiled(self.tree, event.node, isinstance(component, Custom))
+        if veil is not None:
+            log.debug("event %s on node %s dropped, which %s", event.name, event.node, veil)
+            self._unheard(event, veil)
+            return None
         if getattr(component, "disabled", False) and not _despite_disabled(component, event):
             log.debug("event %s on disabled node %s dropped", event.name, event.node)
             self._unheard(event, "is disabled")
@@ -1938,9 +2032,27 @@ class Session[S]:
             return None
 
         handler = self.tree.handler(event.node, event.name)
+        if isinstance(component, Custom) and event.name not in component.events:
+            # No handler by the event's own name, so it goes to the one
+            # for every event, which is told the name as well.
+            handler = component.on_event
+            payload = (event.name, payload)
         if handler is None:
             log.warning("no handler for %s on %s", event.name, event.node)
             self._unheard(event, f"has no handler for {event.name}")
+            return None
+
+        try:
+            drawn = self.tree.nodes.get(event.node)
+            # A component of the app's own is drawn under its own name,
+            # which may be one of the catalog's.
+            if drawn is not None and not isinstance(component, Custom):
+                found = frozenset().union(*self._found.get(event.node, ()))
+                payload = offers.given(self.tree, drawn, event.name, payload, found)
+        except offers.Refused as refused:
+            # No tab of the bundle's sends this, so it is worth a line.
+            log.warning("%s on %s %s", event.name, event.node, refused)
+            self._unheard(event, str(refused))
             return None
 
         if event.name == "upload" and isinstance(component, FileUpload):
@@ -1967,6 +2079,7 @@ class Session[S]:
                     "form_issues", node=event.node, issues=[i.model_dump() for i in issues]
                 )
                 return None
+            self._files_sent(draft)
             payload = instance
 
         return Plan(
@@ -1979,6 +2092,7 @@ class Session[S]:
             form=form,
             visit=self.visit,
             typed=event.name == "change" and isinstance(component, Input | Textarea),
+            pressed=_is_press(component, event.name),
         )
 
     def _form_file(self, node: str) -> Callable[[str], FileRef | None]:
@@ -1989,6 +2103,17 @@ class Session[S]:
             return ref if ref is not None and ref.node == node else None
 
         return lookup
+
+    def _files_sent(self, draft: Any) -> None:
+        """The files in a draft that goes to a handler are the app's now."""
+        if isinstance(draft, FileRef):
+            self.files.sent(draft.id)
+        elif isinstance(draft, dict):
+            for value in draft.values():
+                self._files_sent(value)
+        elif isinstance(draft, list):
+            for value in draft:
+                self._files_sent(value)
 
     # --------------------------------------------------------- requests
 
@@ -2069,6 +2194,9 @@ class Session[S]:
         component = self.tree.components.get(node_id) if self.tree is not None else None
         accept: list[str] | None
         max_mb: int | None
+        if self.tree is not None and offers.veiled(self.tree, node_id) is not None:
+            # Closed or hidden, it shows no way to send a file.
+            raise Reject("no upload component for this node")
         if isinstance(component, FileUpload) and not component.disabled:
             accept, max_mb = component.accept, component.max_size_mb
         elif isinstance(component, Chat) and component.attachments and not component.disabled:
@@ -2077,7 +2205,11 @@ class Session[S]:
             # The pointer of a file field in the draft; a list index is dropped to find
             # it in the spec, which knows list items without an index.
             pointer = re.sub(r"/\d+(?=/|$)", "", field or "")
-            spec = file_fields(field_spec(component.model)).get(pointer)
+            # The form as it was drawn: with what ``overrides`` set for the
+            # field, and without a field that ``fields`` left out.
+            drawn = self.tree.nodes[node_id].props.get("schema") if self.tree else None
+            schema = drawn if isinstance(drawn, dict) else field_spec(component.model)
+            spec = file_fields(schema).get(pointer)
             if spec is None:
                 raise Reject("no file field at this pointer")
             accept, max_mb = spec.get("accept"), spec.get("max_size_mb")
@@ -2130,6 +2262,47 @@ class _ConfirmButtons(Component):
     type: ClassVar[str] = "Row"
     gap: int = 2
     justify: str = "end"
+
+
+_said_no_zones = False
+
+
+def zone_of(name: str | None) -> ZoneInfo | None:
+    """The time zone a tab named, or None for no name and for a name there
+    is no zone by."""
+    global _said_no_zones
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        # The name is whatever a client sent, and a lookup fails in more
+        # ways than one.
+        pass
+    try:
+        ZoneInfo("UTC")
+    except Exception:
+        if not _said_no_zones:
+            _said_no_zones = True
+            log.warning(
+                "this Python has no time zone data, so s.timezone is None in every "
+                "session. The tzdata package brings it"
+            )
+    else:
+        log.debug("a tab named a time zone there is none by: %r", name)
+    return None
+
+
+# The events that are someone's press on a thing that shows nothing of it
+# by itself.
+_PRESSES = frozenset({"click", "submit", "action", "row_click"})
+
+
+def _is_press(component: Component, event: str) -> bool:
+    if isinstance(component, Custom):
+        return False
+    # A menu closes at a choice, and a table's ``select`` is rows ticked.
+    return event in _PRESSES or (event == "select" and isinstance(component, DropdownMenu))
 
 
 def _noop(*args: Any, **kwargs: Any) -> None:
@@ -2188,6 +2361,8 @@ SLOW_PAGE_MS = 20
 # How many open tabs the session keeps on a tab's word while it has no page
 # to check them against.
 SHOWING_KEPT = 64
+# The answers of a field's search whose options count as on offer.
+FOUND_KEPT = 4
 # Requests in flight per session, of any kind, and files streaming out at once.
 MAX_REQUESTS = 32
 FILE_SLOTS = 4

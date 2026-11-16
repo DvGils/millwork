@@ -163,7 +163,8 @@ ui.Row(
 `ui.Link` is a hyperlink. `active=True` marks the link to the page the
 session is on, as `aria-current="page"`, which a sidebar styles with
 `aria-[current=page]:` classes. A path inside the app navigates over the
-session without a reload, and `target="_blank"` opens a new tab.
+session without a reload, and `target="_blank"` opens a new tab. `badge`
+puts a count or a word after the label.
 
 ```python live
 ui.Row(

@@ -67,7 +67,13 @@ export function CodeBlock({ children, className, copyable = true, style }: { chi
       <pre ref={ref} className={cn("overflow-auto rounded-lg bg-muted p-3 font-mono text-xs", copyable && "pr-10", className)} style={style}>
         {children}
       </pre>
-      {copyable ? <CopyButton text={() => ref.current?.textContent ?? ""} className="absolute top-1.5 right-1.5" /> : null}
+      {/* The corner the button stands in has the block's own color, with a
+          soft edge, so a long line goes under it and not through it. */}
+      {copyable ? (
+        <div className="absolute top-0 right-0 rounded-tr-lg bg-muted pt-1.5 pr-1.5 pb-1 pl-1 shadow-[-6px_0_6px_var(--muted)]">
+          <CopyButton text={() => ref.current?.textContent ?? ""} />
+        </div>
+      ) : null}
     </div>
   );
 }

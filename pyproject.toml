@@ -1,6 +1,6 @@
 [project]
 name = "millwork"
-version = "0.4.1"
+version = "0.5.0"
 description = "A Python framework for data tools and AI applications: one prebuilt React bundle, driven from Python."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -11,6 +11,7 @@ dependencies = [
     "websockets>=15",
     "pydantic>=2.11,<3",
     "httpx>=0.28",
+    "tzdata>=2025.1",
 ]
 
 [project.urls]
@@ -54,7 +55,7 @@ packages = ["src/millwork"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "examples"]
 # millwork does not use its own retired spellings.
 filterwarnings = ["error::millwork.MillworkDeprecationWarning"]
 faulthandler_timeout = 30

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inkOn, markBadge, markColor, parseMarks } from "../marks";
+import { inkOn, markBadge, markColor, parseMarks, partName } from "../marks";
 import { around, common } from "../pointing";
 import { stillTold, TOLD_FOR } from "../marks-layer";
 
@@ -25,6 +25,24 @@ describe("parseMarks", () => {
       color: "ring",
       style: "solid",
     });
+  });
+});
+
+describe("a mark on a part", () => {
+  it("keeps the key of a row or a value of a chart, and nothing that is neither", () => {
+    const sent = [
+      { n: 1, id: "root/orders", part: 1042, color: "blue", style: "solid" },
+      { n: 2, id: "root/sales", part: "2026-03", color: "blue", style: "solid" },
+      { n: 3, id: "root/flags", part: false, color: "blue", style: "solid" },
+    ];
+    expect(parseMarks(sent)).toEqual(sent);
+    expect(parseMarks([{ n: 4, id: "a", part: { x: 1 }, color: "blue", style: "solid" }])[0]).toEqual({ n: 4, id: "a", color: "blue", style: "solid" });
+  });
+
+  it("goes by a name that tells a number from the text of it", () => {
+    expect(partName(1042)).toBe("1042");
+    expect(partName("1042")).toBe('"1042"');
+    expect(partName(undefined)).toBe("null");
   });
 });
 

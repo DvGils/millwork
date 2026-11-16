@@ -798,3 +798,71 @@ def test_an_intent_has_a_button_for_each_provider_that_names_it() -> None:
     ).describe("/", either="or")
     (button,) = [n["props"] for n in own["nodes"].values() if n["type"] == "SignIn"]
     assert button["label"] == "Look around" and not button["with_provider"]
+
+
+def test_wrong_passwords_are_counted_and_a_failing_check_is_no_error_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = make_app(tmp_path)
+    wrong = {"username": "demian", "password": "nope"}
+    right = {"username": "demian", "password": "pw"}
+    with TestClient(app.asgi) as client:
+        for _ in range(auth.Tries.PAIR):
+            assert client.post("/_mw/auth/login", json=wrong).status_code == 401
+        # The next try is turned away without a check, the right password too,
+        # and the name in another case is the same name.
+        for tried in (right, {"username": "DEMIAN", "password": "pw"}):
+            r = client.post("/_mw/auth/login", json=tried)
+            assert r.status_code == 429 and "too many wrong passwords" in r.json()["reason"]
+        # Another name from the same place is not held back by it.
+        other = {"username": "someone", "password": "x"}
+        assert client.post("/_mw/auth/login", json=other).status_code == 401
+        # A minute later the name can be tried again, and a right password
+        # clears the count.
+        monkeypatch.setattr(auth.Tries, "WINDOW", 0.0)
+        assert client.post("/_mw/auth/login", json=right).status_code == 200
+        monkeypatch.setattr(auth.Tries, "WINDOW", 60.0)
+        for _ in range(auth.Tries.PAIR - 1):
+            assert client.post("/_mw/auth/login", json=wrong).status_code == 401
+        assert client.post("/_mw/auth/login", json=right).status_code == 200
+        assert client.post("/_mw/auth/login", json=wrong).status_code == 401
+
+        # A check that raises is said on the sign-in page, and is no wrong
+        # password however often it happens.
+        def broken(username: str, password: str) -> bool:
+            raise ConnectionError("the directory is away")
+
+        monkeypatch.setattr(app.auth.providers["password"], "verify", broken)
+        for _ in range(auth.Tries.PAIR + 2):
+            r = client.post("/_mw/auth/login", json={"username": "new", "password": "pw"})
+            assert r.status_code == 503
+        assert r.json() == {"reason": "sign-in is not working right now"}
+
+
+def test_tries_sent_at_once_are_counted_as_they_start() -> None:
+    tries = auth.Tries()
+    # Five checks under way for one name, none of them answered yet.
+    assert all(tries.begin("ada", "10.0.0.1") for _ in range(auth.Tries.PAIR))
+    assert not tries.begin("ada", "10.0.0.1") and not tries.begin("ADA", "10.0.0.1")
+    # One of them was the right password: it is taken back, and with it
+    # what was counted against the name from there.
+    tries.right("ada", "10.0.0.1")
+    assert tries.begin("ada", "10.0.0.1")
+    # The address keeps what the other names cost it.
+    assert len(tries._tried[("", "10.0.0.1")]) == auth.Tries.PAIR
+    # An address of the newer kind is the network it is in.
+    for n in range(auth.Tries.PAIR):
+        assert tries.begin("cy", f"2001:db8:1:2::{n + 1}")
+    assert not tries.begin("cy", "2001:db8:1:2:ffff::9")
+    assert tries.begin("cy", "2001:db8:1:3::1")
+
+
+def test_only_so_many_names_and_addresses_are_remembered() -> None:
+    tries = auth.Tries()
+    for n in range(auth.Tries.KEPT):
+        tries.begin(f"name{n}", f"10.0.{n // 250}.{n % 250}")
+    assert len(tries._tried) == auth.Tries.KEPT
+    # From one address, many names are held back together.
+    for n in range(auth.Tries.ADDRESS):
+        tries.begin(f"guess{n}", "10.9.9.9")
+    assert tries.over("anyone", "10.9.9.9") and not tries.over("anyone", "10.9.9.8")

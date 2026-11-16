@@ -18,7 +18,7 @@ import shutil
 import tempfile
 import threading
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -443,9 +443,39 @@ class SessionFiles:
         self._session = session
         self._refs: dict[str, FileRef] = {}
         self._passing: set[str] = set()
+        # Uploads for a form or a chat that no handler was given yet: files
+        # a person chose and has not sent.
+        self._unsent: set[str] = set()
 
     def register(self, ref: FileRef) -> None:
         self._refs[ref.id] = ref
+        tree = self._session.tree
+        component = tree.components.get(ref.node) if tree is not None and ref.node else None
+        if getattr(component, "type", None) in ("Form", "Chat"):
+            self._unsent.add(ref.id)
+
+    def sent(self, *file_ids: str) -> None:
+        """These were given to a handler, in a form that was submitted or a
+        message that was sent. From here they are the app's to keep."""
+        self._unsent.difference_update(file_ids)
+
+    def drop_unsent(self, nodes: Collection[str]) -> None:
+        """Forget the files that were chosen in a form or a chat and never
+        sent, when that form or chat is not among ``nodes``, the page as it
+        is now. A form that was closed or left takes its uploads with it.
+        One that is still there after a navigation, in an assistant that
+        stays or on the same page with another query, keeps them, as the
+        tab keeps its draft."""
+        for file_id in list(self._unsent):
+            ref = self._refs.get(file_id)
+            if ref is None or ref.node not in nodes:
+                self.remove(file_id)
+
+    def forget(self) -> None:
+        """The session is over and its files are deleted: none are listed."""
+        self._refs.clear()
+        self._passing.clear()
+        self._unsent.clear()
 
     def get(self, file_id: str) -> FileRef | None:
         return self._refs.get(file_id)
@@ -468,6 +498,7 @@ class SessionFiles:
     def remove(self, file_id: str) -> bool:
         """Forget a file and delete it from disk; its quota is freed. False if unknown."""
         self._passing.discard(file_id)
+        self._unsent.discard(file_id)
         ref = self._refs.pop(file_id, None)
         if ref is None:
             return False

@@ -75,7 +75,7 @@ SAID: dict[str, list[str]] = {
     "Kbd": ["keys"],
     "Lazy": [],
     "LineChart": ["data.s", "data.value", "data.x", "series.label"],
-    "Link": ["href", "label"],
+    "Link": ["badge", "href", "label"],
     "Logo": [],
     "Markdown": ["content"],
     "MultiSelect": ["options.label", "options.value", "placeholder"],

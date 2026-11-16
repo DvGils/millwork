@@ -2,7 +2,8 @@
 // selection reported to the server, tones instead of styles. A long table
 // draws the rows in view, and a row is drawn again only when it changed.
 
-import { dateFormat, dateTimeFormat, formatNumber } from "../format";
+import { partName, usePartMarks } from "../marks";
+import { asDate, dateFormat, dateTimeFormat, formatNumber } from "../format";
 import { t } from "../theme";
 import { type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
@@ -156,7 +157,7 @@ function formatCell(value: unknown, format: string, tone?: string) {
     case "date":
     case "datetime": {
       // What is not a date is shown as it came: formatting it would throw.
-      const when = new Date(String(value));
+      const when = asDate(value);
       if (Number.isNaN(when.getTime())) return String(value);
       return (format === "date" ? dateFormat : dateTimeFormat).format(when);
     }
@@ -195,6 +196,8 @@ const NONE: never[] = [];
 interface RowProps {
   row: Record<string, unknown>;
   rowKey: unknown;
+  // What a highlight on this row finds it by.
+  part: string;
   tone: string | null | undefined;
   cellTones: Record<string, string> | null | undefined;
   selected: boolean;
@@ -208,9 +211,10 @@ interface RowProps {
 // One row, drawn again only when something it shows changed: the record is the
 // same object from one patch to the next unless the patch touched it, and
 // everything else here is a plain value or stable for the table's life.
-const Row = memo(function Row({ row, rowKey, tone, cellTones, selected, columns, checkbox, actions, clickable, act }: RowProps) {
+const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, columns, checkbox, actions, clickable, act }: RowProps) {
   return (
     <TableRow
+      data-part={part}
       data-state={selected ? "selected" : undefined}
       data-press={clickable ? "" : undefined}
       className={cn(tone && rowTone[tone], clickable && "cursor-pointer")}
@@ -251,7 +255,7 @@ const Row = memo(function Row({ row, rowKey, tone, cellTones, selected, columns,
 
 type Head = { id: string; header: ReactNode; sortable: boolean; filterable: boolean; size?: number; column?: Column };
 
-export const Table: Renderer = ({ props, emit }) => {
+export const Table: Renderer = ({ node, props, emit }) => {
   const rows = (Array.isArray(props.rows) ? (props.rows as Record<string, unknown>[]) : NONE);
   const keys = (Array.isArray(props.keys) ? (props.keys as unknown[]) : NONE);
   const columns = (Array.isArray(props.columns) ? (props.columns as Column[]) : NONE);
@@ -386,6 +390,39 @@ export const Table: Renderer = ({ props, emit }) => {
   );
   useSteadyColumns(headRow, body, view.windowed, visible, drawn);
 
+  // A highlight on a row that asks to be brought into view: the table
+  // turns to the row's page, and one that draws a window of its rows
+  // scrolls to where the row is. The highlight itself does the rest once
+  // the row is drawn. Each is brought once, so the person can leave again.
+  const pointed = usePartMarks(node.id);
+  const brought = useRef(new Set<number>());
+  const [wanted, setWanted] = useState<string | null>(null);
+  useEffect(() => {
+    for (const mark of pointed) {
+      if (!mark.scroll || mark.waits || brought.current.has(mark.n)) continue;
+      const name = partName(mark.part);
+      const at = shown.findIndex((e) => e.id === name);
+      if (at < 0) {
+        // A row the person filtered out is left there, also once it is
+        // back. One that is not in the table yet is waited for.
+        if (entries.some((e) => e.id === name)) brought.current.add(mark.n);
+        continue;
+      }
+      brought.current.add(mark.n);
+      if (pageSize) setPageIndex(Math.floor(at / pageSize));
+      setWanted(name);
+      break;
+    }
+  }, [pointed, shown, entries, pageSize]);
+  const bring = view.bring;
+  useEffect(() => {
+    if (wanted === null || !distinct) return;
+    const at = names.indexOf(wanted);
+    if (at < 0) return;
+    setWanted(null);
+    bring(at);
+  }, [wanted, names, distinct, bring]);
+
   const heads: Head[] = [];
   if (selection === "rows") {
     heads.push({
@@ -482,6 +519,7 @@ export const Table: Renderer = ({ props, emit }) => {
                   key={names[view.first + n]}
                   row={e.row}
                   rowKey={e.key}
+                  part={e.id}
                   tone={toneRows[e.i]}
                   cellTones={toneCells[e.i]}
                   selected={selectedSet.has(e.id)}

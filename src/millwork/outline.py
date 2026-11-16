@@ -541,7 +541,7 @@ def _kbd(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
     return {"text": limits.cut("+".join(keys))} if keys else {}
 
 
-def _tab(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
+def _badge(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
     badge = props.get("badge")
     return {"badge": limits.cut(badge)} if isinstance(badge, str | int) and badge != "" else {}
 
@@ -634,7 +634,7 @@ SAYS: dict[str, Says] = {
     "Accordion": Says(places=True),
     "AccordionItem": Says(label=("title",)),
     "Tabs": Says(),
-    "Tab": Says(label=("label",), flags=_OFF, more=_tab),
+    "Tab": Says(label=("label",), flags=_OFF, more=_badge),
     "Dialog": Says(
         label=("title",), help=("description",), folds="open", browser=False, slots=("footer",)
     ),
@@ -665,7 +665,9 @@ SAYS: dict[str, Says] = {
     "FileCard": Says(more=_file),
     # Pressed.
     "Button": Says(label=("label",), href=True, flags=(*_OFF, ("loading", "busy")), more=_button),
-    "Link": Says(label=("label",), href=True, flags=(("active", "the page it is on"),)),
+    "Link": Says(
+        label=("label",), href=True, flags=(("active", "the page it is on"),), more=_badge
+    ),
     "Download": Says(label=("label",), flags=_OFF, more=_download),
     "DropdownMenu": Says(slots=("trigger",), more=_menu),
     "SignIn": Says(label=("label",)),
@@ -811,9 +813,15 @@ def _entry(tree: Tree, node: Node, limits: _Limits) -> dict[str, Any]:
         state += extra.pop("state", [])
         out.update(extra)
     on = limits.marks.get(node.id, [])
-    whole = next((mark for mark in on if "field" not in mark), None)
+    whole = next((mark for mark in on if "field" not in mark and "part" not in mark), None)
     if whole is not None:
         out["marked"] = _marked(whole)
+    # A row of a table or a value of a chart, by what a name says it with.
+    of_part = [
+        {"at": limits.cut(str(mark["part"])), **_marked(mark)} for mark in on if "part" in mark
+    ]
+    if of_part:
+        out["marked_parts"] = of_part[:LISTED]
     if node.type == "Form":
         _point(out, node.id, {str(mark["field"]): mark for mark in on if "field" in mark})
     told = limits.issues.get(node.id) if node.type == "Form" else None
@@ -1095,6 +1103,8 @@ def _line(entry: dict[str, Any], keys: dict[str, int]) -> str:
         words.append("shows " + _quoted(entry["empty"]))
     if entry.get("marked"):
         words.append(_mark_words(entry["marked"]))
+    for part in entry.get("marked_parts", ()):
+        words.append(f"{_quoted(part['at'])} {_mark_words(part)}")
     words += state
     if entry.get("help"):
         words.append(_quoted(entry["help"]))

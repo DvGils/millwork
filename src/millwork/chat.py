@@ -173,6 +173,8 @@ class Reply:
             id=secrets.token_urlsafe(8), role="assistant", metadata={"at": time.time()}
         )
         self._text_id: str | None = None
+        # The text part that is being written, between its start and its end.
+        self._text_part: dict[str, Any] | None = None
         self._finished = False
         self._started = time.monotonic()
         self._tool_started: dict[str, float] = {}
@@ -205,9 +207,10 @@ class Reply:
     # ------------------------------------------------------------- parts
 
     async def _end_text(self) -> None:
-        if self._text_id is not None:
+        if self._text_id is not None and self._text_part is not None:
+            self._text_part["state"] = "done"
             await self._send({"type": "text-end", "id": self._text_id})
-            self._text_id = None
+            self._text_id = self._text_part = None
 
     async def text(self, chunk: str) -> None:
         """Append text to the reply; consecutive calls extend one text part."""
@@ -215,9 +218,11 @@ class Reply:
             return
         if self._text_id is None:
             self._text_id = secrets.token_urlsafe(6)
-            self.message.parts.append({"type": "text", "text": "", "state": "streaming"})
+            self._text_part = {"type": "text", "text": "", "state": "streaming"}
+            self.message.parts.append(self._text_part)
             await self._send({"type": "text-start", "id": self._text_id})
-        self.message.parts[-1]["text"] += chunk
+        assert self._text_part is not None
+        self._text_part["text"] += chunk
         await self._send({"type": "text-delta", "id": self._text_id, "delta": chunk})
 
     @contextlib.asynccontextmanager
@@ -366,7 +371,12 @@ class Reply:
         return part_id
 
     async def error(self, text: str) -> None:
-        await self._send({"type": "error", "errorText": text})
+        """Say that the reply failed, in words for the person. It is kept
+        with the message, so it is there after a reload as well."""
+        await self._end_text()
+        part = {"type": "error", "errorText": text}
+        self.message.parts.append(part)
+        await self._send(part)
 
 
 class ReasoningHandle:

@@ -52,12 +52,18 @@ export const Page: Renderer = ({ node, props, children }) => {
 
 export const Stack: Renderer = ({ props, children }) => (
   <div
+    data-box=""
     className={cn(
       "flex flex-col",
       gapClass(props.gap),
       alignClass[String(props.align ?? "stretch")],
       justifyClass[String(props.justify ?? "start")],
       props.grow && "grow",
+      // As high as the room that is left, and no higher. On a page the
+      // body gives a child with mw-fill no height of its own to start
+      // from. In a column that fills, the stack shrinks to what the other
+      // children leave. Anywhere else it is a stack like any.
+      props.fill && "mw-fill min-h-0 grow",
       props.divided && "mw-divided",
       props.cls as string,
     )}
@@ -68,6 +74,7 @@ export const Stack: Renderer = ({ props, children }) => (
 
 export const Row: Renderer = ({ props, children }) => (
   <div
+    data-box=""
     className={cn(
       "flex flex-row",
       gapClass(props.gap),

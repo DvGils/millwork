@@ -17,12 +17,14 @@ import {
   LineChart as RLineChart,
   Pie,
   PieChart as RPieChart,
+  Rectangle,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
 import { formatNumber } from "../format";
+import { partName, usePartMarks } from "../marks";
 import { cn } from "cn";
 import {
   NEUTRAL,
@@ -40,7 +42,14 @@ import {
 } from "../charts-data";
 import { chartHeight, type ChartKind } from "./charts";
 
+// How wide a bar gets at most. A chart of many bars has thin ones, and one
+// of a few has room for more: four slivers with wide gaps between them
+// read as a chart with something missing.
 const BAR = 24;
+function barWidth(count: number, horizontal: boolean): number {
+  const [room, most] = horizontal ? [120, 36] : [280, 72];
+  return Math.min(most, Math.max(BAR, Math.round(room / Math.max(1, count))));
+}
 
 interface TipProps {
   active?: boolean;
@@ -249,9 +258,21 @@ function usePress() {
 }
 
 export interface ChartProps {
+  // The node the chart is, which a highlight on a part of it names.
+  id: string;
   kind: ChartKind;
   props: Record<string, unknown>;
   emit: (name: string, payload?: unknown) => void;
+}
+
+// The values along a chart's axis that a highlight is on, each by the
+// name a part goes by, or null when there is none. What the chart draws
+// for such a value carries the name, for the highlight to find: the bars,
+// the points of the lines, the slice. A chart nothing points at is drawn
+// as it would be without any of this.
+function useMarked(id: string): Set<string> | null {
+  const on = usePartMarks(id);
+  return useMemo(() => (on.length ? new Set(on.map((m) => partName(m.part))) : null), [on]);
 }
 
 interface Slice {
@@ -282,8 +303,9 @@ function PieTip({ active, payload, format, total }: { active?: boolean; payload?
 // The one mark of a pie, by the name it reports under.
 const PIE = ["pie"];
 
-function PieInner({ props, emit }: Omit<ChartProps, "kind">) {
+function PieInner({ id, props, emit }: Omit<ChartProps, "kind">) {
   const slices = (props.data as Slice[] | undefined) ?? [];
+  const marked = useMarked(id);
   const format = props.format as string | null | undefined;
   const donut = Boolean(props.donut);
   const labels = Boolean(props.labels);
@@ -329,9 +351,10 @@ function PieInner({ props, emit }: Omit<ChartProps, "kind">) {
             onClick={click ? (d: unknown) => press.clicked() && click(d) : undefined}
             onMouseUp={click && moving ? (d: unknown, _at: number, e: { clientX: number; clientY: number; button: number }) => press.released(e) && click(d) : undefined}
           >
-            {colors.map((fill, i) => (
-              <Cell key={i} fill={fill} />
-            ))}
+            {colors.map((fill, i) => {
+              const name = partName(slices[i].x);
+              return marked?.has(name) ? <Cell key={i} fill={fill} data-part={name} /> : <Cell key={i} fill={fill} />;
+            })}
             {donut && center ? (
               <Label
                 position="center"
@@ -352,8 +375,12 @@ function PieInner({ props, emit }: Omit<ChartProps, "kind">) {
   );
 }
 
-export function Chart({ kind, props, emit }: ChartProps) {
-  if (kind === "pie") return <PieInner props={props} emit={emit} />;
+export function Chart(all: ChartProps) {
+  return all.kind === "pie" ? <PieInner id={all.id} props={all.props} emit={all.emit} /> : <AxisChart {...all} />;
+}
+
+function AxisChart({ id, kind, props, emit }: ChartProps) {
+  const marked = useMarked(id);
   const series = (props.series as Series[] | undefined) ?? [];
   const raw = (props.data as Row[] | undefined) ?? [];
   const format = props.format as string | null | undefined;
@@ -510,6 +537,34 @@ export function Chart({ kind, props, emit }: ChartProps) {
     className: click ? "cursor-pointer" : undefined,
   };
 
+  // The bars of a value that is highlighted, in a group that carries its name.
+  const barShape = marked
+    ? (bar: unknown) => {
+        const name = partName((bar as { payload?: Row }).payload?.x);
+        const drawn = <Rectangle {...(bar as object)} />;
+        return marked.has(name) ? <g data-part={name}>{drawn}</g> : drawn;
+      }
+    : undefined;
+  // The dots of a line: its own, and at a value that is highlighted one
+  // that is not painted, for the highlight to stand around. It is wider
+  // than a dot, and takes the pointer so that getting to the point is
+  // getting to the highlight. Like the dots, it is put on a line once the
+  // line has been drawn.
+  const pointDot = (i: number, plain: boolean) => {
+    const look = { r: 3, strokeWidth: 2, stroke: "var(--background)", fill: `var(--color-${slot(i)})` };
+    if (!marked || drawing) return plain ? look : false;
+    return (p: { cx?: number; cy?: number; index?: number; payload?: Row }) => {
+      const here = typeof p.cx === "number" && typeof p.cy === "number";
+      const name = partName(p.payload?.x);
+      return (
+        <g key={p.index}>
+          {plain && here ? <circle className="recharts-dot recharts-line-dot" cx={p.cx} cy={p.cy} {...look} /> : null}
+          {here && marked.has(name) ? <circle data-part={name} cx={p.cx} cy={p.cy} r={7} fill="none" pointerEvents="all" /> : null}
+        </g>
+      );
+    };
+  };
+
   let plot: ReactElement;
   if (kind === "bar") {
     const bars = diverging
@@ -521,7 +576,8 @@ export function Chart({ kind, props, emit }: ChartProps) {
             fill={`var(--color-${slot(index)})`}
             stroke="var(--background)"
             strokeWidth={1}
-            maxBarSize={BAR}
+            maxBarSize={barWidth(rows.length, horizontal)}
+            shape={barShape}
             {...motion(dataKey)}
             {...barClick(index)}
           />
@@ -535,7 +591,8 @@ export function Chart({ kind, props, emit }: ChartProps) {
             radius={stacked ? 0 : horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
             stroke={stacked ? "var(--background)" : undefined}
             strokeWidth={stacked ? 1 : 0}
-            maxBarSize={BAR}
+            maxBarSize={barWidth(rows.length, horizontal)}
+            shape={barShape}
             {...motion(slot(i))}
             {...barClick(i)}
           >
@@ -573,7 +630,7 @@ export function Chart({ kind, props, emit }: ChartProps) {
             stroke={`var(--color-${slot(i)})`}
             strokeWidth={2}
             // Dots are put on a line once it has been drawn, as the labels are.
-            dot={dots && !drawing ? { r: 3, strokeWidth: 2, stroke: "var(--background)", fill: `var(--color-${slot(i)})` } : false}
+            dot={pointDot(i, dots && !drawing)}
             activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--background)" }}
             {...motion(slot(i))}
           >
@@ -599,6 +656,7 @@ export function Chart({ kind, props, emit }: ChartProps) {
             strokeWidth={2}
             fill={`var(--color-${slot(i)})`}
             fillOpacity={stacked ? 0.5 : 0.2}
+            dot={pointDot(i, false)}
             activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--background)" }}
             {...motion(slot(i))}
           >

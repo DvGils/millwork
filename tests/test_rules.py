@@ -66,6 +66,7 @@ def test_a_session_is_only_set_up_from_outside_never_changed() -> None:
     # Who it is for and how it is to behave, said before its life begins.
     set_up = {
         "user",
+        "timezone",
         "visitor",
         "base",
         "client",

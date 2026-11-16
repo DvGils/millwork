@@ -182,6 +182,11 @@ class Stack(Component):
     align: Align = "stretch"
     justify: Justify = "start"
     grow: bool = False
+    fill: bool = False
+    """The stack is as high as the room that is left, and no higher. On a
+    page that is the height of the window under the header, and in a stack
+    that fills it is what the other children leave. What is in it has to
+    fit, so the part that is long goes in a ``ScrollArea`` with ``fill``."""
     divided: bool = False
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
@@ -196,6 +201,7 @@ class Stack(Component):
             align: Align = "stretch",
             justify: Justify = "start",
             grow: bool = False,
+            fill: bool = False,
             divided: bool = False,
         ) -> None: ...
 
@@ -673,6 +679,13 @@ class Sheet(Component):
 class ScrollArea(Component):
     type: ClassVar[str] = "ScrollArea"
     height: str | None = None
+    fill: bool = False
+    """The area takes the height that is left, on a page or in a ``Stack``
+    that fills, and scrolls inside it. In place of a ``height``."""
+    stick_to_end: bool = False
+    """The area starts at its end and stays there as its content grows,
+    until the reader scrolls away from the end. Back at the end, it stays
+    there again."""
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -683,6 +696,8 @@ class ScrollArea(Component):
             hidden: bool = False,
             cls: str | None = None,
             height: str | None = None,
+            fill: bool = False,
+            stick_to_end: bool = False,
         ) -> None: ...
 
 
@@ -876,6 +891,9 @@ class Link(Component):
     href: str
     target: Literal["_self", "_blank"] = "_self"
     icon: str | None = None
+    badge: str | None = None
+    """A count or a word after the label, such as the messages not read
+    yet in the place the link goes to."""
     # The link to the page the session is on: ``aria-current="page"`` in the tab.
     active: bool = False
 
@@ -893,6 +911,7 @@ class Link(Component):
             href: str,
             target: Literal["_self", "_blank"] = "_self",
             icon: str | None = None,
+            badge: str | None = None,
             active: bool = False,
         ) -> None: ...
 
