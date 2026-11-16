@@ -150,7 +150,7 @@ async def point_at(s: mw.Session[Any], db: sqlite3.Connection, call: PointAt) ->
         raise Refused(f"The card {card.id} is no chart with {at} along the bottom.")
     # A chart's name, a slash and a value along its axis is that value in
     # the chart: its bar, or its point on the line.
-    s.highlight(f"{card.id}-chart/{at}", "primary", style="trace", label=at)
+    s.highlight(f"{card.id}-chart/{at}", "primary", style="trace")
     return {"pointed_at": card.id, "at": at}
 
 
