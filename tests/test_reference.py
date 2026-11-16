@@ -23,6 +23,7 @@ def test_every_component_of_the_catalogue_is_exported() -> None:
 INSIDE_THE_SESSION = {
     *("aim", "answer", "attached", "bring_up", "cancel", "close_ask", "closed", "command"),
     *("detached", "dismiss", "enter", "event", "fall_back", "flush", "has_tab", "hello"),
+    "in_zone",
     *("idle", "inflight", "kept_part", "leave", "leaving_for", "marked", "mounted"),
     *("open_ask", "owns_resume", "place", "post", "ready", "render", "request"),
     *("settle_page", "shown", "sort", "stay_current", "stream", "take_owed", "take_wanted"),

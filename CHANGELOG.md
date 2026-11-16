@@ -39,6 +39,13 @@ versions; a release says so here when it does.
 - `ui.ScrollArea(stick_to_end=True)` opens at its end and stays there as
   rows arrive, for messages or a log. A reader who scrolls up is left
   where they are.
+- `s.timezone` is the time zone of the viewer's browser, as a
+  `zoneinfo.ZoneInfo`. The tab names it when it connects. Before, an app
+  had only the server's clock. `at.astimezone(s.timezone)` shows a time
+  that is kept in UTC on the viewer's clock, and
+  `datetime.now(s.timezone).date()` is the viewer's today. It is `None`
+  when the zone is not known, and a test gives one with
+  `open("/", timezone="Asia/Tokyo")`.
 - `page.submit(field, text)` in a test types text into an `Input` or a
   `Textarea` and enters it, with Enter or with Ctrl+Enter in a
   `Textarea`. The field gets what a tab sends then. That is the text to

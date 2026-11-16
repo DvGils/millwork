@@ -165,6 +165,8 @@ class Hello(Wire):
     # The bundle the tab runs, as its page named it. A client that is not
     # the bundle names none.
     bundle: str | None = None
+    # The browser's time zone by its name, such as Europe/Amsterdam.
+    timezone: str | None = Field(None, max_length=64)
 
 
 class Event(Wire):

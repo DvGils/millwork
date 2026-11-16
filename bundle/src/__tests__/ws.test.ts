@@ -81,6 +81,13 @@ describe("ws request layer", () => {
     expect(hello.seq).toBe(7);
   });
 
+  it("the hello names the browser's time zone", () => {
+    ws.connect();
+    const s = last();
+    s.open();
+    expect(s.json()[0].msg.timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
   it("a duplicate numbered message after a reply is still dropped", async () => {
     const s = last();
     session(s);

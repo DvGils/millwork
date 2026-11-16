@@ -977,3 +977,95 @@ async def test_a_literal_path_wins_over_a_parameter_in_either_order(tmp_path: Pa
     app.page("/tie/{b}")(lambda s: ui.Page(ui.Text("second", key="t")))
     async with TestApp(app).open("/tie/x") as page:
         assert page.find("t").props["content"] == "first"
+
+
+def a_zone(name: str) -> Any:
+    """A time zone by its name, or the test is skipped where Python has no
+    time zones to read."""
+    from zoneinfo import ZoneInfo
+
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        pytest.skip("this Python has no time zone data")
+
+
+def zoned_app(tmp_path: Path, seen: list[Any]) -> mw.App:
+    """A page that shows its viewer's time zone, and tells what its connect
+    hook found."""
+    app = mw.App("z", public=None, bundle_dir=tmp_path, session_grace=60)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text(str(s.timezone), key="zone"))
+
+    @home.connect
+    def connect(s: mw.Session) -> None:
+        seen.append(s.timezone)
+
+    return app
+
+
+def shown(mount: dict[str, Any]) -> str:
+    assert mount["type"] == "mount", mount
+    return mount["nodes"]["root/zone"]["props"]["content"]
+
+
+def test_a_session_has_the_time_zone_its_tab_named(tmp_path: Path) -> None:
+    tokyo, lima = a_zone("Asia/Tokyo"), a_zone("America/Lima")
+    seen: list[Any] = []
+    app = zoned_app(tmp_path, seen)
+    with TestClient(app.asgi) as client:
+        with client.websocket_connect("/_mw/ws") as ws:
+            info = hello(ws, timezone="Asia/Tokyo")
+            assert shown(recv(ws)) == "Asia/Tokyo"
+            # There from the connect hook on.
+            assert seen == [tokyo]
+            assert app.sessions[info["id"]].timezone is tokyo
+        # The tab comes back from somewhere else, and the session goes along.
+        with client.websocket_connect("/_mw/ws") as ws:
+            again = hello(ws, session=info["id"], resume=info["resume"], timezone="America/Lima")
+            assert again["id"] == info["id"]
+            # The page as it stood, and then as it is over there.
+            assert shown(recv(ws)) == "Asia/Tokyo"
+            patch = recv(ws)
+            assert patch["type"] == "patch" and patch["ops"][0]["props"] == {
+                "content": "America/Lima"
+            }
+            assert app.sessions[info["id"]].timezone is lima
+        # The connect hook ran once, for the session and not for the tab.
+        assert seen == [tokyo]
+
+
+@pytest.mark.parametrize(
+    "named",
+    [None, "", "Mars/Olympus", "../../etc/passwd", "/etc/localtime", "Europe", "a\x00b", "x" * 64],
+)
+def test_a_zone_that_is_none_leaves_the_session_without_one(tmp_path: Path, named: Any) -> None:
+    seen: list[Any] = []
+    app = zoned_app(tmp_path, seen)
+    with TestClient(app.asgi) as client, client.websocket_connect("/_mw/ws") as ws:
+        hello(ws, **({} if named is None else {"timezone": named}))
+        assert shown(recv(ws)) == "None"
+    assert seen == [None]
+
+
+def test_a_zone_longer_than_a_name_is_no_hello(tmp_path: Path) -> None:
+    app = zoned_app(tmp_path, [])
+    with TestClient(app.asgi) as client, client.websocket_connect("/_mw/ws") as ws:
+        send(ws, {"type": "hello", "path": "/", "timezone": "x" * 65})
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_text()
+        assert closed.value.code == 4400
+
+
+async def test_a_test_gives_its_page_a_time_zone(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    tokyo = a_zone("Asia/Tokyo")
+    seen: list[Any] = []
+    app = zoned_app(tmp_path, seen)
+    async with TestApp(app).open("/", timezone="Asia/Tokyo") as page:
+        assert page.session.timezone is tokyo and seen == [tokyo]
+    async with TestApp(app).open("/") as page:
+        assert page.session.timezone is None

@@ -26,7 +26,7 @@ from millwork.protocol import (
     pack,
     unpack_client,
 )
-from millwork.session import Session
+from millwork.session import Session, zone_of
 from millwork.shell import root_of
 from millwork.visitors import Visitor
 
@@ -93,6 +93,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         return
     session: Session[Any] | None = None
     seen = 0
+    zone = zone_of(first.timezone)
     if first.session and first.resume:
         candidate = app.sessions.get(first.session)
         if candidate is not None and candidate.owns_resume(first.resume) and not candidate.over:
@@ -121,6 +122,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             return
         session = Session(app, page, params, first.path)
         session.user = user
+        session.timezone = zone
         if app.visitors is not None:
             # The browser's id when it brought one. Without it the session
             # keeps the id it was made with, which no other session has.
@@ -160,6 +162,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     conn = Connection(ws, session.id[:6])
     try:
         session.attached(conn, seen)
+        session.in_zone(zone)
         # A new session and a resumed one alike: the tab may come back on a
         # newer sign-in than the one the session was opened on.
         session.watch_sign_in(ws.scope.get("millwork.sign_in"))

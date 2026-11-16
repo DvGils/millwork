@@ -25,6 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 from millwork import context, marks, outline, work
 from millwork.chat import ChatTurn, Thread, UIMessage
@@ -139,6 +140,10 @@ class Session[S]:
         self.params = params
         self.path = path
         self.user: Any = None
+        # The time zone of the browser the tab runs in, as the tab named it
+        # when it last connected. None when it named none, or one this
+        # Python has no data for.
+        self.timezone: ZoneInfo | None = None
         # The browser it was opened from, when the app identifies visitors.
         # An id of its own until the socket says which browser it is, and for
         # good when the browser brought no cookie.
@@ -461,6 +466,16 @@ class Session[S]:
         conn.bind(self, last_seq)
         if self.tree is not None and self.tree is self._failure:
             # A reload is how a person tries a page that failed again.
+            self.refresh()
+
+    def in_zone(self, zone: ZoneInfo | None) -> None:
+        """The tab said which time zone it is in. A tab that comes back from
+        another one, its laptop moved or its clock set, has a page that was
+        drawn for the old one, and that is drawn again."""
+        if zone == self.timezone:
+            return
+        self.timezone = zone
+        if self.tree is not None:
             self.refresh()
 
     def detached(self, conn: Connection) -> None:
@@ -2139,6 +2154,35 @@ class _ConfirmButtons(Component):
     type: ClassVar[str] = "Row"
     gap: int = 2
     justify: str = "end"
+
+
+_said_no_zones = False
+
+
+def zone_of(name: str | None) -> ZoneInfo | None:
+    """The time zone a tab named, or None for no name and for a name there
+    is no zone by."""
+    global _said_no_zones
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        # The name is whatever a client sent, and a lookup fails in more
+        # ways than one.
+        pass
+    try:
+        ZoneInfo("UTC")
+    except Exception:
+        if not _said_no_zones:
+            _said_no_zones = True
+            log.warning(
+                "this Python has no time zone data, so s.timezone is None in every "
+                "session. The tzdata package brings it"
+            )
+    else:
+        log.debug("a tab named a time zone there is none by: %r", name)
+    return None
 
 
 # The events that are someone's press on a thing that shows nothing of it

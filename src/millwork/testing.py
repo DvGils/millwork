@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
+from zoneinfo import ZoneInfo
 
 from millwork.auth import Forbidden
 from millwork.connection import Connection
@@ -718,13 +719,18 @@ class TestApp:
         user: Any = None,
         state: Any = None,
         visitor: str | None = None,
+        timezone: str | None = None,
     ) -> AsyncIterator[Page]:
         """Open a page as a new session: connect (unless ``state`` is given), mount, yield.
 
         ``visitor`` is the id of the browser the page is opened from, in an
         app that identifies visitors. Two pages opened with the same one are
         two tabs of one browser, and a page opened without is a browser of
-        its own."""
+        its own.
+
+        ``timezone`` is the time zone of that browser by its name, such as
+        ``"Asia/Tokyo"``, for ``s.timezone``. Without it the session has
+        none."""
         if visitor is not None and self.app.visitors is None:
             raise ValueError("visitor= needs App(identify_visitors=True)")
         await self.startup()
@@ -739,6 +745,8 @@ class TestApp:
             raise Forbidden(verdict.message or self.app.theme.text("forbidden_text"))
         session: Session[Any] = Session(self.app, page_def, params, path)
         session.user = user
+        if timezone is not None:
+            session.timezone = ZoneInfo(timezone)
         if visitor is not None:
             session.visitor = Visitor(visitor)
         # What a page refuses with is raised in the test, where a running app
