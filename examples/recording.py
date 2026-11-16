@@ -288,12 +288,13 @@ def gif(
             for i, png in enumerate(window.frames):
                 (Path(tmp) / f"w{n}-{i:05d}.png").write_bytes(png)
             inputs += ["-framerate", str(FPS), "-i", str(Path(tmp) / f"w{n}-%05d.png")]
-            # A phone gets the dark frame of a phone, a screen a hairline.
-            frame = (
-                "pad=iw+12:ih+12:6:6:color=0x0e0d12"
-                if window.phone
-                else "pad=iw+2:ih+2:1:1:color=0xd5cec1"
-            )
+            # A phone gets the dark frame of a phone, a screen a hairline that
+            # shows against its own scheme.
+            if window.phone:
+                frame = "pad=iw+12:ih+12:6:6:color=0x0e0d12"
+            else:
+                line = "0x2a3140" if window.scheme == "dark" else "0xd5cec1"
+                frame = f"pad=iw+2:ih+2:1:1:color={line}"
             parts.append(f"[{n}:v]scale={width}:-1:flags=lanczos,{frame}[w{n}]")
             parts.append(f"[p{n}][w{n}]overlay={x}:{y}:shortest=1[p{n + 1}]")
         picture = ";".join(parts)

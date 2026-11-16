@@ -8,6 +8,9 @@ picture of it in use.
 - [Expense claims](claims/): sign-in for three kinds of people, a claim
   with its receipt that is filed, reviewed and paid, and a report that
   prints.
+- [Analyst](analyst/): a chat that answers questions about a table of
+  orders, pins charts to a board and points at them. It runs on a script,
+  or on a model when it has a key.
 
 An example runs from the repository root:
 
