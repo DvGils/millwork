@@ -33,7 +33,7 @@ from millwork.protocol import (
 )
 from millwork.scope import Scope
 from millwork.session import Session, names
-from millwork.ui import Button, Checkbox, Custom, Link, Switch, Tabs
+from millwork.ui import Button, Checkbox, Custom, Input, Link, Switch, Tabs, Textarea
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -363,11 +363,29 @@ class Page:
             events.append(("show", value))
         await self._send(found, *events)
 
-    async def submit(self, form: Found | str, draft: Any) -> None:
-        """Submit a draft (a dict or a model instance) as the tab would."""
+    async def submit(self, node: Found | str, draft: Any) -> None:
+        """Submit a form's draft (a dict or a model instance) as the tab would.
+
+        On an ``Input`` or a ``Textarea`` the draft is the text, typed just
+        before and entered with Enter, or Ctrl+Enter in a ``Textarea``. The
+        field gets what a tab sends then. That is the text for ``on_change``
+        when there is one, the text for ``on_submit``, and from a field
+        with ``clear_on_submit`` its new, empty value for ``on_change``."""
+        found = node if isinstance(node, Found) else self.find(node)
+        field = found.component
+        if isinstance(field, Input | Textarea):
+            if not isinstance(draft, str):
+                raise TypeError(f"{found!r} is submitted with the text typed into it")
+            if field.on_submit is None:
+                # In a tab the Enter does nothing, and nothing is sent.
+                raise LookupError(f"{found!r} has no handler for submit")
+            typed = [("change", draft)] if field.on_change is not None else []
+            emptied = [("change", "")] if typed and field.clear_on_submit else []
+            await self._send(found, *typed, ("submit", draft), *emptied)
+            return
         if hasattr(draft, "model_dump"):
             draft = draft.model_dump(mode="json")
-        await self.event(form, "submit", draft)
+        await self.event(found, "submit", draft)
 
     async def select(self, table: Found | str, keys: list[Any]) -> None:
         """Select rows of a table by key."""

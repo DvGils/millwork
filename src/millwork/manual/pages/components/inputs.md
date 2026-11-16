@@ -142,9 +142,11 @@ stays enabled and its handler checks the text.
 `clear_on_submit=True` empties the field at the Enter, in the browser,
 ready for the next entry: a line for a list, a code from a scanner, a
 message. The handler gets the text and has nothing to clear, and the
-keyboard stays in the field. A handler that empties a value it holds, or
-calls `s.reset`, does so a round trip later, and what was typed in that
-time goes with it. A `Textarea` takes the same at Ctrl+Enter.
+keyboard stays in the field. A field with an `on_change` reports its
+new, empty value there right after, so a draft kept in state is emptied
+as well. A handler that empties a value it holds, or calls `s.reset`,
+does so a round trip later, and what was typed in that time goes with
+it. A `Textarea` takes the same at Ctrl+Enter.
 
 ```python live
 from pydantic import BaseModel

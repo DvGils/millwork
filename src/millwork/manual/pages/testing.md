@@ -78,6 +78,11 @@ field=)`, which runs every check an upload gets and returns the `FileRef`,
 `send(chat, text, files=)`, `stop(chat)`, `navigate(path)`, and `event(node,
 name, payload)` for anything else. A draft that fails validation produces
 the same `form_issues` command the tab would get, at the same pointers.
+On an `Input` or a `Textarea`, `submit(field, text)` types the text and
+enters it, with Enter or with Ctrl+Enter in a `Textarea`, and sends what
+a tab sends then. That is the text to `on_change` when the field has
+one, the text to `on_submit`, and from a field with `clear_on_submit`
+its new, empty value to `on_change`.
 On `ui.Tabs`, `change(tabs, "history")` opens the tab with that id. A
 click on a `Checkbox` or a `Switch` with `checked` turns it to its other
 value. One with `default_checked` keeps its value in the browser, where

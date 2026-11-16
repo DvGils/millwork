@@ -3,6 +3,24 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.4.2
+
+### Features
+
+- `page.submit(field, text)` in a test types text into an `Input` or a
+  `Textarea` and enters it, with Enter or with Ctrl+Enter in a
+  `Textarea`. The field gets what a tab sends then. That is the text to
+  `on_change` when it has one, the text to `on_submit`, and from a field
+  with `clear_on_submit` its new, empty value to `on_change`. A test that
+  sent the `submit` event alone kept a draft in state that a browser had
+  emptied.
+
+### The manual
+
+- Inputs says that a field with `clear_on_submit` and an `on_change`
+  reports its empty value after the Enter, so a draft kept in state is
+  emptied without the handler doing it.
+
 ## 0.4.1
 
 ### Bug fixes
