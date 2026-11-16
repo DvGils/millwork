@@ -12,7 +12,8 @@ A path can carry parameters in Starlette's syntax. `{name}` takes one
 segment as a string. `{name:int}`, `{name:float}` and `{name:uuid}` convert
 the segment, and a path that does not convert simply does not match.
 `{name:path}` takes the rest of the path. The values arrive in `s.params`,
-and `s.path` holds the path as it was opened.
+each as what its converter makes of it, so `{project_id:int}` is a
+number there. `s.path` holds the path as it was opened.
 
 ```python
 @app.page("/projects/{project_id:int}")

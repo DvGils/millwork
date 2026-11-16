@@ -183,7 +183,7 @@ class PageDef:
         """The names of the parameters in the page's path."""
         return tuple(self._param_convertors)
 
-    def match(self, path: str) -> dict[str, str] | None:
+    def match(self, path: str) -> dict[str, Any] | None:
         m = self._regex.match(path)
         if m is None:
             return None
@@ -409,7 +409,7 @@ class App:
         """A session's state: one instance of the app's model, kept for the session."""
         return None if self.state_model is None else self.state_model()
 
-    def resolve(self, path: str) -> tuple[PageDef, dict[str, str]] | None:
+    def resolve(self, path: str) -> tuple[PageDef, dict[str, Any]] | None:
         """The page at a path and its parameters. Where several pages match,
         the one whose path is exact soonest wins, read from the left: a
         literal segment over a parameter, so ``/orders/new`` is its own page
@@ -817,6 +817,7 @@ class App:
         session.dismiss()
         self.sessions.pop(session.id, None)
         self.files.discard(session.id)
+        session.files.forget()
         if not session.gone.done():
             session.gone.set_result(None)
 

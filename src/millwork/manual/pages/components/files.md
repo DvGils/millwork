@@ -11,6 +11,9 @@ id, a name, a size and a type, and `ref.path` is where the bytes are on
 the server, for `ref.path.read_bytes()` or a library that takes a path.
 The bytes live for as long as the session does and travel to the browser
 over the session's own socket, so a file has no URL and needs no signing.
+A file that someone chose in a form or attached in a chat and never sent
+is the exception. It goes when its form or chat is no longer on the
+page.
 
 ## FileUpload
 <!-- keywords: upload, dropzone, attach, drag and drop -->

@@ -42,7 +42,14 @@ import {
 } from "../charts-data";
 import { chartHeight, type ChartKind } from "./charts";
 
+// How wide a bar gets at most. A chart of many bars has thin ones, and one
+// of a few has room for more: four slivers with wide gaps between them
+// read as a chart with something missing.
 const BAR = 24;
+function barWidth(count: number, horizontal: boolean): number {
+  const [room, most] = horizontal ? [120, 36] : [280, 72];
+  return Math.min(most, Math.max(BAR, Math.round(room / Math.max(1, count))));
+}
 
 interface TipProps {
   active?: boolean;
@@ -569,7 +576,7 @@ function AxisChart({ id, kind, props, emit }: ChartProps) {
             fill={`var(--color-${slot(index)})`}
             stroke="var(--background)"
             strokeWidth={1}
-            maxBarSize={BAR}
+            maxBarSize={barWidth(rows.length, horizontal)}
             shape={barShape}
             {...motion(dataKey)}
             {...barClick(index)}
@@ -584,7 +591,7 @@ function AxisChart({ id, kind, props, emit }: ChartProps) {
             radius={stacked ? 0 : horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
             stroke={stacked ? "var(--background)" : undefined}
             strokeWidth={stacked ? 1 : 0}
-            maxBarSize={BAR}
+            maxBarSize={barWidth(rows.length, horizontal)}
             shape={barShape}
             {...motion(slot(i))}
             {...barClick(i)}

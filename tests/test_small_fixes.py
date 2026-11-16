@@ -661,3 +661,67 @@ async def test_a_progress_value_above_one_is_said(caplog: pytest.LogCaptureFixtu
     # A bar that is wrong from the first drawing is said at the first drawing.
     async with TestApp(app).open("/first"):
         assert "root/wrong is a ui.Progress with the value 50" in caplog.text
+
+
+class Showing(BaseModel):
+    form: bool = True
+
+
+async def test_a_file_that_was_chosen_and_never_sent_goes_with_its_form(tmp_path: Path) -> None:
+    app = mw.App("unsent", state=Showing, public=None)
+    kept: list[mw.FileRef] = []
+
+    def close(s: mw.Session[Showing], _: object) -> None:
+        s.state.form = False
+
+    def keep(s: mw.Session[Showing], claim: Receipt) -> None:
+        if claim.receipt is not None:
+            kept.append(claim.receipt)
+        s.state.form = False
+
+    @app.page("/")
+    def home(s: mw.Session[Showing]) -> ui.Component:
+        return ui.Page(
+            ui.Form(Receipt, on_submit=keep, key="claim") if s.state.form else None,
+            ui.Chat(on_message=lambda s, t: None, attachments=ui.Accept(), key="chat"),
+            ui.FileUpload(key="drop"),
+            ui.Button("Close", on_click=close, key="close"),
+        )
+
+    @app.page("/other")
+    def other(s: mw.Session[Showing]) -> ui.Component:
+        return ui.Page(ui.Text("Elsewhere"))
+
+    photo = tmp_path / "photo.png"
+    photo.write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(64))
+    async with TestApp(app).open("/") as page:
+        files = page.session.files
+        chosen = await page.upload("claim", photo, field="/receipt")
+        dropped = await page.upload("drop", photo)
+        # Another drawing of the page leaves it: its form is still there.
+        page.session.refresh()
+        await page.settle()
+        assert files.get(chosen.id) is not None
+        # The form goes without a submit, and its upload with it. What a
+        # FileUpload took is the app's from the start.
+        await page.click("close")
+        assert files.get(chosen.id) is None and not chosen.path.exists()
+        assert files.get(dropped.id) is not None
+        assert page.session.app.files.used(page.session.id) == dropped.size
+    async with TestApp(app).open("/") as page:
+        files = page.session.files
+        # A file that was sent with the form is the handler's to keep.
+        sent = await page.upload("claim", photo, field="/receipt")
+        await page.submit("claim", {"title": "Train", "receipt": sent})
+        assert kept[-1].id == sent.id and files.get(sent.id) is not None and sent.path.exists()
+        # One attached to a message that was never sent stays through a
+        # navigation that keeps the page, as the tab's draft does.
+        attached = await page.upload("chat", photo)
+        await page.navigate("/?tab=2")
+        assert files.get(attached.id) is not None
+        # It goes when the page is left for another.
+        await page.navigate("/other")
+        assert files.get(attached.id) is None and files.get(sent.id) is not None
+        session = page.session
+    # A session that is over lists no files.
+    assert session.files.all() == [] and not sent.path.exists()

@@ -46,6 +46,21 @@ versions; a release says so here when it does.
   or every visitor counts as one address.
 - `ui.Progress(value=50)` drew a full bar without a word. The value is a
   share from 0 to 1, and one above 1 is now a framework warning.
+- A file that was chosen in a form's file field, or attached in a chat,
+  and never sent stayed in the session until it ended, and counted
+  against its storage for that long. It now goes when its form or chat
+  is no longer on the page. A file that was sent, or that a
+  `ui.FileUpload` took, is the app's as before. A session that had ended
+  still listed its files, and lists none now.
+- The copy button of a code block, in a `ui.Code` and in Markdown, lay
+  over the end of a long line. The line now goes under it.
+- A chart of a few bars drew them as slivers with wide gaps between
+  them. A bar is now wider the fewer there are, up to three times what
+  it was, and a chart of twelve bars or more is as before.
+- `s.params` was typed as text for every value, so a type checker
+  refused `ITEMS[s.params["id"]]` on a page at `/items/{id:int}`, where
+  the value is a number. A value is typed as whatever its converter
+  makes of it.
 - A table's `date` column showed a day without a time as the day
   before, in every time zone west of UTC. A `date` from Python is such a
   day.

@@ -131,7 +131,7 @@ def names(name: str, node_id: str, component: Component | None) -> bool:
 
 
 class Session[S]:
-    def __init__(self, app: App, page: PageDef, params: dict[str, str], path: str) -> None:
+    def __init__(self, app: App, page: PageDef, params: dict[str, Any], path: str) -> None:
         self._loop = asyncio.get_running_loop()
         self.id = secrets.token_urlsafe(16)
         self.resume_token = secrets.token_urlsafe(24)
@@ -635,7 +635,7 @@ class Session[S]:
         if self._showing or self._render_due:
             self.refresh()
 
-    def enter(self, page: PageDef, params: dict[str, str], path: str) -> None:
+    def enter(self, page: PageDef, params: dict[str, Any], path: str) -> None:
         """Step onto the page a navigation leads to, for its connect to run.
         What the session was on is kept, to go back to if that fails."""
         self._previous = (
@@ -1131,6 +1131,7 @@ class Session[S]:
         ]
         if component.attachments is not None:
             files = files[: component.attachments.max_files]
+        self.files.sent(*(ref.id for ref in files))
         # A command is a message on its own: one that takes no words is sent
         # with none.
         command = payload.get("command")
@@ -1468,6 +1469,7 @@ class Session[S]:
                         "form_issues", node=event.node, issues=[i.model_dump() for i in issues]
                     )
                     return True
+                self._files_sent(draft)
                 ask.future.set_result(instance)
                 return True
             if event.name in ("close", "cancel"):
@@ -1651,6 +1653,7 @@ class Session[S]:
         else:
             self._failure = None
         self.tree = tree
+        self.files.drop_unsent(tree.nodes)
         self._title_shown = self._title(tree)
         # The marks of this page go with it: the ones the tab had were the
         # last page's.
@@ -1707,6 +1710,7 @@ class Session[S]:
         ops = diff(self.tree, tree)
         self._check_keyless(self.tree, tree)
         self.tree = tree
+        self.files.drop_unsent(tree.nodes)
         self._typed = None
         if ops:
             self.post(Patch(ops=ops))
@@ -2034,6 +2038,7 @@ class Session[S]:
                     "form_issues", node=event.node, issues=[i.model_dump() for i in issues]
                 )
                 return None
+            self._files_sent(draft)
             payload = instance
 
         return Plan(
@@ -2057,6 +2062,17 @@ class Session[S]:
             return ref if ref is not None and ref.node == node else None
 
         return lookup
+
+    def _files_sent(self, draft: Any) -> None:
+        """The files in a draft that goes to a handler are the app's now."""
+        if isinstance(draft, FileRef):
+            self.files.sent(draft.id)
+        elif isinstance(draft, dict):
+            for value in draft.values():
+                self._files_sent(value)
+        elif isinstance(draft, list):
+            for value in draft:
+                self._files_sent(value)
 
     # --------------------------------------------------------- requests
 
