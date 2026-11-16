@@ -22,6 +22,30 @@ versions; a release says so here when it does.
   zone. The warning is now for a press, which is a click, a submit, a
   row or card action, a click on a table's row and a choice from a menu.
 
+- The limits of a form's file field were only held in the browser when
+  they were set with `overrides`, as `{"/receipt": {"accept": [".png"],
+  "max_size_mb": 2}}`. The server took any file up to the app's own
+  limit. It now goes by the form as it was drawn, so those limits hold,
+  and a file field that `fields` leaves out takes no upload.
+- A row with bytes that are no text in it, a blob from a database say,
+  failed the whole page with a `UnicodeDecodeError` in a table and in a
+  chart, and so did a `memoryview`, which is what some database drivers
+  give for one. Such a cell now shows how many bytes it holds, as
+  `4 bytes`.
+- `reply.error(text)` in a chat was shown and not kept, so a failed
+  answer was an empty one after a reload. It is kept with the message
+  now. A text part of a stored message was left marked as still
+  streaming, and is marked done.
+- A password check that raised gave an error page of the server's.
+  The sign-in page now says that sign-in is not working right now, and
+  the exception is in the log.
+- Nothing slowed down someone guessing passwords. Wrong passwords are
+  now counted for a minute, and after five for one name from one
+  address, or thirty from one address, the next try is turned away
+  without a check. An app behind a proxy needs `proxied=True` for this,
+  or every visitor counts as one address.
+- `ui.Progress(value=50)` drew a full bar without a word. The value is a
+  share from 0 to 1, and one above 1 is now a framework warning.
 - A table's `date` column showed a day without a time as the day
   before, in every time zone west of UTC. A `date` from Python is such a
   day.

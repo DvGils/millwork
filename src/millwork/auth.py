@@ -12,10 +12,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import contextlib
 import datetime as dt
 import hashlib
 import hmac
 import inspect
+import ipaddress
 import json
 import logging
 import math
@@ -319,6 +321,73 @@ def Google(*, client_id: str, client_secret: str, http: httpx.AsyncClient | None
     )
 
 
+class Tries:
+    """Wrong passwords of the last minute, counted by who was tried from
+    where and by where alone. Past ``PAIR`` for a name from one address,
+    or ``ADDRESS`` from one address, the next try is turned away without
+    a check, so guessing goes no faster than that.
+
+    A try is counted when it starts and taken back when the password was
+    right, so tries sent at once are held as tries sent one by one are.
+    An address of the newer kind counts as the network it is in, since
+    whoever has one has all of that network's.
+
+    It is counted in this process. Replicas each count their own, which
+    makes the most a guesser gets that many times higher and no more.
+    """
+
+    WINDOW = 60.0
+    PAIR, ADDRESS = 5, 30
+    # How many names and addresses are remembered. One more drops the oldest.
+    KEPT = 4096
+
+    def __init__(self) -> None:
+        self._tried: dict[tuple[str, str], list[float]] = {}
+
+    @staticmethod
+    def _keys(username: str, address: str) -> tuple[tuple[str, str], tuple[str, str]]:
+        if ":" in address:
+            with contextlib.suppress(ValueError):
+                address = str(ipaddress.ip_network(f"{address}/64", strict=False))
+        return (username.lower(), address), ("", address)
+
+    def _recent(self, key: tuple[str, str]) -> list[float]:
+        since = time.monotonic() - self.WINDOW
+        kept = [at for at in self._tried.get(key, ()) if at > since]
+        if kept:
+            self._tried[key] = kept
+        else:
+            self._tried.pop(key, None)
+        return kept
+
+    def over(self, username: str, address: str) -> bool:
+        pair, place = self._keys(username, address)
+        return len(self._recent(pair)) >= self.PAIR or len(self._recent(place)) >= self.ADDRESS
+
+    def begin(self, username: str, address: str) -> bool:
+        """Count a try that is about to be checked. False when there were
+        too many already, and this one is not to be checked."""
+        if self.over(username, address):
+            return False
+        for key in self._keys(username, address):
+            self._tried[key] = [*self._recent(key), time.monotonic()]
+        while len(self._tried) > self.KEPT:
+            del self._tried[next(iter(self._tried))]
+        return True
+
+    def undo(self, username: str, address: str) -> None:
+        """Take back a try that turned out to be no wrong password."""
+        for key in self._keys(username, address):
+            if key in self._tried:
+                self._tried[key].pop()
+
+    def right(self, username: str, address: str) -> None:
+        """A password that was right is no wrong one, and clears what was
+        counted against the name from that address."""
+        self.undo(username, address)
+        self._tried.pop(self._keys(username, address)[0], None)
+
+
 class Password(Provider):
     """A username and password checked by the app's callable."""
 
@@ -567,6 +636,7 @@ class Auth:
         login: Component | None = None,
     ) -> None:
         self.providers = {p.id: p for p in providers}
+        self._tries = Tries()
         self.on_login = on_login
         self.on_logout = on_logout
         # Who the signed-in person is now: asked with the user the cookie
@@ -994,17 +1064,33 @@ class Auth:
         password = str(body.get("password") or "")
         if not username or not password:
             return JSONResponse({"reason": "username and password are required"}, status_code=400)
+        who = request.client.host if request.client else "?"
+        if not self._tries.begin(username, who):
+            reason = "too many wrong passwords, try again in a minute"
+            return JSONResponse({"reason": reason}, status_code=429)
         # A password check is slow by design (scrypt): off the loop, so a burst of
         # wrong passwords stalls nothing else.
-        if inspect.iscoroutinefunction(provider.verify):
-            ok = await provider.verify(username, password)
-        else:
-            ok = await asyncio.to_thread(provider.verify, username, password)
-            if inspect.isawaitable(ok):
-                ok = await ok
+        try:
+            if inspect.iscoroutinefunction(provider.verify):
+                ok = await provider.verify(username, password)
+            else:
+                ok = await asyncio.to_thread(provider.verify, username, password)
+                if inspect.isawaitable(ok):
+                    ok = await ok
+        except Exception:
+            # The app's own check failed, a database that is away say. The
+            # person is told that it is not them, on the page they are on.
+            self._tries.undo(username, who)
+            log.exception("the password check raised")
+            reason = "sign-in is not working right now"
+            return JSONResponse({"reason": reason}, status_code=503)
         if not ok:
             log.warning("login denied: %s via password", self._log_id(username))
+            if self._tries.over(username, who):
+                # Said once here, and not for each try that is turned away.
+                log.warning("login: further tries from %s are held back for a minute", who)
             return JSONResponse({"reason": "wrong username or password"}, status_code=401)
+        self._tries.right(username, who)
         user = await self.login(
             Identity(
                 provider="password",

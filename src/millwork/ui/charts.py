@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from pydantic import BaseModel, PrivateAttr, model_validator
 from pydantic_core import to_jsonable_python
 
-from millwork.nodes import Component
+from millwork.nodes import Component, shown_bytes
 
 MAX_SERIES = 5
 """Five hues the theme defines; a sixth series would need a generated colour."""
@@ -29,6 +29,8 @@ def _value(v: Any) -> Any:
     # A Decimal (database rows) would become a string, and a string is a gap.
     if isinstance(v, Decimal):
         return float(v)
+    if isinstance(v, bytes | bytearray | memoryview):
+        return shown_bytes(v)
     return to_jsonable_python(v)
 
 

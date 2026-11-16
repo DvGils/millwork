@@ -1742,6 +1742,19 @@ class Session[S]:
                     "a change moves rows instead of redrawing them",
                 )
 
+    def _check_shares(self, tree: Tree) -> None:
+        """A progress bar's value is a share from 0 to 1. One given as a
+        percentage is drawn full, which looks like a bar that works."""
+        for node_id, node in tree.nodes.items():
+            value = node.props.get("value") if node.type == "Progress" else None
+            # A sum of shares can come out a hair above 1, which is 1.
+            if isinstance(value, int | float) and value > 1.001:
+                self.warn(
+                    f"share:{node_id}",
+                    f"{node_id} is a ui.Progress with the value {value:g}, which is drawn "
+                    "as a full bar: a value is a share from 0 to 1, so half is 0.5",
+                )
+
     def _check_icons(self, tree: Tree) -> None:
         """The icons a page gives as files under ``/public/``. One that is
         not in the public folder draws nothing, and where it should be is
@@ -1827,6 +1840,7 @@ class Session[S]:
             tree = build(root, last=last, showing=self._showing, wanted=self._parts_due)
             if tree.icon_files:
                 self._check_icons(tree)
+            self._check_shares(tree)
             # The lazy functions are the page function in parts, so their
             # time is its time.
             ms = (took + tree.spent) * 1000
@@ -2131,7 +2145,11 @@ class Session[S]:
             # The pointer of a file field in the draft; a list index is dropped to find
             # it in the spec, which knows list items without an index.
             pointer = re.sub(r"/\d+(?=/|$)", "", field or "")
-            spec = file_fields(field_spec(component.model)).get(pointer)
+            # The form as it was drawn: with what ``overrides`` set for the
+            # field, and without a field that ``fields`` left out.
+            drawn = self.tree.nodes[node_id].props.get("schema") if self.tree else None
+            schema = drawn if isinstance(drawn, dict) else field_spec(component.model)
+            spec = file_fields(schema).get(pointer)
             if spec is None:
                 raise Reject("no file field at this pointer")
             accept, max_mb = spec.get("accept"), spec.get("max_size_mb")

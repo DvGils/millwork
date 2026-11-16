@@ -68,6 +68,10 @@ def example(s):
 `overrides` maps a pointer to any spec key, such as a `widget`, `min`,
 `max`, `step` or `rows`. `counter` shows under a text field how much it
 holds, against its `max_length`. `fields` picks a subset in order.
+What `overrides` says of a file field, its `accept` and `max_size_mb`,
+is checked on the server as well as in the browser, and goes before the
+same keys in the model's `json_schema_extra`. A field that `fields`
+leaves out takes no upload.
 
 `choices` is a list of bare values, `(value, label)` pairs, dicts and
 `ui.Option`s. A dict takes the keys an Option has. An Option's value is

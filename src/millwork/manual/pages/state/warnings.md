@@ -1,7 +1,7 @@
 ---
 title: Framework warnings
 order: 4
-description: Four mistakes millwork can see, and how it tells you.
+description: Six mistakes millwork can see, and how it tells you.
 related: /running/development, /components/tasks
 ---
 
@@ -24,6 +24,9 @@ log line with the page's path, and in debug mode as a toast as well.
 - **An icon file that is not there**, a component's `icon` given as a
   path under `/public/` whose file is not in the public folder. The
   page draws nothing in its place, which is easy to miss.
+- **A progress bar past its end**, a `ui.Progress` whose `value` is
+  above 1. The value is a share from 0 to 1, and a percentage such as 50
+  is drawn as a full bar.
 - **A handler that changed nothing**, no state, no command, no task.
   Usually a forgotten `await`. It is said of a press, which is a click, a
   submit, a row or card action, a click on a table's row and a choice

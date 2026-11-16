@@ -189,7 +189,9 @@ the log has the exception. What the exception says stays on the server,
 since it can name a table, a host or a path, and the tab is sent
 "Something went wrong." in its place. In debug mode the tab gets the
 exception's own words. A handler that has something to tell the reader
-catches the exception and calls `reply.error` with it.
+catches the exception and calls `reply.error` with it. The error line is
+kept with the message, as a part of the type `error`, so it is there
+after a reload as well.
 
 ## Reading aids
 

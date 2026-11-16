@@ -525,3 +525,139 @@ async def test_a_text_field_says_when_it_is_emptied_at_its_enter() -> None:
         assert page.find("line").props["clear_on_submit"] is True
         assert page.find("note").props["clear_on_submit"] is True
         assert page.find("plain").props["clear_on_submit"] is False
+
+
+class Receipt(BaseModel):
+    title: str = ""
+    receipt: mw.FileRef | None = None
+
+
+async def test_a_file_fields_limits_from_overrides_hold_on_the_server(tmp_path: Path) -> None:
+    from millwork.files import Reject
+
+    app = mw.App("limits", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        limits = {"/receipt": {"accept": [".png"], "max_size_mb": 1}}
+        return ui.Page(
+            ui.Form(Receipt, overrides=limits, on_submit=lambda s, v: None, key="claim"),
+            # A form that leaves the field out takes no file for it.
+            ui.Form(Receipt, fields=["title"], on_submit=lambda s, v: None, key="short"),
+        )
+
+    (tmp_path / "note.txt").write_text("not a picture")
+    (tmp_path / "large.png").write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(2 * 1024 * 1024))
+    (tmp_path / "small.png").write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(64))
+    async with TestApp(app).open("/") as page:
+        with pytest.raises(Reject, match="not accepted"):
+            await page.upload("claim", tmp_path / "note.txt", field="/receipt")
+        with pytest.raises(Reject, match="larger than"):
+            await page.upload("claim", tmp_path / "large.png", field="/receipt")
+        assert (await page.upload("claim", tmp_path / "small.png", field="/receipt")).name
+        with pytest.raises(Reject, match="no file field"):
+            await page.upload("short", tmp_path / "small.png", field="/receipt")
+
+
+async def test_bytes_in_a_row_are_shown_and_do_not_fail_the_page() -> None:
+    import dataclasses
+
+    @dataclasses.dataclass
+    class Stored:
+        name: str
+        body: bytes
+
+    app = mw.App("blobs", public=None)
+    blob = b"\xff\xd8\xff\xe0"
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Table(rows=[{"name": "a", "body": blob}, {"name": "b", "body": b"plain"}], key="t"),
+            ui.Table(rows=[Stored("c", blob)], key="d"),
+            ui.BarChart(
+                [{"what": blob, "n": 2}, {"what": b"text", "n": 3}], x="what", y="n", key="c"
+            ),
+        )
+
+    class Kept(BaseModel):
+        name: str
+        body: bytes
+
+    views = [{"body": memoryview(blob), "all": {blob}}, {"body": memoryview(b"text"), "all": []}]
+
+    @app.page("/more")
+    def more(s: mw.Session) -> ui.Component:
+        # What a database driver gives for a blob, and rows that are models.
+        return ui.Page(
+            ui.Table(rows=views, key="v"),
+            ui.Table(rows=[Kept(name="m", body=blob), Kept(name="n", body=b"plain")], key="m"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        assert [row["body"] for row in page.find("t").rows] == ["4 bytes", "plain"]
+        assert page.find("d").rows == [{"name": "c", "body": "4 bytes"}]
+        assert [point["x"] for point in page.find("c").props["data"]] == ["4 bytes", "text"]
+    async with TestApp(app).open("/more") as page:
+        assert page.find("v").rows == [
+            {"body": "4 bytes", "all": ["4 bytes"]},
+            {"body": "text", "all": []},
+        ]
+        assert [row["body"] for row in page.find("m").rows] == ["4 bytes", "plain"]
+
+
+async def test_a_reply_that_failed_keeps_its_error_and_its_text_is_done() -> None:
+    app = mw.App("failed", public=None)
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as reply:
+            await reply.text("Looking it up. ")
+            await reply.error("The service did not answer.")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Chat(on_message=answer, key="chat"))
+
+    async with TestApp(app).open("/") as page:
+        await page.send("chat", "Hello")
+        parts = page.session.chat("chat").messages[-1].parts
+        assert parts == [
+            {"type": "text", "text": "Looking it up. ", "state": "done"},
+            {"type": "error", "errorText": "The service did not answer."},
+        ]
+        # What a tab that loads the page now is given is the same.
+        assert page.find("chat").props["messages"][-1]["parts"] == parts
+        kinds = [chunk["type"] for chunk in page.stream]
+        assert kinds.index("text-end") < kinds.index("error")
+
+
+async def test_a_progress_value_above_one_is_said(caplog: pytest.LogCaptureFixture) -> None:
+    class Done(BaseModel):
+        share: float = 0.5
+
+    app = mw.App("share", state=Done, public=None)
+
+    def more(s: mw.Session[Done], _: object) -> None:
+        s.state.share = 50
+
+    @app.page("/")
+    def home(s: mw.Session[Done]) -> ui.Component:
+        return ui.Page(
+            ui.Progress(value=s.state.share, key="bar"),
+            # A sum of shares that comes out a hair above 1 is 1.
+            ui.Progress(value=0.1 * 3 + 0.7000000001, key="full"),
+            ui.Button("More", on_click=more, key="more"),
+        )
+
+    @app.page("/first")
+    def first(s: mw.Session[Done]) -> ui.Component:
+        return ui.Page(ui.Progress(value=50, key="wrong"))
+
+    async with TestApp(app).open("/") as page:
+        assert "share from 0 to 1" not in caplog.text
+        await page.click("more")
+        assert "root/bar is a ui.Progress with the value 50" in caplog.text
+        assert caplog.text.count("share from 0 to 1") == 1
+    # A bar that is wrong from the first drawing is said at the first drawing.
+    async with TestApp(app).open("/first"):
+        assert "root/wrong is a ui.Progress with the value 50" in caplog.text

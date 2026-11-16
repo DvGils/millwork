@@ -39,6 +39,17 @@ from the standard library. `millwork hash-password --user ada` prints a
 line for a credentials file, and `auth.check_password(password, stored)`
 checks a password against one.
 
+Wrong passwords are counted for a minute. After five for one name from
+one address, or thirty from one address for any names, the next try is
+turned away without a check, and the sign-in page says to try again in a
+minute. A right password clears the count for its name from that
+address. The count is kept by each process. An app behind a proxy has to
+run with `proxied=True` to see each visitor's own address. Without it
+every visitor comes from the proxy's address, and thirty wrong passwords
+a minute from anyone hold back everyone. A `verify` that raises, with a
+directory that is away say, is logged, and the sign-in page says that
+sign-in is not working right now.
+
 ```python
 USERS = {"ada": "scrypt$..."}
 

@@ -14,10 +14,10 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
-from pydantic_core import to_jsonable_python
+from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from millwork.icons import check_icon
-from millwork.nodes import Component, Wired
+from millwork.nodes import Component, Wired, shown_bytes
 
 Format = Literal[
     "text",
@@ -76,23 +76,45 @@ def _wire_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
     not."""
     models = 0
     ready: list[Any] = []
-    for raw in rows:
-        if type(raw) is dict:
-            ready.append(raw)
-        elif isinstance(raw, BaseModel):
-            ready.append(raw.model_dump(mode="json"))
-            models += 1
-        elif isinstance(raw, Mapping):
-            ready.append(dict(raw))
-        elif dataclasses.is_dataclass(raw) and not isinstance(raw, type):
-            ready.append(raw)
-        else:
-            raise TypeError(
-                f"a table row is a mapping, a model or a dataclass, not {type(raw).__name__}"
-            )
-    # A dump is JSON-ready already, and a table of models is nothing else.
-    out: list[dict[str, Any]] = ready if models == len(ready) else to_jsonable_python(ready)
+    try:
+        for raw in rows:
+            if type(raw) is dict:
+                ready.append(raw)
+            elif isinstance(raw, BaseModel):
+                ready.append(raw.model_dump(mode="json"))
+                models += 1
+            elif isinstance(raw, Mapping):
+                ready.append(dict(raw))
+            elif dataclasses.is_dataclass(raw) and not isinstance(raw, type):
+                ready.append(raw)
+            else:
+                raise TypeError(
+                    f"a table row is a mapping, a model or a dataclass, not {type(raw).__name__}"
+                )
+        # A dump is JSON-ready already, and a table of models is nothing else.
+        if models == len(ready):
+            return ready
+        out: list[dict[str, Any]] = to_jsonable_python(ready)
+    except (UnicodeDecodeError, PydanticSerializationError):
+        # A cell of bytes that are no text, a blob from a database say, or
+        # a view of some. The rows are gone over once more, by hand.
+        out = to_jsonable_python([_without_blobs(row) for row in rows])
     return out
+
+
+def _without_blobs(value: Any) -> Any:
+    """A row with each run of bytes in it as a page can show it."""
+    if isinstance(value, bytes | bytearray | memoryview):
+        return shown_bytes(value)
+    if isinstance(value, BaseModel):
+        return _without_blobs(value.model_dump())
+    if isinstance(value, Mapping):
+        return {k: _without_blobs(v) for k, v in value.items()}
+    if isinstance(value, list | tuple | set | frozenset):
+        return [_without_blobs(v) for v in value]
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return _without_blobs(dataclasses.asdict(value))
+    return value
 
 
 # Whole numbers up to here are held exactly by a number in a browser. Past
