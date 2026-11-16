@@ -5,6 +5,13 @@ versions; a release says so here when it does.
 
 ## 0.4.2
 
+### Bug fixes
+
+- The warning for a slow page function said to move I/O out of it, also
+  to a page that does none and is slow for its size alone. It now names
+  that case too, and says to show fewer rows at a time or to have the
+  tabs that are not open in `ui.lazy`.
+
 ### Features
 
 - `page.submit(field, text)` in a test types text into an `Input` or a

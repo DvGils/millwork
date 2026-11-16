@@ -14,6 +14,9 @@ log line with the page's path, and in debug mode as a toast as well.
 - **A slow page function**, over 20 ms, the time in its
   [lazy parts](/components/layout#lazy-parts) included. The page function
   builds the tree, and I/O belongs in the page's `connect` hook or a task.
+  A page that is slow for its size alone, a thousand rows built one by
+  one, shows fewer of them at a time. Where the size is in tabs, `ui.lazy`
+  leaves the ones that are not open out of a render.
 - **A list without keys**, meaning four or more siblings of one type
   without a key whose number changed between renders. Children that are
   written out, one of them left out with `x if shown else None`, are no

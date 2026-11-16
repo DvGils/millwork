@@ -1785,8 +1785,10 @@ class Session[S]:
             if self._slow_builds >= 2:
                 self.warn(
                     "slow-page",
-                    f"the page function took {ms:.0f} ms; it should build the tree and "
-                    "nothing else, so move I/O to connect or a task",
+                    f"the page function took {ms:.0f} ms. It builds the tree and nothing "
+                    "else, so I/O belongs in connect or a task. A tree that is slow for "
+                    "its size alone shows fewer rows at a time, or has the tabs that are "
+                    "not the open one in ui.lazy",
                 )
             if self._showing:
                 self._showing = {k: v for k, v in self._showing.items() if k in tree.nodes}
