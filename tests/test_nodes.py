@@ -300,6 +300,8 @@ def test_a_grid_takes_the_widths_it_knows_and_counts_it_can_draw() -> None:
         with pytest.raises(ValidationError):
             ui.Grid(cols=bad)  # type: ignore[arg-type]
     assert build(ui.Sheet(size="lg")).nodes["root"].props["size"] == "lg"
+    link = build(ui.Link(label="General", href="/c/general", badge="3")).nodes["root"].props
+    assert link["badge"] == "3"
 
 
 def test_a_button_with_an_href_is_a_link_and_takes_no_handler() -> None:

@@ -48,6 +48,9 @@ versions; a release says so here when it does.
   `open("/", timezone="Asia/Tokyo")`. millwork now depends on the
   `tzdata` package, which has the zones where the system has none, on
   Windows and in a container image without them.
+- `ui.Link(badge=)` shows a count or a word after a link's label, at the
+  end of its row in a sidebar, as `ui.Tab` has. Unread counts had to go
+  into the label's text.
 - `page.submit(field, text)` in a test types text into an `Input` or a
   `Textarea` and enters it, with Enter or with Ctrl+Enter in a
   `Textarea`. The field gets what a tab sends then. That is the text to

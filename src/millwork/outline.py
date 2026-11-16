@@ -541,7 +541,7 @@ def _kbd(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
     return {"text": limits.cut("+".join(keys))} if keys else {}
 
 
-def _tab(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
+def _badge(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
     badge = props.get("badge")
     return {"badge": limits.cut(badge)} if isinstance(badge, str | int) and badge != "" else {}
 
@@ -634,7 +634,7 @@ SAYS: dict[str, Says] = {
     "Accordion": Says(places=True),
     "AccordionItem": Says(label=("title",)),
     "Tabs": Says(),
-    "Tab": Says(label=("label",), flags=_OFF, more=_tab),
+    "Tab": Says(label=("label",), flags=_OFF, more=_badge),
     "Dialog": Says(
         label=("title",), help=("description",), folds="open", browser=False, slots=("footer",)
     ),
@@ -665,7 +665,9 @@ SAYS: dict[str, Says] = {
     "FileCard": Says(more=_file),
     # Pressed.
     "Button": Says(label=("label",), href=True, flags=(*_OFF, ("loading", "busy")), more=_button),
-    "Link": Says(label=("label",), href=True, flags=(("active", "the page it is on"),)),
+    "Link": Says(
+        label=("label",), href=True, flags=(("active", "the page it is on"),), more=_badge
+    ),
     "Download": Says(label=("label",), flags=_OFF, more=_download),
     "DropdownMenu": Says(slots=("trigger",), more=_menu),
     "SignIn": Says(label=("label",)),

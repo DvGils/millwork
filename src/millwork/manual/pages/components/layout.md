@@ -39,20 +39,20 @@ shown inline. The sidebar is.
 <!-- keywords: navigation, nav, menu, drawer -->
 
 `ui.Sidebar` holds the places to go. A `ui.Link` in it is drawn as a row
-to press, with its `icon` in front and the one marked `active=True` set
-apart. `ui.SidebarGroup` folds a set of links under a label: open by
-default, folded with `default_open=False`, and the browser remembers what
-the reader did unless `open` is given, in which case `on_toggle` reports
-the click and Python decides. `collapsible=False` makes it a plain heading
-over its links. This manual's sidebar is one such group per part. Outside
-a `Page`, a `Sidebar` is its children in a column, which is how it is
-shown here.
+to press, with its `icon` in front, a `badge` such as a count at its end,
+and the one marked `active=True` set apart. `ui.SidebarGroup` folds a set
+of links under a label: open by default, folded with `default_open=False`,
+and the browser remembers what the reader did unless `open` is given, in
+which case `on_toggle` reports the click and Python decides.
+`collapsible=False` makes it a plain heading over its links. This manual's
+sidebar is one such group per part. Outside a `Page`, a `Sidebar` is its
+children in a column, which is how it is shown here.
 
 ```python live
 ui.Sidebar(
     ui.Link(label="Overview", href="/components/layout#sidebar", icon="home", active=True),
     ui.SidebarGroup(
-        ui.Link(label="Orders", href="/components/layout#sidebar", icon="table"),
+        ui.Link(label="Orders", href="/components/layout#sidebar", icon="table", badge="3"),
         ui.Link(label="Customers", href="/components/layout#sidebar", icon="users"),
         label="Sales",
     ),

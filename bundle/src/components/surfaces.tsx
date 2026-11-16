@@ -428,6 +428,12 @@ export const Link: Renderer = ({ props }) => {
     >
       {Icon ? <Icon className={inSidebar ? "mt-0.5 size-4 shrink-0" : "size-3.5"} /> : null}
       {String(props.label ?? "")}
+      {/* In a sidebar the count stands at the row's end, where a column of them lines up. */}
+      {props.badge ? (
+        <UiBadge variant="secondary" className={inSidebar ? "ml-auto" : undefined}>
+          {String(props.badge)}
+        </UiBadge>
+      ) : null}
     </a>
   );
 };

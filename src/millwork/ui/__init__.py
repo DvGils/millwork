@@ -891,6 +891,9 @@ class Link(Component):
     href: str
     target: Literal["_self", "_blank"] = "_self"
     icon: str | None = None
+    badge: str | None = None
+    """A count or a word after the label, such as the messages not read
+    yet in the place the link goes to."""
     # The link to the page the session is on: ``aria-current="page"`` in the tab.
     active: bool = False
 
@@ -908,6 +911,7 @@ class Link(Component):
             href: str,
             target: Literal["_self", "_blank"] = "_self",
             icon: str | None = None,
+            badge: str | None = None,
             active: bool = False,
         ) -> None: ...
 

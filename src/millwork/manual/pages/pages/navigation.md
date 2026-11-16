@@ -34,8 +34,9 @@ of the app opens on the session, anything else opens a new tab.
 
 `ui.Header(links=[...])` puts links in the app bar, and `ui.Sidebar` holds
 a longer list. A `ui.Link` in a sidebar is drawn as a row to press, with
-its `icon` in front and the one marked `active=True` set apart, so the
-list needs no classes of its own. `ui.SidebarGroup` folds a set of links
+its `icon` in front, a `badge` such as a count at its end, and the one
+marked `active=True` set apart, so the list needs no classes of its own.
+`ui.SidebarGroup` folds a set of links
 under a label. This manual's sidebar is a `Sidebar` of such groups. The
 [Layout](/components/layout) page shows them all.
 
