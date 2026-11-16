@@ -739,6 +739,70 @@ async def test_development_warnings_name_the_four_mistakes(tmp_path: Path) -> No
         assert sum("changed nothing" in w for w in warnings()) == 1
 
 
+async def test_only_a_press_that_shows_nothing_is_warned_about(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    class Draft(BaseModel):
+        text: str = ""
+        sent: list[str] = []
+        zone: str = ""
+
+    app = mw.App("w", state=Draft, public=None, bundle_dir=tmp_path, debug=True)
+
+    def keep(s: mw.Session[Draft], text: str) -> None:
+        s.state.text = text
+
+    def send(s: mw.Session[Draft], text: str) -> None:
+        s.state.sent.append(text)
+        s.state.text = ""
+
+    def zone(s: mw.Session[Draft], name: str) -> None:
+        s.state.zone = name
+
+    def nothing(s: mw.Session[Draft], _: Any) -> None:
+        pass
+
+    @app.page("/")
+    def home(s: mw.Session[Draft]) -> ui.Component:
+        return ui.Page(
+            ui.Input(key="line", clear_on_submit=True, on_change=keep, on_submit=send),
+            ui.Select(key="pick", options=["a", "b"], on_change=nothing),
+            ui.Table(rows=[{"id": 1}], key="rows", selection="rows", on_select=nothing),
+            ui.Collapsible(ui.Text("more"), key="fold", title="More", on_toggle=nothing),
+            ui.Custom("Clock", key="clock", events={"zone": zone, "click": nothing}),
+            ui.Button("dead", key="dead", on_click=nothing),
+            ui.DropdownMenu(
+                key="menu",
+                trigger=ui.Button("Menu"),
+                items=[ui.MenuItem(id="go", label="Go")],
+                on_select=nothing,
+            ),
+            ui.Text(f"{len(s.state.sent)} sent"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        noops = lambda: sorted(k for k in page.session._warned if k.startswith("noop:"))  # noqa: E731
+        # A draft that is kept and drawn nowhere.
+        await page.change("line", "hel")
+        # The field's own emptying finds the draft emptied by the handler.
+        await page.submit("line", "hello")
+        assert page.state.sent == ["hello"]
+        # What a custom component tells of, and when, is its own.
+        await page.event("clock", "zone", "Europe/Amsterdam")
+        await page.event("clock", "click")
+        # What the tab shows by itself: a choice, rows ticked, a panel folded.
+        await page.change("pick", "b")
+        await page.select("rows", [1])
+        await page.event("fold", "toggle", False)
+        assert noops() == []
+        await page.click("dead")
+        await page.choose("menu", "go")
+        assert noops() == [
+            "noop:the click handler on root/dead",
+            "noop:the select handler on root/menu",
+        ]
+
+
 async def test_a_changed_custom_component_is_pushed_to_open_tabs(tmp_path: Path) -> None:
     from millwork.testing import TestApp
 

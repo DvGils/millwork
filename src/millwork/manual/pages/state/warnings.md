@@ -25,7 +25,11 @@ log line with the page's path, and in debug mode as a toast as well.
   path under `/public/` whose file is not in the public folder. The
   page draws nothing in its place, which is easy to miss.
 - **A handler that changed nothing**, no state, no command, no task.
-  Usually a forgotten `await`.
+  Usually a forgotten `await`. It is said of a press, which is a click, a
+  submit, a row or card action, a click on a table's row and a choice
+  from a menu. Other events tell of what the tab shows already, such as
+  a value typed or rows ticked, so a handler that only keeps that is not
+  warned about. Neither is an event a custom component emits.
 - **A sync task that changed state from its thread.** A task reports
   through `progress()` and returns a result, and the handler that awaits it
   puts the result in state, as the [Tasks](/components/tasks) page shows.

@@ -12,6 +12,16 @@ versions; a release says so here when it does.
   that case too, and says to show fewer rows at a time or to have the
   tabs that are not open in `ui.lazy`.
 
+- The warning for a handler that changed nothing was said of handlers
+  that had done their work. An `on_change` that keeps a draft the page
+  does not draw was one, and so was the change to an empty value that a
+  field with `clear_on_submit` sends after its Enter, when `on_submit`
+  had emptied the draft already. A table's `on_select` that keeps the
+  ticked rows for a button to use was another, and so was a custom
+  component that reports something once, such as the browser's time
+  zone. The warning is now for a press, which is a click, a submit, a
+  row or card action, a click on a table's row and a choice from a menu.
+
 ### Features
 
 - `page.submit(field, text)` in a test types text into an `Input` or a

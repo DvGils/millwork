@@ -49,7 +49,7 @@ from millwork.scope import Scope, Timer
 from millwork.signal import Signal
 from millwork.tasks import Task
 from millwork.turn import Turn
-from millwork.ui import Button, Dialog, DropdownMenu, Input, Sheet, Tabs, Text, Textarea
+from millwork.ui import Button, Custom, Dialog, DropdownMenu, Input, Sheet, Tabs, Text, Textarea
 from millwork.ui.chat import Chat
 from millwork.ui.files import Download, FileUpload
 from millwork.ui.form import Form
@@ -95,6 +95,11 @@ class Plan:
     typed: bool = False
     """The event is what was typed into a text field. The tab shows that by
     itself, and sends it right before a press that follows it."""
+    pressed: bool = False
+    """The event is a press, which a person expects to see something of.
+    Any other event tells of what the tab shows already, a value typed, a
+    row chosen, a panel folded, and keeping that is all its handler has to
+    do. What a custom component emits is its own to mean."""
     more: dict[str, Any] = field(default_factory=dict)
 
 
@@ -1336,8 +1341,9 @@ class Session[S]:
             self._typed = event.node
         return self._effects
 
-    def _handler_ended(self, where: str, before: int, event: Event) -> None:
-        self._noop_watch = (where, before)
+    def _handler_ended(self, plan: Plan, before: int, event: Event) -> None:
+        if plan.pressed:
+            self._noop_watch = (plan.where, before)
         if event.name == "change":
             self._typed = event.node
 
@@ -1981,6 +1987,7 @@ class Session[S]:
             form=form,
             visit=self.visit,
             typed=event.name == "change" and isinstance(component, Input | Textarea),
+            pressed=_is_press(component, event.name),
         )
 
     def _form_file(self, node: str) -> Callable[[str], FileRef | None]:
@@ -2132,6 +2139,18 @@ class _ConfirmButtons(Component):
     type: ClassVar[str] = "Row"
     gap: int = 2
     justify: str = "end"
+
+
+# The events that are someone's press on a thing that shows nothing of it
+# by itself.
+_PRESSES = frozenset({"click", "submit", "action", "row_click"})
+
+
+def _is_press(component: Component, event: str) -> bool:
+    if isinstance(component, Custom):
+        return False
+    # A menu closes at a choice, and a table's ``select`` is rows ticked.
+    return event in _PRESSES or (event == "select" and isinstance(component, DropdownMenu))
 
 
 def _noop(*args: Any, **kwargs: Any) -> None:

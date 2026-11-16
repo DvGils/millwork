@@ -282,7 +282,7 @@ async def turn(s: Session[Any], plan: Plan) -> None:
         before = s._handler_begins(plan.event)
         await _call(plan.handler, *plan.args)
         if plan.event is not None:
-            s._handler_ended(plan.where, before, plan.event)
+            s._handler_ended(plan, before, plan.event)
     except FormIssues as exc:
         if plan.event is None:
             _report(s, plan, exc)
