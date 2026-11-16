@@ -725,3 +725,29 @@ async def test_a_file_that_was_chosen_and_never_sent_goes_with_its_form(tmp_path
         session = page.session
     # A session that is over lists no files.
     assert session.files.all() == [] and not sent.path.exists()
+
+
+async def test_on_event_hears_what_events_has_no_handler_for(tmp_path: Path) -> None:
+    heard: list[Any] = []
+    app = mw.App("pond", public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Custom(
+                "Pond",
+                events={"ping": lambda s, p: heard.append(("ping", p))},
+                on_event=lambda s, e: heard.append(e),
+                key="pond",
+            ),
+            ui.Custom("Pond", events={"ping": lambda s, p: None}, key="quiet"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        await page.event("pond", "ping", 1)
+        await page.event("pond", "wave", {"to": "you"})
+        await page.event("pond", "event", 2)
+        assert heard == [("ping", 1), ("wave", {"to": "you"}), ("event", 2)]
+        # Without it, an event that has no handler is still not taken.
+        with pytest.raises(LookupError, match="has no handler for wave"):
+            await page.event("quiet", "wave")

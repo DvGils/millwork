@@ -66,6 +66,10 @@ versions; a release says so here when it does.
   day.
 - A `ui.ScrollArea` printed only the rows in view. It prints its whole
   content now, as a table with a `height` does.
+- `ui.Custom(on_event=...)` heard nothing. The handler was only reached
+  by an event named `event`, and got its payload without the name. It
+  now gets `(name, payload)` for every event that `events` has no
+  handler for, as the manual says.
 - A number typed into a `ui.NumberInput` outside its `min` and `max` was
   sent as typed. It becomes the nearest end on Enter and when the field
   is left.

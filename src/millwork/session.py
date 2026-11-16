@@ -2032,6 +2032,11 @@ class Session[S]:
             return None
 
         handler = self.tree.handler(event.node, event.name)
+        if isinstance(component, Custom) and event.name not in component.events:
+            # No handler by the event's own name, so it goes to the one
+            # for every event, which is told the name as well.
+            handler = component.on_event
+            payload = (event.name, payload)
         if handler is None:
             log.warning("no handler for %s on %s", event.name, event.node)
             self._unheard(event, f"has no handler for {event.name}")
