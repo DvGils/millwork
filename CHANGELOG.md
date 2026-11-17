@@ -3,6 +3,23 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.5.2
+
+### Bug fixes
+
+- An upload of a text file such as a `.csv` was refused as "not UTF-8
+  text" when its first 64 bytes held a character in another encoding,
+  which is how a spreadsheet on Windows saves one. Text is now taken in
+  any encoding, and a file is refused only when those bytes hold a NUL
+  and are not UTF-16 or UTF-32. The app gets the bytes as they were
+  sent and decodes them. The theme string `file_not_text` reads "the
+  file is not text".
+
+### The manual
+
+- Files says what an upload is checked for, and that a text file's
+  encoding is the app's to know.
+
 ## 0.5.1
 
 ### Bug fixes

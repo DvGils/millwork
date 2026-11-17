@@ -114,7 +114,7 @@ def test_content_checks_and_names() -> None:
     with pytest.raises(Reject):
         check_content("a.png", b"GIF89a")
     with pytest.raises(Reject):
-        check_content("a.txt", b"\xff\xfe\x00bad")
+        check_content("a.txt", b"PK\x03\x04\x14\x00\x00\x00")
     with pytest.raises(Reject):
         check_content("a.pdf", b"")
     check_content("a.bin", b"\x00\x01")  # unknown extension: only non-empty is required
@@ -582,11 +582,36 @@ def test_a_downloads_copy_is_the_sessions_until_the_tab_has_it(tmp_path: Path) -
         assert files.used(session) == 1000
 
 
-def test_text_check_allows_a_cut_character() -> None:
+def test_text_is_taken_in_the_encoding_it_was_saved_in() -> None:
+    rows = "naam;café;prijs €\r\nZoë;1;2,50\r\n"
+    for encoding in ("utf-8", "utf-8-sig", "cp1252", "latin-1", "utf-16", "utf-32"):
+        check_content("prices.csv", rows.encode(encoding, "replace")[:64])
+    for mark, encoding in ((b"\xfe\xff", "utf-16-be"), (b"\x00\x00\xfe\xff", "utf-32-be")):
+        check_content("prices.csv", (mark + rows.encode(encoding))[:64])
+    check_content("names.csv", "名前,価格\n".encode("shift_jis"))
+    check_content("names.csv", "名字,价格\n".encode("gb18030"))
     check_content("note.txt", ("a" * 63 + "é").encode()[:64])  # cut inside the é
-    check_content("note.csv", "é".encode()[:1])
-    with pytest.raises(Reject):
-        check_content("note.txt", b"a" * 10 + b"\xff\xfe")
+    # Control bytes that text does hold: a terminal's colors and title, a
+    # line break inside a field, the end of a file from DOS.
+    check_content("log.txt", b"\x1b]0;ada@host\x07\x1b[31mred\x1b[0m\n")
+    check_content("people.csv", b'"Ada","one\x0btwo"\r\n\x1a')
+
+
+def test_utf16_without_its_mark_is_text_while_it_is_latin() -> None:
+    for encoding in ("utf-16-le", "utf-16-be"):
+        check_content("data.csv", "id,name\r\n1,Zoë\r\n".encode(encoding))
+        check_content("data.csv", "id,name\r\n1,Zoë\r\n".encode(encoding)[:63])
+    check_content("data.csv", "a".encode("utf-16-le"))
+
+
+def test_a_file_of_another_kind_is_not_text() -> None:
+    png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+    jpg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+    heads = (png, jpg, b"PK\x03\x04\x14\x00", b"\x7fELF\x02\x01\x01\x00", b"plain\x00text")
+    for head in (*heads, b"\x00", b"\x00" * 8):
+        with pytest.raises(Reject) as refused:
+            check_content("data.csv", head)
+        assert refused.value.key == "file_not_text"
 
 
 def test_a_file_field_inside_a_list_row_uploads(tmp_path: Path) -> None:

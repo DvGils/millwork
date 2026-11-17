@@ -25,6 +25,12 @@ and `max_size_mb` caps each. `on_upload` receives the `FileRef`s, and
 reason the framework gives is one of the theme's strings that start with
 `file_`, or `disconnected` when the connection dropped mid-upload.
 
+A file has to start as what its extension says. A PDF, a picture or an
+Office file starts the way its format does, and a text file such as a
+`.csv` starts with text. Text is taken in any encoding, so the app
+decodes `ref.path.read_bytes()` the way the file was saved. A
+spreadsheet's CSV export is often `cp1252`.
+
 ```python live
 from pydantic import BaseModel
 

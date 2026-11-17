@@ -121,7 +121,7 @@ STRINGS: dict[str, str] = {
     "file_too_large": "the file is larger than {mb} MB",
     "file_empty": "the file is empty",
     "file_not_valid": "the file is not a valid .{ext}",
-    "file_not_text": "the file is not UTF-8 text",
+    "file_not_text": "the file is not text",
     "file_not_accepted": "this type of file is not accepted; expected {expected}",
     "file_failed": "the upload failed",
     "file_interrupted": "the upload was interrupted",

@@ -7,7 +7,6 @@ bytes travel over the session's own socket, so a file has no URL.
 
 from __future__ import annotations
 
-import codecs
 import contextlib
 import logging
 import mimetypes
@@ -103,6 +102,8 @@ _MAGIC: dict[str, tuple[bytes, ...]] = {
     "pptx": (b"PK\x03\x04",),
 }
 _TEXT = {"txt", "md", "csv", "tsv", "json", "xml", "yaml", "yml", "html", "py"}
+# What a file in UTF-16 or UTF-32 starts with.
+_MARKS = (b"\xff\xfe", b"\xfe\xff", b"\x00\x00\xfe\xff")
 
 _SAFE_NAME = re.compile(r"[^\w.\- ()\[\]]+")
 # Device names Windows refuses as file names, whatever the extension.
@@ -130,6 +131,16 @@ def safe_name(name: str) -> str:
     return cleaned[: 200 - len(suffix)] + suffix
 
 
+def _wide(head: bytes) -> bool:
+    """Whether a file starts as UTF-16 or UTF-32, the text that has NUL bytes
+    in it. Either says so with its mark. UTF-16 without one is known while it
+    is plain Latin, where every other byte is NUL."""
+    if head.startswith(_MARKS):
+        return True
+    first, second = head[0::2], head[1::2]
+    return len(head) > 1 and ((not any(first) and all(second)) or (not any(second) and all(first)))
+
+
 def check_content(name: str, head: bytes) -> None:
     ext = Path(name).suffix.lower().lstrip(".")
     if not head:
@@ -142,11 +153,11 @@ def check_content(name: str, head: bytes) -> None:
                 "the file is not a valid .webp", key="file_not_valid", vars={"ext": "webp"}
             )
     elif ext in _TEXT:
-        # The head may end inside a multibyte character: only invalid bytes count.
-        try:
-            codecs.getincrementaldecoder("utf-8")().decode(head, final=False)
-        except UnicodeDecodeError as exc:
-            raise Reject("the file is not UTF-8 text", key="file_not_text") from exc
+        # Text in whatever encoding it was saved in, which a spreadsheet's
+        # export seldom leaves as UTF-8. The bytes are the app's to decode.
+        # A NUL byte is what tells another kind of file from text.
+        if 0 in head and not _wide(head):
+            raise Reject("the file is not text", key="file_not_text")
 
 
 def _owner() -> str:

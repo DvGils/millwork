@@ -243,7 +243,7 @@ def test_an_upload_is_refused_in_the_themes_words(tmp_path: Path) -> None:
         hello(ws)
         assert refused(ws, "big.txt", big) == "het bestand is groter dan 1 MB"
         assert refused(ws, "a.exe", 4) == "dit soort bestand mag niet; wel .txt"
-        assert refused(ws, "b.txt", 4, b"\xff\xfe\xff\xfe") == "het bestand is geen tekst"
+        assert refused(ws, "b.txt", 4, b"\x00\x00\x00\x01") == "het bestand is geen tekst"
     with (
         TestClient(themed_app(tmp_path, Theme()).asgi) as client,
         client.websocket_connect("/_mw/ws") as ws,
