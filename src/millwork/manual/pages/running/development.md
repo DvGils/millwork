@@ -97,7 +97,9 @@ file.
 a browser shows it. The command serves the app on a free port, opens the
 page in a Chrome, Chromium, Edge or Brave that is already on the machine,
 and waits until the page has stopped changing. Nothing is installed for
-it.
+it. A browser that will not start is passed over for the next one found,
+and `--browser` names one to use. In a container that allows a browser
+no sandbox, `--no-sandbox` runs it without one.
 
 ```sh
 millwork shot app.py /orders --out orders.png

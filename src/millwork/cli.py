@@ -174,6 +174,11 @@ def main(argv: list[str] | None = None) -> int:
     shot.add_argument(
         "--browser", help="the browser to use; default the first Chromium-family one found"
     )
+    shot.add_argument(
+        "--no-sandbox",
+        action="store_true",
+        help="run the browser without its sandbox, for a container that allows it none",
+    )
     shot.add_argument("--debug", action="store_true", help="as for run")
     sub.add_parser("secret", help="print a signing secret for App(secret=...)")
     hp = sub.add_parser("hash-password", help="hash a password for a Password provider")

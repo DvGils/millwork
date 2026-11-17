@@ -29,15 +29,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, WebSocketException
 
 # Looked for on the path, in this order.
 NAMES = (
-    "chromium",
-    "chromium-browser",
     "google-chrome",
     "google-chrome-stable",
     "chrome",
+    "chromium",
+    "chromium-browser",
     "brave",
     "brave-browser",
     "microsoft-edge",
@@ -88,100 +88,165 @@ class Shot:
     cut: bool = False
 
 
-def find_browser(named: str | None = None) -> str:
-    """The browser to drive: the one named, ``MILLWORK_BROWSER``, or the first
-    Chromium-family browser found on the path or where its installer puts it."""
+def find_browsers(named: str | None = None) -> list[str]:
+    """The browsers to try, in order: the one named or ``MILLWORK_BROWSER``
+    and no other, or every Chromium-family browser found on the path and
+    where its installer puts it."""
     wanted = named or os.environ.get("MILLWORK_BROWSER")
     if wanted:
         found = shutil.which(wanted)
         if found is None:
             raise ShotError(f"no browser at {wanted!r}")
-        return found
-    for name in NAMES:
-        found = shutil.which(name)
-        if found:
-            return found
+        return [found]
     places: list[str] = []
     if sys.platform == "darwin":
         places = list(_MAC)
     elif sys.platform == "win32":
         roots = [os.environ.get(v) for v in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
         places = [os.path.join(root, tail) for root in roots if root for tail in _WINDOWS]
-    for place in places:
-        if os.path.isfile(place):
-            return place
-    raise ShotError(
-        "no browser found. A picture needs Chrome, Chromium, Edge or Brave on this "
-        "machine; --browser or MILLWORK_BROWSER names one that is somewhere else"
-    )
+    on_path = [shutil.which(name) for name in NAMES]
+    browsers: list[str] = []
+    seen: set[str] = set()
+    for one in [b for b in on_path if b] + [place for place in places if os.path.isfile(place)]:
+        # One browser under two names is tried once.
+        real = os.path.normcase(os.path.realpath(one))
+        if real not in seen:
+            seen.add(real)
+            browsers.append(one)
+    if not browsers:
+        raise ShotError(
+            "no browser found. A picture needs Chrome, Chromium, Edge or Brave on this "
+            "machine; --browser or MILLWORK_BROWSER names one that is somewhere else"
+        )
+    return browsers
+
+
+def find_browser(named: str | None = None) -> str:
+    """The first of the browsers to try."""
+    return find_browsers(named)[0]
+
+
+def _port(file: Path) -> tuple[str, str] | None:
+    """The port a browser took and its own address, once it has written both."""
+    try:
+        parts = file.read_text().split()
+    except OSError:
+        # Not there yet, or still held by the browser as it writes, which
+        # Windows does not let another process read through.
+        return None
+    return (parts[0], parts[1]) if len(parts) >= 2 else None
+
+
+def _why(said: str, code: int | None) -> str:
+    """Why a browser ended as it started, from what it wrote: the line that
+    says so, which a crash follows with a long trace."""
+    lines = [line.strip() for line in said.splitlines() if line.strip()]
+    fatal = [line for line in lines if "FATAL" in line]
+    # A browser writes errors it lives with as it starts. The last is the
+    # nearest to what ended it.
+    errors = [line for line in lines if "ERROR" in line]
+    if fatal or errors:
+        return (fatal[0] if fatal else errors[-1])[:400]
+    return " ".join(lines[:3])[:400] or f"it ended with code {code}"
 
 
 class _Tab:
     """One tab of a headless browser, over the DevTools protocol."""
 
-    def __init__(self, browser: str) -> None:
-        self.browser = browser
+    def __init__(self, browsers: list[str], sandbox: bool = True) -> None:
+        self.browsers = browsers
+        self.browser = browsers[0]
+        # A browser refuses to start as root with its sandbox on, which is
+        # how a container runs one.
+        self.sandbox = sandbox and not (hasattr(os, "geteuid") and os.geteuid() == 0)
         self._n = 0
         self._session: str | None = None
         self._asked = False
         self.events: list[dict[str, Any]] = []
 
     async def __aenter__(self) -> _Tab:
+        # A browser that will not start here is passed over for the next one
+        # found. One build can be kept from its sandbox where another is not.
+        failed: list[str] = []
+        for browser in self.browsers:
+            self.browser = browser
+            self._stack = contextlib.AsyncExitStack()
+            try:
+                await self._start(browser)
+                return self
+            except ShotError as exc:
+                await self._stack.aclose()
+                failed.append(str(exc))
+            except BaseException:
+                await self._stack.aclose()
+                raise
+        why = "; ".join(failed)
+        if "sandbox" in why.lower() and self.sandbox:
+            why = why.rstrip(".") + (
+                ". The browser's sandbox does not work here, as in many containers, "
+                "and --no-sandbox runs it without one"
+            )
+        raise ShotError(why)
+
+    async def _start(self, browser: str) -> None:
         from websockets.asyncio.client import connect
 
-        self._stack = contextlib.AsyncExitStack()
-        try:
-            # On Windows the browser can still hold a file as the profile goes.
-            profile = self._stack.enter_context(
-                tempfile.TemporaryDirectory(prefix="millwork-shot-", ignore_cleanup_errors=True)
+        self._n = 0
+        self._session = None
+        self.events = []
+        # On Windows the browser can still hold a file as the profile goes.
+        profile = self._stack.enter_context(
+            tempfile.TemporaryDirectory(prefix="millwork-shot-", ignore_cleanup_errors=True)
+        )
+        said = Path(profile) / "browser.log"
+        args = [
+            browser,
+            "--headless=new",
+            "--remote-debugging-port=0",
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-gpu",
+            "--hide-scrollbars",
+            # A cookie is kept in the profile, and the keyring of the
+            # person at the machine is not asked to guard it.
+            "--use-mock-keychain",
+            "--password-store=basic",
+        ]
+        if not self.sandbox:
+            args.append("--no-sandbox")
+        # A group of its own, so that Ctrl-C in the terminal stops this
+        # command and the command closes the browser.
+        apart: dict[str, Any] = {"start_new_session": True}
+        if sys.platform == "win32":
+            apart = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        with said.open("wb") as log:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                "about:blank",
+                stdout=log,
+                stderr=log,
+                stdin=subprocess.DEVNULL,
+                **apart,
             )
-            said = Path(profile) / "browser.log"
-            args = [
-                self.browser,
-                "--headless=new",
-                "--remote-debugging-port=0",
-                f"--user-data-dir={profile}",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-gpu",
-                "--hide-scrollbars",
-                # A cookie is kept in the profile, and the keyring of the
-                # person at the machine is not asked to guard it.
-                "--use-mock-keychain",
-                "--password-store=basic",
-            ]
-            if hasattr(os, "geteuid") and os.geteuid() == 0:
-                # A browser refuses to start as root with its sandbox on, which
-                # is how a container runs one.
-                args.append("--no-sandbox")
-            # A group of its own, so that Ctrl-C in the terminal stops this
-            # command and the command closes the browser.
-            apart: dict[str, Any] = {"start_new_session": True}
-            if sys.platform == "win32":
-                apart = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-            with said.open("wb") as log:
-                proc = await asyncio.create_subprocess_exec(
-                    *args,
-                    "about:blank",
-                    stdout=log,
-                    stderr=log,
-                    stdin=subprocess.DEVNULL,
-                    **apart,
-                )
-            self._stack.push_async_callback(self._stop, proc)
-            # The browser writes the port it took and its own address there.
-            port_file = Path(profile) / "DevToolsActivePort"
-            waited = 0.0
-            while not (port_file.exists() and len(port_file.read_text().split()) >= 2):
-                if proc.returncode is not None:
-                    tail = said.read_text(errors="replace").strip().splitlines()[-3:]
-                    why = " ".join(tail) or f"it ended with code {proc.returncode}"
-                    raise ShotError(f"{self.browser} would not start: {why}")
-                if waited >= START:
-                    raise ShotError(f"{self.browser} did not start in {START:g} s")
-                await asyncio.sleep(0.05)
-                waited += 0.05
-            port, address = port_file.read_text().split()[:2]
+        self._stack.push_async_callback(self._stop, proc)
+        # The browser writes the port it took and its own address there.
+        port_file = Path(profile) / "DevToolsActivePort"
+        waited = 0.0
+        while (reached := _port(port_file)) is None:
+            if proc.returncode is not None:
+                # What it wrote may be held by a helper of it that is still ending.
+                wrote = ""
+                with contextlib.suppress(OSError):
+                    wrote = said.read_text(errors="replace")
+                why = _why(wrote, proc.returncode)
+                raise ShotError(f"{browser} would not start: {why}")
+            if waited >= START:
+                raise ShotError(f"{browser} did not start in {START:g} s")
+            await asyncio.sleep(0.05)
+            waited += 0.05
+        port, address = reached
+        try:
             # A proxy named in the environment is not for a browser on this machine.
             self._ws = await self._stack.enter_async_context(
                 connect(f"ws://127.0.0.1:{port}{address}", max_size=None, proxy=None)
@@ -190,11 +255,9 @@ class _Tab:
             attached = await self.call(
                 "Target.attachToTarget", targetId=target["targetId"], flatten=True
             )
-            self._session = attached["sessionId"]
-        except BaseException:
-            await self._stack.aclose()
-            raise
-        return self
+        except (OSError, WebSocketException) as exc:
+            raise ShotError(f"{browser} started and could not be reached: {exc}") from exc
+        self._session = attached["sessionId"]
 
     async def __aexit__(self, *exc: object) -> None:
         # Asked to close, a browser ends its helpers and stops writing to its
@@ -341,6 +404,7 @@ async def shoot(
     user: Any = None,
     timeout: float = 10.0,
     browser: str | None = None,
+    sandbox: bool = True,
 ) -> Shot:
     """Save a picture of the page at ``path`` and say how it went.
 
@@ -348,7 +412,8 @@ async def shoot(
     browser set to dark shows it. ``user`` is a ``mw.User`` to be signed in
     as, for an app with sign-in. The cookie is made with the app's own secret
     and is good for a few minutes. ``on_login`` is not asked about the user,
-    and the app's ``recheck`` is.
+    and the app's ``recheck`` is. ``sandbox=False`` runs the browser without
+    its sandbox, for a container that does not let it have one.
     """
     if not path.startswith("/") or path.startswith("//"):
         raise ShotError(f"a path starts with one slash, and {path!r} does not")
@@ -358,17 +423,18 @@ async def shoot(
         raise ShotError("the app has no sign-in, so there is nobody to be")
     if not (200 <= width <= 4000 and 200 <= height <= TALLEST):
         raise ShotError(f"a picture is 200 to 4000 wide and 200 to {TALLEST} high")
-    found = find_browser(browser)
+    found = find_browsers(browser)
     out = Path(out)
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise ShotError(f"no folder for {out}: {exc}") from exc
     wait = int(timeout * 1000)
+    tab = _Tab(found, sandbox)
     try:
-        return await _shoot(app, path, out, width, height, full, dark, user, wait, found)
+        return await _shoot(app, path, out, width, height, full, dark, user, wait, tab)
     except ConnectionClosed as exc:
-        raise ShotError(f"{found} went away before the picture was made") from exc
+        raise ShotError(f"{tab.browser} went away before the picture was made") from exc
 
 
 async def _shoot(
@@ -381,9 +447,9 @@ async def _shoot(
     dark: bool,
     user: Any,
     wait: int,
-    found: str,
+    tab: _Tab,
 ) -> Shot:
-    async with _served(app) as base, _Tab(found) as tab:
+    async with _served(app) as base, tab:
         await tab.call("Page.enable")
         await tab.call("Network.enable")
         metrics = {"width": width, "deviceScaleFactor": 1, "mobile": False}
@@ -467,6 +533,7 @@ def main(args: Any) -> int:
                     user=user,
                     timeout=args.timeout,
                     browser=args.browser,
+                    sandbox=not args.no_sandbox,
                 )
             )
         finally:

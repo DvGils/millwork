@@ -38,7 +38,9 @@ versions; a release says so here when it does.
   installed for it. `--full` takes the whole page, `--width` and
   `--height` set the window, `--dark` is the page as a browser set to
   dark shows it, and `--user` signs in as a user in an app with
-  sign-in. The picture is of the page as it opens.
+  sign-in. A browser that will not start is passed over for the next
+  one found, and `--no-sandbox` is for a container that allows a
+  browser no sandbox. The picture is of the page as it opens.
 
 ### The manual
 
