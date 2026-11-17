@@ -514,6 +514,7 @@ async def test_what_a_handler_did_shows_while_it_waits_for_its_task(tmp_path: Pa
 
     app = mw.App("waits", state=Upload, public=None, bundle_dir=tmp_path)
     release = asyncio.Event()
+    drawn = asyncio.Event()
 
     async def read() -> str:
         await release.wait()
@@ -525,16 +526,18 @@ async def test_what_a_handler_did_shows_while_it_waits_for_its_task(tmp_path: Pa
 
     @app.page("/")
     def home(s: mw.Session[Upload]) -> ui.Component:
+        if s.state.said == "reading":
+            drawn.set()
         return ui.Page(ui.Text(s.state.said, key="said"), ui.Button("Go", key="go", on_click=start))
 
     async with TestApp(app).open("/") as page:
         pressed = asyncio.ensure_future(page.click("go"))
-        for _ in range(50):
-            await asyncio.sleep(0.01)
-            if "idle" not in page.text():
-                break
-        # The task has not ended, and the page shows what the handler set
-        # before it began to wait.
+        # The task has not ended, and the page is drawn with what the
+        # handler set before it began to wait. That drawing is waited for
+        # and not a number of short sleeps: where the clock is coarse, as on
+        # Windows before Python 3.13, a sleep shorter than one tick of it
+        # is over at once while the loop has other work.
+        await asyncio.wait_for(drawn.wait(), 5)
         assert "reading" in page.text()
         release.set()
         await pressed
