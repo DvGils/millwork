@@ -52,7 +52,7 @@ jobs:
           cache-dependency-path: bundle/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: bundle
-      - run: pnpm exec tsc --noEmit && pnpm exec vitest run && pnpm build
+      - run: pnpm exec tsc -b && pnpm exec vitest run && pnpm build
         working-directory: bundle
       - name: The committed bundle is the built bundle
         run: |
