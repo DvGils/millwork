@@ -33,6 +33,15 @@ versions; a release says so here when it does.
   without a word and drew a cell with no tone. It is now a `ValueError`
   that names the column.
 
+- `millwork run --reload` without `watchfiles` looked at every Python
+  file under the folder, those of the project's virtual environment
+  included. The first pass after each start only notes when a file was
+  last changed, so where a pass takes long an edit made during it was
+  never seen, and a later one was seen a pass late. It now looks at the
+  app's own files and passes over a virtual environment, a hidden
+  folder, `node_modules` and `site-packages`. An app given as a file
+  outside the current folder has its own folder watched as well.
+
 - A toast made while a dialog, a sheet or a question was open showed
   behind the dimmed page, blurred, and its action could not be pressed.
   Behind a sheet at the side it could not be seen at all. A toast now

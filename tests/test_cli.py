@@ -6,6 +6,7 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -135,10 +136,12 @@ def test_reload_mode_passes_the_bound_socket_to_the_reloader(
     for key in ("MILLWORK_TARGET", "MILLWORK_DEBUG", "MILLWORK_PROXIED"):
         monkeypatch.setenv(key, "")  # so the values main sets are undone afterwards
     seen: list[tuple[int, bool]] = []
+    watched: list[list[Path]] = []
 
     class Reloader:
-        def __init__(self, config: object, target: object, sockets: list[socket.socket]) -> None:
+        def __init__(self, config: Any, target: object, sockets: list[socket.socket]) -> None:
             seen.append((sockets[0].family, sockets[0].get_inheritable()))
+            watched.append(config.reload_dirs)
             for sock in sockets:
                 sock.close()
 
@@ -151,6 +154,9 @@ def test_reload_mode_passes_the_bound_socket_to_the_reloader(
     assert seen[0] == (socket.AF_UNIX, True)
     assert main(["run", str(tmp_path / "demo.py"), "--reload", "--port", "0"]) == 0
     assert seen[1][0] in (socket.AF_INET, socket.AF_INET6)
+    # The app is a file outside the folder the command runs in, and both
+    # folders are watched.
+    assert watched[1] == [Path.cwd().resolve(), tmp_path.resolve()]
 
 
 def test_serve_bounds_what_a_tab_may_send_on_the_socket(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -176,3 +182,51 @@ def test_serve_bounds_what_a_tab_may_send_on_the_socket(monkeypatch: pytest.Monk
     monkeypatch.setattr(uvicorn, "Server", Server)
     assert serve(object(), host=None, port=None, uds=None, root_path="", debug=False) == 0
     assert seen["ws_max_size"] == WS_MAX_SIZE == 1024 * 1024 and seen["proxy_headers"] is False
+
+
+def test_reload_without_watchfiles_looks_at_the_apps_own_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+    import time
+
+    import uvicorn
+    import uvicorn.supervisors
+    from uvicorn.supervisors.statreload import StatReload
+
+    from millwork.cli import _reloader, own_files
+
+    def touch(name: str) -> Path:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x = 1\n")
+        return path
+
+    app = touch("app.py")
+    page = touch("pages/home.py")
+    touch("pages/notes.txt")
+    # An environment by a name of its own is known by what is in it.
+    touch("env/pyvenv.cfg")
+    for elsewhere in (
+        ".venv/lib/site.py",
+        "env/lib/site.py",
+        ".git/hooks/hook.py",
+        "node_modules/tool/build.py",
+        "vendor/site-packages/pkg/mod.py",
+    ):
+        touch(elsewhere)
+    assert sorted(own_files([tmp_path])) == [app, page]
+    page = page.resolve()
+
+    # Without watchfiles uvicorn's reloader is the one that looks at files.
+    monkeypatch.setattr(uvicorn.supervisors, "ChangeReload", StatReload)
+    config = uvicorn.Config("demo:app", reload=True, reload_dirs=[str(tmp_path)])
+    reloader = _reloader(config, lambda sockets=None: None, [])
+    monkeypatch.setattr(reloader, "pause", lambda: None)
+    assert isinstance(reloader, StatReload)
+    assert reloader.should_restart() is None
+    late = time.time() + 5
+    os.utime(tmp_path / ".venv/lib/site.py", (late, late))
+    assert reloader.should_restart() is None
+    os.utime(page, (late, late))
+    assert [path.resolve() for path in reloader.should_restart() or []] == [page]
