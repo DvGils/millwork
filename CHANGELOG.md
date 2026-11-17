@@ -3,6 +3,15 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.5.3
+
+### Bug fixes
+
+- A toast made while a dialog, a sheet or a question was open showed
+  behind the dimmed page, blurred, and its action could not be pressed.
+  Behind a sheet at the side it could not be seen at all. A toast now
+  shows on top.
+
 ## 0.5.2
 
 ### Bug fixes
