@@ -97,7 +97,7 @@ function Legend({ series, colors, line }: { series: Series[]; colors: string[]; 
 // The series name at the end of its line, instead of a number on every point.
 // `last` is the last point with a value: a trailing gap has no place to sit.
 function endLabel(text: string, last: number) {
-  return (p: { x?: number; y?: number; index?: number }): ReactElement | null =>
+  return (p: { x?: number | string; y?: number | string; index?: number }): ReactElement | null =>
     p.index === last && typeof p.x === "number" && typeof p.y === "number" ? (
       <text x={p.x + 6} y={p.y} dy={4} className="fill-foreground text-[10px]">
         {text}
@@ -358,7 +358,7 @@ function PieInner({ id, props, emit }: Omit<ChartProps, "kind">) {
             {donut && center ? (
               <Label
                 position="center"
-                content={(p: { x?: number; y?: number }) =>
+                content={(p: { x?: number | string; y?: number | string }) =>
                   typeof p.x === "number" && typeof p.y === "number" ? (
                     <text x={p.x} y={p.y} dy={6} textAnchor="middle" className="fill-foreground text-lg font-semibold tabular-nums">
                       {center}

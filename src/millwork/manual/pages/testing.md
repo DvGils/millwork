@@ -99,8 +99,8 @@ such an action does nothing, so a test that passed on one would have
 checked nothing. A custom component is the exception to hidden. A tab
 keeps it running while it does not show, so `page.event` with an event
 it emits is taken. A disabled `Chat` still takes `stop`, feedback and a
-message's actions, and a disabled or read-only `Form` still takes
-`cancel`.
+message's actions, and a disabled or read-only `Form` that has a Cancel
+still takes `cancel`.
 
 A click on a `Button` with `form=` submits that form in a browser. The
 draft is the test's to give, so the test calls `submit(form, draft)`.
@@ -172,7 +172,10 @@ async def test_wiping_asks_first(app):
 ## Routes
 
 A route of the app's own has no session, so it is tested with
-Starlette's `TestClient`, on `app.asgi`.
+Starlette's `TestClient`, on `app.asgi`. A recent Starlette runs that
+client on `httpx2`, which goes into the project's test dependencies.
+With only the `httpx` that millwork brings, it warns that `httpx` is
+deprecated.
 
 ```python
 from starlette.testclient import TestClient

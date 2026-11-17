@@ -600,6 +600,9 @@ async def ask(s: Session[Any], component: Component, timeout: float | None = Non
     timeout answers ``None``. So does a question with no page to show it on:
     from a connect or a close hook, or on a session that is over. The session
     ending cancels the handler itself, as it does any other work.
+
+    A ``Dialog`` or ``Sheet`` with ``dismissable=False`` is one the person
+    cannot close, so it is answered by what is in it.
     """
     if not s.ready:
         return None
@@ -622,10 +625,14 @@ async def confirm(
     ok: str | None = None,
     cancel: str | None = None,
     destructive: bool = False,
+    dismissable: bool = True,
 ) -> bool:
     """Ask a yes-or-no question in a dialog and wait for the answer. The
-    buttons say ``ok`` and ``cancel``, or the theme's words for them."""
-    answer = await ask(s, s._confirm_dialog(title, description, ok, cancel, destructive))
+    buttons say ``ok`` and ``cancel``, or the theme's words for them.
+    ``dismissable=False`` leaves the two buttons as the only way out: no
+    cross, and Escape and a press outside do nothing."""
+    dialog = s._confirm_dialog(title, description, ok, cancel, destructive, dismissable)
+    answer = await ask(s, dialog)
     return answer is True
 
 

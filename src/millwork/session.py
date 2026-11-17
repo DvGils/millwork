@@ -470,8 +470,9 @@ class Session[S]:
             # Its forms are drawn anew, with nothing of their last submit.
             self._form_issues = {}
         conn.bind(self, last_seq)
-        if self.tree is not None and self.tree is self._failure:
-            # A reload is how a person tries a page that failed again.
+        if self.tree is not None and (self.tree is self._failure or self._render_due):
+            # A reload is how a person tries a page that failed again. And
+            # what changed while no tab was there has not been drawn.
             self.refresh()
 
     def in_zone(self, zone: ZoneInfo | None) -> None:
@@ -1426,6 +1427,7 @@ class Session[S]:
         ok: str | None,
         cancel: str | None,
         destructive: bool,
+        dismissable: bool = True,
     ) -> Component:
         buttons = _ConfirmButtons(
             children=[
@@ -1448,6 +1450,7 @@ class Session[S]:
             title=title,
             size="sm",
             footer=buttons,
+            dismissable=dismissable,
         )
 
     def _ask_root(self, request: str) -> str:
@@ -1475,6 +1478,13 @@ class Session[S]:
                 self._files_sent(draft)
                 ask.future.set_result(instance)
                 return True
+            if event.name == "close" and not getattr(component, "dismissable", True):
+                # No answer: it goes on to be refused, as a close of any
+                # dialog that cannot be dismissed.
+                return False
+            if event.name == "cancel" and isinstance(component, Form) and not component.cancel:
+                # Nor from a form that shows no Cancel to press.
+                return False
             if event.name in ("close", "cancel"):
                 ask.future.set_result(None)
                 return True
@@ -1589,6 +1599,11 @@ class Session[S]:
             # left state this page has no way to show, and the page that is
             # coming is drawn from it anyway. Or the page was drawn
             # meanwhile, by a handler that needed it as it stood.
+            return
+        if self.conn is None and self.tree is not None:
+            # Nobody is there to see it. It stays due, and the tab that
+            # comes back gets one drawing for all that changed meanwhile.
+            # A handler that needs the page as it stands still draws it.
             return
         self.render()
         if not self._render_due:

@@ -226,6 +226,7 @@ async def test_forms_over_the_wire_nested_lists_unions_and_rejections(tmp_path) 
                 fields=["title", "target", "operations"],
                 labels={"language": {"choices": [("nl", "Dutch")]}},
                 on_submit=submit,
+                cancel="Cancel",
                 on_cancel=lambda s, _: got.append("cancelled"),
             ),
             ui.Form(Strict, key="strict", on_submit=lambda s, v: got.append(v)),

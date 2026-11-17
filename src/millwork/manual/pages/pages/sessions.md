@@ -130,6 +130,10 @@ Everything includes what the page had open. A sheet or a dialog whose
 `open` is a field of the state is open again after a reload, because the
 state still says so.
 
+While a session waits for its tab, what a signal or a task changes is
+not drawn. It is drawn once, when the tab is back. Until then
+`s.outline()` is the page as the tab last had it.
+
 The `close` hook of a closed tab therefore runs minutes after the person
 left, which suits releasing what the page held and does not suit anything
 they are waiting to see.

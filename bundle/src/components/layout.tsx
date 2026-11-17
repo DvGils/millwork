@@ -58,13 +58,13 @@ export const Stack: Renderer = ({ props, children }) => (
       gapClass(props.gap),
       alignClass[String(props.align ?? "stretch")],
       justifyClass[String(props.justify ?? "start")],
-      props.grow && "grow",
+      props.grow ? "grow" : undefined,
       // As high as the room that is left, and no higher. On a page the
       // body gives a child with mw-fill no height of its own to start
       // from. In a column that fills, the stack shrinks to what the other
       // children leave. Anywhere else it is a stack like any.
-      props.fill && "mw-fill min-h-0 grow",
-      props.divided && "mw-divided",
+      props.fill ? "mw-fill min-h-0 grow" : undefined,
+      props.divided ? "mw-divided" : undefined,
       props.cls as string,
     )}
   >
@@ -80,7 +80,7 @@ export const Row: Renderer = ({ props, children }) => (
       gapClass(props.gap),
       alignClass[String(props.align ?? "center")],
       justifyClass[String(props.justify ?? "start")],
-      props.wrap && "flex-wrap",
+      props.wrap ? "flex-wrap" : undefined,
       props.cls as string,
     )}
   >
@@ -115,7 +115,7 @@ export const Text: Renderer = ({ props }) => {
       className={cn(
         textVariant[variant] ?? textVariant.body,
         props.tone ? toneText[String(props.tone)] : undefined,
-        props.truncate && "truncate",
+        props.truncate ? "truncate" : undefined,
         props.align === "center" && "text-center",
         props.align === "right" && "text-right",
         props.cls as string,
@@ -140,7 +140,7 @@ export const Code: Renderer = ({ props }) => (
     {props.title ? <div className="text-xs text-muted-foreground">{String(props.title)}</div> : null}
     <CodeBlock
       copyable={props.copyable !== false}
-      className={cn(props.wrap && "whitespace-pre-wrap [overflow-wrap:anywhere]")}
+      className={cn(props.wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : undefined)}
       style={props.max_height ? { maxHeight: String(props.max_height) } : undefined}
     >
       <code>{String(props.content ?? "")}</code>

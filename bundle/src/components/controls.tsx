@@ -160,8 +160,8 @@ export const Input: Renderer = ({ props, emit }) => {
       // here it would be the second, so the browser's steps aside.
       className={cn(
         Prefix && "pl-8",
-        props.clearable && (secret ? "pr-14" : "pr-8"),
-        props.clearable && "[&::-webkit-search-cancel-button]:appearance-none",
+        props.clearable ? (secret ? "pr-14" : "pr-8") : undefined,
+        props.clearable ? "[&::-webkit-search-cancel-button]:appearance-none" : undefined,
         !wrapped && own,
       )}
     />
@@ -219,7 +219,7 @@ const cardTone: Record<string, string> = {
 
 export const Card: Renderer = ({ props, children, emit }) => (
   <UiCard
-    className={cn(props.tone ? cardTone[String(props.tone)] : undefined, props.on_click && pressLook, props.cls as string)}
+    className={cn(props.tone ? cardTone[String(props.tone)] : undefined, props.on_click ? pressLook : undefined, props.cls as string)}
     {...(props.on_click ? pressable(() => emit("click")) : undefined)}
   >
     {props.title || props.description ? (

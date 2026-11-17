@@ -440,7 +440,7 @@ export const Sheet: Renderer = ({ node, props, children, emit }) => {
       if (!open && props.dismissable !== false && props.on_close) emit("close");
     }}
   >
-    <SheetContent data-node={node.id} side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], props.cls as string)}>
+    <SheetContent showCloseButton={props.dismissable !== false} data-node={node.id} side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], props.cls as string)}>
       {props.title || props.description ? (
         <SheetHeader>
           {props.title ? <SheetTitle>{String(props.title)}</SheetTitle> : null}

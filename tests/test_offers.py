@@ -339,6 +339,86 @@ async def test_a_question_in_a_dialog_is_still_answered(tmp_path: Path) -> None:
         assert page.state.got == [True]
 
 
+async def test_what_cannot_be_dismissed_takes_no_close(tmp_path: Path) -> None:
+    class Name(BaseModel):
+        name: str
+
+    app = mw.App("held", state=State, public=None, bundle_dir=tmp_path)
+
+    async def sure(s: mw.Session[State], _: object) -> None:
+        take(s, await s.confirm("Sure?", dismissable=False))
+
+    async def name(s: mw.Session[State], _: object) -> None:
+        take(s, await s.ask(ui.Dialog(ui.Form(Name), title="Name it", dismissable=False)))
+
+    async def leave(s: mw.Session[State], _: object) -> None:
+        form = ui.Form(Name, cancel="Not now")
+        take(s, await s.ask(ui.Sheet(form, title="Name it", dismissable=False)))
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Button("Sure", on_click=sure, key="sure"),
+            ui.Button("Name", on_click=name, key="name"),
+            ui.Button("Leave", on_click=leave, key="leave"),
+            ui.Dialog(ui.Text("Held"), open=True, dismissable=False, on_close=take, key="dialog"),
+            ui.Sheet(ui.Text("Held"), open=True, dismissable=False, on_close=take, key="sheet"),
+            ui.Dialog(ui.Text("Easy"), open=True, on_close=take, key="easy"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        # A tab shows no cross on these and sends nothing for Escape.
+        for held in ("dialog", "sheet"):
+            assert page.find(held).props["dismissable"] is False
+            with pytest.raises(LookupError, match="cannot be dismissed"):
+                await page.event(held, "close")
+        await page.event("easy", "close")
+        assert page.state.got == [None]
+
+        # A yes or no that has to be given: only its two buttons answer.
+        await page.click("sure")
+        with pytest.raises(LookupError, match="cannot be dismissed"):
+            await page.answer(None)
+        await page.answer(False)
+        assert page.state.got == [None, False]
+
+        # A form that has to be filled in: it shows no Cancel, so none is taken.
+        await page.click("name")
+        with pytest.raises(LookupError, match="cannot be dismissed"):
+            await page.answer(None)
+        with pytest.raises(LookupError, match="shows no Cancel"):
+            await page.event(page.find(ui.Form), "cancel")
+        await page.answer({"name": "Kestrel"})
+        assert page.state.got[-1] == Name(name="Kestrel")
+
+        # The way out a form was given still is one.
+        await page.click("leave")
+        await page.event(page.find(ui.Form), "cancel")
+        assert page.state.got[-1] is None and len(page.state.got) == 4
+
+
+async def test_a_form_without_a_cancel_takes_none_in_a_question_either(tmp_path: Path) -> None:
+    class Name(BaseModel):
+        name: str
+
+    app = mw.App("asks", state=State, public=None, bundle_dir=tmp_path)
+
+    async def ask(s: mw.Session[State], _: object) -> None:
+        take(s, await s.ask(ui.Form(Name, cancel="")))
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Button("Ask", on_click=ask, key="ask"))
+
+    async with TestApp(app).open("/") as page:
+        await page.click("ask")
+        with pytest.raises(LookupError, match="shows no Cancel"):
+            await page.event(page.find(ui.Form), "cancel")
+        # The cross of the dialog around it is still a way out.
+        await page.answer(None)
+        assert page.state.got == [None]
+
+
 async def test_a_key_past_what_a_tab_can_count_comes_back_whole(tmp_path: Path) -> None:
     big = 2**53 + 1
     got: list[Any] = []
