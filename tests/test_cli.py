@@ -155,8 +155,8 @@ def test_reload_mode_passes_the_bound_socket_to_the_reloader(
     assert main(["run", str(tmp_path / "demo.py"), "--reload", "--port", "0"]) == 0
     assert seen[1][0] in (socket.AF_INET, socket.AF_INET6)
     # The app is a file outside the folder the command runs in, and both
-    # folders are watched.
-    assert watched[1] == [Path.cwd().resolve(), tmp_path.resolve()]
+    # folders are watched. uvicorn keeps them in no order.
+    assert sorted(watched[1]) == sorted([Path.cwd().resolve(), tmp_path.resolve()])
 
 
 def test_serve_bounds_what_a_tab_may_send_on_the_socket(monkeypatch: pytest.MonkeyPatch) -> None:
