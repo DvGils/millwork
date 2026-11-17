@@ -99,8 +99,8 @@ such an action does nothing, so a test that passed on one would have
 checked nothing. A custom component is the exception to hidden. A tab
 keeps it running while it does not show, so `page.event` with an event
 it emits is taken. A disabled `Chat` still takes `stop`, feedback and a
-message's actions, and a disabled or read-only `Form` still takes
-`cancel`.
+message's actions, and a disabled or read-only `Form` that has a Cancel
+still takes `cancel`.
 
 A click on a `Button` with `form=` submits that form in a browser. The
 draft is the test's to give, so the test calls `submit(form, draft)`.

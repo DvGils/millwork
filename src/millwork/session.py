@@ -1427,6 +1427,7 @@ class Session[S]:
         ok: str | None,
         cancel: str | None,
         destructive: bool,
+        dismissable: bool = True,
     ) -> Component:
         buttons = _ConfirmButtons(
             children=[
@@ -1449,6 +1450,7 @@ class Session[S]:
             title=title,
             size="sm",
             footer=buttons,
+            dismissable=dismissable,
         )
 
     def _ask_root(self, request: str) -> str:
@@ -1476,6 +1478,13 @@ class Session[S]:
                 self._files_sent(draft)
                 ask.future.set_result(instance)
                 return True
+            if event.name == "close" and not getattr(component, "dismissable", True):
+                # No answer: it goes on to be refused, as a close of any
+                # dialog that cannot be dismissed.
+                return False
+            if event.name == "cancel" and isinstance(component, Form) and not component.cancel:
+                # Nor from a form that shows no Cancel to press.
+                return False
             if event.name in ("close", "cancel"):
                 ask.future.set_result(None)
                 return True

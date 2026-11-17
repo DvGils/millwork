@@ -14,10 +14,21 @@ versions; a release says so here when it does.
   and the tab that comes back gets one drawing of it. `s.outline()` is
   the page as the tab last had it until then.
 
+### Features
+
+- A dialog the person has to answer. `ui.Dialog(dismissable=False)` has
+  no cross, and Escape and a click outside do nothing, so it closes only
+  by what the page puts in it. `ui.Sheet` takes the same option, and so
+  does `s.confirm`, which then leaves its two buttons as the only way
+  out. One given to `s.ask` stays until it is answered. The session
+  refuses a `close` from one, and a `cancel` from a form that shows no
+  Cancel.
+
 ### The manual
 
 - Sessions says what a session does while its tab is away. Testing says
-  that a recent Starlette's `TestClient` wants `httpx2`.
+  that a recent Starlette's `TestClient` wants `httpx2`. Feedback shows a
+  dialog that cannot be dismissed.
 
 ## 0.5.0
 

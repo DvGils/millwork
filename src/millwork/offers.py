@@ -119,6 +119,21 @@ def _nothing(tree: Tree, node: Node, payload: Any) -> Any:
     return None
 
 
+def _close(tree: Tree, node: Node, payload: Any) -> Any:
+    """A dialog or a sheet that cannot be dismissed has no cross to press,
+    and its tab sends nothing for Escape or a press outside."""
+    if node.props.get("dismissable") is False:
+        raise Refused("was sent, and it cannot be dismissed")
+    return None
+
+
+def _cancel(tree: Tree, node: Node, payload: Any) -> Any:
+    """A form has a Cancel to press when it was given the word for it."""
+    if not node.props.get("cancel"):
+        raise Refused("was sent, and the form shows no Cancel")
+    return None
+
+
 def _flag(tree: Tree, node: Node, payload: Any) -> Any:
     if type(payload) is not bool:
         raise Refused(f"was sent {payload!r}, which is not true or false")
@@ -434,10 +449,7 @@ _PRESSED = (
     ("Card", "click"),
     ("Image", "click"),
     ("FileCard", "click"),
-    ("Dialog", "close"),
-    ("Sheet", "close"),
     ("Alert", "dismiss"),
-    ("Form", "cancel"),
 )
 _FLAGGED = (
     ("Checkbox", "change"),
@@ -449,6 +461,9 @@ _FLAGGED = (
 )
 _CHECKS: dict[tuple[str, str], Check] = {
     **dict.fromkeys(_PRESSED, _nothing),
+    ("Dialog", "close"): _close,
+    ("Sheet", "close"): _close,
+    ("Form", "cancel"): _cancel,
     **dict.fromkeys(_FLAGGED, _flag),
     ("Select", "change"): _one(clears=True),
     ("RadioGroup", "change"): _one(clears=False),

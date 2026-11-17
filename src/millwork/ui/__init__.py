@@ -625,6 +625,8 @@ class Dialog(Component):
     description: str | None = None
     footer: Component | None = None
     size: Literal["sm", "md", "lg", "xl", "full"] = "md"
+    # False: no cross, and Escape and a press outside do nothing, so it
+    # closes only by what the page puts in it.
     dismissable: bool = True
     on_close: Any = None
 
@@ -657,6 +659,9 @@ class Sheet(Component):
     size: Literal["sm", "md", "lg", "xl", "full"] = "sm"
     title: str | None = None
     description: str | None = None
+    # False: no cross, and Escape and a press outside do nothing, so it
+    # closes only by what the page puts in it.
+    dismissable: bool = True
     on_close: Any = None
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
@@ -672,6 +677,7 @@ class Sheet(Component):
             size: Literal["sm", "md", "lg", "xl", "full"] = "sm",
             title: str | None = None,
             description: str | None = None,
+            dismissable: bool = True,
             on_close: Any = None,
         ) -> None: ...
 

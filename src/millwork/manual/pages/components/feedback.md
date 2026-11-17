@@ -236,12 +236,18 @@ closes. A dialog is never taller than the window. The title and the
 footer stay in place, and the body between them scrolls when what it
 holds is taller or wider than the dialog.
 
+With `dismissable=False` a dialog has no cross, and Escape and a click
+outside do nothing. It closes by what the page puts in it, so the person
+has to choose.
+
 ```python live
 from pydantic import BaseModel
 
 
 class Modal(BaseModel):
     open: bool = False
+    held: bool = False
+    chose: str = ""
 
 
 def example(s):
@@ -250,8 +256,28 @@ def example(s):
     def close(s, _):
         st.open = False
 
+    def choose(what):
+        def chosen(s, _):
+            st.held, st.chose = False, what
+
+        return chosen
+
     return ui.Row(
         ui.Button("Open a dialog", on_click=lambda s, _: setattr(st, "open", True)),
+        ui.Button("Open one that stays", variant="outline", on_click=lambda s, _: setattr(st, "held", True)),
+        ui.Text(st.chose, variant="muted"),
+        ui.Dialog(
+            ui.Text("A file with this name is already there."),
+            open=st.held,
+            title="Keep or replace?",
+            size="sm",
+            dismissable=False,
+            footer=ui.Row(
+                ui.Button("Keep both", variant="outline", on_click=choose("Kept both.")),
+                ui.Button("Replace", on_click=choose("Replaced.")),
+                gap=2,
+            ),
+        ),
         ui.Dialog(
             ui.Text("Dialogs hold any children. This one has a footer with a button."),
             open=st.open,
@@ -273,7 +299,10 @@ it submits. A `Form` answers with its validated model, and a dialog that
 is closed answers None.
 
 The question is shown in a dialog. A `ui.Dialog` or a `ui.Sheet` given to
-`s.ask` is shown as it is, with its own title and size.
+`s.ask` is shown as it is, with its own title and size. One with
+`dismissable=False` stays until it is answered, and
+`s.confirm(..., dismissable=False)` leaves its two buttons as the only
+way out.
 
 When the question closes, the keyboard goes back to the button that asked
 it, so an Enter right after presses that button again. A handler that
@@ -319,6 +348,7 @@ def example(s):
 `ui.Sheet` slides a panel in from a `side`. Like a dialog it is open when
 state says so and `on_close` lets the handler close it. `size` is how wide
 a sheet at the left or right may get, from `sm` to `full` as on a dialog.
+`dismissable=False` holds it open as it does a dialog.
 
 ```python live
 from pydantic import BaseModel
