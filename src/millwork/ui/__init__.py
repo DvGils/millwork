@@ -558,6 +558,7 @@ class Assistant(_Owned):
     payloads: ClassVar[dict[str, str]] = {
         "on_toggle": "True when open",
     }
+    theme_words: ClassVar[dict[str, str]] = {"label": "assistant"}
     label: str = "Assistant"
     title: str | None = None
     icon: str = "message-square"

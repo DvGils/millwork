@@ -7,6 +7,27 @@ versions; a release says so here when it does.
 
 ### Bug fixes
 
+- What was typed in a row of a repeatable list in a form was not what
+  the form submitted. The tab kept a row's fields at the wrong place in
+  the document, `/ranges/0/ranges/label` for `/ranges/0/label`, so the
+  row arrived empty, the model refused it, and the refusal was shown at
+  no field. Every form with a list of models or of a union was hit. An
+  app that worked around it by overriding a row field's `pointer` takes
+  that override out. `labels` and `overrides` now reach a field in a row
+  that is one of several models, and a file field there takes its upload.
+
+- An issue for a place with no field of its own was shown nowhere, so a
+  refused submit looked like a button that did nothing. That is one tag
+  of a list of tags, a field the form leaves out, or a pointer the app
+  spelled wrong in `ui.FormIssues`. It is now shown at the nearest field
+  above it, and at the foot of the form when there is none.
+
+- The button under a repeatable list said "Add" in English whatever the
+  theme said. It now comes from the theme's string `add_item`, which is
+  `Add {item}`. A form select's "Choose" placeholder, a `ui.FileUpload`
+  button's "Choose file" (the new string `choose_file`) and the label of
+  a `ui.Assistant` follow the theme too.
+
 - A toast made while a dialog, a sheet or a question was open showed
   behind the dimmed page, blurred, and its action could not be pressed.
   Behind a sheet at the side it could not be seen at all. A toast now

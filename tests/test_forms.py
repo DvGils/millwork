@@ -357,6 +357,39 @@ def test_overrides_merge_into_the_spec_and_the_key_names_the_form_element() -> N
     assert build(ui.Button("Save", form="settings")).nodes["root"].props["form"] == "settings"
 
 
+def test_a_field_in_a_row_is_reached_by_its_pointer_without_the_rows_number() -> None:
+    from millwork.files import FileRef
+    from millwork.nodes import build
+
+    class Sheet(BaseModel):
+        type: Literal["sheet"] = "sheet"
+        file: FileRef | None = None
+
+    class Note(BaseModel):
+        type: Literal["note"] = "note"
+        text: str = ""
+
+    class Row(BaseModel):
+        label: str = ""
+
+    class Model(BaseModel):
+        rows: list[Row] = []
+        # A row that is one of several models has its fields per variant.
+        parts: list[Annotated[Sheet | Note, Field(discriminator="type")]] = []
+
+    form = ui.Form(
+        Model,
+        labels={"/parts/text": {"label": "Remark"}},
+        overrides={"/rows/label": {"widget": "textarea"}, "/parts/file": {"accept": [".csv"]}},
+    )
+    fields = {f["name"]: f for f in build(form).nodes["root"].props["schema"]["fields"]}
+    assert fields["rows"]["item"]["fields"][0]["widget"] == "textarea"
+    sheet, note = fields["parts"]["item"]["variants"]
+    assert sheet["fields"][0]["accept"] == [".csv"]
+    assert note["fields"][0]["label"] == "Remark"
+    assert set(file_fields(field_spec(Model))) == {"/parts/file"}
+
+
 def test_dates_and_multiselect_hints_reach_the_spec() -> None:
     import datetime as dt
     from typing import Literal

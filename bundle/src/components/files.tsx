@@ -180,7 +180,7 @@ export const FileUpload: Renderer = ({ node, props, emit }) => {
       ) : (
         <Button type="button" variant="outline" disabled={disabled} onClick={() => inputRef.current?.click()}>
           {Up ? <Up /> : null}
-          {String(props.label ?? "Choose file")}
+          {String(props.label ?? t("choose_file"))}
         </Button>
       )}
       {busy.map((b, i) => (

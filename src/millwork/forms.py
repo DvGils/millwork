@@ -234,10 +234,9 @@ def file_fields(spec: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
             if f["widget"] in ("file", "files"):
                 out[f["pointer"]] = f
             walk(f.get("fields", []))
-            item = f.get("item")
-            if item:
-                walk(item.get("fields", []))
-            for v in f.get("variants", []):
+            item = f.get("item") or {}
+            walk(item.get("fields", []))
+            for v in [*f.get("variants", []), *item.get("variants", [])]:
                 walk(v["fields"])
 
     walk(list(spec.get("fields", [])))

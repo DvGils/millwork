@@ -138,9 +138,16 @@ They are English. An app in another language sets them in the theme's
 refused. Every key is in the table below, with its English.
 
 A label the framework fills in follows the same table. A form's submit
-button says `save`, a `ui.Download` says `download` and a pie chart's
-folded slice says `other`, until the app gives the component a label of
-its own. The keys that start with `issue_` say what is wrong with a form
+button says `save`, a `ui.Download` says `download`, a `ui.Assistant`
+says `assistant` and a pie chart's folded slice says `other`, until the
+app gives the component a label of its own.
+
+A string can hold a name in braces that the framework fills in.
+`add_item` is `Add {item}`, where `{item}` is the name of a row in lower
+case and `{Item}` is the same as it was written, so a language that puts
+the name first can start with it.
+
+The keys that start with `issue_` say what is wrong with a form
 field when pydantic found it, and the ones that start with `file_` say
 why an upload was refused. Words the app wrote itself, in a validator or
 a refusal of its own, are shown as written.
