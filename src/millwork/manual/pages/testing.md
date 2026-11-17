@@ -14,6 +14,10 @@ and render with no socket and no browser. `millwork.testing.TestApp` opens
 a page, the test clicks and types through the real event path, and then
 reads the state and the messages a tab would have received.
 
+How a page looks is not a test's to say. `millwork shot` saves a picture
+of one, as [Development](/running/development#a-picture-of-a-page)
+describes.
+
 ## A test
 
 ```python

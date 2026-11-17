@@ -59,12 +59,12 @@ def split_target(target: str) -> tuple[str, str]:
 def _import_file(path: str) -> types.ModuleType:
     file = os.path.abspath(path)
     if not os.path.isfile(file):
-        raise SystemExit(f"millwork run: no such file: {path}")
+        raise SystemExit(f"millwork: no such file: {path}")
     name = os.path.splitext(os.path.basename(file))[0]
     sys.path.insert(0, os.path.dirname(file))
     spec = importlib.util.spec_from_file_location(name, file)
     if spec is None or spec.loader is None:
-        raise SystemExit(f"millwork run: cannot import {path}")
+        raise SystemExit(f"millwork: cannot import {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
@@ -152,6 +152,29 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="how much to print for one lookup: 4000 by default for a search, 500 at least",
     )
+    shot = sub.add_parser(
+        "shot", help="save a picture of one page, as a browser on this machine shows it"
+    )
+    shot.add_argument("target", help="as for run")
+    shot.add_argument("path", nargs="?", default="/", help="the page's path; default /")
+    shot.add_argument("--out", default="shot.png", metavar="FILE", help="default shot.png")
+    shot.add_argument("--width", type=int, default=1280, help="of the window; default 1280")
+    shot.add_argument("--height", type=int, default=800, help="of the window; default 800")
+    shot.add_argument("--full", action="store_true", help="the whole page, as far as it scrolls")
+    shot.add_argument("--dark", action="store_true", help="as a browser set to dark shows it")
+    shot.add_argument("--user", metavar="ID", help="sign in as this user, in an app with sign-in")
+    shot.add_argument("--claims", metavar="JSON", help="the user's claims, as a JSON object")
+    shot.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        metavar="SECONDS",
+        help="how long to wait for the page to stop changing; default 10",
+    )
+    shot.add_argument(
+        "--browser", help="the browser to use; default the first Chromium-family one found"
+    )
+    shot.add_argument("--debug", action="store_true", help="as for run")
     sub.add_parser("secret", help="print a signing secret for App(secret=...)")
     hp = sub.add_parser("hash-password", help="hash a password for a Password provider")
     hp.add_argument("--user", default="", help="prefix the line with the user name")
@@ -165,6 +188,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"--root-path: {exc}", file=sys.stderr)
             return 2
 
+    if args.command == "shot":
+        from millwork import shot as picture
+
+        return picture.main(args)
     if args.command == "docs":
         from millwork.manual import make_app
 

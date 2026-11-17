@@ -30,10 +30,20 @@ versions; a release says so here when it does.
   `fileUrl` is plain bytes for a file of any other type. Markdown now
   opens in a tab as text, from `ui.FileCard` too.
 
+### Features
+
+- `millwork shot app.py /orders` saves a picture of a page as a browser
+  shows it. It serves the app on a free port and drives a Chrome,
+  Chromium, Edge or Brave that is already on the machine, so nothing is
+  installed for it. `--full` takes the whole page, `--width` and
+  `--height` set the window, `--dark` is the page as a browser set to
+  dark shows it, and `--user` signs in as a user in an app with
+  sign-in. The picture is of the page as it opens.
+
 ### The manual
 
 - Files says what an upload is checked for, and that a text file's
-  encoding is the app's to know.
+  encoding is the app's to know. Development describes `millwork shot`.
 
 ## 0.5.1
 

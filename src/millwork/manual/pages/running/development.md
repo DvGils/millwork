@@ -89,3 +89,27 @@ reference and the whole manual are a lot to take in at once.
 `millwork secret` prints a secret for the session
 cookie, and `millwork hash-password --user ada` a line for a credentials
 file.
+
+## A picture of a page
+<!-- keywords: screenshot, headless, browser, png, visual, look -->
+
+`millwork shot app.py /orders` saves `shot.png`, a picture of the page as
+a browser shows it. The command serves the app on a free port, opens the
+page in a Chrome, Chromium, Edge or Brave that is already on the machine,
+and waits until the page has stopped changing. Nothing is installed for
+it.
+
+```sh
+millwork shot app.py /orders --out orders.png
+millwork shot app.py /orders --full              # the whole page, as far as it scrolls
+millwork shot app.py /orders --width 390 --dark  # a phone that is set to dark
+millwork shot app.py /orders --user ada --claims '{"role": "admin"}'
+```
+
+`--user` signs in as a user with that id, in an app with sign-in. The
+app's `on_login` is not asked about that user. The picture is of the
+page as it opens. Nothing is pressed or typed first,
+and what a press does is for a test with
+[`TestApp`](/testing). A page that never rests, such as one with a
+spinner that stays, is taken when `--timeout` runs out, and the command
+says so.

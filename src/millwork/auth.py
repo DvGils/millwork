@@ -694,14 +694,16 @@ class Auth:
 
     # ------------------------------------------------------------- tokens
 
-    def issue(self, user: User) -> str:
+    def issue(self, user: User, lasting: dt.timedelta | None = None) -> str:
+        """A token that signs ``user`` in, for as long as a sign-in lasts or
+        for ``lasting`` when that is given."""
         if len(json.dumps(user.claims)) > CLAIMS_LIMIT:
             raise ValueError("user claims exceed 2 KB; keep the record small")
         now = dt.datetime.now(dt.UTC)
         payload = {
             **user.model_dump(mode="json"),
             "iat": int(now.timestamp()),
-            "exp": int((now + self.session).timestamp()),
+            "exp": int((now + (lasting or self.session)).timestamp()),
             "jti": secrets.token_urlsafe(8),
         }
         return sign(self.secret, f"auth:{self.app}", payload)
