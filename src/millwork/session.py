@@ -1391,6 +1391,23 @@ class Session[S]:
             self._typed = event.node
         return self._effects
 
+    def _handler_held(self, plan: Plan, seconds: float) -> None:
+        """A handler kept its turn for ``seconds``, its waits on a task, on
+        the user and on another page left out. One that kept it for long is
+        warned about: nothing was drawn for its session in that time, and
+        for as much of it as the handler did not await, no session was
+        served."""
+        ms = seconds * 1000
+        if self.over or ms <= SLOW_HANDLER_MS:
+            return
+        self.warn(
+            f"slow-handler:{plan.where}",
+            f"{plan.where} ran for {ms:.0f} ms. The page is not drawn while a handler "
+            "runs, and while it does not await, every other session waits as well. Work "
+            "that takes time goes in a task that the handler itself awaits, as in "
+            "result = await s.task(work), which runs a plain function in a thread",
+        )
+
     def _handler_ended(self, plan: Plan, before: int, event: Event) -> None:
         if plan.pressed:
             self._noop_watch = (plan.where, before)
@@ -2373,6 +2390,9 @@ def _unlazy(part: Any) -> Any:
 
 # A page function slower than this is doing more than building a tree.
 SLOW_PAGE_MS = 20
+# A handler that keeps its turn for longer than this has kept a person
+# waiting for the page, and is doing work that belongs in a task.
+SLOW_HANDLER_MS = 250
 # How many open tabs the session keeps on a tab's word while it has no page
 # to check them against.
 SHOWING_KEPT = 64

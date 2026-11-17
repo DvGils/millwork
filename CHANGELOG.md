@@ -38,6 +38,21 @@ versions; a release says so here when it does.
   Behind a sheet at the side it could not be seen at all. A toast now
   shows on top.
 
+### Features
+
+- A handler that keeps its turn for over 250 ms is warned about, once
+  per session and handler, as a slow page function is. Nothing is drawn
+  for its session in that time, and a handler that does not `await`
+  keeps every other session waiting as well. The time it waits on a
+  task, a question or another page does not count.
+
+### The manual
+
+- Forms says which of a row field's two pointers goes where, that a
+  long `max_length` makes a multi-line box and how to keep one line.
+  Tasks says which waits of a handler draw the page meanwhile, a task,
+  a question and another page, and how to wait for several tasks.
+
 ## 0.5.2
 
 ### Bug fixes

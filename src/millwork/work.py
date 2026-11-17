@@ -14,9 +14,12 @@ the wait raises. Nothing here turns its own cancellation into anything else.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import logging
-from collections.abc import Callable
+import time
+from collections.abc import AsyncIterator, Callable
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from millwork import context, offers
@@ -47,6 +50,10 @@ ROOM_PATIENCE_SECONDS = 5.0
 STREAM_CHUNK = 256 * 1024
 
 Outcome = tuple[str, BaseException | None]
+
+# How long the handler that runs in this task has waited with its turn lent.
+# Each handler runs in a task of its own, so each has its own count.
+_lent: ContextVar[float] = ContextVar("millwork_lent", default=0.0)
 
 
 async def _call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -280,7 +287,12 @@ async def turn(s: Session[Any], plan: Plan) -> None:
                 return
         s._before_handler(plan.event)
         before = s._handler_begins(plan.event)
-        await _call(plan.handler, *plan.args)
+        _lent.set(0.0)
+        started = time.monotonic()
+        try:
+            await _call(plan.handler, *plan.args)
+        finally:
+            s._handler_held(plan, time.monotonic() - started - _lent.get())
         if plan.event is not None:
             s._handler_ended(plan, before, plan.event)
     except FormIssues as exc:
@@ -584,6 +596,19 @@ async def leave(s: Session[Any], to: str | None = None) -> None:
     await end(s, s.text("sign_in_hint"), to=s.leaving_for(to))
 
 
+@contextlib.asynccontextmanager
+async def _lending(s: Session[Any]) -> AsyncIterator[None]:
+    """A wait with the turn lent: on the user, on a task, on the next page.
+    The page is drawn and other handlers run while it lasts, so it does not
+    count as time the handler held the page."""
+    began = time.monotonic()
+    try:
+        async with s.turn.lent(_lender(s), lambda: s.over):
+            yield
+    finally:
+        _lent.set(_lent.get() + time.monotonic() - began)
+
+
 def _lender(s: Session[Any]) -> asyncio.Task[Any] | None:
     """Who may lend a turn: a child of the session that holds it. A hook
     runs in the session's life, whose turn is held for the page switch and
@@ -608,7 +633,7 @@ async def ask(s: Session[Any], component: Component, timeout: float | None = Non
         return None
     asked = s.open_ask(component)
     try:
-        async with s.turn.lent(_lender(s), lambda: s.over):
+        async with _lending(s):
             if timeout:
                 return await asyncio.wait_for(asked.future, timeout)
             return await asked.future
@@ -643,7 +668,7 @@ async def wait_for_task(s: Session[Any], task: Task[Any]) -> Any:
     handler can catch). A handler that is itself being cancelled, by its
     session ending or by a timeout of its own, gets that cancellation.
     """
-    async with s.turn.lent(_lender(s), lambda: s.over):
+    async with _lending(s):
         try:
             return await asyncio.shield(task.future)
         except asyncio.CancelledError:
@@ -686,5 +711,5 @@ async def navigate_to(s: Session[Any], path: str) -> None:
     arrived = s.want(path)
     if not s.ready:
         return
-    async with s.turn.lent(_lender(s), lambda: s.over):
+    async with _lending(s):
         await asyncio.shield(arrived)
