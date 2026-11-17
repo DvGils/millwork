@@ -243,8 +243,8 @@ export const FileCard: Renderer = ({ props, emit }) => {
     <div
       className={cn(
         "flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm",
-        props.on_click && pressLook,
-        props.on_click && "hover:bg-accent/50",
+        props.on_click ? pressLook : undefined,
+        props.on_click ? "hover:bg-accent/50" : undefined,
         status === "error" && "border-destructive/50",
         props.cls as string,
       )}
@@ -296,7 +296,7 @@ export const Image: Renderer = ({ props, emit }) => {
     <img
       src={src}
       alt={String(props.alt ?? "")}
-      className={cn("rounded-lg", imageSize[String(props.size ?? "md")], props.fit === "cover" ? "object-cover" : "object-contain", props.on_click && pressLook, props.on_click && "cursor-zoom-in", props.cls as string)}
+      className={cn("rounded-lg", imageSize[String(props.size ?? "md")], props.fit === "cover" ? "object-cover" : "object-contain", props.on_click ? [pressLook, "cursor-zoom-in"] : undefined, props.cls as string)}
       {...(props.on_click ? pressable(() => emit("click")) : undefined)}
     />
   );

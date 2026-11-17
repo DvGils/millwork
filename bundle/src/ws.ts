@@ -196,7 +196,7 @@ export interface Ongoing<T> extends Promise<T> {
   cancel: () => void;
 }
 
-function packFrame(request: string, data: Uint8Array): Uint8Array {
+function packFrame(request: string, data: Uint8Array): Uint8Array<ArrayBuffer> {
   const id = new TextEncoder().encode(request);
   const out = new Uint8Array(1 + id.length + data.length);
   out[0] = id.length;

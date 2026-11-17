@@ -477,7 +477,7 @@ export const ScrollArea: Renderer = ({ props, children }) => {
       // One that fills is a column of its own, so its viewport is given the
       // height the area came to and scrolls inside it. It keeps a few rows
       // of height where its neighbors leave it none, and the page scrolls.
-      className={cn("min-h-0", props.fill && "mw-fill flex min-h-24 grow flex-col", props.cls as string)}
+      className={cn("min-h-0", props.fill ? "mw-fill flex min-h-24 grow flex-col" : undefined, props.cls as string)}
       style={props.height ? { height: String(props.height) } : undefined}
     >
       <div className="flex flex-col gap-4">{children}</div>
