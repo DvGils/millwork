@@ -134,7 +134,8 @@ def _apply(
                     f[k] = v
         if "fields" in f:
             _apply(f["fields"], table, keys)
-        if "item" in f and "fields" in f["item"]:
-            _apply(f["item"]["fields"], table, keys)
-        for v in f.get("variants", []):
+        # A row of a list is a model, with fields, or a union, with variants.
+        item = f.get("item") or {}
+        _apply(item.get("fields", []), table, keys)
+        for v in [*f.get("variants", []), *item.get("variants", [])]:
             _apply(v["fields"], table, keys)

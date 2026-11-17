@@ -160,8 +160,10 @@ function itemDefault(item: FieldSpec | undefined): unknown {
   return defaultFor(item);
 }
 
-// Pointers inside a list item or variant are schema pointers; the draft pointer
-// substitutes the index. rebase("/ops/0", "/ops/source") -> "/ops/0/source".
+// A field's pointer in the spec has no index for the lists it is in, and its
+// place in the draft has one. A field is placed at its parent's place plus
+// what its own pointer adds to the parent's:
+// rebase("/ops/0", "/ops/source", "/ops") is "/ops/0/source".
 export function rebase(base: string, schemaPointer: string, schemaBase: string): string {
   return base + schemaPointer.slice(schemaBase.length);
 }
@@ -171,7 +173,7 @@ export function rebase(base: string, schemaPointer: string, schemaBase: string):
 export const Form: Renderer = ({ node, props, emit }) => {
   const schema = (props.schema ?? { fields: [] }) as { title?: string; fields: FieldSpec[] };
   const initial = (props.initial ?? null) as Draft | null;
-  const serverIssues = (Array.isArray(props.issues) ? (props.issues as Issue[]) : []);
+  const serverIssues = useMemo(() => (Array.isArray(props.issues) ? (props.issues as Issue[]) : []), [props.issues]);
   const readOnly = Boolean(props.read_only);
   const disabled = Boolean(props.disabled);
 
@@ -202,12 +204,39 @@ export const Form: Renderer = ({ node, props, emit }) => {
     return () => window.removeEventListener("mw:form-issues", onIssues);
   }, [node.id]);
 
-  const allIssues = useMemo(() => [...serverIssues, ...issues], [serverIssues, issues]);
+  // An issue for a place with no field of its own, one tag of a list of
+  // tags or a field the form leaves out, is said at the nearest field above
+  // it, and at the foot of the form when there is none. Which fields there
+  // are is read off the form as it was drawn.
+  const formRef = useRef<HTMLFormElement>(null);
+  const [moved, setMoved] = useState<Issue[]>([]);
+  useEffect(() => {
+    const form = formRef.current;
+    if (!form) return;
+    const drawn = (pointer: string) => pointer === "" || form.querySelector(`[data-field="${CSS.escape(pointer)}"]`) !== null;
+    const next: Issue[] = [];
+    for (const issue of [...serverIssues, ...issues]) {
+      let pointer = issue.pointer;
+      if (drawn(pointer)) continue;
+      while (!drawn(pointer)) {
+        const cut = pointer.lastIndexOf("/");
+        pointer = cut > 0 ? pointer.slice(0, cut) : "";
+      }
+      next.push({ pointer, message: issue.message });
+    }
+    setMoved((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
+  }, [serverIssues, issues, draft, schema]);
+
+  const allIssues = useMemo(() => [...serverIssues, ...issues, ...moved], [serverIssues, issues, moved]);
   const issueFor = useCallback((pointer: string) => allIssues.filter((i) => i.pointer === pointer), [allIssues]);
 
   const update = useCallback((pointer: string, value: unknown) => {
     setDraft((d) => setAt(d, pointer, value) as Draft);
     setDirty(true);
+    // What was said of the places under this one was said of what it held
+    // before: the rows of a list that has lost one, the fields of a variant
+    // that was swapped for another.
+    setIssues((was) => (was.some((i) => i.pointer.startsWith(`${pointer}/`)) ? was.filter((i) => !i.pointer.startsWith(`${pointer}/`)) : was));
   }, []);
 
   const submit = () => {
@@ -225,6 +254,7 @@ export const Form: Renderer = ({ node, props, emit }) => {
 
   return (
     <form
+      ref={formRef}
       id={props.form_id ? `mw-form-${String(props.form_id)}` : undefined}
       className={cn("flex flex-col gap-5", props.cls as string)}
       onSubmit={(e) => {
@@ -335,7 +365,7 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
             return (
               <div key={i} className="flex items-start gap-2 rounded-lg border p-3">
                 <div className="flex grow flex-col gap-3">
-                  <ItemField item={f.item!} pointer={itemPointer} schemaPointer="" ctx={ctx} />
+                  <ItemField item={f.item!} pointer={itemPointer} schemaPointer={f.pointer} ctx={ctx} />
                 </div>
                 {!ctx.disabled ? (
                   <Button type="button" variant="ghost" size="icon-sm" aria-label={t("remove")} onClick={() => set(items.filter((__, j) => j !== i))}>
@@ -348,7 +378,7 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
           {!ctx.disabled ? (
             <Button type="button" variant="outline" size="sm" className="self-start" onClick={() => set([...items, itemDefault(f.item)])}>
               {Plus ? <Plus /> : null}
-              {f.item_label ? `Add ${f.item_label.toLowerCase()}` : "Add"}
+              {f.item_label ? t("add_item", { item: f.item_label.toLowerCase(), Item: f.item_label }) : t("add")}
             </Button>
           ) : null}
         </div>
@@ -542,7 +572,7 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
       return (
         <Select<string | number | boolean> value={value === undefined || value === "" ? null : (value as string | number | boolean | null)} disabled={ctx.disabled} items={(f.options ?? []).map((o) => ({ value: o.value, label: optionLabel(o) }))} onValueChange={(v) => set(v)}>
           <SelectTrigger id={id} className="w-full" aria-invalid={invalid || undefined}>
-            <SelectValue placeholder={f.placeholder ?? "Choose"} />
+            <SelectValue placeholder={f.placeholder ?? t("choose")} />
           </SelectTrigger>
           <SelectContent>
             {grouped(f.options ?? []).map((bucket, i) => (

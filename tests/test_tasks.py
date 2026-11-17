@@ -504,3 +504,100 @@ async def test_a_failure_the_handler_awaits_is_no_error_in_the_log(
         # So is one that only has an on_done: that handler gets the task and
         # what it says went wrong, and nothing of where.
         assert [r.levelname for r in told] == ["ERROR"] and told[0].exc_info
+
+
+async def test_what_a_handler_did_shows_while_it_waits_for_its_task(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    class Upload(BaseModel):
+        said: str = "idle"
+
+    app = mw.App("waits", state=Upload, public=None, bundle_dir=tmp_path)
+    release = asyncio.Event()
+    drawn = asyncio.Event()
+
+    async def read() -> str:
+        await release.wait()
+        return "read"
+
+    async def start(s: mw.Session[Upload], _: Any) -> None:
+        s.state.said = "reading"
+        s.state.said = await s.task(read, label="Read")
+
+    @app.page("/")
+    def home(s: mw.Session[Upload]) -> ui.Component:
+        if s.state.said == "reading":
+            drawn.set()
+        return ui.Page(ui.Text(s.state.said, key="said"), ui.Button("Go", key="go", on_click=start))
+
+    async with TestApp(app).open("/") as page:
+        pressed = asyncio.ensure_future(page.click("go"))
+        # The task has not ended, and the page is drawn with what the
+        # handler set before it began to wait. That drawing is waited for
+        # and not a number of short sleeps: where the clock is coarse, as on
+        # Windows before Python 3.13, a sleep shorter than one tick of it
+        # is over at once while the loop has other work.
+        await asyncio.wait_for(drawn.wait(), 5)
+        assert "reading" in page.text()
+        release.set()
+        await pressed
+        assert "read" in page.text() and "reading" not in page.text()
+
+
+async def test_a_handler_that_keeps_its_turn_for_long_is_warned_about(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import sys
+
+    from millwork.testing import TestApp
+
+    # The module, which the package's name for the function ``mw.session`` hides.
+    monkeypatch.setattr(sys.modules["millwork.session"], "SLOW_HANDLER_MS", 45)
+    app = mw.App("slow", public=None, bundle_dir=tmp_path)
+
+    async def nap() -> None:
+        await asyncio.sleep(0.15)
+
+    def blocks(s: mw.Session, _: Any) -> None:
+        time.sleep(0.15)
+        s.toast("done")
+
+    async def holds(s: mw.Session, _: Any) -> None:
+        await asyncio.to_thread(time.sleep, 0.15)
+        s.toast("done")
+
+    async def lends(s: mw.Session, _: Any) -> None:
+        await s.task(nap, label="Nap")
+        s.toast("done")
+
+    async def asks(s: mw.Session, _: Any) -> None:
+        await s.confirm("Sure?")
+        s.toast("done")
+
+    def quick(s: mw.Session, _: Any) -> None:
+        s.toast("done")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            *[
+                ui.Button(f.__name__, key=f.__name__, on_click=f)
+                for f in (blocks, holds, lends, asks, quick)
+            ]
+        )
+
+    async with TestApp(app).open("/") as page:
+        with caplog.at_level("WARNING", logger="millwork.session"):
+            for name in ("blocks", "holds", "lends", "quick"):
+                await page.click(name)
+            await page.click("asks")
+            await asyncio.sleep(0.15)
+            await page.answer(True)
+        slow = sorted(key for key in page.session._warned if key.startswith("slow-handler:"))
+        # A wait on a task or on the person is no time the handler held the page.
+        assert slow == [
+            "slow-handler:the click handler on root/blocks",
+            "slow-handler:the click handler on root/holds",
+        ]
+        told = [r.getMessage() for r in caplog.records if "ran for" in r.getMessage()]
+        assert len(told) == 2 and "result = await s.task(work)" in told[0]

@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import { defaults, getAt, rebase, setAt } from "../components/form";
 
 describe("form pointers", () => {
-  it("rebases list item pointers rooted at the item", () => {
-    // Python emits item field pointers rooted at "" for list items.
-    expect(rebase("/rows/0", "/name", "")).toBe("/rows/0/name");
-    expect(rebase("/ops/1", "/source", "")).toBe("/ops/1/source");
-    // A top-level union's variant fields are rooted at the union's own pointer.
+  it("places a field at its parent's place plus what its pointer adds", () => {
+    // A field of a row has the list's pointer without an index.
+    expect(rebase("/rows/0", "/rows/name", "/rows")).toBe("/rows/0/name");
+    expect(rebase("/ops/1", "/ops/source", "/ops")).toBe("/ops/1/source");
+    // So has a list inside a row, and a field of its rows.
+    expect(rebase("/rows/0", "/rows/tags", "/rows")).toBe("/rows/0/tags");
+    expect(rebase("/rows/0/tags/2", "/rows/tags/name", "/rows/tags")).toBe("/rows/0/tags/2/name");
+    // The fields of a union's variant are under the union's own pointer.
     expect(rebase("/op", "/op/source", "/op")).toBe("/op/source");
   });
 

@@ -151,7 +151,11 @@ STRINGS: dict[str, str] = {
     "actions": "Actions",
     "download": "Download",
     "add": "Add",
+    # The button under the rows of a list in a form. {item} is the name of a
+    # row in lower case, and {Item} is the same as it was written.
+    "add_item": "Add {item}",
     "choose": "Choose",
+    "choose_file": "Choose file",
     "search": "Search",
     "no_results": "No results",
     "use_typed": "Use “{text}”",

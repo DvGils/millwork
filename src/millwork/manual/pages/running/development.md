@@ -12,12 +12,20 @@ related: /testing, /state/warnings, /running/app-options
 package.module:app` names the object instead. `--port` picks the port.
 
 `millwork run app.py --reload --debug` is the loop. `--reload` restarts
-the process when a Python file changes. The tab shows "Reconnecting" and
-remounts when the server is back. `--debug` shows page errors in the tab,
-pushes a changed theme file or custom component to every open tab, allows
-the `Dev` auth provider, and turns the framework's warnings into toasts, a
-slow page function, a list without keys, a handler that changed nothing, a
-sync task that changed state from its thread. [Framework
+the process when a Python file changes, under the current folder or
+under the app's own when the app is a file somewhere else. The tab shows
+"Reconnecting" and remounts when the server is back.
+
+With `watchfiles` installed, which `pip install "millwork[dev]"` brings,
+the system tells of a change. Without it the app's own files are looked
+at a few times a second, and a virtual environment, a hidden folder,
+`node_modules` and `site-packages` are passed over.
+
+`--debug` shows page errors in the tab, pushes a changed theme file or
+custom component to every open tab, allows the `Dev` auth provider, and
+turns the framework's warnings into toasts, a slow page function, a slow
+handler, a list without keys, a handler that changed nothing, a sync task
+that changed state from its thread. [Framework
 warnings](/state/warnings) says what each means.
 
 Tests drive a session without a browser, so for most changes the loop is

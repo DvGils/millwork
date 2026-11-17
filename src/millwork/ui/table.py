@@ -11,7 +11,7 @@ import dataclasses
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import PydanticSerializationError, to_jsonable_python
@@ -34,6 +34,21 @@ Format = Literal[
 ]
 Tone = Literal["default", "muted", "primary", "accent", "success", "warning", "destructive"]
 Row = Mapping[str, Any]
+_TONES = frozenset(get_args(Tone))
+
+
+def _tone(tone: Any, of: str) -> str | None:
+    """What a ``tones`` function returned, when it is a tone or nothing. The
+    tab draws any other value as no tone at all, which looks like a function
+    that was never called."""
+    if not tone:
+        return None
+    if not isinstance(tone, str) or tone not in _TONES:
+        raise ValueError(
+            f"the tone of {of} is one of {', '.join(sorted(_TONES))}, or None, and the "
+            f"function in tones returned {tone!r}"
+        )
+    return tone
 
 
 class Column(BaseModel):
@@ -246,12 +261,12 @@ class Table(Component):
         tone_rows: list[str | None] = []
         tone_cells: list[dict[str, str] | None] = []
         if callable(self.tones):
-            tone_rows = [self.tones(raw) or None for raw in self.rows]
+            tone_rows = [_tone(self.tones(raw), "a row") for raw in self.rows]
         elif self.tones:
             for raw, row in zip(self.rows, rows, strict=True):
                 cells = {}
                 for col, fn in self.tones.items():
-                    tone = fn(raw, row.get(col))
+                    tone = _tone(fn(raw, row.get(col)), f"a cell of {col!r}")
                     if tone:
                         cells[col] = tone
                 tone_cells.append(cells or None)

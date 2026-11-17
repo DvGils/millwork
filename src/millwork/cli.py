@@ -14,6 +14,8 @@ import socket
 import stat
 import sys
 import types
+from collections.abc import Iterable, Iterator
+from pathlib import Path
 from typing import Any, cast
 
 
@@ -269,10 +271,17 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["MILLWORK_TARGET"] = args.target
         os.environ["MILLWORK_DEBUG"] = "1" if args.debug else "0"
         os.environ["MILLWORK_PROXIED"] = "1" if proxied else "0"
+        # The folder the command runs in, and the app's own when the app is
+        # a file somewhere else.
+        watched = [os.getcwd()]
+        file = split_target(args.target)[0]
+        if file.endswith(".py") or os.sep in file:
+            watched.append(os.path.dirname(os.path.abspath(file)))
         return serve(
             "millwork.cli:asgi_factory",
             factory=True,
             reload=True,
+            watched=watched,
             host=args.host,
             port=args.port,
             uds=args.uds,
@@ -303,6 +312,7 @@ def serve(
     root_path: str,
     debug: bool,
     reload: bool = False,
+    watched: list[str] | None = None,
     factory: bool = False,
     default_port: int = 8000,
 ) -> int:
@@ -325,7 +335,7 @@ def serve(
         root_path=root_path,
         log_level="info",
         reload=reload,
-        reload_dirs=[os.getcwd()] if reload else None,
+        reload_dirs=(watched or [os.getcwd()]) if reload else None,
         factory=factory,
     )
     server = uvicorn.Server(config)
@@ -340,10 +350,8 @@ def serve(
         return 2
     try:
         if reload:
-            from uvicorn.supervisors import ChangeReload
-
             sockets = [sock if sock is not None else config.bind_socket()]
-            ChangeReload(config, target=server.run, sockets=sockets).run()
+            _reloader(config, server.run, sockets).run()
         elif sock is not None:
             server.run(sockets=[sock])
         else:
@@ -351,6 +359,50 @@ def serve(
     except KeyboardInterrupt:
         pass
     return 0
+
+
+# Folders that hold no code of the app's own.
+_NOT_THE_APPS = frozenset({"node_modules", "__pycache__", "site-packages"})
+
+
+def own_files(folders: Iterable[str | Path]) -> Iterator[Path]:
+    """The Python files of an app under ``folders``. A virtual environment,
+    by whatever name, a hidden folder and installed packages are left out."""
+    for top in folders:
+        for folder, inner, files in os.walk(top):
+            inner[:] = [
+                name
+                for name in inner
+                if not name.startswith(".")
+                and name not in _NOT_THE_APPS
+                and not os.path.exists(os.path.join(folder, name, "pyvenv.cfg"))
+            ]
+            for name in files:
+                if name.endswith(".py"):
+                    yield Path(folder, name)
+
+
+def _reloader(config: Any, target: Any, sockets: list[socket.socket]) -> Any:
+    """What restarts the server when a Python file changes.
+
+    With watchfiles installed that is uvicorn's reloader, which the system
+    tells of a change. Without it uvicorn's looks at every Python file
+    under the folder, time and again, and a project's virtual environment
+    alone holds thousands. Its first pass after each start only notes
+    when a file was last changed, so an edit made during that pass is
+    never seen, and a later one is seen a pass late. The one here looks
+    at the app's own files, which takes no time to speak of."""
+    from uvicorn.supervisors import ChangeReload
+    from uvicorn.supervisors.statreload import StatReload
+
+    if ChangeReload is not StatReload:
+        return ChangeReload(config, target=target, sockets=sockets)
+
+    class OwnFiles(StatReload):
+        def iter_py_files(self) -> Iterator[Path]:
+            return own_files(self.config.reload_dirs)
+
+    return OwnFiles(config, target=target, sockets=sockets)
 
 
 def _unix_family() -> int:

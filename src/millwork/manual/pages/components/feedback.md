@@ -42,7 +42,8 @@ ui.Stack(
 
 A toast is a command rather than a component. Call `s.toast(message,
 tone=, title=)` from any handler. `action=(label, handler)` puts a button
-on it that runs the handler once.
+on it that runs the handler once. A toast shows on top of an open
+dialog, sheet or question, and its button can be pressed there.
 
 ```python live
 ui.Row(

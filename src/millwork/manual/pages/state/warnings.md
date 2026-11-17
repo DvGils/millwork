@@ -1,7 +1,7 @@
 ---
 title: Framework warnings
 order: 4
-description: Six mistakes millwork can see, and how it tells you.
+description: Seven mistakes millwork can see, and how it tells you.
 related: /running/development, /components/tasks
 ---
 
@@ -17,6 +17,14 @@ log line with the page's path, and in debug mode as a toast as well.
   A page that is slow for its size alone, a thousand rows built one by
   one, shows fewer of them at a time. Where the size is in tabs, `ui.lazy`
   leaves the ones that are not open out of a render.
+- **A slow handler**, one that kept its turn for over 250 ms. The page is
+  not drawn while a handler runs, so the person sees nothing of what it
+  set until it is done. A handler that does not `await` in that time, one
+  that reads a file or calls a slow library, also keeps every other
+  session waiting. The time a handler waits on a task, on a question or
+  on another page does not count, since the page is drawn then. Work that
+  takes time goes in a [task](/components/tasks) that the handler itself
+  awaits, and `await s.task(work)` gives it the result.
 - **A list without keys**, meaning four or more siblings of one type
   without a key whose number changed between renders. Children that are
   written out, one of them left out with `x if shown else None`, are no

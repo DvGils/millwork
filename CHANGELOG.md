@@ -3,6 +3,65 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.5.3
+
+### Bug fixes
+
+- What was typed in a row of a repeatable list in a form was not what
+  the form submitted. The tab kept a row's fields at the wrong place in
+  the document, `/ranges/0/ranges/label` for `/ranges/0/label`, so the
+  row arrived empty, the model refused it, and the refusal was shown at
+  no field. Every form with a list of models or of a union was hit. An
+  app that worked around it by overriding a row field's `pointer` takes
+  that override out. `labels` and `overrides` now reach a field in a row
+  that is one of several models, and a file field there takes its upload.
+
+- An issue for a place with no field of its own was shown nowhere, so a
+  refused submit looked like a button that did nothing. That is one tag
+  of a list of tags, a field the form leaves out, or a pointer the app
+  spelled wrong in `ui.FormIssues`. It is now shown at the nearest field
+  above it, and at the foot of the form when there is none.
+
+- The button under a repeatable list said "Add" in English whatever the
+  theme said. It now comes from the theme's string `add_item`, which is
+  `Add {item}`. A form select's "Choose" placeholder, a `ui.FileUpload`
+  button's "Choose file" (the new string `choose_file`) and the label of
+  a `ui.Assistant` follow the theme too.
+
+- A function in a table's `tones` that returned something that is no
+  tone, as one written `(value, row)` for `(row, value)` does, was taken
+  without a word and drew a cell with no tone. It is now a `ValueError`
+  that names the column.
+
+- `millwork run --reload` without `watchfiles` looked at every Python
+  file under the folder, those of the project's virtual environment
+  included. The first pass after each start only notes when a file was
+  last changed, so where a pass takes long an edit made during it was
+  never seen, and a later one was seen a pass late. It now looks at the
+  app's own files and passes over a virtual environment, a hidden
+  folder, `node_modules` and `site-packages`. An app given as a file
+  outside the current folder has its own folder watched as well.
+
+- A toast made while a dialog, a sheet or a question was open showed
+  behind the dimmed page, blurred, and its action could not be pressed.
+  Behind a sheet at the side it could not be seen at all. A toast now
+  shows on top.
+
+### Features
+
+- A handler that keeps its turn for over 250 ms is warned about, once
+  per session and handler, as a slow page function is. Nothing is drawn
+  for its session in that time, and a handler that does not `await`
+  keeps every other session waiting as well. The time it waits on a
+  task, a question or another page does not count.
+
+### The manual
+
+- Forms says which of a row field's two pointers goes where, that a
+  long `max_length` makes a multi-line box and how to keep one line.
+  Tasks says which waits of a handler draw the page meanwhile, a task,
+  a question and another page, and how to wait for several tasks.
+
 ## 0.5.2
 
 ### Bug fixes

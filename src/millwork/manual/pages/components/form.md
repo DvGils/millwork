@@ -73,6 +73,11 @@ is checked on the server as well as in the browser, and goes before the
 same keys in the model's `json_schema_extra`. A field that `fields`
 leaves out takes no upload.
 
+A text field that may hold more than 200 characters is drawn as a
+multi-line box. `overrides={"/label": {"widget": "input"}}` keeps it to
+one line. The button under a repeatable list says `Add` and the name of a
+row, from the theme's string `add_item`.
+
 `choices` is a list of bare values, `(value, label)` pairs, dicts and
 `ui.Option`s. A dict takes the keys an Option has. An Option's value is
 a string, so a field that holds a number takes its choices as dicts or
@@ -123,7 +128,14 @@ ui.Form(
 
 A handler that finds something wrong raises `ui.FormIssues` with a list
 of `(pointer, message)` pairs. The form shows each at its field and keeps
-the draft.
+the draft. An issue for a place that has no field of its own, such as
+one tag of a list of tags, is shown at the nearest field above it, and at
+the foot of the form when there is none.
+
+A field in a row of a list has two pointers. An issue names one row, so
+it has the row's number, `/groups/1/values`. `labels` and `overrides`
+speak of the field in every row, so they leave the number out,
+`/groups/values`.
 
 ```python live
 from pydantic import BaseModel, Field

@@ -153,6 +153,19 @@ def test_table_cell_tones_and_default_columns() -> None:
     assert props["tone_cells"] == [None, {"n": "warning"}]
 
 
+def test_a_tone_that_is_no_tone_is_refused() -> None:
+    rows = [{"id": 1, "kind": "new"}]
+    # The two arguments the wrong way round give the row for a tone.
+    swapped = ui.Table(rows=rows, tones={"kind": lambda value, row: row})
+    with pytest.raises(ValueError, match="the tone of a cell of 'kind' is one of"):
+        build(swapped)
+    with pytest.raises(ValueError, match="the tone of a row is one of .* returned 'green'"):
+        build(ui.Table(rows=rows, tones=lambda row: "green"))
+    assert build(ui.Table(rows=rows, tones=lambda row: "")).nodes["root"].props["tone_rows"] == [
+        None
+    ]
+
+
 def test_rows_of_any_shape_become_json() -> None:
     import datetime as dt
     import enum
