@@ -15,6 +15,21 @@ versions; a release says so here when it does.
   sent and decodes them. The theme string `file_not_text` reads "the
   file is not text".
 
+- A session file that a browser can run script in, such as HTML, XML
+  or an SVG, could become a page of the app in the tab. A file in a
+  chat message opened in a new tab, `ui.Pdf` framed whatever `FileRef`
+  it was given, and an SVG picture could be opened in a tab by hand.
+  The page's Content Security Policy kept a script in such a file from
+  running, so an app that had dropped or loosened the policy had
+  nothing else in the way. The tab now gives a session file its type
+  only when a browser runs nothing in it. A chat attachment of any
+  other type is saved, as `ui.FileCard` saved it already, and `ui.Pdf`
+  leaves its frame empty for a file that is no PDF. An SVG is still a
+  picture on the page, and opened by hand it is a page that reaches
+  nothing of the app. The address a custom component gets from
+  `fileUrl` is plain bytes for a file of any other type. Markdown now
+  opens in a tab as text, from `ui.FileCard` too.
+
 ### The manual
 
 - Files says what an upload is checked for, and that a text file's

@@ -294,7 +294,34 @@ function rejectPending(why: string) {
   for (const p of all) p.reject(new Error(why));
 }
 
-// One of the session's files, as a blob URL the tab keeps for the session.
+// What a browser shows without running anything in it: a PDF, a picture that
+// is no drawing with scripts in it, plain text, Markdown, sound and film. To a tab or a
+// frame that is pointed at them, the bytes of a session file are a page of
+// this app, so only these are opened and any other file is saved.
+const RUNS_NOTHING = /^(application\/pdf|text\/(plain|markdown)|image\/(png|jpeg|gif|webp|avif|bmp)|audio\/[\w.-]+|video\/[\w.-]+)$/;
+const bare = (mime: string) => mime.split(";")[0].trim().toLowerCase();
+export function runsNothing(mime: string | undefined): boolean {
+  return RUNS_NOTHING.test(bare(mime ?? ""));
+}
+
+// The type the server gave with the bytes of a file, once they are here. It
+// is the one to go by, where a message or a prop only says what a file is.
+const fileTypes = new Map<string, string>();
+export function fileType(id: string): string | undefined {
+  return fileTypes.get(id);
+}
+
+// Bytes as an address that holds them. A page at such an address has an
+// origin of its own, so it reaches nothing of this app.
+function dataUrl(parts: Uint8Array[], type: string): string {
+  let text = "";
+  for (const part of parts) {
+    for (let i = 0; i < part.length; i += 0x8000) text += String.fromCharCode(...part.subarray(i, i + 0x8000));
+  }
+  return `data:${type};base64,${btoa(text)}`;
+}
+
+// One of the session's files, as a URL the tab keeps for the session.
 const fileUrls = new Map<string, Promise<string>>();
 export function fileUrl(id: string): Promise<string> {
   let p = fileUrls.get(id);
@@ -306,7 +333,18 @@ export function fileUrl(id: string): Promise<string> {
       mime = String((meta as { mime?: string })?.mime ?? mime);
     },
     onChunk: (data) => parts.push(data.slice()),
-  }).then(() => URL.createObjectURL(new Blob(parts as BlobPart[], { type: mime })));
+  }).then(() => {
+    const type = bare(mime);
+    fileTypes.set(id, type);
+    // The address is a page of this app to whoever opens it, by a link or
+    // by hand. So the bytes keep their type only when nothing in them runs,
+    // and any other file is plain bytes at its address. A drawing is the
+    // picture it is on a page, and a page of nobody's opened by hand.
+    if (type === "image/svg+xml") return dataUrl(parts, type);
+    // The type as it was tested. A blob drops one that is not plain ASCII.
+    const kept = runsNothing(type) ? (/^[\x20-\x7e]+$/.test(mime) ? mime : type) : "application/octet-stream";
+    return URL.createObjectURL(new Blob(parts as BlobPart[], { type: kept }));
+  });
   p.catch(() => fileUrls.delete(id));
   fileUrls.set(id, p);
   return p;
@@ -327,6 +365,7 @@ export function saveFile(id: string, filename: string): Promise<void> {
 function forgetFiles() {
   for (const p of fileUrls.values()) void p.then((url) => URL.revokeObjectURL(url)).catch(() => undefined);
   fileUrls.clear();
+  fileTypes.clear();
 }
 
 // A hash names a heading on the page being opened: the server never sees it,

@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Renderer } from "../render";
 import { cn } from "cn";
 import { icon } from "../icons";
-import { fileUrl, onStatus, request, saveFile } from "../ws";
+import { fileType, fileUrl, onStatus, request, runsNothing, saveFile } from "../ws";
 import { toast } from "@/components/ui/toast";
 import { linkLook, safeUrl } from "../lib";
 import { pressable, pressLook } from "../press";
@@ -198,10 +198,6 @@ export const FileUpload: Renderer = ({ node, props, emit }) => {
   );
 };
 
-// The types a new tab is given to show: a PDF, a picture that is no drawing
-// with scripts in it, plain text, sound and film.
-const SHOWN_IN_A_TAB = /^(application\/pdf|text\/plain|image\/(png|jpeg|gif|webp|avif|bmp)|audio\/[\w.+-]+|video\/[\w.+-]+)$/;
-
 export const FileCard: Renderer = ({ props, emit }) => {
   const file = (props.file ?? null) as FileRef | null;
   const name = String(props.name ?? file?.name ?? "");
@@ -215,11 +211,12 @@ export const FileCard: Renderer = ({ props, emit }) => {
   // The new tab is cut off from this one by hand: asked for with "noopener"
   // the browser hands nothing back, and there would be no tab to point.
   // Bytes shown in a tab are a page of this app, so only what a browser
-  // shows without running anything is opened, and the rest is saved.
+  // shows without running anything is opened, and the rest is saved. The
+  // type that came with the bytes has the last word.
   const open = (e: React.MouseEvent) => {
     if (!file) return;
     e.preventDefault();
-    if (!SHOWN_IN_A_TAB.test(file.mime.split(";")[0].trim().toLowerCase())) {
+    if (!runsNothing(file.mime)) {
       saveFile(file.id, file.name).catch(failedDownload);
       return;
     }
@@ -227,8 +224,12 @@ export const FileCard: Renderer = ({ props, emit }) => {
     if (win) win.opener = null;
     fileUrl(file.id)
       .then((u) => {
-        if (win) win.location.href = u;
-        else return saveFile(file.id, file.name);
+        if (win && runsNothing(fileType(file.id))) {
+          win.location.href = u;
+          return;
+        }
+        win?.close();
+        return saveFile(file.id, file.name);
       })
       .catch(() => {
         win?.close();
@@ -305,7 +306,9 @@ export const Image: Renderer = ({ props, emit }) => {
 export const Pdf: Renderer = ({ props }) => {
   const ref = typeof props.src === "object" && props.src ? (props.src as FileRef) : null;
   const blob = useFileUrl(ref?.id);
-  const base = ref ? blob : safeUrl(typeof props.src === "string" ? props.src : undefined);
+  // A frame is a page of this app as well, so a file that is no PDF stays out of it.
+  const pdf = ref && blob && fileType(ref.id) === "application/pdf" ? blob : null;
+  const base = ref ? pdf : safeUrl(typeof props.src === "string" ? props.src : undefined);
   const src = base ? (typeof props.page === "number" ? `${base}#page=${props.page}` : base) : undefined;
   return (
     <iframe

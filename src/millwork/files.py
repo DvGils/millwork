@@ -29,9 +29,6 @@ if TYPE_CHECKING:
 log = logging.getLogger("millwork.files")
 
 
-# Served inline (the browser may render it); everything else is an attachment.
-
-
 class FileRef(BaseModel):
     """A file the session holds. ``path`` stays on the server."""
 
