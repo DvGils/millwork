@@ -3,6 +3,50 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.5.2
+
+### Bug fixes
+
+- An upload of a text file such as a `.csv` was refused as "not UTF-8
+  text" when its first 64 bytes held a character in another encoding,
+  which is how a spreadsheet on Windows saves one. Text is now taken in
+  any encoding, and a file is refused only when those bytes hold a NUL
+  and are not UTF-16 or UTF-32. The app gets the bytes as they were
+  sent and decodes them. The theme string `file_not_text` reads "the
+  file is not text".
+
+- A session file that a browser can run script in, such as HTML, XML
+  or an SVG, could become a page of the app in the tab. A file in a
+  chat message opened in a new tab, `ui.Pdf` framed whatever `FileRef`
+  it was given, and an SVG picture could be opened in a tab by hand.
+  The page's Content Security Policy kept a script in such a file from
+  running, so an app that had dropped or loosened the policy had
+  nothing else in the way. The tab now gives a session file its type
+  only when a browser runs nothing in it. A chat attachment of any
+  other type is saved, as `ui.FileCard` saved it already, and `ui.Pdf`
+  leaves its frame empty for a file that is no PDF. An SVG is still a
+  picture on the page, and opened by hand it is a page that reaches
+  nothing of the app. The address a custom component gets from
+  `fileUrl` is plain bytes for a file of any other type. Markdown now
+  opens in a tab as text, from `ui.FileCard` too.
+
+### Features
+
+- `millwork shot app.py /orders` saves a picture of a page as a browser
+  shows it. It serves the app on a free port and drives a Chrome,
+  Chromium, Edge or Brave that is already on the machine, so nothing is
+  installed for it. `--full` takes the whole page, `--width` and
+  `--height` set the window, `--dark` is the page as a browser set to
+  dark shows it, and `--user` signs in as a user in an app with
+  sign-in. A browser that will not start is passed over for the next
+  one found, and `--no-sandbox` is for a container that allows a
+  browser no sandbox. The picture is of the page as it opens.
+
+### The manual
+
+- Files says what an upload is checked for, and that a text file's
+  encoding is the app's to know. Development describes `millwork shot`.
+
 ## 0.5.1
 
 ### Bug fixes

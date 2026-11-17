@@ -214,8 +214,10 @@ describe("ws request layer", () => {
     const f = new Uint8Array([rid.length, ...new TextEncoder().encode(rid), 104, 105]);
     s.bin(f.buffer);
     s.text(0, { type: "reply", request: rid, payload: { size: 2 }, error: null });
+    expect(ws.fileType("F1")).toBeUndefined();
     const url = await p1;
     expect(url.startsWith("blob:")).toBe(true);
+    expect(ws.fileType("F1")).toBe("text/plain");
     // same promise for the same id afterwards
     expect(ws.fileUrl("F1")).toBe(p1);
     // a fetch interrupted by a close is forgotten so the next call asks again
@@ -233,6 +235,55 @@ describe("ws request layer", () => {
     session(s3, "S2");
     const p4 = ws.fileUrl("F1");
     expect(p4).not.toBe(p1);
+    expect(ws.fileType("F1")).toBeUndefined();
     p4.catch(() => undefined);
+  });
+
+  it("fileType: the type is the one that came with the bytes, without its parameters", async () => {
+    const s = last();
+    const p = ws.fileUrl("H1");
+    const rid: string = s.json().at(-1).msg.request;
+    s.text(0, { type: "head", request: rid, payload: { mime: "Text/HTML; charset=utf-8" } });
+    s.text(0, { type: "reply", request: rid, payload: { size: 0 }, error: null });
+    await p;
+    expect(ws.fileType("H1")).toBe("text/html");
+    expect(ws.runsNothing(ws.fileType("H1"))).toBe(false);
+  });
+
+  it("fileUrl: the address has the type only of what runs nothing", async () => {
+    const s = last();
+    const fetched = async (id: string, mime: string, body = "<svg/>") => {
+      const p = ws.fileUrl(id);
+      const rid: string = s.json().at(-1).msg.request;
+      s.text(0, { type: "head", request: rid, payload: { mime } });
+      const f = new Uint8Array([rid.length, ...new TextEncoder().encode(rid), ...new TextEncoder().encode(body)]);
+      s.bin(f.buffer);
+      s.text(0, { type: "reply", request: rid, payload: { size: body.length }, error: null });
+      return p;
+    };
+    const typeAt = async (id: string, mime: string) => (await fetch(await fetched(id, mime))).headers.get("content-type");
+    expect(await typeAt("T1", "text/plain; charset=utf-8")).toBe("text/plain; charset=utf-8");
+    expect(await typeAt("T2", "application/pdf")).toBe("application/pdf");
+    expect(await typeAt("T3", "text/html")).toBe("application/octet-stream");
+    expect(await typeAt("T4", "application/xhtml+xml")).toBe("application/octet-stream");
+    expect(await typeAt("T5", "text/csv")).toBe("application/octet-stream");
+    // A type that reads as plain text and is not plain ASCII would leave the
+    // blob without a type, for the browser to guess at.
+    expect(await typeAt("T6", "text/plain\u00a0")).toBe("text/plain");
+    expect(await typeAt("T7", "text/mar\u212adown")).toBe("text/markdown");
+    // A drawing is no blob of this app: it is a data URL, with the bytes in it.
+    const svg = await fetched("T8", "image/svg+xml", "<svg>\u00e9</svg>");
+    expect(svg).toBe("data:image/svg+xml;base64,PHN2Zz7DqTwvc3ZnPg==");
+    expect(ws.fileType("T8")).toBe("image/svg+xml");
+  });
+
+  it("runsNothing: only what a browser shows without running anything", () => {
+    const shown = ["application/pdf", "text/plain", "TEXT/PLAIN; charset=utf-8", "text/markdown", "image/png", "image/jpeg", "audio/mpeg", "video/mp4"];
+    for (const mime of shown) expect(ws.runsNothing(mime)).toBe(true);
+    const saved = [
+      "text/html", "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml", "text/csv",
+      "text/javascript", "application/octet-stream", "application/pdf+xml", "xtext/plain", "video/x+xml", "audio/svg+xml", "", undefined,
+    ];
+    for (const mime of saved) expect(ws.runsNothing(mime)).toBe(false);
   });
 });

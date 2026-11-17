@@ -25,6 +25,12 @@ and `max_size_mb` caps each. `on_upload` receives the `FileRef`s, and
 reason the framework gives is one of the theme's strings that start with
 `file_`, or `disconnected` when the connection dropped mid-upload.
 
+A file has to start as what its extension says. A PDF, a picture or an
+Office file starts the way its format does, and a text file such as a
+`.csv` starts with text. Text is taken in any encoding, so the app
+decodes `ref.path.read_bytes()` the way the file was saved. A
+spreadsheet's CSV export is often `cp1252`.
+
 ```python live
 from pydantic import BaseModel
 
@@ -57,8 +63,9 @@ def example(s):
 
 `ui.FileCard` shows a file with its size and kind, an optional `meta` line,
 a `status` and `actions`. Given a `FileRef`, Open shows the bytes in a new
-tab when they are a PDF, a picture that is no SVG, plain text, sound or
-film, and saves any other file. Given a `url`, it links there. With `on_click` the card is a target,
+tab when they are a PDF, a picture that is no SVG, plain text, Markdown,
+sound or film, and saves any other file. A session file in a chat
+message opens and saves by the same rule. Given a `url`, it links there. With `on_click` the card is a target,
 by pointer and by keyboard, and Open and the actions stay their own.
 
 ```python live
@@ -95,7 +102,8 @@ def example(s):
 
 `ui.Image` and `ui.Pdf` take a `FileRef` or an outside URL. An image has
 a `size` and a `fit`, and with `on_click` it is a target that takes focus
-and answers Enter and Space. A PDF has a `page` and a `height`. The browser's own
+and answers Enter and Space. A PDF has a `page` and a `height`, and a
+`FileRef` that is no PDF leaves its frame empty. The browser's own
 viewer shows the PDF, so a form or a link inside it looks like part of the
 app. Show files the app made or the person uploaded themselves, and keep
 documents from strangers out of it. A browser that cannot show a PDF

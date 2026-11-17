@@ -144,6 +144,10 @@ millwork reference testing.md      # a page of the manual
 millwork reference --index         # prints every name
 ```
 
+`millwork shot app.py /orders` saves a picture of a page, taken with a
+browser that is already on the machine. An agent can look at what it
+built without setting up a headless browser.
+
 ## Status
 
 millwork is still in beta and moving fast. Version 1.0.0 will be the first stable release. 

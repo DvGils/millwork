@@ -17,7 +17,10 @@ from. Python reaches it by name with `ui.Custom`.
 A component is a default export that receives `props` from Python, `emit`
 to send an event back, `request` to ask one of its handlers and get the
 answer as a promise, `fileUrl` to show a session file, and `children`
-rendered from Python.
+rendered from Python. The address `fileUrl` gives carries the file's type
+when it is a picture, a PDF, plain text, Markdown, sound or film. Any
+other file is plain bytes there, HTML among them, since its address
+would be a page of the app.
 
 ```jsx
 import { useState } from "react";

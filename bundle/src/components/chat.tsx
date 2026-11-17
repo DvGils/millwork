@@ -9,7 +9,7 @@ import { Render } from "../render";
 import { cn } from "cn";
 import { icon } from "../icons";
 import { safeUrl } from "../lib";
-import { onStream } from "../ws";
+import { fileType, onStream, runsNothing } from "../ws";
 import { upload, useFileUrl } from "./files";
 import { applyChunk, type Part, type Transient, type UIMessage } from "../stream";
 import { Markdown } from "./markdown";
@@ -462,12 +462,17 @@ function FilePart({ part }: { part: Part }) {
   // A file in a message is one of the session's: its bytes come over the socket.
   const fileId = typeof part.fileId === "string" ? part.fileId : null;
   const blob = useFileUrl(fileId);
-  const url = fileId ? (blob ?? undefined) : safeUrl(part.url, { image: true });
   const media = String(part.mediaType ?? "");
-  if (media.startsWith("image/")) return <img src={url} alt={String(part.filename ?? "")} className="max-h-64 rounded-lg" />;
+  const image = media.startsWith("image/");
+  const url = fileId ? (blob ?? undefined) : safeUrl(part.url, { image });
+  if (image) return <img src={url} alt={String(part.filename ?? "")} className="max-h-64 rounded-lg" />;
   const Icon = icon("file-text");
   // A type the browser shows opens in a tab; anything else saves under its name.
-  const viewable = media === "application/pdf" || media.startsWith("text/") || media.startsWith("audio/") || media.startsWith("video/");
+  // One of the session's files is a page of this app in that tab, so it opens
+  // only when the type that came with its bytes is one that runs nothing.
+  const viewable = fileId
+    ? blob !== null && runsNothing(fileType(fileId))
+    : media === "application/pdf" || media.startsWith("text/") || media.startsWith("audio/") || media.startsWith("video/");
   return (
     <a href={url} target="_blank" rel="noreferrer" download={viewable ? undefined : String(part.filename ?? "file")} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-muted/50">
       {Icon ? <Icon className="size-4 text-muted-foreground" /> : null}
