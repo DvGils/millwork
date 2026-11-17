@@ -313,6 +313,10 @@ async def test_a_drop_that_fails_does_not_stop_the_clock_for_the_others(
     harness = TestApp(example.app)
     async with harness.open("/") as one, harness.open("/") as two:
         broken, sound = (example.WORLDS[p.session.id] for p in (one, two))
+        # A tick while the second page opened leaves a drawing of the first
+        # one due, and a drop that is broken cannot be drawn. It is drawn
+        # now, and no step of the broken drop asks for another.
+        await one.settle()
         broken.cells[0] = None  # what no drop holds, and no step gets past
         for _ in range(200):
             if sound.time > 0.5:
