@@ -28,6 +28,11 @@ versions; a release says so here when it does.
   button's "Choose file" (the new string `choose_file`) and the label of
   a `ui.Assistant` follow the theme too.
 
+- A function in a table's `tones` that returned something that is no
+  tone, as one written `(value, row)` for `(row, value)` does, was taken
+  without a word and drew a cell with no tone. It is now a `ValueError`
+  that names the column.
+
 - A toast made while a dialog, a sheet or a question was open showed
   behind the dimmed page, blurred, and its action could not be pressed.
   Behind a sheet at the side it could not be seen at all. A toast now

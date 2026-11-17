@@ -115,9 +115,10 @@ mapping from column key to a function of the row and the cell, called as
 a model there. The value is the cell as it goes to the tab, before the
 column's `format`. A number is a number, a date is its ISO text, a
 `Decimal` is its text and an `Enum` its value, and the row has each as it
-was given. Returning `None` leaves the row or cell as it is. A row's
-tone tints the row, and a cell's tone colors the cell's text, or the
-badge when the column is one.
+was given. Returning `None` leaves the row or cell as it is, and
+anything that is no tone is refused. A row's tone tints the row, and a
+cell's tone colors the cell's text, or the badge when the column is one.
+On a badge `muted` and `accent` look like no tone at all.
 
 ```python live
 ui.Table(
