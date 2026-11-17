@@ -172,7 +172,10 @@ async def test_wiping_asks_first(app):
 ## Routes
 
 A route of the app's own has no session, so it is tested with
-Starlette's `TestClient`, on `app.asgi`.
+Starlette's `TestClient`, on `app.asgi`. A recent Starlette runs that
+client on `httpx2`, which goes into the project's test dependencies.
+With only the `httpx` that millwork brings, it warns that `httpx` is
+deprecated.
 
 ```python
 from starlette.testclient import TestClient
