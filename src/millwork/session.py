@@ -470,8 +470,9 @@ class Session[S]:
             # Its forms are drawn anew, with nothing of their last submit.
             self._form_issues = {}
         conn.bind(self, last_seq)
-        if self.tree is not None and self.tree is self._failure:
-            # A reload is how a person tries a page that failed again.
+        if self.tree is not None and (self.tree is self._failure or self._render_due):
+            # A reload is how a person tries a page that failed again. And
+            # what changed while no tab was there has not been drawn.
             self.refresh()
 
     def in_zone(self, zone: ZoneInfo | None) -> None:
@@ -1589,6 +1590,11 @@ class Session[S]:
             # left state this page has no way to show, and the page that is
             # coming is drawn from it anyway. Or the page was drawn
             # meanwhile, by a handler that needed it as it stood.
+            return
+        if self.conn is None and self.tree is not None:
+            # Nobody is there to see it. It stays due, and the tab that
+            # comes back gets one drawing for all that changed meanwhile.
+            # A handler that needs the page as it stands still draws it.
             return
         self.render()
         if not self._render_due:

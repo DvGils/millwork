@@ -1997,9 +1997,11 @@ def at_rest(sim: Sim, session: Any, sid: str) -> None:
         and tree is not session._failure
         and not getattr(session, "fuzz_failed", False)
     )
-    if quiet and session._render_due:
+    if quiet and session._render_due and session.conn is not None:
         # Nothing is under way and no timer is armed, so nothing is going
-        # to make the drawing: the tab stays on what it was last told.
+        # to make the drawing: the tab stays on what it was last told. A
+        # session without a tab is another matter. It draws nothing until
+        # its tab is back, and that is what makes the drawing.
         why = f"{sid} has a drawing due and nothing that will make it"
         sim.world.broken.append(("left undrawn", why))
     if not quiet or session._render_due:

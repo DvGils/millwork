@@ -946,3 +946,92 @@ async def test_a_tab_that_comes_back_to_a_failure_page_tries_the_page_again() ->
     assert third.types().count("mount") == 2
     assert third.messages[-1]["type"] == "mount" and "fine" in json.dumps(third.messages[-1])
     session.dismiss()
+
+
+async def test_a_session_without_a_tab_draws_nothing_until_the_tab_is_back() -> None:
+    class Nothing(BaseModel):
+        pass
+
+    news = mw.Signal()
+    said = {"n": 0}
+    drawn: list[bool] = []
+    app = mw.App("away", state=Nothing, public=None, components=None)
+
+    @app.page("/")
+    def home(s: mw.Session[Nothing]) -> ui.Component:
+        drawn.append(s.connected)
+        return ui.Page(ui.Text(f"said {said['n']}", key="said"))
+
+    @home.connect
+    def follow(s: mw.Session[Nothing]) -> None:
+        s.follow(news)
+
+    async def tell(session: Session[Any]) -> None:
+        said["n"] += 1
+        news.fire()
+        await flush(session)
+
+    first = Wire()
+    session = await open_session(app, first)
+    await tell(session)
+    assert drawn == [True, True] and first.types()[-1] == "patch"
+
+    # The tab goes. Whatever fires now is drawn for nobody, so it is not drawn.
+    seen = first.seqs[-1]
+    first.drop()
+    await flush(session)
+    assert not session.connected
+    for _ in range(5):
+        await tell(session)
+    assert drawn == [True, True]
+
+    # The tab is back where it left off: one drawing, one patch, the page as
+    # it is now.
+    second = Wire()
+    await attach(session, second, seen)
+    assert drawn == [True, True, True]
+    assert second.types() == ["session", "patch"]
+    assert "said 6" in json.dumps(second.messages[-1])
+
+    # A tab that comes back with nothing, as after a reload, is given the
+    # page as it was last drawn and then what changed.
+    second.drop()
+    await flush(session)
+    await tell(session)
+    third = Wire()
+    await attach(session, third)
+    assert third.types() == ["session", "mount", "patch"]
+    assert "said 7" in json.dumps(third.messages[-1])
+    assert all(drawn)
+    session.dismiss()
+
+
+async def test_what_was_typed_before_the_tab_went_is_cleared_when_it_is_back(
+    tmp_path: Path,
+) -> None:
+    first = Wire()
+    session = await open_session(draft_app(tmp_path, []), first)
+    seen = first.seqs[-1]
+    first.drop()
+    await flush(session)
+    assert not session.connected
+
+    # What the tab sent right before it went: the typing, and the press
+    # that posts it and empties the field. The field is told both values,
+    # so the tab that still shows the text has it taken out.
+    session.event(Event(node="root/box", name="change", payload="hello"))
+    session.event(Event(node="root/post", name="click"))
+    await turns()
+    await flush(session)
+    assert session.state.posted == ["hello"]
+    second = Wire()
+    await attach(session, second, seen)
+    told = [
+        op["props"]["value"]
+        for m in second.messages
+        if m["type"] == "patch"
+        for op in m["ops"]
+        if op.get("id") == "root/box" and "value" in op.get("props", {})
+    ]
+    assert told == ["hello", ""]
+    await over(session)
