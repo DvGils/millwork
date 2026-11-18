@@ -174,18 +174,39 @@ export const Select: Renderer = ({ props, emit }) => {
     if (!controlled) setDraft(null);
     if (props.on_change) emit("change", null);
   };
+  // Whether a key is going down on the closed field, which picks the option
+  // that starts with what is typed.
+  const keyed = useRef(false);
   const select = (
     <UiSelect
       items={labels}
       value={current}
-      onValueChange={(v) => {
+      onValueChange={(v, details) => {
+        // Given new options, the select drops a value that is not among
+        // them, and goes by the value it had before, also when the new one
+        // came with the options. That change comes with no press of an
+        // option, no event of the browser's and no key. Where the page
+        // holds the value it is not the select's to change, so nothing is
+        // said of it.
+        const own = details.reason !== "none" || details.event.type !== "base-ui" || keyed.current;
+        if (controlled && !own) {
+          details.cancel();
+          return;
+        }
         const next = v === null ? null : String(v);
         if (!controlled) setDraft(next);
         if (props.on_change) emit("change", next);
       }}
       disabled={Boolean(props.disabled)}
     >
-      <SelectTrigger className={cn("w-full", clearable && "pr-8", props.cls as string)}>
+      <SelectTrigger
+        className={cn("w-full", clearable && "pr-8", props.cls as string)}
+        onKeyDownCapture={() => {
+          // Until the key has been dealt with, which is within this task.
+          keyed.current = true;
+          setTimeout(() => (keyed.current = false), 0);
+        }}
+      >
         <SelectValue placeholder={props.placeholder ? String(props.placeholder) : undefined} />
       </SelectTrigger>
       <SelectContent>

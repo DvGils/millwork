@@ -3,6 +3,19 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.5.4
+
+### Bug fixes
+
+- A `ui.Select` whose value the page holds told the page its value was
+  `None` when a handler gave it new options and a value among them, once
+  a person had opened it. `on_change(None)` ran right after the handler
+  and undid what it had set, and the select went blank. The select
+  dropped a value that was not among its new options, going by the value
+  it had before. It now leaves a value the page holds to the page. A
+  select that keeps its own value still drops one that is gone and says
+  so.
+
 ## 0.5.3
 
 ### Bug fixes

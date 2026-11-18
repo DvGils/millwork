@@ -101,6 +101,24 @@ class Page:
         assert pressed, f"no button says {label!r}"
         await self.rest()
 
+    async def click(self, selector: str, text: str | None = None) -> None:
+        """Click with the mouse on what ``selector`` finds, the one that says
+        ``text`` when there are several. A press and a release at its
+        middle, which is what opens a select."""
+        says = "true" if text is None else f"e.textContent.trim() === {json.dumps(text)}"
+        at = await self.read(
+            f"(() => {{ const e = [...document.querySelectorAll({json.dumps(selector)})]"
+            f".find((e) => {says}); if (!e) return null;"
+            " const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; })()"
+        )
+        assert at, f"nothing at {selector} says {text!r}"
+        for kind in ("mousePressed", "mouseReleased"):
+            await self.tab.call(
+                "Input.dispatchMouseEvent", type=kind, x=at[0], y=at[1], button="left", clickCount=1
+            )
+        await self.rest()
+
     async def type(self, field: str, text: str) -> None:
         """Type into a field, by its place in the form."""
         selector = json.dumps(f'[data-field="{field}"] input')
@@ -204,3 +222,53 @@ async def test_the_button_that_adds_a_row_says_so_in_the_themes_words() -> None:
     async with Page(app) as page:
         await page.press("Range toevoegen")
         assert "/ranges/0/label" in await page.fields()
+
+
+async def test_a_select_given_new_options_and_a_value_of_them_keeps_that_value() -> None:
+    class Choice(BaseModel):
+        options: list[str] = ["a", "b"]
+        value: str | None = "a"
+
+    picked: list[str | None] = []
+    app = mw.App("select", state=Choice, public=None)
+
+    def pick(s: mw.Session[Choice], value: str | None) -> None:
+        picked.append(value)
+        s.state.value = value
+
+    def swap(s: mw.Session[Choice], _: Any) -> None:
+        s.state.options = ["x", "y"]
+        s.state.value = "x"
+
+    def back(s: mw.Session[Choice], _: Any) -> None:
+        # With the option the select began at among the new ones.
+        s.state.options = ["a", "c"]
+        s.state.value = "c"
+
+    @app.page("/")
+    def home(s: mw.Session[Choice]) -> ui.Component:
+        return ui.Page(
+            ui.Select(key="sel", options=s.state.options, value=s.state.value, on_change=pick),
+            ui.Button("swap", key="swap", on_click=swap),
+            ui.Button("back", key="back", on_click=back),
+        )
+
+    shown = "document.querySelector('[data-slot=select-value]').textContent.trim()"
+    async with Page(app) as page:
+        # A select the person has used, which is when it knows its options.
+        await page.click("[role=combobox]")
+        await page.click("[role=option]", "b")
+        assert picked == ["b"] and await page.read(shown) == "b"
+        await page.press("swap")
+        # The page chose, and the select has nothing of its own to say.
+        assert picked == ["b"]
+        assert await page.read(shown) == "x"
+        # A key on the closed select still picks the option it starts.
+        await page.read("document.querySelector('[role=combobox]').focus()")
+        for kind in ("keyDown", "keyUp"):
+            await page.tab.call("Input.dispatchKeyEvent", type=kind, key="y", code="KeyY")
+        await page.rest()
+        assert picked == ["b", "y"] and await page.read(shown) == "y"
+        await page.press("back")
+        assert picked == ["b", "y"] and await page.read(shown) == "c"
+
