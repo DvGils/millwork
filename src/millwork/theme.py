@@ -85,6 +85,7 @@ STRINGS: dict[str, str] = {
     "other_tab": "This page was opened in another tab.",
     "page_out_of_date": "This page is out of date.",
     "copied": "Copied",
+    "copy_failed": "Copying failed",
     "working": "Working",
     "thinking": "Thinking",
     "thought": "Thought",

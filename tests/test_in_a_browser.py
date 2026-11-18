@@ -272,3 +272,26 @@ async def test_a_select_given_new_options_and_a_value_of_them_keeps_that_value()
         await page.press("back")
         assert picked == ["b", "y"] and await page.read(shown) == "c"
 
+
+async def test_copied_is_said_only_of_what_was_copied() -> None:
+    app = mw.App("copy", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Button("Copy", key="copy", on_click=lambda s, _: s.clipboard("text")))
+
+    def writes(how: str) -> str:
+        # The browser's own answer is the machine's to give, so it is given here.
+        return (
+            "Object.defineProperty(navigator.clipboard, 'writeText',"
+            f" {{ configurable: true, value: () => Promise.{how} }})"
+        )
+
+    said = "[...document.querySelectorAll('[data-slot=toast-title]')].map((e) => e.textContent)"
+    async with Page(app) as page:
+        await page.read(writes("reject(new Error('refused'))"))
+        await page.press("Copy")
+        assert await page.read(said) == ["Copying failed"]
+        await page.read(writes("resolve()"))
+        await page.press("Copy")
+        assert "Copied" in await page.read(said)

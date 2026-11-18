@@ -16,6 +16,11 @@ versions; a release says so here when it does.
   select that keeps its own value still drops one that is gone and says
   so.
 
+- `s.clipboard` said "Copied" whether or not the text was copied. On a
+  page that is not served over HTTPS or from localhost a browser has no
+  clipboard, and a browser may refuse the write. The person is now told
+  that copying failed, in the new theme string `copy_failed`.
+
 ## 0.5.3
 
 ### Bug fixes
