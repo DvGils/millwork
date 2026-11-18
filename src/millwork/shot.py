@@ -310,7 +310,9 @@ class _Tab:
 # A page is done when, for a moment, nothing in it changes, no animation runs,
 # and its fonts and pictures are in. A spinner counts as running, so a page
 # that loads its data is waited for, and one that never rests runs out the
-# time it was given.
+# time it was given. An animation that goes by how far something has
+# scrolled, and not by the clock, runs for as long as its element is there
+# and is no sign of a page at work.
 _SETTLE = """
 new Promise((done) => {
   const deadline = performance.now() + %(timeout)d;
@@ -322,7 +324,9 @@ new Promise((done) => {
     !document.getElementById("root")?.childElementCount
     || document.fonts.status !== "loaded"
     || Array.from(document.images).some((i) => !i.complete)
-    || document.getAnimations().some((a) => a.playState === "running");
+    || document.getAnimations().some(
+      (a) => a.playState === "running" && a.timeline instanceof DocumentTimeline,
+    );
   const look = () => {
     const now = performance.now();
     if (busy()) last = now;

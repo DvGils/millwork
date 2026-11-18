@@ -21,6 +21,11 @@ versions; a release says so here when it does.
   clipboard, and a browser may refuse the write. The person is now told
   that copying failed, in the new theme string `copy_failed`.
 
+- `millwork shot` of a page with a `ui.Chat` waited out its whole
+  `--timeout` and said the page was still changing. The fade at the edge
+  of the chat's messages is an animation that goes by the scroll and not
+  by the clock, and it was taken for a page at work.
+
 ### The manual
 
 - Inputs has `s.clipboard`, for a Copy button, and Testing says how a
