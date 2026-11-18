@@ -151,6 +151,8 @@ async def test_the_form_rejects_a_short_name(app):
 A click on a `Download` is the download its button starts. The file is
 in the session by the id the tab was told, so its text is
 `page.session.files.get(page.commands[-1].args["id"]).path.read_text()`.
+What a handler put on the clipboard with `s.clipboard` is the command
+named `clipboard`, and its text is `page.commands[-1].args["text"]`.
 A handler that calls `s.confirm` or `s.ask` stops and waits. The test sees
 the dialog on the page and answers it with `page.answer(value)`, `False`,
 or `None` for a dismissal. A task started by a handler has run by the time

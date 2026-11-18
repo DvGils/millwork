@@ -21,6 +21,12 @@ versions; a release says so here when it does.
   clipboard, and a browser may refuse the write. The person is now told
   that copying failed, in the new theme string `copy_failed`.
 
+### The manual
+
+- Inputs has `s.clipboard`, for a Copy button, and Testing says how a
+  test reads what was copied. Development says why a full-page picture
+  from a tool of your own shows one window's height.
+
 ## 0.5.3
 
 ### Bug fixes

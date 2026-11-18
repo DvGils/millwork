@@ -123,3 +123,9 @@ and what a press does is for a test with
 [`TestApp`](/testing). A page that never rests, such as one with a
 spinner that stays, is taken when `--timeout` runs out, and the command
 says so.
+
+A browser driven by a tool of your own, such as Playwright, takes a
+full-page picture of one window's height. A `ui.Page` is as tall as the
+window and scrolls its body inside it, so the window has nothing below
+for the tool to take. `--full` makes the window as tall as the page
+first, and a window set that tall does the same in your own tool.
