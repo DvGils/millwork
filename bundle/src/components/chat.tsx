@@ -11,7 +11,7 @@ import { icon } from "../icons";
 import { safeUrl } from "../lib";
 import { fileType, onStream, runsNothing } from "../ws";
 import { upload, useFileUrl } from "./files";
-import { applyChunk, type Part, type Transient, type UIMessage } from "../stream";
+import { applyChunk, seenRunning, type Part, type Transient, type UIMessage } from "../stream";
 import { Markdown } from "./markdown";
 import { CopyButton } from "./copy";
 import { Button } from "@/components/ui/button";
@@ -109,6 +109,9 @@ export const Chat: Renderer = ({ node, props, emit }) => {
   const inline = (props.inline ?? {}) as Record<string, { $node: string }>;
   const [inflight, setInflight] = useState<UIMessage | null>(null);
   const [transient, setTransient] = useState<Transient>({});
+  // The reply has come to its end, though its handler may go on for a
+  // while: the answer is there and nothing more is on its way.
+  const [ended, setEnded] = useState(false);
   // Chunks are applied synchronously against refs, then published: a state
   // updater would run later and lose the transient parts.
   const inflightRef = useRef<UIMessage | null>(null);
@@ -121,7 +124,9 @@ export const Chat: Renderer = ({ node, props, emit }) => {
         const applied = applyChunk(inflightRef.current, chunk as { type: string }, extra);
         // On finish the message stays on screen until the server's props carry
         // it (the busy flag dropping is what removes the stream copy).
-        const next = (chunk as { type: string }).type === "finish" ? inflightRef.current : applied;
+        const kind = (chunk as { type: string }).type;
+        if (kind === "start" || kind === "finish") setEnded(kind === "finish");
+        const next = kind === "finish" ? inflightRef.current : applied;
         inflightRef.current = next;
         transientRef.current = extra;
         setInflight(next);
@@ -133,6 +138,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
   // When the server says the turn is over, its props carry the final message: drop the stream copy.
   useEffect(() => {
     if (!busy) {
+      setEnded(false);
       inflightRef.current = null;
       transientRef.current = { ...transientRef.current, status: undefined };
       setInflight(null);
@@ -141,6 +147,9 @@ export const Chat: Renderer = ({ node, props, emit }) => {
   }, [busy, finished.length]);
 
   const messages = useMemo(() => (inflight && busy ? [...finished, inflight] : finished), [finished, inflight, busy]);
+  // A reply is under way and nothing on the page says so. The handler's
+  // own status always shows.
+  const waiting = busy && !ended && (Boolean(transient.status) || !seenRunning(inflight?.parts ?? [], String(props.show_steps ?? "collapsed") !== "hidden"));
   const suggestions = (transient.suggestions ?? (props.live_suggestions as string[] | undefined) ?? []).length
     ? (transient.suggestions ?? (props.live_suggestions as string[]))
     : messages.length === 0
@@ -194,12 +203,18 @@ export const Chat: Renderer = ({ node, props, emit }) => {
                   <ChatMessage message={m} inline={inline} showSteps={String(props.show_steps ?? "collapsed")} streaming={m === inflight} tools={tools} last={m.id === lastAssistant} aids={aids} />
                 </MessageScrollerItem>
               ))}
-              {transient.status && busy ? (
-                <Marker variant="default">
+              {waiting && props.waiting === "dots" && !transient.status ? (
+                <div role="status" aria-label={t("thinking")} className="flex w-fit items-center gap-1 rounded-2xl bg-muted px-3.5 py-3">
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/70" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:150ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:300ms]" />
+                </div>
+              ) : waiting ? (
+                <Marker variant="default" role="status">
                   <MarkerIcon>
                     <Spin />
                   </MarkerIcon>
-                  <MarkerContent>{transient.status}</MarkerContent>
+                  <MarkerContent>{transient.status ?? t("thinking")}</MarkerContent>
                 </Marker>
               ) : null}
             </MessageScrollerContent>

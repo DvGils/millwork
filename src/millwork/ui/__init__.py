@@ -539,6 +539,17 @@ class Floating(Component):
         ) -> None: ...
 
 
+def _chat_keys(component: Component) -> list[str]:
+    """The keys of the chats in a component, however deep."""
+    keys: list[str] = []
+    for child in component.children:
+        if isinstance(child, Chat) and child.key is not None:
+            keys.append(child.key)
+        elif isinstance(child, Component):
+            keys.extend(_chat_keys(child))
+    return keys
+
+
 class Assistant(_Owned):
     """A floating button that becomes a window. Minimized, it is a round
     button in a corner of the page that the reader can drag about. Opened,
@@ -568,6 +579,14 @@ class Assistant(_Owned):
     open: bool | None = None
     default_open: bool | None = None
     on_toggle: Any = None
+
+    def wire_extra(self) -> dict[str, Any]:
+        """Whether a chat in the window is making a reply, which the button
+        shows while the window is minimized."""
+        from millwork import context
+
+        s = context.current()
+        return {"busy": s is not None and any(s.chat(key).busy for key in _chat_keys(self))}
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 

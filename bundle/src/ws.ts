@@ -584,10 +584,16 @@ function command(name: string, args: Record<string, unknown>) {
     case "title":
       document.title = String(args.title ?? "");
       break;
-    case "clipboard":
-      void navigator.clipboard?.writeText(String(args.text ?? ""));
-      toast.add({ title: t("copied"), type: "success", timeout: 1500 });
+    case "clipboard": {
+      // A page that is not served over HTTPS or from localhost has no
+      // clipboard, and a browser may refuse the write.
+      const written = navigator.clipboard ? navigator.clipboard.writeText(String(args.text ?? "")) : Promise.reject(new Error("no clipboard"));
+      written.then(
+        () => toast.add({ title: t("copied"), type: "success", timeout: 1500 }),
+        () => toast.add({ title: t("copy_failed"), type: "error" }),
+      );
       break;
+    }
     case "print":
       // After two frames: the patch that came just before has been drawn by then.
       requestAnimationFrame(() => requestAnimationFrame(() => window.print()));

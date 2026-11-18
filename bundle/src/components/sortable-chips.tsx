@@ -299,7 +299,7 @@ export function SortableChips({
         ? createPortal(
             <div
               ref={overlay}
-              className="pointer-events-none fixed z-50 flex h-[calc(--spacing(5.25))] items-center gap-1 rounded-sm bg-muted px-1.5 text-xs font-medium whitespace-nowrap text-foreground shadow-lg ring-1 ring-border"
+              className="pointer-events-none fixed z-[58] flex h-[calc(--spacing(5.25))] items-center gap-1 rounded-sm bg-muted px-1.5 text-xs font-medium whitespace-nowrap text-foreground shadow-lg ring-1 ring-border"
               style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.width }}
             >
               {Grip ? <Grip className="-ml-0.5 size-3 shrink-0 text-muted-foreground" /> : null}

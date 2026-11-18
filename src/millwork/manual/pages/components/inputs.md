@@ -77,6 +77,12 @@ when the component is made, with the closest names in the error. It can
 also be a file of the app's own, as [Icon](/components/text#icon)
 describes.
 
+A Copy button is a button whose handler calls `s.clipboard(text)`, which
+puts the text on the clipboard of the person's browser and says
+"Copied". A browser has a clipboard only for a page served over HTTPS or
+from localhost. Without one, or when the browser refuses, the person is
+told that copying failed.
+
 ```python live
 ui.Stack(
     ui.Row(
@@ -114,6 +120,7 @@ ui.Stack(
     ui.Row(
         ui.Button("To the Layout page", href="/components/layout", icon="arrow-right", icon_position="end"),
         ui.Button("Print this page", icon="printer", variant="outline", on_click=lambda s, _: s.print()),
+        ui.Button("Copy the address", icon="copy", variant="outline", on_click=lambda s, _: s.clipboard("https://millwork-ui.com")),
         gap=2,
         wrap=True,
     ),

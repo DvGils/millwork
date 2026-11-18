@@ -41,8 +41,10 @@ function SheetContent({
   side = "right",
   showCloseButton = true,
   keepMounted = false,
+  overlayClassName,
   ...props
 }: SheetPrimitive.Popup.Props & {
+  overlayClassName?: string
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
   // Keep what the sheet holds while it is closed, so a draft typed in it
@@ -51,7 +53,7 @@ function SheetContent({
 }) {
   return (
     <SheetPortal keepMounted={keepMounted}>
-      <SheetOverlay />
+      <SheetOverlay className={overlayClassName} />
       <SheetPrimitive.Popup
         data-slot="sheet-content"
         data-side={side}

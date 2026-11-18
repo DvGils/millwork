@@ -77,7 +77,9 @@ is done with it, by pointing at where it is done. The name is a key or an
 id, and `form/field` names a field of a form. A row of a table and a
 value in a chart have names too, which the end of this section shows.
 Unlike a toast it stays: the session holds it until the person gets to
-the component.
+the component. The frame lies just over its component, so a dialog or
+the window of a floating assistant that covers part of the component
+covers that part of the frame too.
 
 The buttons on top set highlights on the card under them.
 
@@ -239,7 +241,8 @@ holds is taller or wider than the dialog.
 
 With `dismissable=False` a dialog has no cross, and Escape and a click
 outside do nothing. It closes by what the page puts in it, so the person
-has to choose.
+has to choose. Such a dialog lies over a floating assistant, where one
+that can be dismissed lies under it.
 
 ```python live
 from pydantic import BaseModel

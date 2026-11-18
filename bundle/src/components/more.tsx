@@ -8,6 +8,7 @@ import { useStatus } from "../ws";
 import { useMounts, useNode } from "../store";
 import { cn } from "cn";
 import { has } from "../lib";
+import { besideIt, isUrgent, URGENT, useUrgent } from "./surfaces";
 import { PageBody, pageBodyClass } from "./page-body";
 import { InSidebar, PageNavContext, type PageNav } from "./anchor";
 import { NavLinks } from "./header";
@@ -432,15 +433,19 @@ export const Sheet: Renderer = ({ node, props, children, emit }) => {
   const status = useStatus();
   // As a dialog: hidden, or in something hidden, it does not open.
   const hidden = useHiddenAbove();
+  const shown = Boolean(props.open) && status !== "closed" && !hidden;
+  const urgent = isUrgent(node.id, props.dismissable);
+  useUrgent(shown && urgent);
   return (
   <UiSheet
-    open={Boolean(props.open) && status !== "closed" && !hidden}
+    open={shown}
     disablePointerDismissal={props.dismissable === false}
-    onOpenChange={(open) => {
+    onOpenChange={(open, details) => {
+      if (!open && besideIt(details)) return;
       if (!open && props.dismissable !== false && props.on_close) emit("close");
     }}
   >
-    <SheetContent showCloseButton={props.dismissable !== false} data-node={node.id} side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], props.cls as string)}>
+    <SheetContent showCloseButton={props.dismissable !== false} data-node={node.id} side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} overlayClassName={urgent ? URGENT : undefined} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], urgent && URGENT, props.cls as string)}>
       {props.title || props.description ? (
         <SheetHeader>
           {props.title ? <SheetTitle>{String(props.title)}</SheetTitle> : null}

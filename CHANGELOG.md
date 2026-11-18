@@ -3,6 +3,64 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.5.4
+
+### Bug fixes
+
+- A `ui.Select` whose value the page holds told the page its value was
+  `None` when a handler gave it new options and a value among them, once
+  a person had opened it. `on_change(None)` ran right after the handler
+  and undid what it had set, and the select went blank. The select
+  dropped a value that was not among its new options, going by the value
+  it had before. It now leaves a value the page holds to the page. A
+  select that keeps its own value still drops one that is gone and says
+  so.
+
+- `s.clipboard` said "Copied" whether or not the text was copied. On a
+  page that is not served over HTTPS or from localhost a browser has no
+  clipboard, and a browser may refuse the write. The person is now told
+  that copying failed, in the new theme string `copy_failed`.
+
+- `millwork shot` of a page with a `ui.Chat` waited out its whole
+  `--timeout` and said the page was still changing. The fade at the edge
+  of the chat's messages is an animation that goes by the scroll and not
+  by the clock, and it was taken for a page at work.
+
+- A highlight was drawn over everything, the window of a floating
+  assistant included, where the window covered part of the highlighted
+  component. A frame now lies just over the layer its component is in,
+  so a window or a dialog over the component is over its frame too.
+
+- A `ui.Assistant` was under an open dialog or sheet, dimmed and
+  blurred with the page, and could not be used. Its button and window
+  now stay on top of one, under a toast. A press or typing there does
+  not close the dialog, Escape there is for what it was pressed in, and
+  a screen reader still reads it. A menu, a select's list, a popover
+  and a tooltip lie over the window, so one opened in it shows. A
+  question from `s.confirm`, `s.ask` or a button's `confirm`, and a
+  dialog or sheet with `dismissable=False`, lie over the assistant,
+  which waits under them with the rest of the page. The window can
+  cover part of a dialog and the button a corner of a sheet, until they
+  are dragged aside or minimized.
+
+### Features
+
+- A chat says that a reply is on its way while nothing of it shows yet,
+  with a spinner and the word "Thinking". Before, the Stop button was the
+  only sign until the handler said something. It is gone once the reply
+  has ended. `reply.status(text)` takes the word's place, and
+  `ui.Chat(waiting="dots")` shows three dots in a bubble instead.
+
+- The button of a minimized `ui.Assistant` shows a spinner while a chat
+  in its window is making a reply, and a dot when a reply came while it
+  was minimized. A screen reader hears the new theme string `new_reply`.
+
+### The manual
+
+- Inputs has `s.clipboard`, for a Copy button, and Testing says how a
+  test reads what was copied. Development says why a full-page picture
+  from a tool of your own shows one window's height.
+
 ## 0.5.3
 
 ### Bug fixes
