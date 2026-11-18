@@ -1,6 +1,6 @@
 // Surfaces and feedback: tabs, dialogs, empties, alerts, progress, split panes.
 
-import { type CSSProperties, useContext, useEffect, useState } from "react";
+import { type CSSProperties, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
@@ -134,6 +134,90 @@ export function SlotChildren({ ids }: { ids: string[] }) {
 // Tab is rendered by its Tabs parent; on its own it is just its children.
 export const Tab: Renderer = ({ children }) => <>{children}</>;
 
+// The layers of what lies over the page. A dialog or a sheet is at 50. The
+// floating assistant is over those, at 55, since it is there to help with
+// whatever is open. A question, and a dialog or a sheet that cannot be
+// dismissed, is over the assistant: it wants its answer before anything
+// else, the assistant included. Lists, menus and tooltips are over all of
+// that, at 58, wherever they were opened from, and a toast is at 60.
+export const URGENT = "z-[57]";
+
+// Whether a dialog is one that wants its answer first: a question a
+// handler waits on, or one that cannot be dismissed.
+export function isUrgent(nodeId: string, dismissable: unknown): boolean {
+  return dismissable === false || nodeId.includes("/@ask:");
+}
+
+// How many of those are open. While one is, the assistant is under it and
+// is no more to be read than to be seen.
+let urgentOpen = 0;
+const urgentListeners = new Set<() => void>();
+function urgentChanged(by: number) {
+  urgentOpen += by;
+  for (const listener of urgentListeners) listener();
+}
+export function useUrgent(open: boolean) {
+  useEffect(() => {
+    if (!open) return;
+    urgentChanged(1);
+    return () => urgentChanged(-1);
+  }, [open]);
+}
+export function useBlocked(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      urgentListeners.add(listener);
+      return () => urgentListeners.delete(listener);
+    },
+    () => urgentOpen > 0,
+    () => urgentOpen > 0,
+  );
+}
+
+// Whether the person is busy in the floating assistant, or in a list or a
+// menu it opened: where they last pressed or put the keyboard. A press or
+// the keyboard in the assistant says yes, and in a dialog, on what dims
+// the page, on a toast or on the page itself says no. Anywhere else, a
+// list that hangs over the page say, leaves it as it was, since that
+// belongs to whatever opened it.
+let withAssistant = false;
+function landed(event: Event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest("[data-mw-over]")) withAssistant = true;
+  else if (target.closest("[data-slot$='-overlay'], [data-slot$='-content'][data-node], [data-slot^='toast'], #root")) withAssistant = false;
+}
+if (typeof document !== "undefined") {
+  document.addEventListener("pointerdown", landed, true);
+  document.addEventListener("focusin", landed, true);
+}
+
+// Whether what would close a dialog or a sheet is none of its business:
+// a press outside it, Escape, or the keyboard leaving it, while the person
+// is busy in the assistant, which lies over the dialog by design. A press
+// that begins on a field of the assistant and ends on the list it opened
+// is one. Left as it is, the dialog stays open.
+//
+// Escape goes by where the keyboard was when the key went down, which is
+// what the key was pressed on: the window may have been minimized by it
+// since. In the assistant's window, or in a list it opened, the key is for
+// that. On the assistant's button, which has no use for it, or nowhere at
+// all, it is the dialog's.
+export function besideIt(details: { reason: string; event: Event; cancel: () => void }): boolean {
+  if (!["outside-press", "escape-key", "focus-out"].includes(details.reason)) return false;
+  const target = details.event.target;
+  const at = target instanceof Element ? target : null;
+  let beside: boolean;
+  if (details.reason === "escape-key") {
+    if (!at || at === document.body || at === document.documentElement || at.matches("button[data-mw-over]")) beside = false;
+    else beside = at.closest("[data-mw-over]") !== null || withAssistant;
+  } else {
+    beside = withAssistant || at?.closest("[data-mw-over]") != null;
+  }
+  if (beside) details.cancel();
+  return beside;
+}
+
 const dialogSize: Record<string, string> = {
   sm: "sm:max-w-sm",
   md: "sm:max-w-lg",
@@ -147,11 +231,15 @@ export const Dialog: Renderer = ({ node, props, children, emit }) => {
   // Hidden, or in something hidden, it does not open: it is drawn at the
   // top of the page, where the wrapper that hides a node does not reach.
   const hidden = useHiddenAbove();
+  const shown = Boolean(props.open) && status !== "closed" && !hidden;
+  const urgent = isUrgent(node.id, props.dismissable);
+  useUrgent(shown && urgent);
   return (
   <UiDialog
-    open={Boolean(props.open) && status !== "closed" && !hidden}
+    open={shown}
     disablePointerDismissal={props.dismissable === false}
-    onOpenChange={(open) => {
+    onOpenChange={(open, details) => {
+      if (!open && besideIt(details)) return;
       if (!open && props.dismissable !== false && props.on_close) emit("close");
     }}
   >
@@ -161,7 +249,8 @@ export const Dialog: Renderer = ({ node, props, children, emit }) => {
       data-node={node.id}
       // A column no taller than the window: the title and the footer stay, and
       // the body between them scrolls when what it holds is taller or wider.
-      className={cn("flex max-h-[calc(100dvh-2rem)] flex-col", dialogSize[String(props.size ?? "md")], props.cls as string)}
+      className={cn("flex max-h-[calc(100dvh-2rem)] flex-col", dialogSize[String(props.size ?? "md")], urgent && URGENT, props.cls as string)}
+      overlayClassName={urgent ? URGENT : undefined}
       showCloseButton={props.dismissable !== false}
     >
       {props.title || props.description ? (

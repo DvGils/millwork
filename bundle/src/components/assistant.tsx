@@ -13,7 +13,7 @@ import { icon } from "../icons";
 import { t } from "../theme";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet as UiSheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useOwnedOpen } from "./surfaces";
+import { useBlocked, useOwnedOpen } from "./surfaces";
 import { Spinner } from "@/components/ui/spinner";
 import { useFloating, useWindow, viewport } from "./floating";
 import { minimizeTo, openFrom, PANEL_SIZE, panelSize, type Size } from "../assistant-math";
@@ -31,6 +31,8 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
   const draggable = props.draggable !== false;
   const pinned = props.pinned === true;
 
+  // A question, or a dialog that cannot be dismissed, lies over this.
+  const blocked = useBlocked();
   // A chat inside is making a reply. With the window minimized the button
   // says so, and says that a reply came once it has.
   const busy = Boolean(props.busy);
@@ -141,7 +143,16 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
       style={win.style}
       {...win.frameHandlers}
       onKeyDown={onKeyDown}
-      className="fixed z-40 touch-none outline-none print:hidden"
+      // Over a dialog or a sheet and what dims the page behind one, and
+      // under a toast: an assistant is there to help with whatever is
+      // open. The mark tells a dialog that a press here is none outside it.
+      // A dialog hides the rest of the page from a screen reader and
+      // leaves alone what says how it speaks, which "off" does without
+      // changing how: this stays as readable as it is visible, and is
+      // neither under a dialog that lies over it.
+      data-mw-over=""
+      aria-live={blocked ? undefined : "off"}
+      className="fixed z-[55] touch-none outline-none print:hidden"
     >
       <div aria-hidden className="absolute -inset-1" />
       <div className="relative flex h-full w-full flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl">
@@ -174,10 +185,12 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
         aria-label={unread ? `${label}, ${t("new_reply")}` : label}
         aria-expanded={open}
         aria-busy={busy || undefined}
+        data-mw-over=""
+        aria-live={blocked ? undefined : "off"}
         {...button.handlers}
         style={button.style}
         className={cn(
-          "fixed z-40 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none print:hidden",
+          "fixed z-[55] flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none print:hidden",
           draggable && !pinned && "cursor-grab touch-none select-none active:cursor-grabbing",
           button.corner,
           props.cls as string,
@@ -189,7 +202,7 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
       )}
       {mobile ? (
         <UiSheet open={open} onOpenChange={(next) => toggle(next)}>
-          <SheetContent side="bottom" keepMounted className="flex flex-col gap-0 p-0 data-[side=bottom]:h-[85dvh]">
+          <SheetContent side="bottom" keepMounted data-mw-over="" aria-live={blocked ? undefined : "off"} overlayClassName="z-[55]" className="z-[55] flex flex-col gap-0 p-0 data-[side=bottom]:h-[85dvh]">
             <SheetHeader className="border-b px-4 py-3">
               <SheetTitle>{title}</SheetTitle>
             </SheetHeader>

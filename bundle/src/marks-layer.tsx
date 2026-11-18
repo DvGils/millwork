@@ -43,6 +43,9 @@ interface Known {
   targets: HTMLElement[];
   within: HTMLElement[];
   clips: HTMLElement[];
+  // The layer its component is in, as the page stacks its layers: 0 for
+  // the page itself, more for a dialog or a window over it.
+  layer: number;
   looked: number;
 }
 const known = new Map<number, Known>();
@@ -50,7 +53,7 @@ let frames = 0;
 
 function about(n: number): Known {
   let k = known.get(n);
-  if (!k) known.set(n, (k = { seen: false, scrolled: false, timer: null, ink: "", told: 0, targets: [], within: [], clips: [], looked: -LOOK_EVERY }));
+  if (!k) known.set(n, (k = { seen: false, scrolled: false, timer: null, ink: "", told: 0, targets: [], within: [], clips: [], layer: 0, looked: -LOOK_EVERY }));
   return k;
 }
 
@@ -82,9 +85,14 @@ function targetsOf(mark: Mark, k: Known): HTMLElement[] {
     // is held against the whole chart. A row is its own element.
     k.within = k.targets[0] instanceof SVGElement ? elementsOf(mark.id) : k.targets;
     k.clips = [];
-    for (let up = k.targets[0]?.parentElement; up && up !== document.body; up = up.parentElement) {
+    k.layer = 0;
+    for (let up: Element | null = k.targets[0] ?? null; up && up !== document.body; up = up.parentElement) {
       const flow = getComputedStyle(up);
-      if (flow.overflowX !== "visible" || flow.overflowY !== "visible") k.clips.push(up);
+      if (up !== k.targets[0] && up instanceof HTMLElement && (flow.overflowX !== "visible" || flow.overflowY !== "visible")) k.clips.push(up);
+      // The outermost element that is given a place in the stack is the
+      // one the page stacks, with everything in it.
+      const z = Number(flow.zIndex);
+      if (flow.position !== "static" && Number.isFinite(z)) k.layer = Math.max(0, z);
     }
   }
   return k.targets;
@@ -122,6 +130,7 @@ interface Placed {
   box: Box | null;
   part: Box | null;
   color: string | null;
+  layer: number;
 }
 
 export function Marks() {
@@ -150,7 +159,7 @@ export function Marks() {
         if (!el) continue;
         const k = about(mark.n);
         if (stillTold(k.told, now)) {
-          placed.push({ el, box: null, part: null, color: null });
+          placed.push({ el, box: null, part: null, color: null, layer: 0 });
           continue;
         }
         const targets = targetsOf(mark, k);
@@ -163,18 +172,21 @@ export function Marks() {
           if (!whole) targets[0].scrollIntoView({ block: "center", behavior: "smooth" });
         }
         const badge = el.firstElementChild;
-        placed.push({ el, box, part, color: box && part && badge ? getComputedStyle(badge).backgroundColor : null });
+        placed.push({ el, box, part, color: box && part && badge ? getComputedStyle(badge).backgroundColor : null, layer: k.layer });
         if (box && part && !k.seen) {
           k.seen = true;
           if (mark.seconds) k.timer = window.setTimeout(() => done(mark, "timed out"), mark.seconds * 1000);
         }
       }
-      for (const { el, box, part, color } of placed) {
+      for (const { el, box, part, color, layer } of placed) {
         if (!box || !part) {
           el.style.display = "none";
           continue;
         }
         el.style.display = "";
+        // Just over the layer its component is in, so that what lies over
+        // the component, a window or a dialog, lies over its frame as well.
+        el.style.zIndex = String(layer + 1);
         el.style.transform = `translate(${box.left - OFF}px, ${box.top - OFF}px)`;
         el.style.width = `${box.right - box.left + 2 * OFF}px`;
         el.style.height = `${box.bottom - box.top + 2 * OFF}px`;

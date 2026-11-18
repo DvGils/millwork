@@ -324,17 +324,16 @@ body.mw-dragging * {
     inherits: false;
     initial-value: 0deg;
 }
+/* The frames have no layer of their own. Each is put just over the layer
+   its component is in, by the script that places it. */
 .mw-marks {
-    position: fixed;
-    inset: 0;
-    z-index: 2147483000;
-    overflow: hidden;
-    pointer-events: none;
+    display: contents;
 }
 .mw-mark {
-    position: absolute;
+    position: fixed;
     top: 0;
     left: 0;
+    pointer-events: none;
     border-radius: calc(var(--radius) + 1px);
     box-shadow:
         0 0 0 2px var(--mw-mark),

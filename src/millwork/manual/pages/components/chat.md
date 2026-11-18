@@ -123,6 +123,17 @@ window always folds back to. On a phone the window is a sheet from the
 bottom. `open` makes Python the owner of whether it is open, with
 `on_toggle` reporting the clicks. Left alone, the browser holds that.
 
+The button and the window stay on top of an open dialog or sheet, and
+under a toast, so the assistant can help with a form that is open.
+Pressing or typing there leaves the dialog as it is, and Escape in the
+window minimizes the window alone. The window can cover part of the
+dialog, where it is dragged aside or minimized.
+
+A question lies over the assistant, as does a dialog or sheet with
+`dismissable=False`. Those want their answer before anything else, so
+the assistant waits under them with the rest of the page. A question is
+what `s.confirm`, `s.ask` and a button's `confirm` put on the page.
+
 While a chat in the window is making a reply, the minimized button shows
 a spinner in place of its icon. A reply that came while the window was
 minimized leaves a dot on the button until the window is opened. The

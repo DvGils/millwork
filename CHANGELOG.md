@@ -26,6 +26,23 @@ versions; a release says so here when it does.
   of the chat's messages is an animation that goes by the scroll and not
   by the clock, and it was taken for a page at work.
 
+- A highlight was drawn over everything, the window of a floating
+  assistant included, where the window covered part of the highlighted
+  component. A frame now lies just over the layer its component is in,
+  so a window or a dialog over the component is over its frame too.
+
+- A `ui.Assistant` was under an open dialog or sheet, dimmed and
+  blurred with the page, and could not be used. Its button and window
+  now stay on top of one, under a toast. A press or typing there does
+  not close the dialog, Escape there is for what it was pressed in, and
+  a screen reader still reads it. A menu, a select's list, a popover
+  and a tooltip lie over the window, so one opened in it shows. A
+  question from `s.confirm`, `s.ask` or a button's `confirm`, and a
+  dialog or sheet with `dismissable=False`, lie over the assistant,
+  which waits under them with the rest of the page. The window can
+  cover part of a dialog and the button a corner of a sheet, until they
+  are dragged aside or minimized.
+
 ### Features
 
 - A chat says that a reply is on its way while nothing of it shows yet,

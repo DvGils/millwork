@@ -412,3 +412,274 @@ async def test_a_reply_on_its_way_is_said_in_the_chat_and_on_the_assistants_butt
         await page.click("button[aria-label=Minimize]")
         assert await page.read(f"{button}.ariaLabel") == "Assistant"
 
+
+async def test_the_assistant_is_at_hand_over_a_dialog_and_under_no_highlight() -> None:
+    class Order(BaseModel):
+        customer: str = ""
+        amount: float | None = None
+
+    class Desk(BaseModel):
+        ordering: bool = False
+        asked: list[str] = []
+
+    app = mw.App("layers", state=Desk, public=None)
+
+    async def answer(s: mw.Session[Desk], turn: mw.ChatTurn) -> None:
+        s.state.asked.append(turn.text)
+        async with turn.reply() as reply:
+            await reply.text("The amount comes next.")
+        s.highlight("order/amount")
+
+    def order(s: mw.Session[Desk], _: Any) -> None:
+        s.state.ordering = True
+
+    def done(s: mw.Session[Desk], _: Any = None) -> None:
+        s.state.ordering = False
+
+    @app.page("/")
+    def home(s: mw.Session[Desk]) -> ui.Component:
+        return ui.Page(
+            ui.Button("New order", key="new", on_click=order),
+            ui.Button("Mark", key="mark", on_click=lambda s, _: s.highlight("wide")),
+            # Wide enough to lie partly under the assistant's window.
+            ui.Card(ui.Text("An order. " * 60), key="wide", title="Orders"),
+            ui.Text(f"asked {len(s.state.asked)}", key="asked"),
+            ui.Dialog(
+                ui.Form(Order, key="order", on_submit=done),
+                key="dialog",
+                title="New order",
+                open=s.state.ordering,
+                on_close=done,
+            ),
+            ui.Assistant(
+                ui.Select(key="tone", options=["Brief", "Thorough"], default="Brief"),
+                ui.Chat(key="helper", on_message=answer),
+                key="a",
+            ),
+        )
+
+    now = """(() => {
+      const over = document.querySelector('[role=dialog][data-mw-over]');
+      return {
+        dialog: !!document.querySelector('[data-slot=dialog-content]'),
+        assistant: !!over && !over.hidden,
+        heard: !document.querySelector('button[data-mw-over], [role=dialog][data-mw-over]')
+          ?.closest('[aria-hidden=true]'),
+        frames: [...document.querySelectorAll('.mw-mark')]
+          .filter((m) => m.style.display !== 'none').map((m) => Number(m.style.zIndex)),
+        window: over ? Number(getComputedStyle(over).zIndex) : null,
+        asked: document.body.textContent.includes('asked 1'),
+      };
+    })()"""
+    async with Page(app) as page:
+        await page.tab.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=1100,
+            height=700,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        await page.rest()
+        # A highlight on the page lies under the window that covers part of it.
+        await page.click("button[data-mw-over]")
+        await page.press("Mark")
+        await page.rest(1500)
+        seen = await page.read(now)
+        assert seen["assistant"] and len(seen["frames"]) == 1
+        assert seen["frames"][0] < seen["window"]
+        # What a field in the window opens lies over the window.
+        await page.click("[data-mw-over] [role=combobox]", at_most=1500)
+        on_top = await page.read(
+            "(() => { const o = [...document.querySelectorAll('[role=option]')]"
+            ".find((o) => o.textContent.trim() === 'Thorough'); if (!o) return 'no list';"
+            " const r = o.getBoundingClientRect();"
+            " const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);"
+            " return at && at.closest('[role=option]') ? 'the option' : 'something else'; })()"
+        )
+        assert on_top == "the option"
+        await page.click("[role=option]", "Thorough", at_most=1500)
+        await page.click("button[aria-label=Minimize]", at_most=1500)
+
+        # With a dialog open the button is there to press, and pressing it
+        # is no press outside the dialog.
+        await page.press("New order")
+        await page.click("button[data-mw-over]")
+        seen = await page.read(now)
+        assert seen["dialog"] and seen["assistant"] and seen["heard"]
+
+        # What is asked there arrives, and the field it points at in the
+        # dialog is framed over the dialog and under the window.
+        await page.read("document.querySelector('[data-mw-over] textarea').focus()")
+        await page.tab.call("Input.insertText", text="What comes next?")
+        for kind in ("keyDown", "keyUp"):
+            await page.tab.call(
+                "Input.dispatchKeyEvent",
+                type=kind,
+                key="Enter",
+                code="Enter",
+                windowsVirtualKeyCode=13,
+                text="\r" if kind == "keyDown" else "",
+            )
+        await page.rest(1500)
+        seen = await page.read(now)
+        assert seen["asked"] and seen["dialog"] and seen["assistant"]
+        assert len(seen["frames"]) == 1 and 50 < seen["frames"][0] < seen["window"]
+
+        # Escape in the window minimizes the window, and in the dialog
+        # closes the dialog.
+        await page.read("document.querySelector('[data-mw-over] textarea').focus()")
+        await page.key("Escape", 27)
+        seen = await page.read(now)
+        assert seen["dialog"] and not seen["assistant"]
+        await page.click('[data-field="/customer"] input', at_most=1500)
+        await page.key("Escape", 27)
+        assert not (await page.read(now))["dialog"]
+
+
+async def test_a_question_and_a_dialog_that_cannot_be_dismissed_lie_over_the_assistant() -> None:
+    class Desk(BaseModel):
+        ordering: bool = False
+        agreeing: bool = False
+        wiped: bool = False
+
+    app = mw.App("urgent", state=Desk, public=None)
+
+    def set_to(name: str, value: bool) -> Any:
+        return lambda s, _=None: setattr(s.state, name, value)
+
+    @app.page("/")
+    def home(s: mw.Session[Desk]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.Button("New order", key="new", on_click=set_to("ordering", True)),
+            ui.Button("Terms", key="terms", on_click=set_to("agreeing", True)),
+            ui.Text(f"wiped {st.wiped}", key="wiped"),
+            ui.Dialog(
+                ui.Text("An order."),
+                key="order",
+                title="New order",
+                open=st.ordering,
+                on_close=set_to("ordering", False),
+            ),
+            ui.Dialog(
+                ui.Button("Agree", key="agree", on_click=set_to("agreeing", False)),
+                key="must",
+                title="The terms",
+                open=st.agreeing,
+                dismissable=False,
+            ),
+            ui.Assistant(
+                ui.Select(key="tone", options=["Brief", "Thorough"], default="Brief"),
+                ui.Button(
+                    "Wipe", key="wipe", confirm="Delete everything?", on_click=set_to("wiped", True)
+                ),
+                key="a",
+            ),
+        )
+
+    heard = "!document.querySelector('[role=dialog][data-mw-over]').closest('[aria-hidden=true]')"
+    dialogs = "document.querySelectorAll('[data-slot=dialog-content]').length"
+    async with Page(app) as page:
+        await page.tab.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=1000,
+            height=700,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        await page.rest()
+        await page.click("button[data-mw-over]")
+
+        # A question asked from the window lies over the window, all of it.
+        await page.press("Wipe")
+        assert await page.on_top("[data-slot=dialog-content] button", "OK")
+        assert not await page.read(heard)
+        await page.click("[data-slot=dialog-content] button", "OK")
+        assert "wiped True" in await page.read("document.body.textContent")
+        assert await page.read(heard)
+
+        # Escape in a list the window opened closes the list, and leaves a
+        # dialog of the page as it is.
+        await page.press("New order")
+        await page.click("[data-mw-over] [role=combobox]")
+        assert await page.on_top("[role=option]", "Thorough")
+        await page.key("Escape", 27)
+        assert await page.read(dialogs) == 1
+        assert not await page.read("document.querySelector('[role=option]')?.checkVisibility()")
+        # Nor does dragging the window by its header close the dialog.
+        at = await page.read(
+            "(() => { const r = document.querySelector('[role=dialog][data-mw-over]')"
+            ".getBoundingClientRect(); return [r.x + 60, r.y + 20]; })()"
+        )
+        for kind, x in (
+            ("mousePressed", at[0]),
+            ("mouseMoved", at[0] - 30),
+            ("mouseReleased", at[0] - 30),
+        ):
+            await page.tab.call(
+                "Input.dispatchMouseEvent",
+                type=kind,
+                x=x,
+                y=at[1],
+                button="left",
+                buttons=1,
+                clickCount=1,
+            )
+        await page.rest()
+        assert await page.read(dialogs) == 1
+        # With the keyboard nowhere, Escape is the dialog's again, though
+        # the assistant was what the person used last.
+        await page.read("document.activeElement.blur()")
+        assert await page.read("document.activeElement === document.body")
+        await page.key("Escape", 27)
+        assert await page.read(dialogs) == 0
+
+        # A dialog that cannot be dismissed keeps the assistant under it.
+        await page.press("Terms")
+        assert not await page.on_top("[role=dialog][data-mw-over] [role=combobox]")
+        assert not await page.read(heard)
+        await page.click("[data-slot=dialog-content] button", "Agree")
+        assert await page.on_top("[role=dialog][data-mw-over] [role=combobox]")
+        assert await page.read(heard)
+
+
+async def test_on_a_phone_the_assistants_sheet_opens_over_a_dialog() -> None:
+    class Desk(BaseModel):
+        ordering: bool = True
+
+    app = mw.App("phone", state=Desk, public=None)
+
+    def done(s: mw.Session[Desk], _: Any = None) -> None:
+        s.state.ordering = False
+
+    @app.page("/")
+    def home(s: mw.Session[Desk]) -> ui.Component:
+        return ui.Page(
+            ui.Dialog(
+                ui.Text("An order."),
+                key="order",
+                title="New order",
+                open=s.state.ordering,
+                on_close=done,
+            ),
+            ui.Assistant(ui.Chat(key="helper", on_message=lambda s, turn: None), key="a"),
+        )
+
+    async with Page(app) as page:
+        await page.tab.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=390,
+            height=800,
+            deviceScaleFactor=1,
+            mobile=True,
+        )
+        await page.rest()
+        assert await page.on_top("button[data-mw-over]")
+        await page.click("button[data-mw-over]")
+        assert await page.on_top("[data-mw-over] textarea")
+        assert not await page.read(
+            "!!document.querySelector('[data-mw-over] textarea').closest('[aria-hidden=true]')"
+        )
+        assert (
+            await page.read("document.querySelectorAll('[data-slot=dialog-content]').length") == 1
+        )
