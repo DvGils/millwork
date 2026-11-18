@@ -6,7 +6,7 @@
 // or resized. A pinned button never leaves its corner. On a phone the window
 // is a sheet from the bottom.
 
-import { useCallback, useEffect, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { cn } from "cn";
 import type { Renderer } from "../render";
 import { icon } from "../icons";
@@ -14,6 +14,7 @@ import { t } from "../theme";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet as UiSheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useOwnedOpen } from "./surfaces";
+import { Spinner } from "@/components/ui/spinner";
 import { useFloating, useWindow, viewport } from "./floating";
 import { minimizeTo, openFrom, PANEL_SIZE, panelSize, type Size } from "../assistant-math";
 
@@ -29,6 +30,17 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
   const side = props.side === "left" ? "left" : "right";
   const draggable = props.draggable !== false;
   const pinned = props.pinned === true;
+
+  // A chat inside is making a reply. With the window minimized the button
+  // says so, and says that a reply came once it has.
+  const busy = Boolean(props.busy);
+  const [unread, setUnread] = useState(false);
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (open) setUnread(false);
+    else if (wasBusy.current && !busy) setUnread(true);
+    wasBusy.current = busy;
+  }, [busy, open]);
 
   const toggle = useCallback(
     (next: boolean) => {
@@ -159,8 +171,9 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
       <button
         ref={button.ref}
         type="button"
-        aria-label={label}
+        aria-label={unread ? `${label}, ${t("new_reply")}` : label}
         aria-expanded={open}
+        aria-busy={busy || undefined}
         {...button.handlers}
         style={button.style}
         className={cn(
@@ -170,7 +183,8 @@ export const Assistant: Renderer = ({ node, props, children, emit }) => {
           props.cls as string,
         )}
       >
-        {Icon ? <Icon className="size-5" /> : null}
+        {busy ? <Spinner className="size-5" /> : Icon ? <Icon className="size-5" /> : null}
+        {unread && !busy ? <span aria-hidden className="absolute top-0 right-0 size-3 rounded-full bg-destructive ring-2 ring-background" /> : null}
       </button>
       )}
       {mobile ? (

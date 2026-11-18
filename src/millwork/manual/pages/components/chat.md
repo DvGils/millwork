@@ -30,6 +30,13 @@ opens a tool step, `reply.status(text)` shows a transient marker, and
 `reply.suggestions([...])` offers follow-up chips. The whole turn is a
 task, so the stop button cancels it.
 
+While a reply is on its way and nothing of it shows yet, the chat says
+so with a spinner and the word "Thinking", the theme's string `thinking`.
+It goes once text arrives or a step shows, comes back between the parts
+of a reply, and is gone when the reply has ended. What the handler says
+with `reply.status(text)` takes its place. `waiting="dots"` shows three
+dots in a bubble instead.
+
 ```python live
 import asyncio
 
@@ -114,8 +121,15 @@ remembers where the button is and how big the window was. `pinned=True`
 keeps the button in its corner, where it cannot be dragged and where the
 window always folds back to. On a phone the window is a sheet from the
 bottom. `open` makes Python the owner of whether it is open, with
-`on_toggle` reporting the clicks. Left alone, the browser holds that. The
-button below adds one to this page, and it goes away with the page. Its
+`on_toggle` reporting the clicks. Left alone, the browser holds that.
+
+While a chat in the window is making a reply, the minimized button shows
+a spinner in place of its icon. A reply that came while the window was
+minimized leaves a dot on the button until the window is opened. The
+chat is one given to the assistant as it is written, not one inside
+`ui.lazy`.
+
+The button below adds one to this page, and it goes away with the page. Its
 answers come from the manual's own search, with a link to each section it
 finds.
 

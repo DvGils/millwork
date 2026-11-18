@@ -172,6 +172,7 @@ STRINGS: dict[str, str] = {
     "dismiss": "Dismiss",
     "close": "Close",
     "minimize": "Minimize",
+    "new_reply": "New reply",
     "toggle_sidebar": "Toggle sidebar",
     "previous": "Previous",
     "next": "Next",

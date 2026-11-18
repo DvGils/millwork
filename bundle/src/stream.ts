@@ -126,3 +126,16 @@ export function applyChunk(message: UIMessage | null, chunk: Chunk, extra: Trans
 export function messageText(m: UIMessage): string {
   return m.parts.filter((p) => p.type === "text").map((p) => String(p.text)).join("");
 }
+
+// The states of a part of a reply that is still being made.
+const RUNNING = new Set(["streaming", "input-streaming", "input-available"]);
+
+// Whether something of a reply can be seen to be under way: text that is
+// being written and has a word of it there, or a thought or a step that
+// runs, where the chat shows its steps.
+export function seenRunning(parts: Part[], stepsShown: boolean): boolean {
+  return parts.some((p) => {
+    if (!RUNNING.has(String(p.state ?? ""))) return false;
+    return p.type === "text" ? String(p.text ?? "") !== "" : stepsShown;
+  });
+}

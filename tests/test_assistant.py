@@ -79,3 +79,53 @@ async def test_the_notes_example_has_a_bound(tmp_path: Path) -> None:
         assert len(page.session.state.board.notes) == 12
         title = next(c for c in page.find_all(ui.Input) if c.props.get("placeholder") == "Title")
         assert title.props["max_length"] == 80
+
+
+async def test_the_assistant_says_when_a_chat_in_it_is_making_a_reply(tmp_path: Path) -> None:
+    import asyncio
+
+    import millwork as mw
+    from millwork.nodes import build
+
+    app = mw.App("busy", public=None, bundle_dir=tmp_path)
+    release = asyncio.Event()
+    drawn_busy = asyncio.Event()
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        await release.wait()
+        async with turn.reply() as reply:
+            await reply.text("done")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        if s.chat("inside").busy or s.chat("beside").busy:
+            drawn_busy.set()
+        return ui.Page(
+            # However deep in the window the chat is.
+            ui.Assistant(ui.Stack(ui.Chat(key="inside", on_message=answer)), key="helper"),
+            ui.Chat(key="beside", on_message=answer),
+        )
+
+    async with TestApp(app).open("/") as page:
+        assert page.find("helper").props["busy"] is False
+        for chat, busy in (("inside", True), ("beside", False)):
+            sent = asyncio.ensure_future(page.send(chat, "hello"))
+            await asyncio.wait_for(drawn_busy.wait(), 5)
+            # A chat beside the assistant is none of its business.
+            assert page.find("helper").props["busy"] is busy
+            release.set()
+            await sent
+            assert page.find("helper").props["busy"] is False
+            release.clear()
+            drawn_busy.clear()
+
+    # Outside a session there is no chat to ask.
+    assert build(ui.Assistant(ui.Chat(key="c"))).nodes["root"].props["busy"] is False
+
+
+def test_a_chat_says_how_it_waits() -> None:
+    from millwork.nodes import build
+
+    assert build(ui.Chat(key="c", waiting="dots")).nodes["root"].props["waiting"] == "dots"
+    with pytest.raises(ValueError):
+        ui.Chat(key="c", waiting="spinner")

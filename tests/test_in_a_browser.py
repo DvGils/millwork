@@ -76,8 +76,10 @@ class Page:
         finally:
             await self._served.__aexit__(*exc)
 
-    async def rest(self) -> None:
-        await self.tab.value(_SETTLE % {"timeout": 5000, "still": STILL})
+    async def rest(self, at_most: int = 5000) -> None:
+        """Wait for the page to stop changing, for ``at_most`` milliseconds.
+        A page with a spinner on it never does, and is waited for that long."""
+        await self.tab.value(_SETTLE % {"timeout": at_most, "still": STILL})
 
     async def read(self, script: str) -> Any:
         return await self.tab.value(script)
@@ -101,7 +103,7 @@ class Page:
         assert pressed, f"no button says {label!r}"
         await self.rest()
 
-    async def click(self, selector: str, text: str | None = None) -> None:
+    async def click(self, selector: str, text: str | None = None, at_most: int = 5000) -> None:
         """Click with the mouse on what ``selector`` finds, the one that says
         ``text`` when there are several. A press and a release at its
         middle, which is what opens a select."""
@@ -116,6 +118,28 @@ class Page:
         for kind in ("mousePressed", "mouseReleased"):
             await self.tab.call(
                 "Input.dispatchMouseEvent", type=kind, x=at[0], y=at[1], button="left", clickCount=1
+            )
+        await self.rest(at_most)
+
+    async def on_top(self, selector: str, text: str | None = None) -> bool:
+        """Whether what ``selector`` finds, the one that says ``text``, is
+        what a press at its middle would land on."""
+        says = "true" if text is None else f"e.textContent.trim() === {json.dumps(text)}"
+        found: bool | None = await self.read(
+            f"(() => {{ const e = [...document.querySelectorAll({json.dumps(selector)})]"
+            f".find((e) => {says}); if (!e) return null;"
+            " const r = e.getBoundingClientRect();"
+            " const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);"
+            " return !!at && (e === at || e.contains(at)); })()"
+        )
+        assert found is not None, f"nothing at {selector} says {text!r}"
+        return found
+
+    async def key(self, name: str, code: int) -> None:
+        """Press a key that types nothing, such as Escape, where the keyboard is."""
+        for kind in ("keyDown", "keyUp"):
+            await self.tab.call(
+                "Input.dispatchKeyEvent", type=kind, key=name, code=name, windowsVirtualKeyCode=code
             )
         await self.rest()
 
@@ -295,3 +319,96 @@ async def test_copied_is_said_only_of_what_was_copied() -> None:
         await page.read(writes("resolve()"))
         await page.press("Copy")
         assert "Copied" in await page.read(said)
+
+
+async def test_a_reply_on_its_way_is_said_in_the_chat_and_on_the_assistants_button() -> None:
+    import asyncio
+    import threading
+
+    # The server has a thread of its own, so the test holds a reply back
+    # with an event of threads.
+    hold = {"page": threading.Event(), "helper": threading.Event()}
+    tidy = threading.Event()
+    app = mw.App("waits", public=None)
+
+    def answers(name: str) -> Any:
+        async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+            await asyncio.to_thread(hold[name].wait, 20)
+            async with turn.reply() as reply:
+                await reply.text(f"Answer from the {name}.")
+            if name == "page":
+                # What a handler does after its reply, saving it say.
+                await asyncio.to_thread(tidy.wait, 20)
+
+        return answer
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Chat(key="page", on_message=answers("page"), waiting="dots", cls="h-[20rem]"),
+            ui.Assistant(ui.Chat(key="helper", on_message=answers("helper")), key="a"),
+        )
+
+    async def say(page: Page, within: str, text: str) -> None:
+        focused = await page.read(
+            f"(() => {{ const t = document.querySelector({json.dumps(within + ' textarea')});"
+            " if (!t) return false; t.focus(); return true; })()"
+        )
+        assert focused, f"no composer in {within}"
+        await page.tab.call("Input.insertText", text=text)
+        for kind in ("keyDown", "keyUp"):
+            await page.tab.call(
+                "Input.dispatchKeyEvent",
+                type=kind,
+                key="Enter",
+                code="Enter",
+                windowsVirtualKeyCode=13,
+                text="\r" if kind == "keyDown" else "",
+            )
+        # A spinner turns from here on, so the page does not come to rest.
+        await page.rest(800)
+
+    waiting = (
+        "[...document.querySelectorAll('[role=status]')].map((e) => e.ariaLabel || e.textContent)"
+    )
+    button = "document.querySelector('button[aria-expanded]')"
+    async with Page(app) as page:
+        # Wide enough for the assistant to be a window and not a sheet.
+        await page.tab.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=1100,
+            height=700,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        await page.rest()
+        await say(page, "main", "A question")
+        assert await page.read(waiting) == ["Thinking"]
+        hold["page"].set()
+        await page.rest()
+        # The answer is there and its handler is not done: Stop still
+        # shows, and nothing says that more is on its way.
+        assert "Answer from the page." in await page.read("document.body.textContent")
+        assert await page.read(
+            "[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Stop')"
+        )
+        assert await page.read(waiting) == []
+        tidy.set()
+        await page.rest()
+        assert await page.read(waiting) == []
+
+        await page.click("button[aria-expanded]")
+        await say(page, "[role=dialog]", "Another")
+        assert await page.read(waiting) == ["Thinking"]
+        await page.click("button[aria-label=Minimize]", at_most=800)
+        assert await page.read(f"{button}.ariaBusy") == "true"
+        assert await page.read(f"{button}.ariaLabel") == "Assistant"
+        hold["helper"].set()
+        await page.rest()
+        # The reply came while the window was minimized, which the button says.
+        assert await page.read(f"{button}.ariaBusy") is None
+        assert await page.read(f"{button}.ariaLabel") == "Assistant, New reply"
+        await page.click("button[aria-expanded]")
+        await page.click("button[aria-label=Minimize]")
+        assert await page.read(f"{button}.ariaLabel") == "Assistant"
+

@@ -78,6 +78,10 @@ class Chat(Component):
     commands: list[Command] = []
     disabled: bool = False
     show_steps: Literal["full", "collapsed", "hidden"] = "collapsed"
+    waiting: Literal["word", "dots"] = "word"
+    """What says that a reply is on its way while nothing of it shows yet:
+    a spinner and the theme's word for thinking, or three dots in a bubble.
+    What the handler says with ``reply.status`` takes its place."""
     # Reading aids, each off by default: the assistant's picture beside its
     # messages, a name and a time above each message (on hover, always without
     # a mouse), and how long a reply and each of its steps took.
@@ -135,6 +139,7 @@ class Chat(Component):
             commands: list[Command] = ...,
             disabled: bool = False,
             show_steps: Literal["full", "collapsed", "hidden"] = "collapsed",
+            waiting: Literal["word", "dots"] = "word",
             avatar: str | None = None,
             assistant_name: str | None = None,
             names: bool = False,

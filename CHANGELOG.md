@@ -26,6 +26,18 @@ versions; a release says so here when it does.
   of the chat's messages is an animation that goes by the scroll and not
   by the clock, and it was taken for a page at work.
 
+### Features
+
+- A chat says that a reply is on its way while nothing of it shows yet,
+  with a spinner and the word "Thinking". Before, the Stop button was the
+  only sign until the handler said something. It is gone once the reply
+  has ended. `reply.status(text)` takes the word's place, and
+  `ui.Chat(waiting="dots")` shows three dots in a bubble instead.
+
+- The button of a minimized `ui.Assistant` shows a spinner while a chat
+  in its window is making a reply, and a dot when a reply came while it
+  was minimized. A screen reader hears the new theme string `new_reply`.
+
 ### The manual
 
 - Inputs has `s.clipboard`, for a Copy button, and Testing says how a
