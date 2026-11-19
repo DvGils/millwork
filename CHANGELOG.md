@@ -3,6 +3,18 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.1
+
+### Bug fixes
+
+- A page with a `ui.Sortable`, a `ui.MultiSelect` with `sortable=True`
+  or a `ui.FileUpload` low on it gave the window a second scrollbar, as
+  long as the page and with nothing to show. Each has an element in it
+  that is hidden where it stands, what is said to a screen reader and
+  the browser's own file field, and that element reached out of the part
+  of the page that scrolls. The body of a page now holds whatever is
+  placed in it, and the three keep theirs to themselves.
+
 ## 0.6.0
 
 ### Bug fixes

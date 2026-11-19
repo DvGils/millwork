@@ -292,7 +292,7 @@ export function SortableChips({
           {optionLabel(c, "size-3")}
         </ComboboxChip>
       ))}
-      <span aria-live="polite" className="sr-only">
+      <span aria-live="polite" className="mw-said">
         {said}
       </span>
       {drag
