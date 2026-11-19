@@ -40,6 +40,7 @@ MODELS = (
     ui.Accept,
     ui.FileRef,
     ui.Issue,
+    ui.Move,
 )
 SESSION_API = (
     "text",

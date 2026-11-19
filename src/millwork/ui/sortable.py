@@ -10,8 +10,7 @@ from millwork.nodes import Component
 
 
 class Move(BaseModel):
-    """A row that was dragged, as ``on_move`` gets it.
-
+    """A row of a ``Sortable`` that was dragged, as ``on_move`` gets it.
     ``key`` is the row's key. ``source`` is the key of the list it was in and
     ``target`` the key of the list it was dropped in, the same list when the
     row only changed places. ``to`` is its place among the rows of the
@@ -31,13 +30,12 @@ class Sortable(Component):
     has a ``key``. ``on_move`` gets a ``Move`` and changes the state, and
     the page drawn from it is where the row ends up: a handler that leaves
     the state as it was sends the row back.
-
     Lists with the same ``group`` take rows from each other, and such a
     list has a ``key`` of its own, which the ``Move`` names it by.
     ``takes=False`` keeps rows of other lists out, and ``reorder=False``
     keeps the list's own rows in the order they are in. ``empty`` is what
-    a list without rows says, where a row can still be dropped.
-
+    a list without rows says, where a row can still be dropped. ``label``
+    is what a screen reader calls the list.
     A row is dragged by the grip down its left edge, or by all of it with
     ``handle=False``, which suits rows with little in them to press. A list
     without ``on_move`` has nobody to tell, so it takes no rows and keeps
