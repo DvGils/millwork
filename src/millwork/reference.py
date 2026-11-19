@@ -40,6 +40,7 @@ MODELS = (
     ui.Accept,
     ui.FileRef,
     ui.Issue,
+    ui.Move,
 )
 SESSION_API = (
     "text",
@@ -92,6 +93,7 @@ PAGE_API = (
     "select",
     "choose",
     "action",
+    "move",
     "upload",
     "send",
     "stop",

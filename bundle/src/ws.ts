@@ -550,10 +550,19 @@ function command(name: string, args: Record<string, unknown>) {
       const type = tone === "destructive" ? "error" : tone === "success" || tone === "warning" ? tone : tone === "primary" || tone === "accent" ? "info" : undefined;
       const message = String(args.message ?? "");
       const action = args.action as { id: string; label: string } | undefined;
+      // The action runs once, so the toast goes with the press: left
+      // there, its button would take a second press that does nothing.
+      let shown = "";
       const actionProps = action
-        ? { children: action.label, onClick: () => emit(`toast:${action.id}`, "action") }
+        ? {
+            children: action.label,
+            onClick: () => {
+              emit(`toast:${action.id}`, "action");
+              toast.close(shown);
+            },
+          }
         : undefined;
-      toast.add(args.title ? { title: String(args.title), description: message, type, actionProps } : { title: message, type, actionProps });
+      shown = toast.add(args.title ? { title: String(args.title), description: message, type, actionProps } : { title: message, type, actionProps });
       break;
     }
     case "navigate": {
@@ -648,6 +657,9 @@ function command(name: string, args: Record<string, unknown>) {
       break;
     case "form_issues":
       window.dispatchEvent(new CustomEvent("mw:form-issues", { detail: { node: String(args.node), issues: args.issues ?? [] } }));
+      break;
+    case "moved":
+      window.dispatchEvent(new CustomEvent("mw:moved", { detail: { node: String(args.node) } }));
       break;
     case "reset":
       store.reset(Array.isArray(args.ids) ? args.ids.map(String) : []);

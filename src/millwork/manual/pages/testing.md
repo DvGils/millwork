@@ -63,8 +63,9 @@ was given in `props=`, side by side with the catalogue's own, so
 `page.find(ui.Custom, chosen="5")` finds it by one of them, and each of
 its events shows as `on_<name>: True`. A found node has `id`, `type`, `props` as
 they would go to the tab, `children` and, on a table, `rows`. A chart
-has no `rows`. What it sends to the tab is in `props["data"]`. `page.text()` is every string on the page, for a quick "is
-it there". `page.state` is the live state and `page.session` the session
+has no `rows`. What it sends to the tab is in `props["data"]`. `page.text()` is every string a person reads on the page, for a quick
+"is it there". The name of an icon, a size, where a link goes and what
+is in `cls` are not among them. `page.state` is the live state and `page.session` the session
 itself.
 
 A [lazy part](/components/layout#lazy-parts) in a tab that is not open is
@@ -77,7 +78,9 @@ Each action is an event through the real dispatcher, followed by the real
 render. There is `click(node)`, `change(node, value)`, `submit(form,
 draft)` with a dict or a model instance, `select(table, keys)`,
 `choose(menu, item)` for an item of a `DropdownMenu` by its id or label,
-`action(node, id, key)` for a row or card action, `upload(node, path,
+`action(node, id, key)` for a row or card action, `move(row, to,
+into=)` for a row of a `Sortable` dragged to a place in its list or in
+another, `upload(node, path,
 field=)`, which runs every check an upload gets and returns the `FileRef`,
 which for a form is the value of its file field in the draft,
 `send(chat, text, files=)`, `stop(chat)`, `navigate(path)`, and `event(node,

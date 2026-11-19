@@ -40,6 +40,7 @@ import { Progress as TaskProgress, Steps } from "./tasks";
 import { Form } from "./form";
 import { Chat } from "./chat";
 import { Assistant } from "./assistant";
+import { Sortable } from "./sortable";
 import { Floating } from "./floating";
 import { SignIn } from "./sign-in";
 import { Download, FileCard, FileUpload, Image, Pdf } from "./files";
@@ -101,6 +102,7 @@ export const registry: Record<string, Renderer> = {
   Form,
   Chat,
   Assistant,
+  Sortable,
   Floating,
   SignIn,
   FileUpload,

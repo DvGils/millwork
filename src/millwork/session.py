@@ -253,6 +253,7 @@ class Session[S]:
         # followed yet.
         self._typed: str | None = None
         self._print_asked = False
+        self._moves_heard: list[str] = []
         # The component that is to get the keyboard once the next drawing
         # has gone out, by the name it was asked for with, and whether that
         # was said after another page was asked for, and so is for that one.
@@ -667,6 +668,7 @@ class Session[S]:
         # What was asked of the page that is left is not asked of this one.
         # The keyboard asked for after this page was is.
         self._print_asked = False
+        self._moves_heard = []
         if not self._focus_is_for_next:
             self._focus_asked = None
         self._focus_is_for_next = False
@@ -771,6 +773,12 @@ class Session[S]:
         sent it."""
         if self.on_unheard is not None:
             self.on_unheard(event, why)
+        # A list whose row was dropped waits to hear of it, and a move that
+        # is not taken leaves the row where it was, which the tab shows as
+        # soon as it is told.
+        node = self.tree.nodes.get(event.node) if self.tree is not None else None
+        if event.name == "move" and node is not None and node.type == "Sortable":
+            self.command("moved", node=event.node)
 
     def command(self, name: str, **args: Any) -> None:
         """An instruction to the tab: toast, navigate, clipboard."""
@@ -1408,6 +1416,13 @@ class Session[S]:
             "result = await s.task(work), which runs a plain function in a thread",
         )
 
+    def _move_heard(self, event: Event) -> None:
+        """A handler is done with a row that was dropped in a ``Sortable``,
+        however it ended. The list is told so after the next drawing."""
+        node = self.tree.nodes.get(event.node) if self.tree is not None else None
+        if event.name == "move" and node is not None and node.type == "Sortable":
+            self._moves_heard.append(event.node)
+
     def _handler_ended(self, plan: Plan, before: int, event: Event) -> None:
         if plan.pressed:
             self._noop_watch = (plan.where, before)
@@ -1719,6 +1734,13 @@ class Session[S]:
             # The page the handler meant to print.
             self._print_asked = False
             self.command("print")
+        if self._moves_heard:
+            # The lists whose move a handler has dealt with. Said behind
+            # the drawing, so the tab can tell a row the page moved from
+            # one it left where it was, and send that one back.
+            heard, self._moves_heard = self._moves_heard, []
+            for node in heard:
+                self.command("moved", node=node)
         self._send_marks()
 
     def _title(self, tree: Tree) -> str | None:

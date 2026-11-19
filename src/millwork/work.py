@@ -307,6 +307,8 @@ async def turn(s: Session[Any], plan: Plan) -> None:
     finally:
         context.off_visit(began)
         context.unbind(token)
+    if plan.event is not None:
+        s._move_heard(plan.event)
     if plan.form is not None and not rejected:
         # The empty issue list is the form's acknowledgement: the draft was accepted.
         s.command("form_issues", node=plan.form, issues=[])

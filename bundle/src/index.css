@@ -306,6 +306,89 @@ body.mw-dragging * {
   }
 }
 
+/* A list whose rows are dragged. The row that is held follows the pointer
+   as a copy, over everything but a toast, and a gap shows where it would
+   land. */
+.mw-sortable-row {
+    position: relative;
+    min-width: 0;
+}
+/* The grip is inside whatever the row is, down its left edge: in a card
+   it is within the card's border. What the row holds makes room for it. */
+.mw-sortable-gripped > .mw-sortable-held > * > * {
+    padding-left: 2.5rem !important;
+}
+.mw-sortable-grip {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    border-right: 1px solid var(--border);
+    border-radius: var(--radius) 0 0 var(--radius);
+    background: color-mix(in oklab, var(--muted) 55%, transparent);
+    color: var(--muted-foreground);
+    cursor: grab;
+    touch-action: none;
+}
+.mw-sortable-grip > svg {
+    opacity: 0.6;
+    transition: opacity 0.12s;
+}
+.mw-sortable-row:hover > .mw-sortable-grip > svg,
+.mw-sortable-grip:focus-visible > svg {
+    opacity: 1;
+}
+.mw-sortable-grip:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+}
+.mw-sortable-gap {
+    flex: none;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    background: color-mix(in oklab, var(--muted) 60%, transparent);
+}
+.mw-sortable-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 3rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+}
+.mw-sortable-copy {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 58;
+    pointer-events: none;
+    cursor: grabbing;
+    border-radius: var(--radius);
+    background: var(--background);
+    box-shadow:
+        0 0 0 1px var(--border),
+        0 12px 28px -8px rgb(0 0 0 / 0.28);
+}
+.mw-sortable-settled {
+    box-shadow: 0 0 0 1px var(--border);
+    transition:
+        transform 0.12s ease-out,
+        box-shadow 0.12s ease-out;
+}
+@media print {
+    .mw-sortable-grip {
+        display: none;
+    }
+}
+
 /* Highlights: a frame the server asks for around a component, drawn in a
    layer over the page. The named colors are the theme's, and an app's
    stylesheet can set each. */

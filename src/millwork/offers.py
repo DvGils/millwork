@@ -444,6 +444,46 @@ def _search(tree: Tree, node: Node, payload: Any) -> Any:
     return _text(payload)
 
 
+def _move(tree: Tree, node: Node, payload: Any) -> Any:
+    """A row dropped in this list, as a ``Move``. The row is one that is in
+    the list it is said to come from, and that list is this one, or one of
+    its group that the page shows and that is not disabled. The place is
+    kept within the rows there are."""
+    from millwork.ui.sortable import Move
+
+    if node.props.get("disabled"):
+        raise Refused("the list takes no rows")
+    if not isinstance(payload, dict):
+        raise Refused("a move names a row, a list and a place")
+    row, source_id, to = payload.get("key"), payload.get("source"), payload.get("to")
+    if type(row) is not str or type(source_id) is not str or type(to) is not int:
+        raise Refused("a move names a row, a list and a place")
+    source = tree.nodes.get(source_id)
+    if source is None or source.type != "Sortable" or row not in source.children:
+        raise Refused("the row is not in the list it is said to come from")
+    if node.id.startswith(row + "/"):
+        raise Refused("the list is in the row that is moved")
+    here = source_id == node.id
+    if here:
+        if node.props.get("reorder") is False:
+            raise Refused("the rows of the list keep their order")
+    else:
+        group = node.props.get("group")
+        if group is None or source.props.get("group") != group:
+            raise Refused("the lists are not of one group")
+        if node.props.get("takes") is False:
+            raise Refused("the list takes no rows of another")
+        if source.props.get("disabled") or veiled(tree, source_id) is not None:
+            raise Refused("the list the row comes from gives none")
+    others = len(node.children) - (1 if here else 0)
+    return Move(
+        key=str(tree.components[row].key),
+        source=tree.components[source_id].key,
+        target=tree.components[node.id].key,
+        to=max(0, min(to, others)),
+    )
+
+
 _PRESSED = (
     ("Button", "click"),
     ("Card", "click"),
@@ -493,4 +533,5 @@ _CHECKS: dict[tuple[str, str], Check] = {
     ("AreaChart", "click"): _mapping("a place in a chart"),
     ("PieChart", "click"): _mapping("a place in a chart"),
     ("FileUpload", "reject"): _mapping("a file and a reason"),
+    ("Sortable", "move"): _move,
 }

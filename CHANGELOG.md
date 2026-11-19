@@ -3,6 +3,37 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.0
+
+### Bug fixes
+
+- A toast with an action stayed on the page after its button was
+  pressed, and a second press did nothing. The action runs once, so the
+  toast now goes with the press.
+
+- `page.text()` in a test gave the name of an icon, a size such as
+  `72rem`, where a link goes and what is in `cls` among the text of a
+  page, so `"plus" in page.text()` held for a page with a plus icon and
+  no such word. They are left out.
+
+### Features
+
+- `ui.Sortable` is a list whose rows a person drags into another order,
+  by a grip down the left edge of each row or by the row itself, with
+  the mouse, a finger or the keyboard. Lists with the same `group` take rows from
+  each other. `on_move` gets a `ui.Move` with the row's key, the list it
+  came from, the list it was dropped in and its place there, and the
+  page it draws is where the row ends up. A list can be in a row of
+  another list. In a test, `page.move(row, to, into=)` moves a row.
+
+- `python -m millwork` is the `millwork` command, for a script that
+  starts a server with `sys.executable`.
+
+### The manual
+
+- Custom components says what `children` is, an array with one element
+  for each child, and shows a component that wraps each.
+
 ## 0.5.4
 
 ### Bug fixes

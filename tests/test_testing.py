@@ -1174,3 +1174,26 @@ async def test_a_field_that_takes_no_enter_fails_the_test() -> None:
         assert page.state.heard == []
         with pytest.raises(TypeError, match="the text typed into it"):
             await page.submit("line", {"text": "hello"})
+
+
+async def test_the_text_of_a_page_is_what_a_person_reads_on_it(tmp_path: Path) -> None:
+    app = mw.App("text", public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Button("Add", icon="plus", on_click=lambda s, _: None),
+            ui.Icon("trash-2"),
+            ui.Link(label="Orders", href="/orders"),
+            ui.Table(rows=[{"id": 1, "what": "Bread"}]),
+            ui.Text("An order", cls="font-bold"),
+            ui.ScrollArea(ui.Text("inside"), height="72rem"),
+            max_width="64rem",
+        )
+
+    async with TestApp(app).open("/") as page:
+        text = page.text().split("\n")
+        assert {"Add", "An order", "inside", "Orders"} <= set(text)
+        # Which icon, how it is styled, how big it is and where a link goes
+        # are not read there, nor the name of the field that keys a table.
+        assert not {"plus", "trash-2", "font-bold", "72rem", "64rem", "/orders", "id"} & set(text)

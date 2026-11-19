@@ -230,3 +230,14 @@ def test_reload_without_watchfiles_looks_at_the_apps_own_files(
     assert reloader.should_restart() is None
     os.utime(page, (late, late))
     assert [path.resolve() for path in reloader.should_restart() or []] == [page]
+
+
+def test_the_command_runs_as_a_module_of_the_interpreter() -> None:
+    import subprocess
+
+    import millwork
+
+    said = subprocess.run(
+        [sys.executable, "-m", "millwork", "--version"], capture_output=True, text=True, check=True
+    )
+    assert said.stdout.strip() == f"millwork {millwork.__version__}"
