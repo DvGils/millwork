@@ -11,6 +11,11 @@ versions; a release says so here when it does.
   pressed, and a second press did nothing. The action runs once, so the
   toast now goes with the press.
 
+- `page.text()` in a test gave the name of an icon, a size such as
+  `72rem`, where a link goes and what is in `cls` among the text of a
+  page, so `"plus" in page.text()` held for a page with a plus icon and
+  no such word. They are left out.
+
 ## 0.5.4
 
 ### Bug fixes

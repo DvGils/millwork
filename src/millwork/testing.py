@@ -202,7 +202,9 @@ class Page:
     def text(self) -> str:
         """Every string prop of the tree, for a quick "is it there" check. A
         prop that picks from a fixed set, a variant or an alignment, is not
-        text and is left out."""
+        text and is left out. So is the name of an icon, a size such as a
+        width, where a link goes and ``cls``, none of which a person reads
+        on the page."""
         parts: list[str] = []
         built = self.session.tree
         components = built.components if built is not None else {}
@@ -210,7 +212,12 @@ class Page:
             component = components.get(node.id)
             fields = type(component).model_fields if component is not None else {}
             for name, value in node.props.items():
-                if isinstance(value, str) and not _is_choice(fields.get(name)):
+                if name in _NOT_READ or not isinstance(value, str):
+                    continue
+                if name == "name" and node.type == "Icon":
+                    # Which icon it is. A file's name, in the same prop, is read.
+                    continue
+                if not _is_choice(fields.get(name)):
                     parts.append(value)
         return "\n".join(parts)
 
@@ -673,6 +680,26 @@ def _has(node: Node, component: Component | None, name: str, value: Any) -> bool
     if node.props.get(name, _MISSING) == value:
         return True
     return component is not None and getattr(component, name, _MISSING) == value
+
+
+# Props that hold a string nobody reads on the page: which icon, how wide,
+# how it is styled, where a link goes, which field tells a table's rows
+# apart.
+_NOT_READ = frozenset(
+    {
+        "icon",
+        "prefix_icon",
+        "cls",
+        "href",
+        "row_key",
+        "width",
+        "height",
+        "max_width",
+        "max_height",
+        "min_width",
+        "min_height",
+    }
+)
 
 
 def _is_choice(field: Any) -> bool:
