@@ -3,6 +3,14 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.5.5
+
+### Bug fixes
+
+- A toast with an action stayed on the page after its button was
+  pressed, and a second press did nothing. The action runs once, so the
+  toast now goes with the press.
+
 ## 0.5.4
 
 ### Bug fixes

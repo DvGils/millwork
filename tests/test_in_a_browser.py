@@ -683,3 +683,33 @@ async def test_on_a_phone_the_assistants_sheet_opens_over_a_dialog() -> None:
         assert (
             await page.read("document.querySelectorAll('[data-slot=dialog-content]').length") == 1
         )
+
+
+async def test_a_toasts_action_takes_the_toast_with_it() -> None:
+    class Bin(BaseModel):
+        undone: int = 0
+
+    app = mw.App("undo", state=Bin, public=None)
+
+    def undo(s: mw.Session[Bin], _: Any) -> None:
+        s.state.undone += 1
+
+    @app.page("/")
+    def home(s: mw.Session[Bin]) -> ui.Component:
+        return ui.Page(
+            ui.Button(
+                "Delete",
+                key="del",
+                on_click=lambda s, _: s.toast("Deleted.", action=("Undo", undo)),
+            ),
+            ui.Text(f"undone {s.state.undone}", key="count"),
+        )
+
+    toasts = "document.querySelectorAll('[data-slot=toast]').length"
+    async with Page(app) as page:
+        await page.press("Delete")
+        assert await page.read(toasts) == 1
+        await page.click("[data-slot=toast-action]")
+        assert "undone 1" in await page.read("document.body.textContent")
+        # Nothing is left to press a second time.
+        assert await page.read(toasts) == 0
