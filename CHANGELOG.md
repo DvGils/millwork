@@ -21,6 +21,11 @@ versions; a release says so here when it does.
 - `python -m millwork` is the `millwork` command, for a script that
   starts a server with `sys.executable`.
 
+### The manual
+
+- Custom components says what `children` is, an array with one element
+  for each child, and shows a component that wraps each.
+
 ## 0.5.4
 
 ### Bug fixes

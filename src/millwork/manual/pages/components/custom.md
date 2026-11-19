@@ -48,6 +48,26 @@ export default function Hello({ props, emit, children }) {
 }
 ```
 
+`children` is an array, with one element for each child Python gave the
+component, in the order they were given. A component that lays its
+children out one by one, such as a list that can be dragged, wraps each. An
+element's `key` is the child's id on the page, which ends in the `key`
+it has in Python, `root/days/monday` for `key="monday"`.
+
+```jsx
+import { Children } from "react";
+
+export default function Rows({ children }) {
+  return (
+    <ol className="flex flex-col gap-2">
+      {Children.map(children, (child) => (
+        <li className="rounded-lg border p-2">{child}</li>
+      ))}
+    </ol>
+  );
+}
+```
+
 ## Using it from Python
 
 `ui.Custom(name, props=, events=)` renders `components/<name>.jsx`. Events
