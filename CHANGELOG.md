@@ -16,6 +16,11 @@ versions; a release says so here when it does.
   page, so `"plus" in page.text()` held for a page with a plus icon and
   no such word. They are left out.
 
+### Features
+
+- `python -m millwork` is the `millwork` command, for a script that
+  starts a server with `sys.executable`.
+
 ## 0.5.4
 
 ### Bug fixes

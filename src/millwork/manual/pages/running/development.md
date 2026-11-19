@@ -10,6 +10,8 @@ related: /testing, /state/warnings, /running/app-options
 
 `millwork run app.py` serves the file's `app`, and `millwork run
 package.module:app` names the object instead. `--port` picks the port.
+`python -m millwork` is the same command, for a script that starts it
+with the interpreter it runs under.
 
 `millwork run app.py --reload --debug` is the loop. `--reload` restarts
 the process when a Python file changes, under the current folder or
