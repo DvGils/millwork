@@ -18,6 +18,14 @@ versions; a release says so here when it does.
 
 ### Features
 
+- `ui.Sortable` is a list whose rows a person drags into another order,
+  by a grip down the left edge of each row or by the row itself, with
+  the mouse, a finger or the keyboard. Lists with the same `group` take rows from
+  each other. `on_move` gets a `ui.Move` with the row's key, the list it
+  came from, the list it was dropped in and its place there, and the
+  page it draws is where the row ends up. A list can be in a row of
+  another list. In a test, `page.move(row, to, into=)` moves a row.
+
 - `python -m millwork` is the `millwork` command, for a script that
   starts a server with `sys.executable`.
 

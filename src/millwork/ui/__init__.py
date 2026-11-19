@@ -21,6 +21,7 @@ from millwork.ui.charts import AreaChart, BarChart, LineChart, PieChart
 from millwork.ui.chat import Accept, Action, Chat, Command
 from millwork.ui.files import Download, FileCard, FileUpload, Image, Pdf
 from millwork.ui.form import Form
+from millwork.ui.sortable import Move, Sortable
 from millwork.ui.table import Column, MenuItem, Table
 
 Variant = Literal["primary", "secondary", "outline", "ghost", "link", "destructive"]
@@ -1936,6 +1937,7 @@ __all__ = [
     "Link",
     "Markdown",
     "MenuItem",
+    "Move",
     "NumberInput",
     "Option",
     "Page",
@@ -1957,6 +1959,7 @@ __all__ = [
     "SignIn",
     "Skeleton",
     "Slider",
+    "Sortable",
     "Spinner",
     "Split",
     "Stack",

@@ -498,6 +498,112 @@ ui.DropdownMenu(
 )
 ```
 
+## Sortable
+<!-- keywords: drag and drop, reorder, rearrange, kanban, board, dnd, move rows -->
+
+`ui.Sortable` is a list whose rows a person drags into another order.
+Each child is a row and has a `key`. `on_move` gets a `ui.Move` and
+changes the state. The page drawn from that state is where the row ends
+up, so a handler that leaves the state alone sends the row back.
+
+```python live
+from pydantic import BaseModel
+
+
+class Playlist(BaseModel):
+    songs: list[str] = ["Harvest Moon", "Blue in Green", "Pink Moon", "Clair de Lune"]
+
+
+def moved(s, move):
+    songs = s.state.playlist.songs
+    songs.remove(move.key)
+    songs.insert(move.to, move.key)
+
+
+def example(s):
+    songs = s.state.playlist.songs
+    return ui.Stack(
+        ui.Sortable(
+            *[ui.Card(ui.Text(song), key=song) for song in songs],
+            key="songs",
+            on_move=moved,
+        ),
+        ui.Text("First up is " + songs[0] + ".", variant="muted"),
+        gap=3,
+    )
+```
+
+A row is dragged by the grip down its left edge, which sits inside
+whatever the row is, within the border of a card. On the keyboard the
+grip takes Alt with the up or the down arrow, which moves the row a
+place at a time. `handle=False` leaves the grip out and makes the row itself the
+thing to drag, for rows with little in them to press. On a touch screen
+such a row is held by resting a finger on it for a moment.
+
+### Across lists
+
+Lists with the same `group` take rows from each other. Each such list
+has a `key`, and one handler serves them all. The `Move` it gets has the
+row's `key`, the list the row came from as `source`, the list it was
+dropped in as `target`, and its place there as `to`. `to` counts the
+other rows from 0, so taking the row out and inserting it at `to` puts
+it where it was dropped.
+
+```python live
+from pydantic import BaseModel
+
+
+class Chores(BaseModel):
+    lists: dict[str, list[str]] = {
+        "To do": ["Water the plants", "Fix the gate", "Sweep the porch"],
+        "Doing": ["Paint the fence"],
+        "Done": [],
+    }
+
+
+def chore_moved(s, move):
+    lists = s.state.chores.lists
+    lists[move.source].remove(move.key)
+    lists[move.target].insert(move.to, move.key)
+
+
+def example(s):
+    lists = s.state.chores.lists
+    return ui.Grid(
+        *[
+            ui.Stack(
+                ui.Text(name, variant="heading"),
+                ui.Sortable(
+                    *[ui.Card(ui.Text(chore), key=chore) for chore in chores],
+                    key=name,
+                    group="chores",
+                    label=name,
+                    empty="Nothing here",
+                    on_move=chore_moved,
+                ),
+                key=name + " column",
+                gap=2,
+            )
+            for name, chores in lists.items()
+        ],
+        cols={"sm": 1, "md": 3},
+    )
+```
+
+`empty` is what a list without rows says, and a row can be dropped on
+it. `takes=False` keeps the rows of other lists out of a list, and
+`reorder=False` keeps its own rows in the order they are in, though they
+can still leave. A list without `on_move` is both. A list can be in a
+row of another list, as long as the two are not of one group.
+
+What the handler does is what happened. One that puts the row in the
+target and leaves it in the source has copied it, and the row then has
+the same `key` in both lists, with `source` saying which one was meant.
+
+A row that changes list is drawn anew there. What only the browser held
+of it is gone, such as text typed into a field of the row and not sent
+yet. A row that changes place within its list keeps that.
+
 ## Field
 <!-- keywords: label, help text, error message, validation -->
 

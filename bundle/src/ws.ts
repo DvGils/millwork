@@ -658,6 +658,9 @@ function command(name: string, args: Record<string, unknown>) {
     case "form_issues":
       window.dispatchEvent(new CustomEvent("mw:form-issues", { detail: { node: String(args.node), issues: args.issues ?? [] } }));
       break;
+    case "moved":
+      window.dispatchEvent(new CustomEvent("mw:moved", { detail: { node: String(args.node) } }));
+      break;
     case "reset":
       store.reset(Array.isArray(args.ids) ? args.ids.map(String) : []);
       break;

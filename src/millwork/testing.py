@@ -422,6 +422,21 @@ class Page:
             raise LookupError(f"the item {item!r} of {found!r} is disabled")
         await self.event(found, "select", match.id)
 
+    async def move(self, row: Found | str, to: int, *, into: Found | str | None = None) -> None:
+        """Drag a row of a ``Sortable`` to another place: ``to`` among the
+        other rows of its list, or of the list ``into`` names, counted
+        from 0."""
+        found = row if isinstance(row, Found) else self.find(row)
+        source = next(
+            (n for n in self.tree.values() if n.type == "Sortable" and found.id in n.children), None
+        )
+        if source is None:
+            raise LookupError(f"{found!r} is no row of a Sortable")
+        target = (
+            source.id if into is None else (into if isinstance(into, Found) else self.find(into)).id
+        )
+        await self.event(target, "move", {"key": found.id, "source": source.id, "to": to})
+
     async def action(self, node: Found | str, action: str, key: Any = None) -> None:
         """A row action on a Table (``[action, key]``) or a card action (``action``)."""
         await self.event(node, "action", [action, key] if key is not None else action)

@@ -623,6 +623,7 @@ SAYS: dict[str, Says] = {
         places=True,
     ),
     "Card": Says(label=("title",), help=("description",), slots=("footer",), places=True),
+    "Sortable": Says(label=("label",), flags=(("disabled", "disabled"),), places=True),
     "Header": Says(label=("title",), slots=("links",)),
     "Sidebar": Says(
         label=("title",), folds="open", folded="folded away", fixed=("collapsible", "none")

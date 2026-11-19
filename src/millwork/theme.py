@@ -173,6 +173,11 @@ STRINGS: dict[str, str] = {
     "close": "Close",
     "minimize": "Minimize",
     "new_reply": "New reply",
+    # A list whose rows are dragged: what the grip of a row is called, and
+    # what is said of a row the keyboard moved.
+    "move_row": "Move",
+    "row_moved": "Place {n} of {of}",
+    "row_moved_in": "Place {n} of {of} in {list}",
     "toggle_sidebar": "Toggle sidebar",
     "previous": "Previous",
     "next": "Next",

@@ -28,6 +28,7 @@ MODULES = [
     ROOT / "ui" / "form.py",
     ROOT / "ui" / "charts.py",
     ROOT / "ui" / "chat.py",
+    ROOT / "ui" / "sortable.py",
 ]
 BASE = "Component"
 # A field with a before-validator takes more than the field holds; the stub

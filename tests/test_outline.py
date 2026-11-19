@@ -103,6 +103,7 @@ SAID: dict[str, list[str]] = {
     "SignIn": ["label"],
     "Skeleton": [],
     "Slider": ["max", "min", "value"],
+    "Sortable": ["label"],
     "Spinner": ["label"],
     "Split": [],
     "Stack": [],
@@ -734,7 +735,7 @@ def test_a_kind_that_says_nothing_is_passed_over_when_it_only_places_or_is_read(
     assert passed == {
         # Places others.
         *("Page", "Stack", "Row", "Grid", "Split", "ScrollArea", "ButtonGroup", "Floating"),
-        *("Field", "Card", "Accordion"),
+        *("Field", "Card", "Accordion", "Sortable"),
         # Read.
         *("Text", "Markdown", "Code", "Kbd", "Badge", "Separator", "Icon", "Image", "Spinner"),
         *("Skeleton", "Logo", "Tooltip"),

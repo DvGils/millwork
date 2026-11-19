@@ -11,7 +11,7 @@ import { Markdown as MarkdownView } from "./markdown";
 import { CodeBlock } from "./copy";
 
 // Compact density takes one step off every gap, never below one.
-const gapClass = (gap: unknown) => {
+export const gapClass = (gap: unknown) => {
   const g = typeof gap === "number" ? gap : 4;
   return `gap-${isCompact() ? Math.max(1, g - 1) : g}`;
 };

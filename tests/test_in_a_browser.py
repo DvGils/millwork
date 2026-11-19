@@ -4,6 +4,7 @@ what is typed is seen here."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Annotated, Any, Literal
 
@@ -135,11 +136,53 @@ class Page:
         assert found is not None, f"nothing at {selector} says {text!r}"
         return found
 
-    async def key(self, name: str, code: int) -> None:
+    async def middle(self, selector: str) -> tuple[float, float]:
+        """The middle of what ``selector`` finds, in the window."""
+        at = await self.read(
+            f"(() => {{ const e = document.querySelector({json.dumps(selector)});"
+            " if (!e) return null; const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; })()"
+        )
+        assert at, f"nothing at {selector}"
+        return at[0], at[1]
+
+    async def drag(
+        self, selector: str, to: tuple[float, float], *, let_go: bool = True, steps: int = 6
+    ) -> None:
+        """Press the mouse on what ``selector`` finds, carry it to a point
+        of the window in a few steps, and let go there."""
+        x0, y0 = await self.middle(selector)
+        mouse = {"button": "left", "clickCount": 1}
+        await self.tab.call("Input.dispatchMouseEvent", type="mousePressed", x=x0, y=y0, **mouse)
+        for i in range(1, steps + 1):
+            x, y = x0 + (to[0] - x0) * i / steps, y0 + (to[1] - y0) * i / steps
+            await self.tab.call(
+                "Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y, buttons=1, **mouse
+            )
+        if let_go:
+            await self.let_go(to)
+
+    async def let_go(self, at: tuple[float, float]) -> None:
+        await self.tab.call(
+            "Input.dispatchMouseEvent",
+            type="mouseReleased",
+            x=at[0],
+            y=at[1],
+            button="left",
+            clickCount=1,
+        )
+        await self.rest()
+
+    async def key(self, name: str, code: int, *, alt: bool = False) -> None:
         """Press a key that types nothing, such as Escape, where the keyboard is."""
         for kind in ("keyDown", "keyUp"):
             await self.tab.call(
-                "Input.dispatchKeyEvent", type=kind, key=name, code=name, windowsVirtualKeyCode=code
+                "Input.dispatchKeyEvent",
+                type=kind,
+                key=name,
+                code=name,
+                windowsVirtualKeyCode=code,
+                modifiers=1 if alt else 0,
             )
         await self.rest()
 
@@ -713,3 +756,399 @@ async def test_a_toasts_action_takes_the_toast_with_it() -> None:
         assert "undone 1" in await page.read("document.body.textContent")
         # Nothing is left to press a second time.
         assert await page.read(toasts) == 0
+
+
+# ------------------------------------------------------------- rows that are dragged
+
+ROWS = """Object.fromEntries([...document.querySelectorAll('[data-sortable]')].map((l) => [
+  l.dataset.sortable.split('/').pop(),
+  [...l.querySelectorAll(':scope > [data-sortable-row]')]
+    .filter((r) => r.checkVisibility()).map((r) => r.dataset.sortableRow.split('/').pop()),
+]))"""
+COPIES = "document.querySelectorAll('.mw-sortable-copy').length"
+
+
+def grip(row: str) -> str:
+    return f'[data-sortable-row$="/{row}"] [data-sortable-grip]'
+
+
+class Camp(BaseModel):
+    lists: dict[str, list[str]] = {"todo": ["tent", "water", "map", "stove"], "doing": ["food"]}
+    done: list[str] = []
+    full: bool = False
+    slow: bool = False
+    renamed: int = 0
+
+
+def camp() -> mw.App:
+    app = mw.App("camp", state=Camp, public=None)
+
+    async def moved(s: mw.Session[Camp], move: ui.Move) -> None:
+        st = s.state
+        every = {**st.lists, "done": st.done}
+        if move.target == "done" and st.full:
+            # The list is full, so the row is left where it was.
+            return
+        if st.slow:
+            await asyncio.sleep(2.2)
+        every[move.source].remove(move.key)
+        every[move.target].insert(move.to, move.key)
+
+    def rename(s: mw.Session[Camp], _: Any) -> None:
+        s.state.renamed += 1
+
+    def rows(name: str, keys: list[str]) -> ui.Component:
+        return ui.Stack(
+            ui.Text(name, variant="heading"),
+            ui.Sortable(
+                *[ui.Card(title=key.capitalize(), key=key) for key in keys],
+                key=name,
+                group="tasks",
+                label=f"{name} {mw.session().state.renamed}",
+                empty="Nothing here yet",
+                on_move=moved,
+            ),
+            key=f"col-{name}",
+        )
+
+    @app.page("/")
+    def home(s: mw.Session[Camp]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.Grid(*[rows(n, k) for n, k in st.lists.items()], rows("done", st.done), cols=3),
+            ui.Button("Full", key="full", on_click=lambda s, _: setattr(s.state, "full", True)),
+            ui.Button("Slow", key="slow", on_click=lambda s, _: setattr(s.state, "slow", True)),
+            ui.Button("Rename", key="rename", on_click=rename),
+        )
+
+    return app
+
+
+async def wide(page: Page) -> None:
+    await page.tab.call(
+        "Emulation.setDeviceMetricsOverride",
+        width=1000,
+        height=700,
+        deviceScaleFactor=1,
+        mobile=False,
+    )
+    await page.rest()
+
+
+async def test_a_row_is_dragged_to_another_place_and_into_another_list() -> None:
+    async with Page(camp()) as page:
+        await wide(page)
+        # Within its list: the last row over the first.
+        x, y = await page.middle('[data-sortable-row$="/tent"]')
+        await page.drag(grip("stove"), (x, y - 30))
+        assert (await page.read(ROWS))["todo"] == ["stove", "tent", "water", "map"]
+        # Into the list beside it, let go under that list's one row, where
+        # the list itself has ended.
+        x, y = await page.middle('[data-sortable$="/doing"]')
+        await page.drag(grip("map"), (x, y + 90))
+        now = await page.read(ROWS)
+        assert now["todo"] == ["stove", "tent", "water"] and now["doing"] == ["food", "map"]
+        # Into a list with no rows, which says so until a row is over it.
+        assert "Nothing here yet" in await page.read("document.body.textContent")
+        x, y = await page.middle('[data-sortable$="/done"]')
+        await page.drag(grip("water"), (x, y), let_go=False)
+        assert await page.read(
+            "!!document.querySelector('[data-sortable$=\"/done\"] [data-sortable-gap]')"
+        )
+        assert await page.read(COPIES) == 1
+        await page.let_go((x, y))
+        now = await page.read(ROWS)
+        assert now["todo"] == ["stove", "tent"] and now["done"] == ["water"]
+        assert await page.read(COPIES) == 0
+        assert "Nothing here yet" not in await page.read("document.body.textContent")
+        # The keyboard is on the grip of the row where it is now.
+        assert await page.read(
+            "document.activeElement?.closest('[data-sortable-row]')?.dataset.sortableRow"
+        ) == await page.read(
+            "document.querySelector('[data-sortable-row$=\"/done/water\"]').dataset.sortableRow"
+        )
+
+
+async def test_a_held_row_stays_held_and_a_dropped_row_waits_for_the_page() -> None:
+    async with Page(camp()) as page:
+        await wide(page)
+        x, y = await page.middle('[data-sortable$="/doing"]')
+        # The page changes something of the list that is not its rows, and
+        # the row stays in the hand.
+        await page.drag(grip("map"), (x, y + 90), let_go=False)
+        await page.press("Rename")
+        assert (
+            await page.read("document.querySelector('[data-sortable$=\"/doing\"]').ariaLabel")
+            == "doing 1"
+        )
+        assert await page.read(COPIES) == 1
+        await page.let_go((x, y + 90))
+        assert (await page.read(ROWS))["doing"] == ["food", "map"]
+
+        # A handler that takes its time: the row stays where it was let go
+        # until the page has it there, and does not go back meanwhile.
+        await page.press("Slow")
+        x, y = await page.middle('[data-sortable$="/done"]')
+        await page.drag(grip("tent"), (x, y), let_go=False)
+        await page.tab.call(
+            "Input.dispatchMouseEvent", type="mouseReleased", x=x, y=y, button="left", clickCount=1
+        )
+        await asyncio.sleep(1.8)
+        waiting = await page.read(ROWS)
+        assert "tent" not in waiting["todo"] and await page.read(COPIES) == 1
+        await asyncio.sleep(0.8)
+        await page.rest()
+        assert (await page.read(ROWS))["done"] == ["tent"] and await page.read(COPIES) == 0
+
+        # A button that came up where the window did not see it lets the row go back.
+        x, y = await page.middle('[data-sortable$="/doing"]')
+        start = await page.read(ROWS)
+        await page.drag(grip("water"), (x, y), let_go=False)
+        assert await page.read(COPIES) == 1
+        await page.tab.call(
+            "Input.dispatchMouseEvent", type="mouseMoved", x=x + 5, y=y, button="none", buttons=0
+        )
+        await page.rest()
+        assert await page.read(COPIES) == 0 and await page.read(ROWS) == start
+
+
+async def test_a_row_the_page_does_not_move_goes_back() -> None:
+    async with Page(camp()) as page:
+        await wide(page)
+        start = await page.read(ROWS)
+        await page.press("Full")
+        # The handler leaves the row where it was.
+        x, y = await page.middle('[data-sortable$="/done"]')
+        await page.drag(grip("map"), (x, y))
+        assert await page.read(ROWS) == start and await page.read(COPIES) == 0
+        # Let go beside every list.
+        await page.drag(grip("tent"), (995, 400))
+        assert await page.read(ROWS) == start and await page.read(COPIES) == 0
+        # Escape while the row is held.
+        x, y = await page.middle('[data-sortable$="/doing"]')
+        await page.drag(grip("water"), (x, y), let_go=False)
+        assert await page.read(COPIES) == 1
+        await page.key("Escape", 27)
+        assert await page.read(ROWS) == start and await page.read(COPIES) == 0
+        await page.let_go((x, y))
+        assert await page.read(ROWS) == start
+
+
+async def test_the_keyboard_moves_a_row_a_place_at_a_time_and_goes_with_it() -> None:
+    held = (
+        "document.activeElement?.closest('[data-sortable-row]')"
+        "?.dataset.sortableRow.split('/').slice(-2).join('/')"
+    )
+    async with Page(camp()) as page:
+        await wide(page)
+        await page.read(f"document.querySelector({json.dumps(grip('map'))}).focus()")
+        await page.key("ArrowUp", 38, alt=True)
+        assert (await page.read(ROWS))["todo"] == ["tent", "map", "water", "stove"]
+        assert await page.read(held) == "todo/map"
+        # A plain arrow is no move.
+        await page.key("ArrowUp", 38)
+        assert (await page.read(ROWS))["todo"] == ["tent", "map", "water", "stove"]
+        # Past the end of its list a row goes into the next one, at the top.
+        await page.read(f"document.querySelector({json.dumps(grip('stove'))}).focus()")
+        await page.key("ArrowDown", 40, alt=True)
+        now = await page.read(ROWS)
+        assert now["todo"] == ["tent", "map", "water"] and now["doing"] == ["stove", "food"]
+        assert await page.read(held) == "doing/stove"
+        said = await page.read(
+            "[...document.querySelectorAll('[data-sortable] + [aria-live]')]"
+            ".map((e) => e.textContent)"
+        )
+        assert "Place 1 of 2 in doing 0" in said
+
+
+async def test_lists_in_rows_a_row_dragged_by_all_of_it_and_a_long_list() -> None:
+    class Trip(BaseModel):
+        days: dict[str, list[str]] = {"mon": ["swim", "hike"], "tue": ["museum"], "wed": []}
+        long: list[str] = [f"n{i}" for i in range(40)]
+        pressed: list[str] = []
+
+    app = mw.App("trip", state=Trip, public=None)
+
+    def stop_moved(s: mw.Session[Trip], move: ui.Move) -> None:
+        days = s.state.days
+        days[move.source].remove(move.key)
+        days[move.target].insert(move.to, move.key)
+
+    def day_moved(s: mw.Session[Trip], move: ui.Move) -> None:
+        day = move.key.removeprefix("day-")
+        order = [d for d in s.state.days if d != day]
+        order.insert(move.to, day)
+        s.state.days = {d: s.state.days[d] for d in order}
+
+    def long_moved(s: mw.Session[Trip], move: ui.Move) -> None:
+        s.state.long.remove(move.key)
+        s.state.long.insert(move.to, move.key)
+
+    def press(s: mw.Session[Trip], _: Any) -> None:
+        s.state.pressed.append("pressed")
+
+    @app.page("/")
+    def home(s: mw.Session[Trip]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.Grid(
+                # Days, each a row with a list of its own in it.
+                ui.Sortable(
+                    *[
+                        ui.Card(
+                            ui.Sortable(
+                                *[ui.Text(stop, key=stop) for stop in stops],
+                                key=day,
+                                group="stops",
+                                empty="A free day",
+                                on_move=stop_moved,
+                            ),
+                            key=f"day-{day}",
+                            title=day,
+                        )
+                        for day, stops in st.days.items()
+                    ],
+                    key="days",
+                    on_move=day_moved,
+                ),
+                # Rows dragged by all of them, with a button in each.
+                ui.ScrollArea(
+                    ui.Sortable(
+                        *[
+                            ui.Row(ui.Text(n), ui.Button("Press", on_click=press), key=n)
+                            for n in st.long
+                        ],
+                        key="long",
+                        handle=False,
+                        on_move=long_moved,
+                    ),
+                    key="scroll",
+                    height="20rem",
+                ),
+                cols=2,
+            ),
+            ui.Text(f"pressed {len(st.pressed)}", key="pressed"),
+        )
+
+    def day_grip(day: str) -> str:
+        return f'[data-sortable-row$="/day-{day}"] > [data-sortable-grip]'
+
+    async with Page(app) as page:
+        await wide(page)
+        # A stop goes into another day's list, and into a day with none.
+        x, y = await page.middle('[data-sortable$="/tue"]')
+        await page.drag(grip("hike"), (x, y + 4))
+        x, y = await page.middle('[data-sortable$="/wed"]')
+        await page.drag(grip("swim"), (x, y))
+        now = await page.read(ROWS)
+        assert (now["mon"], now["tue"], now["wed"]) == ([], ["museum", "hike"], ["swim"])
+        # A day is a row of the list of days, and takes its stops along.
+        x, y = await page.middle('[data-sortable-row$="/day-mon"]')
+        await page.drag(day_grip("wed"), (x, y - 40))
+        now = await page.read(ROWS)
+        assert now["days"] == ["day-wed", "day-mon", "day-tue"] and now["wed"] == ["swim"]
+
+        # A row with no grip: a press on its button is a press, and the
+        # row is dragged by its words.
+        await page.click('[data-sortable-row$="/n1"] button')
+        assert "pressed 1" in await page.read("document.body.textContent")
+        x, y = await page.middle('[data-sortable-row$="/n3"]')
+        await page.drag('[data-sortable-row$="/n0"] p', (x, y + 4))
+        assert (await page.read(ROWS))["long"][:4] == ["n1", "n2", "n3", "n0"]
+
+        # Held near the foot of what scrolls, the list scrolls under the row.
+        scrolled = "document.querySelector('[data-slot=scroll-area-viewport]').scrollTop"
+        box = await page.read(
+            "(() => { const r = document.querySelector('[data-slot=scroll-area-viewport]')"
+            ".getBoundingClientRect(); return [r.x + r.width / 2, r.bottom - 10]; })()"
+        )
+        assert await page.read(scrolled) == 0
+        await page.drag('[data-sortable-row$="/n1"] p', (box[0], box[1]), let_go=False)
+        await page.rest(600)
+        assert await page.read(scrolled) > 100
+        await page.let_go((box[0], box[1]))
+        order = (await page.read(ROWS))["long"]
+        assert order.index("n1") > 8
+
+
+async def test_a_list_that_keeps_its_order_or_takes_no_rows_and_a_finger_on_a_row() -> None:
+    class Shelf(BaseModel):
+        fixed: list[str] = ["f1", "f2", "f3"]
+        open: list[str] = ["o1", "o2"]
+        plain: list[str] = ["p1", "p2", "p3"]
+
+    app = mw.App("shelf", state=Shelf, public=None)
+
+    def moved(s: mw.Session[Shelf], move: ui.Move) -> None:
+        getattr(s.state, move.source).remove(move.key)
+        getattr(s.state, move.target).insert(move.to, move.key)
+
+    def rows(name: str, keys: list[str], **how: Any) -> ui.Component:
+        return ui.Sortable(
+            *[ui.Card(title=key, key=key) for key in keys], key=name, on_move=moved, **how
+        )
+
+    @app.page("/")
+    def home(s: mw.Session[Shelf]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.Grid(
+                # Its rows keep their order and it takes none, but they may leave.
+                rows("fixed", st.fixed, group="books", reorder=False, takes=False),
+                rows("open", st.open, group="books"),
+                rows("plain", st.plain, handle=False),
+                # Nobody to tell of a move, so there is nothing to hold.
+                ui.Sortable(
+                    ui.Card(title="still", key="still"), ui.Card(title="too", key="too"), key="deaf"
+                ),
+                cols=4,
+            )
+        )
+
+    async with Page(app) as page:
+        await wide(page)
+        start = await page.read(ROWS)
+        assert (
+            await page.read("document.querySelectorAll('[data-sortable$=\"/deaf\"] button').length")
+            == 0
+        )
+        # Within the list that keeps its order a row goes nowhere.
+        x, y = await page.middle('[data-sortable-row$="/f1"]')
+        await page.drag(grip("f3"), (x, y - 20))
+        assert await page.read(ROWS) == start
+        # It takes no row of another list: one let go over it goes back.
+        await page.drag(grip("o1"), (x, y))
+        assert await page.read(ROWS) == start and await page.read(COPIES) == 0
+        # Its own rows leave it.
+        x, y = await page.middle('[data-sortable$="/open"]')
+        await page.drag(grip("f2"), (x, y - 60))
+        now = await page.read(ROWS)
+        assert now["fixed"] == ["f1", "f3"] and now["open"] == ["f2", "o1", "o2"]
+
+        # A finger on a row that is dragged by all of it: moved at once it
+        # scrolls the page and holds nothing, and rested for a moment it
+        # holds the row.
+        await page.tab.call("Emulation.setTouchEmulationEnabled", enabled=True, maxTouchPoints=1)
+        x, y = await page.middle('[data-sortable-row$="/p1"]')
+        last = await page.middle('[data-sortable-row$="/p3"]')
+        target = (last[0], last[1] + 10)
+
+        async def touch(kind: str, at: tuple[float, float] | None) -> None:
+            points = [] if at is None else [{"x": at[0], "y": at[1]}]
+            await page.tab.call("Input.dispatchTouchEvent", type=kind, touchPoints=points)
+
+        await touch("touchStart", (x, y))
+        await touch("touchMove", (x, y + 40))
+        assert await page.read(COPIES) == 0
+        await touch("touchEnd", None)
+        await page.rest()
+        assert (await page.read(ROWS))["plain"] == ["p1", "p2", "p3"]
+
+        await touch("touchStart", (x, y))
+        await page.rest(500)
+        assert await page.read(COPIES) == 1
+        await touch("touchMove", ((x + target[0]) / 2, (y + target[1]) / 2))
+        await touch("touchMove", target)
+        await touch("touchEnd", None)
+        await page.rest()
+        assert (await page.read(ROWS))["plain"] == ["p2", "p3", "p1"]
