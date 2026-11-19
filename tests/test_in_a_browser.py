@@ -928,6 +928,9 @@ async def test_a_row_the_page_does_not_move_goes_back() -> None:
         x, y = await page.middle('[data-sortable$="/doing"]')
         await page.drag(grip("water"), (x, y), let_go=False)
         assert await page.read(COPIES) == 1
+        # Holding a row changes nothing of the page as a whole, which would
+        # have every element of a long page styled anew.
+        assert await page.read("document.body.className") == ""
         await page.key("Escape", 27)
         assert await page.read(ROWS) == start and await page.read(COPIES) == 0
         await page.let_go((x, y))

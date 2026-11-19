@@ -370,6 +370,7 @@ body.mw-dragging * {
     left: 0;
     z-index: 58;
     pointer-events: none;
+    cursor: grabbing;
     border-radius: var(--radius);
     background: var(--background);
     box-shadow:
@@ -381,11 +382,6 @@ body.mw-dragging * {
     transition:
         transform 0.12s ease-out,
         box-shadow 0.12s ease-out;
-}
-.mw-dragging,
-.mw-dragging * {
-    cursor: grabbing !important;
-    user-select: none;
 }
 @media print {
     .mw-sortable-grip {

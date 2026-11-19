@@ -48,15 +48,27 @@ function setDrag(next: Drag | null) {
   drag = next;
   for (const listener of listeners) listener();
 }
-function useDrag(): Drag | null {
-  return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    () => drag,
-    () => drag,
+// The drag as one list shows it: the row that is held when it is this
+// list's, and the gap when the row is over this list. A list draws again
+// when that changes, and not for a gap that moves in another list, which
+// on a page of many rows is most of what happens while a row is held.
+function shownIn(list: string): string {
+  if (!drag) return "";
+  const held = drag.source === list ? drag.row : "";
+  const gap = drag.over === list ? `${drag.at}:${drag.height}` : "";
+  return held || gap ? `${held}|${gap}` : "";
+}
+function watch(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+function useDrag(list: string): Drag | null {
+  const shown = useSyncExternalStore(
+    watch,
+    () => shownIn(list),
+    () => "",
   );
+  return shown ? drag : null;
 }
 
 // The row to give the keyboard to once the page has it where it was moved,
@@ -202,7 +214,15 @@ function begin(e: ReactPointerEvent<HTMLElement>, list: string, group: string | 
     }
     copy.appendChild(inner);
     document.body.appendChild(copy);
-    document.body.classList.add("mw-dragging");
+    // The copy takes the pointer, so the pointer shows the copy's hand
+    // wherever it goes. A class on the page for that would have every
+    // element of the page styled anew, which on a long page is a pause as
+    // the row is picked up.
+    try {
+      copy.setPointerCapture(pointer);
+    } catch {
+      // A pointer that is gone already has nothing to take.
+    }
     const rows = rowsOf(listOf(list)!);
     const from = rows.findIndex((r) => r.dataset.sortableRow === row);
     setDrag({ group, row, source: list, from, height: box.height, over: list, at: from, settled: false });
@@ -223,12 +243,12 @@ function begin(e: ReactPointerEvent<HTMLElement>, list: string, group: string | 
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("touchmove", noScroll);
     window.removeEventListener("blur", onBlur);
+    document.removeEventListener("selectstart", noSelect);
     window.clearTimeout(hold);
     pressing = false;
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
     stopWatching();
-    document.body.classList.remove("mw-dragging");
   };
 
   // The drag is over, and the row shows where the page has it. The copy
@@ -339,6 +359,8 @@ function begin(e: ReactPointerEvent<HTMLElement>, list: string, group: string | 
   const onCancel = (ev: PointerEvent) => {
     if (ev.pointerId === pointer && !drag?.settled) end(true);
   };
+  // A press that carries a row marks no text on its way.
+  const noSelect = (ev: Event) => ev.preventDefault();
   // The window is left with a row held, for another one say.
   const onBlur = () => {
     if (!drag?.settled) end(true);
@@ -355,6 +377,7 @@ function begin(e: ReactPointerEvent<HTMLElement>, list: string, group: string | 
   window.addEventListener("pointercancel", onCancel);
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("blur", onBlur);
+  document.addEventListener("selectstart", noSelect);
   if (resting) {
     window.addEventListener("touchmove", noScroll, { passive: false });
     hold = window.setTimeout(() => {
@@ -389,7 +412,7 @@ function step(list: string, group: string | null, reorder: boolean, row: string,
 // ------------------------------------------------------------- the list
 
 export const Sortable: Renderer = ({ node, props, children }) => {
-  const d = useDrag();
+  const d = useDrag(node.id);
   const group = typeof props.group === "string" ? props.group : null;
   const disabled = Boolean(props.disabled);
   // A list with no handler has nobody to tell of a row dropped in it, so
