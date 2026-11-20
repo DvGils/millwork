@@ -189,7 +189,7 @@ function formatCell(value: unknown, format: string, tone?: string) {
 // rows, its key, and the key as text for sets and for React.
 type Entry = { row: Record<string, unknown>; i: number; key: unknown; id: string };
 
-type Act = (what: "select" | "click" | "action", key: unknown, id?: string) => void;
+type Act = (what: "select" | "range" | "click" | "action", key: unknown, id?: string) => void;
 
 const NONE: never[] = [];
 
@@ -212,6 +212,9 @@ interface RowProps {
 // same object from one patch to the next unless the patch touched it, and
 // everything else here is a plain value or stable for the table's life.
 const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, columns, checkbox, actions, clickable, act }: RowProps) {
+  // Whether shift was down for the press that is changing the checkbox. The
+  // change itself does not say, and it comes during the click that does.
+  const shift = useRef(false);
   return (
     <TableRow
       data-part={part}
@@ -223,8 +226,20 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
       }}
     >
       {checkbox ? (
-        <TableCell className="py-(--mw-cell-y) whitespace-nowrap">
-          <Checkbox checked={selected} onCheckedChange={() => act("select", rowKey)} aria-label={t("select_row")} />
+        <TableCell
+          className="py-(--mw-cell-y) whitespace-nowrap"
+          onClickCapture={(e) => {
+            shift.current = e.shiftKey;
+          }}
+          // A press with shift would also select the text up to here. Stopping
+          // that stops the press from taking the keyboard along, so it is sent.
+          onMouseDown={(e) => {
+            if (!e.shiftKey) return;
+            e.preventDefault();
+            e.currentTarget.querySelector<HTMLElement>("[role=checkbox]")?.focus();
+          }}
+        >
+          <Checkbox checked={selected} onCheckedChange={() => act(shift.current ? "range" : "select", rowKey)} aria-label={t("select_row")} />
         </TableCell>
       ) : null}
       {columns.map((c) => {
@@ -325,11 +340,13 @@ export const Table: Renderer = ({ node, props, emit }) => {
   // What a row does when it is used. The rows hold one function for the table's
   // life, which reads the table as it is now, so a row is not drawn again
   // because the selection or a handler changed elsewhere.
-  const now = useRef({ selection, selected, selectedSet, emit, onSelect: Boolean(props.on_select), onRowClick: Boolean(props.on_row_click) });
-  now.current = { selection, selected, selectedSet, emit, onSelect: Boolean(props.on_select), onRowClick: Boolean(props.on_row_click) };
+  const now = useRef({ selection, selected, selectedSet, emit, onSelect: Boolean(props.on_select), onRowClick: Boolean(props.on_row_click), page: NONE as Entry[] });
+  now.current = { ...now.current, selection, selected, selectedSet, emit, onSelect: Boolean(props.on_select), onRowClick: Boolean(props.on_row_click) };
+  // The row whose checkbox was used last, where a range starts.
+  const anchor = useRef<string | null>(null);
   const act = useCallback<Act>((what, key, id) => {
-    const { selection, selected, selectedSet, emit, onSelect, onRowClick } = now.current;
-    const select = () => {
+    const { selection, selected, selectedSet, emit, onSelect, onRowClick, page } = now.current;
+    const select = (range: boolean) => {
       if (selection === "none" || !onSelect) return;
       const text = JSON.stringify(key);
       const on = selectedSet.has(text);
@@ -337,15 +354,24 @@ export const Table: Renderer = ({ node, props, emit }) => {
         emit("select", on ? [] : [key]);
         return;
       }
-      const next = selected.filter((k) => JSON.stringify(k) !== text);
-      if (!on) next.push(key);
+      // With shift, the rows from the last one used to this one all get what
+      // this one gets, in the order they are shown. The rows are those of the
+      // page in view, so a range never takes in a row the person cannot see,
+      // and it starts from a selection: with none there is nothing to extend.
+      const from = range && selected.length ? page.findIndex((e) => e.id === anchor.current) : -1;
+      const to = from < 0 ? -1 : page.findIndex((e) => e.id === text);
+      anchor.current = text;
+      const span = to < 0 ? [{ id: text, key }] : page.slice(Math.min(from, to), Math.max(from, to) + 1);
+      const ids = new Set(span.map((e) => e.id));
+      const next = selected.filter((k) => !ids.has(JSON.stringify(k)));
+      if (!on) next.push(...span.map((e) => e.key));
       emit("select", next);
     };
     if (what === "action") emit("action", [id, key]);
-    else if (what === "select") select();
+    else if (what === "select" || what === "range") select(what === "range");
     else {
       if (onRowClick) emit("row_click", key);
-      if (selection === "row") select();
+      if (selection === "row") select(false);
     }
   }, []);
 
@@ -378,6 +404,7 @@ export const Table: Renderer = ({ node, props, emit }) => {
     () => (pageSize ? shown.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize) : shown),
     [shown, pageSize, pageIndex],
   );
+  now.current.page = page;
 
   const body = useRef<HTMLTableSectionElement>(null);
   const headRow = useRef<HTMLTableRowElement>(null);
