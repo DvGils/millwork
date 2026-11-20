@@ -53,6 +53,19 @@ class Buckets(BaseModel):
 
 # The keys held with a press, as the browser's own protocol numbers them.
 ALT, SHIFT = 1, 8
+# Whether the app has drawn its page, waited for as long as an app and a
+# browser get to start. Before that the tab holds its shell and nothing of
+# the page, and a shell can stand still for longer than a page is taken to
+# need to come to rest: the first page a browser loads is its slowest.
+DRAWN = """new Promise((done) => {
+  const until = performance.now() + 30000;
+  const look = () => {
+    if (document.querySelector("[data-node]")) done(true);
+    else if (performance.now() > until) done(false);
+    else setTimeout(look, 25);
+  };
+  look();
+})"""
 
 
 class Page:
@@ -70,9 +83,14 @@ class Page:
         except BaseException:
             await self._served.__aexit__(None, None, None)
             raise
-        await self.tab.call("Page.enable")
-        await self.tab.call("Page.navigate", url=base + "/")
-        await self.rest()
+        try:
+            await self.tab.call("Page.enable")
+            await self.tab.call("Page.navigate", url=base + "/")
+            assert await self.tab.value(DRAWN), "the app did not draw its page"
+            await self.rest()
+        except BaseException:
+            await self.__aexit__(None, None, None)
+            raise
         return self
 
     async def __aexit__(self, *exc: object) -> None:
