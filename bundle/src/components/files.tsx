@@ -140,7 +140,7 @@ export const FileUpload: Renderer = ({ node, props, emit }) => {
 
   const zone = props.dropzone !== false;
   return (
-    <div className={cn("flex flex-col gap-2", props.cls as string)}>
+    <div className={cn("relative flex flex-col gap-2", props.cls as string)}>
       <input
         ref={inputRef}
         type="file"

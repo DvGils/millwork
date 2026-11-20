@@ -306,6 +306,24 @@ body.mw-dragging * {
   }
 }
 
+/* Words for a screen reader alone, said as something changes. It is out
+   of sight in a corner of the window and takes no room. An element that
+   is hidden where it stands in the page, as `sr-only` does it, is placed
+   by whatever is positioned above it. In a page that scrolls inside the
+   window that is something outside what scrolls, which then reaches as
+   far down as the element is, and the window gets a scrollbar of its own
+   with nothing to show. */
+.mw-said {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
 /* A list whose rows are dragged. The row that is held follows the pointer
    as a copy, over everything but a toast, and a gap shows where it would
    land. */

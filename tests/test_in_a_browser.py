@@ -1155,3 +1155,91 @@ async def test_a_list_that_keeps_its_order_or_takes_no_rows_and_a_finger_on_a_ro
         await touch("touchEnd", None)
         await page.rest()
         assert (await page.read(ROWS))["plain"] == ["p2", "p3", "p1"]
+
+
+async def test_no_page_of_the_manual_makes_the_window_scroll() -> None:
+    """A page scrolls in its own body, under the header. Something on it
+    that is placed from outside that body, an element hidden for a screen
+    reader for one, makes the window as long as the page and gives it a
+    second scrollbar, with nothing to show for it."""
+    from pathlib import Path
+
+    import millwork.manual as manual
+
+    pages = Path(manual.__file__).parent / "pages"
+    paths = []
+    for file in sorted(pages.rglob("*.md")):
+        name = file.relative_to(pages).with_suffix("").as_posix()
+        paths.append("/" if name == "index" else "/" + name.removesuffix("/index"))
+    assert len(paths) > 20
+    longer = (
+        "(() => { const d = document.documentElement;"
+        " return d.scrollHeight > innerHeight + 2 || d.scrollWidth > innerWidth + 2; })()"
+    )
+    # A page is there once its heading is, however long the machine takes
+    # over it: the page of charts is a while in coming on a slow one. Only
+    # then is it given a moment to come to rest.
+    drawn = """new Promise((done) => {
+      const until = performance.now() + 30000;
+      const look = () => {
+        if (location.pathname === %s && document.querySelector('.mw-shell-body h1')) done(true);
+        else if (performance.now() > until) done(false);
+        else setTimeout(look, 25);
+      };
+      look();
+    })"""
+    scrolls: list[str] = []
+    async with Page(manual.make_app()) as page:
+        await wide(page)
+        base = (await page.read("location.origin")) or ""
+        for path in paths:
+            await page.tab.call("Page.navigate", url=base + path)
+            assert await page.read(drawn % json.dumps(path)), path
+            await page.tab.value(_SETTLE % {"timeout": 4000, "still": 100})
+            if await page.read(longer):
+                scrolls.append(path)
+    assert scrolls == []
+
+
+async def test_what_is_hidden_deep_in_a_long_page_does_not_make_the_window_scroll() -> None:
+    app = mw.App("long", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            *[ui.Text(f"Line {n}") for n in range(150)],
+            # Each has something in it that only a screen reader or the
+            # browser's file dialog has a use for.
+            ui.FileUpload(key="upload"),
+            ui.FileUpload(key="button", dropzone=False),
+            ui.Sortable(ui.Text("a", key="a"), key="rows", on_move=lambda s, m: None),
+            ui.MultiSelect(options=["x", "y"], default=["x"], sortable=True),
+            # In something that scrolls by itself as well.
+            ui.ScrollArea(
+                *[ui.Text(f"Inner {n}") for n in range(60)],
+                ui.FileUpload(key="inner"),
+                key="area",
+                height="10rem",
+            ),
+        )
+
+    async with Page(app) as page:
+        await wide(page)
+        sizes = await page.read(
+            "(() => { const d = document.documentElement;"
+            " const b = document.querySelector('.mw-shell-body');"
+            " b.scrollTop = b.scrollHeight;"
+            " return { window: innerHeight, page: d.scrollHeight, body: b.scrollHeight,"
+            " end: Math.round(b.scrollTop + b.clientHeight) }; })()"
+        )
+        assert sizes["page"] <= sizes["window"] + 2
+        # The body is as long as what is in it, and no longer.
+        assert sizes["body"] > 3000 and sizes["end"] >= sizes["body"] - 2
+        below = await page.read(
+            "(() => { const b = document.querySelector('.mw-shell-body');"
+            " const box = b.getBoundingClientRect();"
+            " const area = document.querySelector('[data-slot=scroll-area]');"
+            " return Math.round(box.bottom - area.getBoundingClientRect().bottom); })()"
+        )
+        # Scrolled to its end, the body ends a little under its last child.
+        assert 0 <= below < 80

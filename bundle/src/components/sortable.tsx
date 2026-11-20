@@ -511,7 +511,7 @@ export const Sortable: Renderer = ({ node, props, children }) => {
           </div>
         ) : null}
       </div>
-      <span ref={said} aria-live="polite" className="sr-only" />
+      <span ref={said} aria-live="polite" className="mw-said" />
     </>
   );
 };
