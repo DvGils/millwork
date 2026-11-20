@@ -656,8 +656,12 @@ def test_an_open_session_outlasts_a_moment_without_an_answer_and_not_an_outage(
 ) -> None:
     world = World()
     app = make_app(tmp_path, world, recheck=True)
-    app.auth.recheck_every = 0.15
-    app.auth._retry_after = 0.02
+    # The press has to land after the answer has run out and before it is
+    # twice as old, by the clock. The times leave half a second for that,
+    # which a slow machine needs: with a tenth of one the session was over
+    # before the press was heard.
+    app.auth.recheck_every = 0.6
+    app.auth._retry_after = 0.05
     with TestClient(app.asgi) as client:
         sign_in(client, "ada")
         with client.websocket_connect("/_mw/ws") as ws:
@@ -665,7 +669,7 @@ def test_an_open_session_outlasts_a_moment_without_an_answer_and_not_an_outage(
             # The database is away. Within twice the interval of the last
             # answer the session goes on as it was.
             world.broken = True
-            time.sleep(0.18)
+            time.sleep(0.7)
             click(ws, "root/poke")
             assert until(ws, lambda m: m.get("name") == "toast")["args"]["message"] == "poked"
             # It stays away, and the session ends rather than run on an

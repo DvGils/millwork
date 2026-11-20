@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import re
-import sqlite3
 from typing import Any, Literal
 
 import dataset
@@ -110,14 +109,14 @@ class Pinned(Show):
     rows: list[dict[str, Any]]
 
 
-async def query(s: mw.Session[Any], db: sqlite3.Connection, call: Query) -> dict[str, Any]:
+async def query(s: mw.Session[Any], db: dataset.Database, call: Query) -> dict[str, Any]:
     # In a thread, so a slow query holds up nobody else's page.
     found = await asyncio.to_thread(dataset.query, db, call.sql, 50)
     rows = [list(row.values()) for row in found.rows]
     return {"columns": found.columns, "rows": rows, "more_rows": found.more}
 
 
-async def show(s: mw.Session[Any], db: sqlite3.Connection, call: Show) -> dict[str, Any]:
+async def show(s: mw.Session[Any], db: dataset.Database, call: Show) -> dict[str, Any]:
     found = await asyncio.to_thread(dataset.query, db, call.sql)
     if call.kind != "table":
         if call.x not in found.columns or call.y not in found.columns:
@@ -135,7 +134,7 @@ async def show(s: mw.Session[Any], db: sqlite3.Connection, call: Show) -> dict[s
     return {"card": card.id, "rows": len(found.rows), "more_rows": found.more}
 
 
-async def point_at(s: mw.Session[Any], db: sqlite3.Connection, call: PointAt) -> dict[str, Any]:
+async def point_at(s: mw.Session[Any], db: dataset.Database, call: PointAt) -> dict[str, Any]:
     card = next((card for card in s.state.cards if card.id == call.card), None)
     if card is None:
         raise Refused(f"There is no card {call.card} on the board.")
@@ -162,7 +161,7 @@ TOOLS: dict[str, tuple[type[BaseModel], Any]] = {
 
 
 async def use(
-    s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Reply, name: str, given: Any
+    s: mw.Session[Any], db: dataset.Database, reply: mw.Reply, name: str, given: Any
 ) -> tuple[dict[str, Any] | str, bool]:
     """Run a tool with what the model or the script gave it, and show it in
     the reply as a step. Gives the tool's result, or the words of what went
@@ -190,7 +189,7 @@ async def use(
     return result, False
 
 
-def briefing(s: mw.Session[Any], db: sqlite3.Connection, added: list[str]) -> str:
+def briefing(s: mw.Session[Any], db: dataset.Database, added: list[str]) -> str:
     """What the analyst is told with each question: the tables there are,
     and the board as the person sees it, which is the page as data."""
     listed = "\n".join(f"- {t}({', '.join(cols)})" for t, cols in dataset.tables(db).items())
@@ -203,7 +202,7 @@ def briefing(s: mw.Session[Any], db: sqlite3.Connection, added: list[str]) -> st
 
 
 async def with_model(
-    s: mw.Session[Any], db: sqlite3.Connection, turn: mw.ChatTurn, reply: mw.Reply, added: list[str]
+    s: mw.Session[Any], db: dataset.Database, turn: mw.ChatTurn, reply: mw.Reply, added: list[str]
 ) -> None:
     """Answer with the model. The conversation as the model sees it is kept
     in the session's state, and it is only ever added to: the model's own
@@ -298,7 +297,7 @@ async def _streamed(history: list[dict[str, Any]], reply: mw.Reply) -> Any:
 
 
 async def scripted(
-    s: mw.Session[Any], db: sqlite3.Connection, turn: mw.ChatTurn, reply: mw.Reply, added: list[str]
+    s: mw.Session[Any], db: dataset.Database, turn: mw.ChatTurn, reply: mw.Reply, added: list[str]
 ) -> None:
     """Answer without a model. The script knows three questions about the
     orders and one about a table that was added, and says so otherwise."""
@@ -337,7 +336,7 @@ async def say(reply: mw.Reply, text: str) -> None:
 
 
 async def do(
-    s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Reply, name: str, **given: Any
+    s: mw.Session[Any], db: dataset.Database, reply: mw.Reply, name: str, **given: Any
 ) -> dict[str, Any]:
     """A tool for the script, which asks for nothing a tool refuses."""
     result, failed = await use(s, db, reply, name, given)
@@ -346,7 +345,7 @@ async def do(
     return result
 
 
-async def _best_region(s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Reply) -> None:
+async def _best_region(s: mw.Session[Any], db: dataset.Database, reply: mw.Reply) -> None:
     sql = (
         "SELECT region, ROUND(SUM(revenue)) AS revenue FROM orders"
         " WHERE day LIKE '2025%' GROUP BY region ORDER BY revenue DESC"
@@ -363,7 +362,7 @@ async def _best_region(s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Rep
     await reply.suggestions(QUESTIONS[1:])
 
 
-async def _by_month(s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Reply) -> None:
+async def _by_month(s: mw.Session[Any], db: dataset.Database, reply: mw.Reply) -> None:
     title = "Revenue by month"
     await do(s, db, reply, "show", title=title, sql=BY_MONTH, kind="line", x="month", y="revenue")
     await say(
@@ -374,7 +373,7 @@ async def _by_month(s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Reply)
     await reply.suggestions(QUESTIONS[2:])
 
 
-async def _march(s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Reply) -> None:
+async def _march(s: mw.Session[Any], db: dataset.Database, reply: mw.Reply) -> None:
     sql = (
         "SELECT product,"
         " ROUND(SUM(CASE WHEN day LIKE '2026-02%' THEN revenue ELSE 0 END)) AS february,"
@@ -399,7 +398,7 @@ async def _march(s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Reply) ->
 
 
 async def _what_is_in(
-    s: mw.Session[Any], db: sqlite3.Connection, reply: mw.Reply, table: str
+    s: mw.Session[Any], db: dataset.Database, reply: mw.Reply, table: str
 ) -> None:
     counted = await do(s, db, reply, "query", sql=f'SELECT COUNT(*) AS n FROM "{table}"')
     first_rows = f'SELECT * FROM "{table}" LIMIT 20'
