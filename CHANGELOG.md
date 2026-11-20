@@ -3,7 +3,7 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
-## 0.7.0
+## 0.6.3
 
 ### Features
 
