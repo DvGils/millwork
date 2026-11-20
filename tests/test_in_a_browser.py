@@ -1176,15 +1176,26 @@ async def test_no_page_of_the_manual_makes_the_window_scroll() -> None:
         "(() => { const d = document.documentElement;"
         " return d.scrollHeight > innerHeight + 2 || d.scrollWidth > innerWidth + 2; })()"
     )
-    drawn = "!!document.querySelector('.mw-shell-body h1')"
+    # A page is there once its heading is, however long the machine takes
+    # over it: the page of charts is a while in coming on a slow one. Only
+    # then is it given a moment to come to rest.
+    drawn = """new Promise((done) => {
+      const until = performance.now() + 30000;
+      const look = () => {
+        if (location.pathname === %s && document.querySelector('.mw-shell-body h1')) done(true);
+        else if (performance.now() > until) done(false);
+        else setTimeout(look, 25);
+      };
+      look();
+    })"""
     scrolls: list[str] = []
     async with Page(manual.make_app()) as page:
         await wide(page)
         base = (await page.read("location.origin")) or ""
         for path in paths:
             await page.tab.call("Page.navigate", url=base + path)
+            assert await page.read(drawn % json.dumps(path)), path
             await page.tab.value(_SETTLE % {"timeout": 4000, "still": 100})
-            assert await page.read(drawn), path
             if await page.read(longer):
                 scrolls.append(path)
     assert scrolls == []
