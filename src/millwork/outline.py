@@ -678,6 +678,7 @@ SAYS: dict[str, Says] = {
     "NumberInput": Says(placeholder=True, held="value", flags=_OFF, more=_number_input),
     "Slider": Says(held="value", flags=_OFF, more=_bounds),
     "DatePicker": Says(placeholder=True, held="value", flags=_OFF, more=_bounds),
+    "ColorPicker": Says(label=("label",), placeholder=True, held="value", flags=_OFF),
     "Select": Says(placeholder=True, held="value", options=True, flags=_OFF),
     "Combobox": Says(
         placeholder=True, held="value", options=True, typed="allow_custom", flags=_OFF

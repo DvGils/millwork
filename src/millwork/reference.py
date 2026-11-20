@@ -132,6 +132,7 @@ ALIASES = {
     "ui.Collapsible": "expand, collapse, disclosure, details, expander",
     "ui.Combobox": "autocomplete, typeahead, searchable dropdown",
     "ui.Custom": "react component, javascript, jsx, plugin, extension",
+    "ui.ColorPicker": "colour, hex code, swatch, palette, color input",
     "ui.DatePicker": "calendar, date range, date input",
     "ui.Dialog": "modal, popup, overlay, lightbox",
     "ui.Download": "export, save a file, csv",

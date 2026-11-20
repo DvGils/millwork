@@ -53,6 +53,19 @@ class Buckets(BaseModel):
 
 # The keys held with a press, as the browser's own protocol numbers them.
 ALT, SHIFT = 1, 8
+# Whether the app has drawn its page, waited for as long as an app and a
+# browser get to start. Before that the tab holds its shell and nothing of
+# the page, and a shell can stand still for longer than a page is taken to
+# need to come to rest: the first page a browser loads is its slowest.
+DRAWN = """new Promise((done) => {
+  const until = performance.now() + 30000;
+  const look = () => {
+    if (document.querySelector("[data-node]")) done(true);
+    else if (performance.now() > until) done(false);
+    else setTimeout(look, 25);
+  };
+  look();
+})"""
 
 
 class Page:
@@ -70,9 +83,14 @@ class Page:
         except BaseException:
             await self._served.__aexit__(None, None, None)
             raise
-        await self.tab.call("Page.enable")
-        await self.tab.call("Page.navigate", url=base + "/")
-        await self.rest()
+        try:
+            await self.tab.call("Page.enable")
+            await self.tab.call("Page.navigate", url=base + "/")
+            assert await self.tab.value(DRAWN), "the app did not draw its page"
+            await self.rest()
+        except BaseException:
+            await self.__aexit__(None, None, None)
+            raise
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -849,6 +867,187 @@ async def test_shift_selects_the_rows_from_the_last_one_used_to_this_one() -> No
         await page.click(box(5, "paged"), shift=True)
         assert await page.read(SELECTED % "paged") == [5, 6, 7]
         assert await page.read(SELECTED % "all") == [2, 5, 6, 7]
+
+
+# ------------------------------------------------------------- a color that is picked
+
+
+async def test_a_color_is_picked_by_dragging_typing_and_pressing() -> None:
+    class Paint(BaseModel):
+        color: str | None = "#3b82f6"
+        picks: int = 0
+        refused: int = 0
+        saved: str = ""
+
+    class Label(BaseModel):
+        color: str = Field(
+            "#ef4444", json_schema_extra={"widget": "color", "swatches": ["#14b8a6"]}
+        )
+
+    app = mw.App("paint", state=Paint, public=None)
+
+    def pick(s: mw.Session[Paint], color: str | None) -> None:
+        s.state.picks += 1
+        s.state.color = color
+
+    def refuse(s: mw.Session[Paint], color: str | None) -> None:
+        s.state.refused += 1
+
+    def save(s: mw.Session[Paint], label: Label) -> None:
+        s.state.saved = label.color
+
+    @app.page("/")
+    def home(s: mw.Session[Paint]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.ColorPicker(
+                value=st.color,
+                swatches=["#ef4444", "#22c55e"],
+                clearable=True,
+                on_change=pick,
+                key="main",
+            ),
+            # The page holds these two at a color. One has a handler that
+            # does not take a pick, and the other has nobody to tell.
+            ui.ColorPicker(value="#ff0000", on_change=refuse, key="refused"),
+            ui.ColorPicker(value="#00ff00", key="fixed"),
+            ui.Text(f"{st.refused} refused", key="refusals"),
+            ui.Text(f"{st.picks} picks, now {st.color}, saved {st.saved}", key="said"),
+            ui.Form(Label, on_submit=save, key="form"),
+        )
+
+    said = "document.querySelector(\"[data-node='root/said']\").textContent"
+    button = "[data-node='root/main'] button"
+    shown = f"document.querySelector({json.dumps(button)}).textContent.trim()"
+    hue = "document.querySelector('.mw-color-strip .mw-color-thumb').style.left"
+    is_open = "!!document.querySelector('.mw-color-square')"
+
+    async with Page(app) as page:
+        await wide(page)
+
+        async def square() -> tuple[float, float, float, float]:
+            x, y, w, h = await page.read(
+                "(() => { const r = document.querySelector('.mw-color-square')"
+                ".getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()"
+            )
+            return x, y, w, h
+
+        async def now() -> tuple[int, str]:
+            picks, _, rest = (await page.read(said)).partition(" picks, now ")
+            return int(picks), rest.partition(",")[0]
+
+        await page.click(button)
+        x, y, w, h = await square()
+
+        # A color that is dragged shows here and is not the page's yet.
+        await page.drag(".mw-color-square", (x + w * 0.25, y + h * 0.5), let_go=False)
+        await page.rest()
+        held = (await page.read(shown)).lower()
+        assert held != "#3b82f6" and await now() == (0, "#3b82f6")
+        # Let go, it is, in one pick. Let go outside, the picker stays.
+        await page.let_go((x + w + 300, y + h + 200))
+        assert await now() == (1, held) and await page.read(is_open)
+
+        # A gray has no hue of its own, and the strip keeps the one it had.
+        was = await page.read(hue)
+        await page.drag(".mw-color-square", (x - 40, y + h * 0.5))
+        picks, gray = await now()
+        assert picks == 2 and gray[1:3] == gray[3:5] == gray[5:7]
+        assert await page.read(hue) == was
+        await page.drag(".mw-color-square", (x + w * 0.9, y + h * 0.2))
+        picks, blue = await now()
+        assert picks == 3 and await page.read(hue) == was
+        assert int(blue[5:7], 16) > int(blue[1:3], 16)
+
+        # A key held down moves the hue along, and the page hears of it
+        # when the key is let go.
+        await page.read("document.querySelector('.mw-color-strip').focus()")
+        for kind in ("keyDown", "keyDown", "keyDown", "keyUp"):
+            await page.tab.call(
+                "Input.dispatchKeyEvent",
+                type=kind,
+                key="ArrowRight",
+                code="ArrowRight",
+                windowsVirtualKeyCode=39,
+            )
+        await page.rest()
+        picks, turned = await now()
+        assert picks == 4 and turned != blue and await page.read(hue) != was
+
+        # A hex code is a color once its six digits are typed.
+        await page.read(
+            "(() => { const i = document.querySelector('input[aria-label=\"Hex code\"]');"
+            " i.focus(); i.select(); })()"
+        )
+        await page.tab.call("Input.insertText", text="22c55")
+        await page.rest()
+        assert (await now())[0] == 4
+        # A code half typed is not a wrong one.
+        assert not await page.read("!!document.querySelector('input[aria-invalid=true]')")
+        await page.tab.call("Input.insertText", text="e")
+        await page.rest()
+        assert await now() == (5, "#22c55e")
+        assert await page.read(
+            "document.querySelector('.mw-color-swatch[aria-pressed=true]').title"
+        ) == ("#22C55E")
+
+        # A color of the app's own is picked with a press, which is all
+        # there was to do.
+        await page.click(".mw-color-swatch[title='#EF4444']")
+        assert await now() == (6, "#ef4444") and not await page.read(is_open)
+        await page.click(button)
+        await page.click("button[aria-label='No color']")
+        assert await now() == (7, "None") and not await page.read(is_open)
+        assert await page.read(shown) == "Choose"
+
+        # Three digits are a color when the field is left with Enter.
+        await page.click(button)
+        await page.read(
+            "(() => { const i = document.querySelector('input[aria-label=\"Hex code\"]');"
+            " i.focus(); i.select(); })()"
+        )
+        await page.tab.call("Input.insertText", text="#0af")
+        await page.rest()
+        assert (await now())[0] == 7
+        await page.key("Enter", 13)
+        assert await now() == (8, "#00aaff")
+        await page.key("Escape", 27)
+
+        def says(key: str) -> str:
+            return f"document.querySelector(\"[data-node='root/{key}'] button\").textContent.trim()"
+
+        refusals = "document.querySelector(\"[data-node='root/refusals']\").textContent"
+
+        # A picker the page holds shows the page's color. With nobody to
+        # tell, a color that is let go of is gone at once.
+        await page.click("[data-node='root/fixed'] button")
+        x, y, w, h = await square()
+        await page.drag(".mw-color-square", (x + w * 0.5, y + h * 0.9))
+        assert await page.read(says("fixed")) == "#00FF00"
+        await page.key("Escape", 27)
+        # A handler is waited for, and the color stands meanwhile. This one
+        # does not take it, so the page's color is back when the wait is over.
+        await page.click("[data-node='root/refused'] button")
+        x, y, w, h = await square()
+        await page.drag(".mw-color-square", (x + w * 0.5, y + h * 0.9))
+        assert await page.read(refusals) == "1 refused"
+        assert await page.read(says("refused")) != "#FF0000"
+        await asyncio.sleep(3.2)
+        await page.rest()
+        assert await page.read(says("refused")) == "#FF0000"
+        # Escape in the middle of a drag takes the drag back.
+        await page.drag(".mw-color-square", (x + w * 0.2, y + h * 0.2), let_go=False)
+        await page.key("Escape", 27)
+        await page.let_go((x + w * 0.2, y + h * 0.2))
+        assert not await page.read(is_open)
+        assert await page.read(refusals) == "1 refused"
+        assert await page.read(says("refused")) == "#FF0000"
+
+        # A field of a form is picked the same way, and saved with the form.
+        await page.click("[data-node='root/form'] button[aria-haspopup]")
+        await page.click(".mw-color-swatch[title='#14B8A6']")
+        await page.press("Save")
+        assert (await page.read(said)).endswith("saved #14b8a6")
 
 
 # ------------------------------------------------------------- rows that are dragged

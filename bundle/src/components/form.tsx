@@ -10,6 +10,7 @@ import { t } from "../theme";
 import { onStatus } from "../ws";
 import { formatSize, upload, type FileRef } from "./files";
 import { DatePickerControl, MultiSelectControl } from "./choices";
+import { ColorPickerControl } from "./color";
 import { gridColumns } from "./surfaces";
 import {
   Field,
@@ -75,6 +76,7 @@ interface FieldSpec {
   max_files?: number;
   max_items?: number | null;
   sortable?: boolean;
+  swatches?: string[];
   min_date?: string | null;
   max_date?: string | null;
   fields?: FieldSpec[];
@@ -651,6 +653,19 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
           disabled={ctx.disabled}
           invalid={invalid}
           onChange={(next) => set(typeof next === "string" ? next : null)}
+        />
+      );
+    case "color":
+      return (
+        <ColorPickerControl
+          id={id}
+          value={typeof value === "string" ? value : null}
+          swatches={f.swatches}
+          clearable={Boolean(f.clearable)}
+          placeholder={f.placeholder ?? undefined}
+          disabled={ctx.disabled}
+          invalid={invalid}
+          onChange={(next) => set(next)}
         />
       );
     case "checkboxes": {

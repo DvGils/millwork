@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import re
 from collections.abc import Callable, Collection, Iterator
 from typing import Any
 
@@ -322,6 +323,21 @@ def _date(tree: Tree, node: Node, payload: Any) -> Any:
     return [None if day is None else _day(node, day) for day in payload]
 
 
+# A color as a tab sends it.
+_HEX_CODE = re.compile(r"#[0-9a-f]{6}")
+
+
+def _color(tree: Tree, node: Node, payload: Any) -> Any:
+    if payload is None:
+        if not node.props.get("clearable"):
+            raise Refused("was sent no color, and it is not one to clear")
+        return None
+    code = _text(payload)
+    if not _HEX_CODE.fullmatch(code):
+        raise Refused(f"was sent {_short(payload)}, which is not a color")
+    return code
+
+
 def _name(key: Any) -> tuple[str, Any] | None:
     """A row's key as a tab holds it. There every number is a float, so 1
     and 1.0 are one key, a whole number past 2**53 is the float nearest
@@ -523,6 +539,7 @@ _CHECKS: dict[tuple[str, str], Check] = {
     ("Slider", "change"): _slide,
     ("NumberInput", "change"): _amount,
     ("DatePicker", "change"): _date,
+    ("ColorPicker", "change"): _color,
     ("Table", "select"): _select,
     ("Table", "row_click"): _row_click,
     ("Table", "action"): _row_action,

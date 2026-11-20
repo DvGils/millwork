@@ -3,6 +3,19 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.3
+
+### Features
+
+- `ui.ColorPicker` picks a color. Its button shows the color with its
+  hex code and opens a square for saturation and brightness, a strip for
+  the hue and a field for the code. `swatches` are colors of the app's
+  own, each picked with one press, `clearable=True` gives a way back to
+  no color, and `compact=True` shows the color without its code. The
+  value is a hex code such as `#3b82f6`. A color that is dragged shows at
+  once and reaches `on_change` when it is let go. In a form, a text field
+  with the `color` widget is a color picker, and takes `swatches` too.
+
 ## 0.6.2
 
 ### Features

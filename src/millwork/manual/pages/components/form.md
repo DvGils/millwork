@@ -91,10 +91,13 @@ them in `overrides`.
 
 The widgets are `input`, `textarea`, `password`, `number`, `slider`,
 `switch`, `checkbox`, `select`, `radio`, `toggle`, `multiselect`,
-`checkboxes`, `tags`, `date`, `datetime`, `file`, `files` and `hidden`.
+`checkboxes`, `tags`, `date`, `datetime`, `color`, `file`, `files` and
+`hidden`.
 Each field gets one from its type, and an override swaps it for another
 that fits the same value, such as `radio` for a short enum or `toggle` for
-a boolean that is given its two `choices`. A field with a `default_factory` opens with what the factory
+a boolean that is given its two `choices`. The `color` widget makes a
+text field a [color picker](/components/inputs#colorpicker), and takes
+the picker's `swatches`. A field with a `default_factory` opens with what the factory
 makes, so a date field defaulting to today shows today. A factory that
 makes a new value on every call, a uuid or the time of day, gives the form
 nothing, and the model makes that value on submit as it always did.

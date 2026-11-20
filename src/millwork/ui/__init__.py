@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from millwork.colors import as_color, as_colors
 from millwork.files import FileRef
 from millwork.forms import FormIssues, Issue
 from millwork.icons import check_icon
@@ -1459,6 +1460,58 @@ class DatePicker(_Owned):
         ) -> None: ...
 
 
+class ColorPicker(_Owned):
+    """A color, as a hex code such as ``#3b82f6``. The button shows the
+    color and opens a square for saturation and brightness, a strip for
+    the hue and a field for the hex code. ``swatches`` are colors of the
+    app's own, each picked with one press. ``compact`` shows the color
+    without its code, and ``label`` names the picker for a screen reader.
+    With ``clearable`` there is a way back to no color, which is ``None``.
+    A color may be given as ``#rgb`` or in capitals, and is held as
+    ``#rrggbb`` in lower case. One that is dragged reaches ``on_change``
+    when it is let go."""
+
+    type: ClassVar[str] = "ColorPicker"
+    payloads: ClassVar[dict[str, str]] = {
+        "on_change": "the color as '#rrggbb', or None",
+    }
+    value: str | None = None
+    default: str | None = None
+    swatches: list[str] = []
+    compact: bool = False
+    label: str | None = None
+    placeholder: str | None = None
+    clearable: bool = False
+    disabled: bool = False
+    on_change: Any = None
+
+    @field_validator("value", "default", mode="before")
+    @classmethod
+    def _color(cls, value: Any) -> Any:
+        return None if value is None else as_color(value)
+
+    _colors = field_validator("swatches", mode="before")(staticmethod(as_colors))
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
+            value: str | None = None,
+            default: str | None = None,
+            swatches: Iterable[str] = ...,
+            compact: bool = False,
+            label: str | None = None,
+            placeholder: str | None = None,
+            clearable: bool = False,
+            disabled: bool = False,
+            on_change: Any = None,
+        ) -> None: ...
+
+
 class Select(_Owned):
     type: ClassVar[str] = "Select"
     payloads: ClassVar[dict[str, str]] = {
@@ -1951,6 +2004,7 @@ __all__ = [
     "DropdownMenu",
     "ButtonGroup",
     "DatePicker",
+    "ColorPicker",
     "MultiSelect",
     "Separator",
     "Sheet",
