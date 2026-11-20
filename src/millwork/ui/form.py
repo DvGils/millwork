@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Type  # noqa: UP035
 
 from pydantic import BaseModel, field_validator
 
+from millwork.colors import as_colors
 from millwork.forms import Issue, choice, field_spec
 from millwork.nodes import Component
 
@@ -120,7 +121,7 @@ def _apply(
     """Merge ``table[pointer]`` (or ``table[name]``) into each field spec, recursively.
 
     ``keys`` limits what is taken; ``None`` takes everything. ``choices`` becomes
-    ``options`` either way.
+    ``options`` either way, and ``swatches`` are checked for being colors.
     """
     for f in fields:
         override = table.get(f["pointer"]) or table.get(f["name"])
@@ -130,6 +131,8 @@ def _apply(
                     f["options"] = [choice(c) for c in v]
                     if f["widget"] == "input":
                         f["widget"] = "select"
+                elif k == "swatches" and keys is None:
+                    f["swatches"] = as_colors(v)
                 elif keys is None or k in keys:
                     f[k] = v
         if "fields" in f:

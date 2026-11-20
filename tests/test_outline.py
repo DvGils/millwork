@@ -43,6 +43,7 @@ SAID: dict[str, list[str]] = {
     "CheckboxGroup": ["label", "options.label", "options.value"],
     "Code": ["content", "title"],
     "Collapsible": ["title"],
+    "ColorPicker": ["label", "placeholder", "value"],
     "Combobox": ["options.label", "options.value", "placeholder", "value"],
     "Custom": [],
     "DatePicker": ["max", "min", "placeholder", "value"],

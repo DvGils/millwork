@@ -474,6 +474,58 @@ ui.Row(
 )
 ```
 
+## ColorPicker
+<!-- keywords: colour, hex code, swatch, palette -->
+
+`ui.ColorPicker` picks a color. The value is a hex code such as
+`#3b82f6`, held as six digits in lower case. Its button opens a square
+for saturation and brightness, a strip for the hue and a field for the
+code. `swatches` are colors of the app's own, each picked with one
+press. `clearable=True` adds a way back to no color, which is `None`.
+
+A color that is dragged shows at once and reaches `on_change` when it is
+let go, so the handler runs once for each pick.
+
+```python live
+from pydantic import BaseModel
+
+PALETTE = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899"]
+
+
+class Paint(BaseModel):
+    color: str | None = "#3b82f6"
+
+
+def example(s):
+    st = s.state.paint
+    return ui.Row(
+        ui.ColorPicker(
+            value=st.color,
+            swatches=PALETTE,
+            clearable=True,
+            on_change=lambda s, color: setattr(st, "color", color),
+        ),
+        ui.Text(f"The page has {st.color}.", variant="muted"),
+    )
+```
+
+`compact=True` shows the color without its code, for a tight place such
+as a row of a list. `label` names the picker for a screen reader.
+
+```python live
+ui.Stack(
+    *[
+        ui.Row(
+            ui.ColorPicker(default=color, compact=True, label=f"Color of {name}"),
+            ui.Text(name),
+            gap=2,
+        )
+        for name, color in [("Urgent", "#ef4444"), ("Waiting", "#eab308"), ("Done", "#22c55e")]
+    ],
+    gap=2,
+)
+```
+
 ## DropdownMenu
 <!-- keywords: context menu, actions, kebab, more options -->
 

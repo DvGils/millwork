@@ -167,6 +167,14 @@ STRINGS: dict[str, str] = {
     "min": "Min",
     "max": "Max",
     "clear": "Clear",
+    # The color picker: what it is called where it shows a swatch alone, its
+    # two places to point at, and what the square says of where it is.
+    "color": "Color",
+    "no_color": "No color",
+    "hex_code": "Hex code",
+    "hue": "Hue",
+    "color_shade": "Saturation and brightness",
+    "color_shade_at": "Saturation {s}%, brightness {v}%",
     "select_all": "Select all",
     "select_row": "Select row",
     "dismiss": "Dismiss",

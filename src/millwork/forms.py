@@ -3,7 +3,7 @@
 The spec is derived from the model's JSON Schema, so nested models, lists,
 literals, enums, optionals and discriminated unions all come out the same
 way. ``json_schema_extra`` carries widget hints: ``widget``, ``choices``,
-``group``, ``order``, ``hidden``, ``sortable``.
+``group``, ``order``, ``hidden``, ``sortable``, ``swatches``.
 """
 
 from __future__ import annotations
@@ -16,10 +16,11 @@ from typing import Any, Union, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_core import PydanticKnownError, to_jsonable_python
 
+from millwork.colors import as_colors
 from millwork.icons import check_icon
 
 Widget = str  # input, textarea, password, number, slider, switch, checkbox, select, radio,
-# toggle, checkboxes, multiselect, date, datetime, fieldset, list, union, file, hidden
+# toggle, checkboxes, multiselect, date, datetime, color, fieldset, list, union, file, hidden
 
 
 class Issue(BaseModel):
@@ -56,6 +57,7 @@ WIDGETS: tuple[str, ...] = (
     "tags",
     "date",
     "datetime",
+    "color",
     "file",
     "files",
     "hidden",
@@ -384,6 +386,8 @@ class _Walker:
         self.classify(prop, spec, name)
         if prop.get("widget"):
             spec["widget"] = prop["widget"]
+        if prop.get("swatches"):
+            spec["swatches"] = as_colors(prop["swatches"])
         if prop.get("choices"):
             spec["options"] = [self.option(c) for c in prop["choices"]]
             if spec["widget"] == "input":
