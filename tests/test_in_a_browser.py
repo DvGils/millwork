@@ -51,6 +51,10 @@ class Buckets(BaseModel):
     tags: list[str] = []
 
 
+# The keys held with a press, as the browser's own protocol numbers them.
+ALT, SHIFT = 1, 8
+
+
 class Page:
     """A page of an app in a browser, for as long as the block runs."""
 
@@ -104,7 +108,9 @@ class Page:
         assert pressed, f"no button says {label!r}"
         await self.rest()
 
-    async def click(self, selector: str, text: str | None = None, at_most: int = 5000) -> None:
+    async def click(
+        self, selector: str, text: str | None = None, at_most: int = 5000, *, shift: bool = False
+    ) -> None:
         """Click with the mouse on what ``selector`` finds, the one that says
         ``text`` when there are several. A press and a release at its
         middle, which is what opens a select."""
@@ -118,7 +124,13 @@ class Page:
         assert at, f"nothing at {selector} says {text!r}"
         for kind in ("mousePressed", "mouseReleased"):
             await self.tab.call(
-                "Input.dispatchMouseEvent", type=kind, x=at[0], y=at[1], button="left", clickCount=1
+                "Input.dispatchMouseEvent",
+                type=kind,
+                x=at[0],
+                y=at[1],
+                button="left",
+                clickCount=1,
+                modifiers=SHIFT if shift else 0,
             )
         await self.rest(at_most)
 
@@ -173,7 +185,7 @@ class Page:
         )
         await self.rest()
 
-    async def key(self, name: str, code: int, *, alt: bool = False) -> None:
+    async def key(self, name: str, code: int, *, alt: bool = False, shift: bool = False) -> None:
         """Press a key that types nothing, such as Escape, where the keyboard is."""
         for kind in ("keyDown", "keyUp"):
             await self.tab.call(
@@ -182,7 +194,7 @@ class Page:
                 key=name,
                 code=name,
                 windowsVirtualKeyCode=code,
-                modifiers=1 if alt else 0,
+                modifiers=(ALT if alt else 0) | (SHIFT if shift else 0),
             )
         await self.rest()
 
@@ -756,6 +768,87 @@ async def test_a_toasts_action_takes_the_toast_with_it() -> None:
         assert "undone 1" in await page.read("document.body.textContent")
         # Nothing is left to press a second time.
         assert await page.read(toasts) == 0
+
+
+# The keys of a table's selected rows, in their order.
+SELECTED = """[...document.querySelectorAll("[data-node='root/%s'] tr[data-state=selected]")]
+  .map((r) => Number(r.dataset.part)).sort((a, b) => a - b)"""
+
+
+async def test_shift_selects_the_rows_from_the_last_one_used_to_this_one() -> None:
+    class Picked(BaseModel):
+        keys: list[int] = []
+
+    app = mw.App("crew", state=Picked, public=None)
+    names = ["Hal", "Ada", "Gus", "Ben", "Fay", "Cas", "Eli", "Dee"]
+
+    def pick(s: mw.Session[Picked], keys: list[int]) -> None:
+        s.state.keys = keys
+
+    def table(key: str, **how: Any) -> ui.Component:
+        return ui.Table(
+            key=key,
+            rows=[{"id": n, "name": name} for n, name in enumerate(names, 1)],
+            columns=[ui.Column(key="name")],
+            selection="rows",
+            on_select=pick,
+            **how,
+        )
+
+    @app.page("/")
+    def home(s: mw.Session[Picked]) -> ui.Component:
+        return ui.Page(
+            table("all", selected=s.state.keys),
+            table("paged", selected=s.state.keys, page_size=4),
+            ui.Button("Clear", key="clear", on_click=lambda s, _: s.state.keys.clear()),
+        )
+
+    def box(n: int, of: str = "all") -> str:
+        return f"[data-node='root/{of}'] tr[data-part='{n}'] [role=checkbox]"
+
+    async with Page(app) as page:
+        await wide(page)
+
+        # A press on a name leaves where a selection of text would start.
+        await page.click("[data-node='root/all'] tr[data-part='1'] td:nth-child(2)")
+        await page.click(box(2))
+        await page.click(box(5), shift=True)
+        assert await page.read(SELECTED % "all") == [2, 3, 4, 5]
+        assert await page.read("getSelection().toString()") == ""
+        # The keyboard is where the mouse was last, as after any press.
+        assert await page.read(
+            f"document.activeElement === document.querySelector({json.dumps(box(5))})"
+        )
+        # A row that was selected is cleared, and the rows up to it with it.
+        await page.click(box(3), shift=True)
+        assert await page.read(SELECTED % "all") == [2]
+        # The rows between are those shown between: sorted by name, Ben
+        # and Dee have Cas between them and no other.
+        await page.click("[data-node='root/all'] th button", "name")
+        await page.click(box(4))
+        await page.click(box(8), shift=True)
+        assert await page.read(SELECTED % "all") == [2, 4, 6, 8]
+
+        # With nothing selected there is nothing to extend, also where a
+        # row was used before.
+        await page.press("Clear")
+        await page.click(box(1), shift=True)
+        assert await page.read(SELECTED % "all") == [1]
+        # The keyboard does what the mouse does.
+        await page.read(f"document.querySelector({json.dumps(box(7))}).focus()")
+        await page.key(" ", 32, shift=True)
+        assert await page.read(SELECTED % "all") == [1, 3, 5, 7]
+
+        # A range stays on the page in view: the row used on the first page
+        # is not where one on the second starts.
+        await page.press("Clear")
+        await page.click(box(2, "paged"))
+        await page.press("Next")
+        await page.click(box(7, "paged"), shift=True)
+        assert await page.read(SELECTED % "paged") == [7]
+        await page.click(box(5, "paged"), shift=True)
+        assert await page.read(SELECTED % "paged") == [5, 6, 7]
+        assert await page.read(SELECTED % "all") == [2, 5, 6, 7]
 
 
 # ------------------------------------------------------------- rows that are dragged

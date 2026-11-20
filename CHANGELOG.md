@@ -3,6 +3,17 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.2
+
+### Features
+
+- A table with `selection="rows"` selects a run of rows at once. With
+  shift held, a press on a row's checkbox sets every row from the last
+  checkbox used to this one to the same state, selected or cleared, in
+  the order the table shows them. Shift with Space does the same from
+  the keyboard. A run covers only rows on the page in view, and
+  `on_select` receives the keys as before.
+
 ## 0.6.1
 
 ### Bug fixes
