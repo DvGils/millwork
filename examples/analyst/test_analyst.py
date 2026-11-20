@@ -187,6 +187,39 @@ def test_a_query_only_reads_and_does_not_run_away(example: ModuleType) -> None:
     assert dataset.query(db, "SELECT x'ff00' AS b").rows == [{"b": "<2 bytes>"}]
 
 
+def test_the_tables_are_listed_while_a_query_runs(example: ModuleType) -> None:
+    import threading
+    import time
+
+    dataset = example.dataset
+    db = dataset.fresh()
+    endless = "SELECT COUNT(*) FROM orders a, orders b, orders c"
+    refused: list[str] = []
+
+    def run() -> None:
+        try:
+            dataset.query(db, endless, seconds=0.4)
+        except dataset.Refused as error:
+            refused.append(str(error))
+
+    asking = threading.Thread(target=run)
+    asking.start()
+    # A page is drawn while the query runs, with its limits on the
+    # database: only reading, and that for a moment.
+    while not db.busy.locked() and asking.is_alive():
+        time.sleep(0.005)
+    assert dataset.tables(db) == {
+        "orders": ["day", "region", "product", "channel", "units", "revenue"]
+    }
+    # A second query waits for the first and is held to its own limits.
+    with pytest.raises(dataset.Refused):
+        dataset.query(db, "CREATE TABLE other (a)")
+    asking.join()
+    assert refused == ["interrupted"]
+    assert dataset.load_csv(db, "notes.csv", "a\n1\n") == ("notes", 1)
+    assert sorted(dataset.tables(db)) == ["notes", "orders"]
+
+
 def test_a_file_is_a_table_or_is_refused(example: ModuleType) -> None:
     dataset = example.dataset
     db = dataset.fresh()

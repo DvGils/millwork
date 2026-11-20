@@ -15,6 +15,7 @@ import io
 import random
 import re
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -82,53 +83,75 @@ _TEMPLATE.executemany("INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?)", _orders())
 _TEMPLATE.commit()
 
 
-def fresh() -> sqlite3.Connection:
+class Database(sqlite3.Connection):
+    """One session's database. A query puts its limits on the connection as
+    a whole, what it may do and for how long, so a query and a file that is
+    loaded take the database one at a time. The list of its tables is kept
+    beside it: a page is drawn from that, and never asks a database that
+    may be in the middle of a query, whose limits would be the page's too."""
+
+    busy: threading.Lock
+    listed: dict[str, list[str]]
+
+
+def fresh() -> Database:
     """A database for one session, with the shop's orders in it."""
-    db = sqlite3.connect(":memory:", check_same_thread=False)
+    db = sqlite3.connect(":memory:", check_same_thread=False, factory=Database)
     _TEMPLATE.backup(db)
     db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, LONGEST)
     db.setlimit(sqlite3.SQLITE_LIMIT_COLUMN, WIDEST)
+    db.busy = threading.Lock()
+    db.listed = _listed(db)
     return db
 
 
-def tables(db: sqlite3.Connection) -> dict[str, list[str]]:
-    """The tables there are, each with its columns."""
+def close(db: Database) -> None:
+    """Close a session's database, once a query that is still running on
+    it is done."""
+    with db.busy:
+        db.close()
+
+
+def tables(db: Database) -> dict[str, list[str]]:
+    """The tables there are, each with its columns, as the database had
+    them when it was made or was last given a file."""
+    return db.listed
+
+
+def _listed(db: Database) -> dict[str, list[str]]:
     names = [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
     return {name: [col[1] for col in db.execute(f'PRAGMA table_info("{name}")')] for name in names}
 
 
-def query(db: sqlite3.Connection, sql: str, limit: int = 200, seconds: float = 1.0) -> Result:
+def query(db: Database, sql: str, limit: int = 200, seconds: float = 1.0) -> Result:
     """Run one statement that only reads, and give its rows."""
-    deadline = time.monotonic() + seconds
-    db.set_authorizer(
-        lambda action, *_: sqlite3.SQLITE_OK if action in READS else sqlite3.SQLITE_DENY
-    )
-    db.set_progress_handler(lambda: time.monotonic() > deadline, 10_000)
-    try:
-        cursor = db.execute(sql)
-        if cursor.description is None:
-            raise Refused("That is not a query that gives rows.")
-        columns = [column[0] for column in cursor.description]
-        rows = cursor.fetchmany(limit + 1)
-    except sqlite3.Error as error:
-        raise Refused(str(error)) from None
-    finally:
-        db.set_authorizer(None)
-        db.set_progress_handler(None, 0)
+    with db.busy:
+        deadline = time.monotonic() + seconds
+        db.set_authorizer(
+            lambda action, *_: sqlite3.SQLITE_OK if action in READS else sqlite3.SQLITE_DENY
+        )
+        db.set_progress_handler(lambda: time.monotonic() > deadline, 10_000)
+        try:
+            cursor = db.execute(sql)
+            if cursor.description is None:
+                raise Refused("That is not a query that gives rows.")
+            columns = [column[0] for column in cursor.description]
+            rows = cursor.fetchmany(limit + 1)
+        except sqlite3.Error as error:
+            raise Refused(str(error)) from None
+        finally:
+            db.set_authorizer(None)
+            db.set_progress_handler(None, 0)
     # Bytes are no value a page or a model can show, so they are named.
     shown = [[f"<{len(v)} bytes>" if isinstance(v, bytes) else v for v in row] for row in rows]
     found = [dict(zip(columns, row, strict=True)) for row in shown[:limit]]
     return Result(columns, found, more=len(rows) > limit)
 
 
-def load_csv(
-    db: sqlite3.Connection, filename: str, text: str, most: int = 50_000
-) -> tuple[str, int]:
+def load_csv(db: Database, filename: str, text: str, most: int = 50_000) -> tuple[str, int]:
     """Make a table of a CSV file, named after the file, and give its name
     and how many rows it got. A column of numbers is a column of numbers."""
     name = _named(filename.rsplit(".", 1)[0]) or "upload"
-    if name in tables(db):
-        raise Refused(f"There is a table {name} already.")
     if name.startswith("sqlite_"):
         raise Refused(f"A table cannot be called {name}.")
     try:
@@ -150,17 +173,24 @@ def load_csv(
     kinds = ", ".join(
         f'"{c}" {"REAL" if n else "TEXT"}' for c, n in zip(columns, numbers, strict=True)
     )
-    try:
-        db.execute(f'CREATE TABLE "{name}" ({kinds})')
-        db.executemany(
-            f'INSERT INTO "{name}" VALUES ({", ".join("?" * width)})',
-            [[_number(v) if n else v for v, n in zip(row, numbers, strict=True)] for row in body],
-        )
-        db.commit()
-    except sqlite3.Error as error:
-        db.rollback()
-        db.execute(f'DROP TABLE IF EXISTS "{name}"')
-        raise Refused(f"That file could not be made a table. {error}") from None
+    with db.busy:
+        if name in db.listed:
+            raise Refused(f"There is a table {name} already.")
+        try:
+            db.execute(f'CREATE TABLE "{name}" ({kinds})')
+            db.executemany(
+                f'INSERT INTO "{name}" VALUES ({", ".join("?" * width)})',
+                [
+                    [_number(v) if n else v for v, n in zip(row, numbers, strict=True)]
+                    for row in body
+                ],
+            )
+            db.commit()
+        except sqlite3.Error as error:
+            db.rollback()
+            db.execute(f'DROP TABLE IF EXISTS "{name}"')
+            raise Refused(f"That file could not be made a table. {error}") from None
+        db.listed = _listed(db)
     return name, len(body)
 
 

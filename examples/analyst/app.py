@@ -17,7 +17,6 @@ file is the page, with the board and the chat.
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from functools import partial
 from typing import Any
 
@@ -55,7 +54,7 @@ app = mw.App("Analyst", state=State, csp=POLICY)
 # Each session's database. A connection is no state a page can draw from,
 # so it is kept here by the session's id, from when the page is opened
 # until it is closed.
-DATA: dict[str, sqlite3.Connection] = {}
+DATA: dict[str, dataset.Database] = {}
 
 
 # -------------------------------------------------------------- handlers
@@ -144,8 +143,10 @@ def open_data(s: mw.Session[State]) -> None:
 
 
 @desk.close
-def close_data(s: mw.Session[State]) -> None:
-    DATA.pop(s.id).close()
+async def close_data(s: mw.Session[State]) -> None:
+    # In a thread, since a query that is still running keeps the database
+    # for as long as it may run, and nobody else's page waits for that.
+    await asyncio.to_thread(dataset.close, DATA.pop(s.id))
 
 
 def board(s: mw.Session[State]) -> ui.Component:
