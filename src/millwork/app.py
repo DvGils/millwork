@@ -321,10 +321,11 @@ class App:
             self._theme_path = _under_home(home, theme)
             self.theme = Theme.load(self._theme_path)
         else:
-            candidate = self.public_dir / "theme.json" if self.public_dir else None
-            self._theme_path = candidate if candidate and candidate.is_file() else None
+            # The place is kept whether or not a file is there, so that one
+            # written while the app runs is read by ``reload_theme``.
+            self._theme_path = self.public_dir / "theme.json" if self.public_dir else None
             self.theme = find_theme(self.public_dir)
-        self._theme_mtime = self._theme_path.stat().st_mtime if self._theme_path else 0.0
+        self._theme_mtime = _mtime(self._theme_path)
         self.theme.say_font_services()
         self._component_mtimes: dict[str, float] = {}
         # A content hash per custom component: in the source URL, so a tab caches
@@ -709,11 +710,7 @@ class App:
         return None
 
     def _stylesheet_mtime(self) -> float:
-        sheet = self._stylesheet_file()
-        try:
-            return sheet.stat().st_mtime if sheet is not None else 0.0
-        except OSError:
-            return 0.0
+        return _mtime(self._stylesheet_file())
 
     async def _watch_theme(self) -> None:
         """Debug only: push a changed theme file, or a changed stylesheet of
@@ -721,13 +718,12 @@ class App:
         styled = self._stylesheet_mtime()
         while True:
             await asyncio.sleep(1.0)
-            if self._theme_path is not None:
-                try:
-                    mtime = self._theme_path.stat().st_mtime
-                except OSError:
-                    continue
-                if mtime != self._theme_mtime:
-                    self._theme_mtime = mtime
+            mtime = _mtime(self._theme_path)
+            if mtime != self._theme_mtime:
+                self._theme_mtime = mtime
+                # A file that is gone leaves the theme as it was. An editor
+                # that saves by replacing the file has it gone for a moment.
+                if mtime:
                     await self.reload_theme()
                     styled = self._stylesheet_mtime()
                     continue
@@ -855,12 +851,20 @@ class App:
             session.dismiss(said, to=session.leaving_for(None), asking=asking)
 
     async def reload_theme(self) -> bool:
-        """Re-read the theme file and push it to open sessions; False when it is invalid."""
+        """Read the theme file again and show it in every open tab, without
+        a reload of the page. For an app that changes its own look while it
+        runs: write the file, then call this. The file is the one given as
+        ``App(theme=)``, or ``public/theme.json``, which need not have been
+        there when the app started. False when there is no file to read or
+        it is no valid theme, and the theme then stays as it was. An app
+        made with a ``Theme`` object has no file, and gets False."""
         if self._theme_path is None:
             return False
+        # What is read here is not read again by the watcher in debug mode.
+        self._theme_mtime = _mtime(self._theme_path)
         try:
             self.theme = Theme.load(self._theme_path)
-        except ValueError as exc:
+        except (OSError, ValueError) as exc:
             log.error("theme not reloaded: %s", exc)
             return False
         log.info("theme reloaded from %s", self._theme_path)
@@ -1276,6 +1280,14 @@ def _home_of_caller() -> Path:
             return where.parent
         frame = frame.f_back
     return Path.cwd()
+
+
+def _mtime(path: Path | None) -> float:
+    """When a file was last written, and 0 for one that is not there."""
+    try:
+        return path.stat().st_mtime if path is not None else 0.0
+    except OSError:
+        return 0.0
 
 
 def _under_home(home: Path, path: str | Path) -> Path:

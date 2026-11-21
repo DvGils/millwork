@@ -1818,7 +1818,8 @@ class Progress(Component):
 
 
 class Steps(Component):
-    """A step tree on Trace: the task's steps, or ``items`` given directly."""
+    """A step tree on Trace: the task's steps, or ``items`` given directly,
+    each a ``mw.Step``."""
 
     type: ClassVar[str] = "Steps"
     items: list[Any] | None = None

@@ -47,6 +47,9 @@ class TaskError(BaseModel):
 
 
 class Step(BaseModel):
+    """One step of ``ui.Steps(items=)``, and of a task's ``steps``. Its
+    ``children`` are the steps under it, and ``lines`` what it logged."""
+
     model_config = ConfigDict(extra="forbid")
 
     id: str

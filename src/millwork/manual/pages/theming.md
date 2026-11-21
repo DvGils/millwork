@@ -50,6 +50,10 @@ A token left out keeps the default, which means a brand is four or five
 values. An unknown token, or a value CSS could misuse, is refused when the
 app starts.
 
+A color under `light` is for the light scheme only. The dark scheme keeps
+its default for that token until `dark` names it too. `radius` and the
+fonts have no dark default, so they go under `light` and hold in both.
+
 Light and dark are both always there. `mode` is `light`, `dark` or
 `system`, and the user menu in the header lets a person choose, which
 their browser remembers. The tones below take their colors from this
@@ -165,6 +169,44 @@ ui.Table(
     height=320,
 )
 ```
+
+## Changing the theme while the app runs
+<!-- keywords: reload theme, live theme, runtime, rebrand, switch theme -->
+
+`await app.reload_theme()` reads the theme file again and shows it in
+every open tab, without a reload of the page. An app that lets someone
+change its look writes the file and then calls it.
+
+```python
+import json
+from pathlib import Path
+
+from millwork.theme import Theme
+
+THEME = Path(__file__).parent / "public" / "theme.json"
+
+
+async def publish(s: mw.Session, tokens: dict[str, dict[str, str]]) -> None:
+    look = json.loads(THEME.read_text()) if THEME.exists() else {}
+    look["tokens"] = tokens
+    try:
+        Theme.model_validate(look)
+    except ValueError as error:
+        s.toast(str(error), tone="destructive")
+        return
+    THEME.write_text(json.dumps(look))
+    await app.reload_theme()
+```
+
+The rest of the file, such as the logo and the fonts, is kept, and only
+the tokens are replaced. `Theme.model_validate` checks the look before it
+is written. A file that is no theme would otherwise stay behind, and the
+app would refuse it at its next start.
+
+The file is the one given as `App(theme=...)`, or `public/theme.json`,
+which need not be there when the app starts. The call returns `False`
+when there is no file or it is not a valid theme, and the theme then stays
+as it was. An app that was made with a `Theme` object has no file to read.
 
 ## While designing
 

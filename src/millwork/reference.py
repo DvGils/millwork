@@ -26,7 +26,7 @@ from millwork.icons import ICONS
 from millwork.nodes import Component
 from millwork.session import Session
 from millwork.signal import Signal
-from millwork.tasks import Reporter, StepHandle, Task
+from millwork.tasks import Reporter, Step, StepHandle, Task
 from millwork.testing import Page
 from millwork.theme import Theme
 from millwork.ui.table import Format
@@ -80,6 +80,7 @@ APP_API = (
     "on_startup",
     "on_shutdown",
     "spawn",
+    "reload_theme",
 )
 TASK_API = ("done", "ok", "cancelled", "result", "cancel")
 REPORTER_API = ("set", "plan", "step", "log", "check")
@@ -194,6 +195,8 @@ ALIASES = {
     "app.spawn": "background listener, startup worker",
     "app.on_startup": "lifespan, init, boot",
     "app.on_shutdown": "lifespan, cleanup, exit",
+    "app.reload_theme": "change the theme while running, live theme, rebrand, switch colors",
+    "mw.Step": "step item, stepper, timeline entry, status",
 }
 
 
@@ -327,6 +330,7 @@ def reference() -> str:
     ]
     for model in MODELS:
         out.extend(_model(f"ui.{model.__name__}", model))
+    out.extend(_model("mw.Step", Step))
     out += [
         "## The session",
         "",

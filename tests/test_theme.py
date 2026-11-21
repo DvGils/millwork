@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from starlette.testclient import TestClient
@@ -49,8 +50,10 @@ def test_css_head_and_strings() -> None:
         "@font-face{font-family:'Montserrat';src:url(/public/fonts/montserrat.woff2)"
     )
     assert "format('woff2')" in css
-    assert ":root{--primary:oklch(0.52 0.17 150);--radius:0.5rem}" in css
-    assert ".dark{--primary:#9fd}" in css
+    # A color under light is the light scheme's alone. A length is for both.
+    assert ":root{--radius:0.5rem}" in css
+    assert ":root:where(:not(.dark)){--primary:oklch(0.52 0.17 150)}" in css
+    assert css.endswith(".dark{--primary:#9fd}")
     assert theme.head() == (
         '<link rel="preload" as="font" type="font/woff2" href="/public/fonts/montserrat.woff2"'
         ' crossorigin><link rel="stylesheet" href="https://fonts.example/inter.css">'
@@ -80,7 +83,7 @@ def test_shell_renders_theme_mode_script_and_boot(tmp_path: Path) -> None:
     )
     html = shell.render(title="T", path="/", theme=theme, user={"id": "u", "name": "U"})
     assert '<html lang="nl" data-density="compact" data-scrollbars="thin">' in html
-    assert '<style id="mw-theme">:root{--primary:#123}</style>' in html
+    assert '<style id="mw-theme">:root:where(:not(.dark)){--primary:#123}</style>' in html
     assert '<link rel="icon" href="/public/favicon.svg">' in html
     assert 'localStorage.getItem("mw:mode")' in html
     boot = json.loads(html.split("window.__mw = ")[1].split(";</script>")[0])
@@ -131,6 +134,44 @@ def test_app_picks_up_public_theme_and_serves_the_favicon(tmp_path: Path) -> Non
     with pytest.raises(ValueError, match="not valid JSON"):
         (public / "theme.json").write_text("{nope")
         mw.App("t", public=public, bundle_dir=tmp_path)
+
+
+async def test_a_theme_file_written_while_the_app_runs_is_read_and_shown(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    public = tmp_path / "public"
+    public.mkdir()
+    app = mw.App("t", public=public, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("hi", key="t"))
+
+    async with TestApp(app).open("/") as page:
+
+        def themes() -> list[dict[str, Any]]:
+            return [c.args for c in page.commands if c.name == "theme"]
+
+        # There is no file yet, so there is nothing to read and nothing is sent.
+        assert not await app.reload_theme()
+        assert app.theme.density == "comfortable" and not themes()
+        file = public / "theme.json"
+        file.write_text(json.dumps({"density": "compact", "tokens": {"dark": {"primary": "#9fd"}}}))
+        assert await app.reload_theme()
+        await page.settle()
+        assert app.theme.density == "compact"
+        (sent,) = themes()
+        assert sent["css"] == ".dark{--primary:#9fd}"
+        assert sent["boot"]["density"] == "compact"
+        # A file that is no theme, or that is gone again, leaves the theme as it was.
+        file.write_text(json.dumps({"tokens": {"light": {"primry": "#123"}}}))
+        assert not await app.reload_theme()
+        file.unlink()
+        assert not await app.reload_theme()
+        await page.settle()
+        assert app.theme.density == "compact" and len(themes()) == 1
+    # An app that was given its theme as an object has no file to read.
+    assert not await mw.App("o", public=public, theme=Theme()).reload_theme()
 
 
 def test_header_links_become_slots() -> None:

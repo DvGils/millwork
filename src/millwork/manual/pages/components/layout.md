@@ -209,7 +209,7 @@ ui.Split(
 an optional `icon` or `badge`. The chosen tab is the tab's own business
 unless the page passes `value`, and `default` names the first one shown.
 Panels stay mounted when hidden, so what the user typed in one survives a
-switch.
+switch. A strip wider than its place, as on a phone, scrolls sideways.
 
 ```python live
 ui.Tabs(

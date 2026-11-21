@@ -1,6 +1,6 @@
 // Surfaces and feedback: tabs, dialogs, empties, alerts, progress, split panes.
 
-import { type CSSProperties, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
 import { useStatus } from "../ws";
@@ -35,6 +35,10 @@ import { Kbd as UiKbd, KbdGroup } from "@/components/ui/kbd";
 import { Tooltip as UiTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge as UiBadge } from "@/components/ui/badge";
 
+// What is left beside a tab that was scrolled into sight, in pixels, so
+// that it does not sit against the edge.
+const STRIP_EDGE = 12;
+
 // Tabs: `value` controlled by the server, `default` kept by the client.
 export const Tabs: Renderer = ({ node, props, emit }) => {
   const controlled = has(props, "value");
@@ -56,6 +60,30 @@ export const Tabs: Renderer = ({ node, props, emit }) => {
     // `emit` is made anew at every render and always speaks for this node.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track, open, status, mounts]);
+  // A strip wider than its place scrolls sideways, and the chosen tab is
+  // brought into sight when the choice changes and when the strip gets
+  // another width, as it does when a phone is turned. Only the strip is
+  // moved: the page stays where the person has it, also when the choice
+  // comes from the server.
+  const strip = useRef<HTMLDivElement>(null);
+  const chosen = controlled ? String(props.value ?? "") : open;
+  useEffect(() => {
+    const el = strip.current;
+    if (!el) return;
+    const show = () => {
+      const tab = el.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      if (!tab) return;
+      const box = el.getBoundingClientRect();
+      const at = tab.getBoundingClientRect();
+      if (at.left < box.left) el.scrollLeft -= box.left - at.left + STRIP_EDGE;
+      else if (at.right > box.right) el.scrollLeft += at.right - box.right + STRIP_EDGE;
+    };
+    show();
+    if (typeof ResizeObserver === "undefined") return;
+    const sizes = new ResizeObserver(show);
+    sizes.observe(el);
+    return () => sizes.disconnect();
+  }, [chosen]);
   return (
     <UiTabs
       value={controlled ? String(props.value ?? "") : undefined}
@@ -66,13 +94,20 @@ export const Tabs: Renderer = ({ node, props, emit }) => {
         setOpen(String(v));
         if (props.on_change) emit("change", v);
       }}
-      className={cn("flex flex-col gap-3", props.cls as string)}
+      // In a row, or in a column that centers what is in it, the tabs would
+      // be as wide as their strip. Held to the width there is, the strip
+      // scrolls there too.
+      className={cn("flex max-w-full min-w-0 flex-col gap-3", props.cls as string)}
     >
-      <TabsList variant={props.variant === "pill" ? "default" : "line"}>
-        {tabs.map((id) => (
-          <TabTrigger key={id} id={id} />
-        ))}
-      </TabsList>
+      {/* The room above and below is for the line under the chosen tab,
+          which what scrolls would cut off. */}
+      <div ref={strip} className="-my-1 overflow-x-auto py-1 [scrollbar-width:none]">
+        <TabsList variant={props.variant === "pill" ? "default" : "line"}>
+          {tabs.map((id) => (
+            <TabTrigger key={id} id={id} />
+          ))}
+        </TabsList>
+      </div>
       {tabs.map((id) => (
         <TabPanel key={id} id={id} />
       ))}

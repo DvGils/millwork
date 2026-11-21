@@ -3,6 +3,31 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.4
+
+### Bug fixes
+
+- A color a theme set under `tokens.light` alone also painted the dark
+  scheme, where a light background then stood under the dark scheme's
+  light text. A color under `light` is now for the light scheme only, and
+  the dark scheme keeps its default until `dark` names the token, as the
+  manual says. `radius` and the fonts hold in both, as before. An app
+  that relied on a brand color under `light` to reach the dark scheme
+  now names it under `dark` as well.
+- A strip of `ui.Tabs` wider than its place was cut off, on a phone
+  above all, with the last tabs out of reach. The strip now scrolls
+  sideways and brings the chosen tab into sight.
+- `app.reload_theme()` did nothing for an app whose `public/theme.json`
+  was not there when it started. A theme file written while the app runs
+  is now read. In debug mode such a file is picked up when it is saved.
+
+### The manual
+
+- Theming has a section on changing the theme while the app runs, with
+  `app.reload_theme()`, which is now in `millwork reference` too.
+- `mw.Step`, the item `ui.Steps(items=)` takes, is in `millwork
+  reference`.
+
 ## 0.6.3
 
 ### Features
