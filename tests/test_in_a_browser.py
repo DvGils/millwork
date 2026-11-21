@@ -789,6 +789,120 @@ async def test_a_toasts_action_takes_the_toast_with_it() -> None:
 
 
 # The keys of a table's selected rows, in their order.
+TOKENS = """(() => {
+  const style = getComputedStyle(document.documentElement);
+  return ["--background", "--radius"].map((name) => style.getPropertyValue(name).trim());
+})()"""
+
+
+async def test_a_color_of_the_light_scheme_leaves_the_dark_one_its_default() -> None:
+    theme = Theme(mode="dark", tokens={"light": {"background": "#ffffff", "radius": "1rem"}})
+    app = mw.App("schemes", public=None, theme=theme)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("A page."))
+
+    async with Page(app) as page:
+        assert await page.read("document.documentElement.classList.contains('dark')")
+        background, radius = await page.read(TOKENS)
+        # The length is for both schemes, the color for the light one alone.
+        assert radius == "1rem"
+        assert background not in ("", "#ffffff")
+        await page.read("document.documentElement.classList.remove('dark')")
+        assert await page.read(TOKENS) == ["#ffffff", "1rem"]
+
+
+# Of the strip of tabs at a place among the page's strips: whether it has
+# more than is in sight, the tab it is on, and whether all of that tab is
+# in sight.
+STRIP = """(() => {
+  const list = document.querySelectorAll("[role=tablist]")[%d];
+  const strip = list.parentElement.getBoundingClientRect();
+  const chosen = list.querySelector("[aria-selected=true]");
+  const at = chosen.getBoundingClientRect();
+  return [
+    list.parentElement.scrollWidth > list.parentElement.clientWidth,
+    chosen.textContent,
+    at.left >= strip.left - 0.5 && at.right <= strip.right + 0.5,
+  ];
+})()"""
+
+# Whether that strip lies within the window from side to side.
+WITHIN = """(() => {
+  const box = document.querySelectorAll("[role=tablist]")[%d].parentElement.getBoundingClientRect();
+  return box.left >= 0 && box.right <= innerWidth;
+})()"""
+
+
+async def test_a_strip_of_tabs_wider_than_a_phone_scrolls_and_shows_the_tab_it_is_on() -> None:
+    class Desk(BaseModel):
+        at: str = "overview"
+
+    app = mw.App("strips", state=Desk, public=None)
+    names = ("Overview", "Activity", "Settings", "Members", "Billing", "Integrations")
+
+    def last(s: mw.Session[Desk], _: Any) -> None:
+        s.state.at = "integrations"
+
+    def tabs(key: str, **how: Any) -> ui.Component:
+        return ui.Tabs(*[ui.Tab(ui.Text(n), id=n.lower(), label=n) for n in names], key=key, **how)
+
+    @app.page("/")
+    def home(s: mw.Session[Desk]) -> ui.Component:
+        return ui.Page(
+            tabs("pill", default="overview", variant="pill"),
+            tabs("late", default="integrations"),
+            tabs("held", value=s.state.at),
+            ui.Button("To the last", on_click=last),
+            # Where the tabs would take the width of their strip.
+            ui.Row(tabs("row", default="overview")),
+            ui.Stack(tabs("middle", default="overview"), align="center"),
+        )
+
+    wide = "document.documentElement.scrollWidth > innerWidth"
+    async with Page(app) as page:
+        # On a desk the strips fit, and nothing about them scrolls.
+        assert [await page.read(STRIP % n) for n in range(3)] == [
+            [False, "Overview", True],
+            [False, "Integrations", True],
+            [False, "Overview", True],
+        ]
+        # The window is made as narrow as a phone while the page is open. It
+        # stays a desk's window: a browser that is switched to a phone's ways
+        # puts everything that scrolls back at its start, which no phone does.
+        await page.tab.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=390,
+            height=800,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        await page.rest()
+        assert not await page.read(wide)
+        assert [await page.read(STRIP % n) for n in range(3)] == [
+            [True, "Overview", True],
+            [True, "Integrations", True],
+            [True, "Overview", True],
+        ]
+        # A choice of the page's brings its tab into sight.
+        await page.press("To the last")
+        assert await page.read(STRIP % 2) == [True, "Integrations", True]
+        # So does a press on a tab that is partly out of sight.
+        await page.read(
+            "(() => { const strip = document.querySelector('[role=tablist]').parentElement;"
+            " strip.scrollLeft = strip.scrollWidth - strip.clientWidth - 30; })()"
+        )
+        await page.click("[role=tablist] [role=tab]", "Integrations")
+        assert await page.read(STRIP % 0) == [True, "Integrations", True]
+        assert not await page.read(wide)
+        # In a row and in the middle of a column the strip is no wider than
+        # the page either, and has its first tab in sight.
+        for n in (3, 4):
+            assert await page.read(STRIP % n) == [True, "Overview", True]
+            assert await page.read(WITHIN % n)
+
+
 SELECTED = """[...document.querySelectorAll("[data-node='root/%s'] tr[data-state=selected]")]
   .map((r) => Number(r.dataset.part)).sort((a, b) => a - b)"""
 

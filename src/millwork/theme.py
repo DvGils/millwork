@@ -70,6 +70,7 @@ COLOUR_TOKENS = (
 )
 OTHER_TOKENS = ("radius", "font-sans", "font-mono", "font-heading")
 TOKENS = frozenset(COLOUR_TOKENS + OTHER_TOKENS)
+_COLOURS = frozenset(COLOUR_TOKENS)
 
 # A token value is one CSS value: colours, lengths, font stacks. Nothing that
 # could close the declaration or the style element, and no url().
@@ -368,12 +369,21 @@ class Theme(BaseModel):
     # ------------------------------------------------------------- rendering
 
     def css(self, base: str = "") -> str:
-        """The style element's text: font faces, then the two token blocks. ``base``
+        """The style element's text: font faces, then the token blocks. ``base``
         is the path prefix the app runs under, for the font files."""
         parts = [f.css(base) for f in self.fonts if f.src is not None]
         light = self.tokens.get("light", {})
         dark = self.tokens.get("dark", {})
-        for selector, values in ((":root", light), (".dark", dark)):
+        # A color under ``light`` is for the light scheme alone, so that the
+        # dark one keeps its default: a plain ``:root`` here comes after the
+        # default ``.dark`` and weighs the same, and would win in both. Inside
+        # ``:where`` the condition adds no weight, so a rule of the app's own
+        # stylesheet still wins by coming later. A length or a font has no
+        # dark default and is for both schemes.
+        colors = {name: value for name, value in light.items() if name in _COLOURS}
+        both = {name: value for name, value in light.items() if name not in _COLOURS}
+        blocks = ((":root", both), (":root:where(:not(.dark))", colors), (".dark", dark))
+        for selector, values in blocks:
             if values:
                 body = ";".join(f"--{name}:{value}" for name, value in values.items())
                 parts.append(f"{selector}{{{body}}}")

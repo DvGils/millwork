@@ -31,7 +31,7 @@ INSIDE_THE_SESSION = {
 }
 INSIDE_THE_APP = {
     *("access", "admit", "asgi", "check_components", "end_sign_in", "fallback"),
-    *("file_response", "locate", "make_state", "may", "reload_theme", "resolve", "user_for"),
+    *("file_response", "locate", "make_state", "may", "resolve", "user_for"),
 }
 # Named in the words above the list of what a page does.
 SAID_OF_THE_PAGE = {
