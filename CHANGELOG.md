@@ -3,6 +3,53 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.5
+
+### Bug fixes
+
+- `ui.Form` over a model that holds itself, such as a folder with a list
+  of folders, ended in a `RecursionError` and thousands of lines of
+  traceback. It is now refused in one line that names the model and the
+  field where it comes back. A form is drawn whole, so each level gets a
+  model of its own, or the field is left out with
+  `json_schema_extra={"hidden": True}`.
+- A row of a union in a form lost everything when it was given another
+  type, also what both types have, such as a name, and a hidden id, so an
+  edit form no longer knew which row it was. The row now keeps the fields
+  both types show in the same way and the ones both hold hidden. The rest
+  gets the new type's defaults, as before.
+- `labels` did not reach the heading of a nested model in a form, which
+  kept the model's own title. The heading is the field's label now, as it
+  is for every other field.
+- `page.text()` in a test held the key of a form and none of what stands
+  at its fields. The key is out, and the labels, help, placeholders and
+  choices of the fields are in.
+
+### Features
+
+- In a `ui.Header` the link of the page the tab is on, the one marked
+  `active=True`, has a line under it. Its heavier weight alone did not
+  tell it from the others.
+- In a form laid out in columns, a list of rows and a union lie across
+  all the columns, and the fields of a row stand in the same columns.
+  Before, a list sat in one column with its rows cramped into it.
+
+### The manual
+
+- Sessions said a session's tasks are canceled before a page's close
+  hook runs. That holds when the session ends. A move to another page
+  leaves them running, which the page now says.
+- Tasks has a section on a task that listens: `quiet=True`, and a page
+  that cancels its own task in its `close` hook.
+- Form has a section on models in a model: nested models, lists of rows,
+  unions and where their labels come from, `item_label`, hidden fields
+  and a model that holds itself. `millwork reference` names the three
+  widgets that come from a field's type.
+- Testing says how an app sets up pytest-asyncio, that a node's
+  `children` are ids, that `page.text()` takes in what is not shown at
+  the moment, what a notice holds, and that a chart's data names its x
+  column `x`.
+
 ## 0.6.4
 
 ### Bug fixes

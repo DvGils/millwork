@@ -204,7 +204,8 @@ class Page:
         prop that picks from a fixed set, a variant or an alignment, is not
         text and is left out. So is the name of an icon, a size such as a
         width, where a link goes and ``cls``, none of which a person reads
-        on the page."""
+        on the page. Of a form it has what stands at the fields: the labels,
+        the help, the placeholders and the choices."""
         parts: list[str] = []
         built = self.session.tree
         components = built.components if built is not None else {}
@@ -219,6 +220,9 @@ class Page:
                     continue
                 if not _is_choice(fields.get(name)):
                     parts.append(value)
+            schema = node.props.get("schema")
+            if node.type == "Form" and isinstance(schema, dict):
+                parts.extend(_form_text(schema.get("fields", [])))
         return "\n".join(parts)
 
     @property
@@ -699,7 +703,7 @@ def _has(node: Node, component: Component | None, name: str, value: Any) -> bool
 
 # Props that hold a string nobody reads on the page: which icon, how wide,
 # how it is styled, where a link goes, which field tells a table's rows
-# apart.
+# apart, the id a button elsewhere submits a form by.
 _NOT_READ = frozenset(
     {
         "icon",
@@ -707,6 +711,7 @@ _NOT_READ = frozenset(
         "cls",
         "href",
         "row_key",
+        "form_id",
         "width",
         "height",
         "max_width",
@@ -715,6 +720,35 @@ _NOT_READ = frozenset(
         "min_height",
     }
 )
+
+
+def _form_text(fields: list[dict[str, Any]]) -> list[str]:
+    """What a person reads at a form's fields, in the order they stand: each
+    field's label, help and placeholder, the name of its group, its choices,
+    and the same of the fields under it."""
+    out: list[str] = []
+    groups: set[str] = set()
+    for f in fields:
+        if f.get("widget") == "hidden":
+            continue
+        group = f.get("group")
+        if group and group not in groups:
+            groups.add(group)
+            out.append(group)
+        out.extend(str(f[k]) for k in ("label", "help", "placeholder") if f.get(k))
+        out.extend(str(o["label"]) for o in f.get("options", []) if o.get("label"))
+        out.extend(_form_text(f.get("fields", [])))
+        item = f.get("item")
+        if item:
+            # A row has no label of its own. Its fields have.
+            out.extend(_form_text(item.get("fields", [])))
+            variants = item.get("variants", [])
+        else:
+            variants = f.get("variants", [])
+        for v in variants:
+            out.append(str(v["label"]))
+            out.extend(_form_text(v["fields"]))
+    return out
 
 
 def _is_choice(field: Any) -> bool:

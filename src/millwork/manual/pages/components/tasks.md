@@ -164,3 +164,30 @@ def example(s):
         gap=3,
     )
 ```
+
+## A task that listens
+<!-- keywords: listener, watcher, quiet, background work per session, subscribe, leave the page -->
+
+A task that waits on something outside the session, such as a queue or a
+feed, is started with `quiet=True`. A quiet task that fails is logged and
+shows no toast, and `settle()` in a test does not wait for it.
+
+A task is the session's, so it runs on when the tab moves to another
+page, and it is canceled when the session ends. One that belongs to a
+page is canceled in that page's `close` hook.
+
+```python
+class State(BaseModel):
+    feed: mw.Task | None = None
+
+
+@board.connect
+def listen(s: mw.Session[State]) -> None:
+    s.state.feed = s.task(follow_feed, s, label="Feed", quiet=True)
+
+
+@board.close
+def leave(s: mw.Session[State]) -> None:
+    if s.state.feed is not None:
+        s.state.feed.cancel()
+```

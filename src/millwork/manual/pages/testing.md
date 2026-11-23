@@ -34,7 +34,17 @@ async def test_a_click_counts(app):
         assert page.last_patch is not None
 ```
 
-Tests are `async def`, run by pytest-asyncio in auto mode. `open(path)`
+Tests are `async def`, run by pytest-asyncio in auto mode. millwork does
+not bring pytest-asyncio along, so the app's project adds it to its test
+dependencies and sets the mode in `pyproject.toml`.
+
+```toml
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+```
+
+`open(path)`
 runs the page's `connect` and the first render and yields a `Page`.
 The first `open` of a `TestApp` runs the app's `on_startup` hooks first,
 as a server does when it starts, so a hook that warms up a client or
@@ -62,9 +72,11 @@ of each is the name it goes by. Its `props` are the ones the component
 was given in `props=`, side by side with the catalogue's own, so
 `page.find(ui.Custom, chosen="5")` finds it by one of them, and each of
 its events shows as `on_<name>: True`. A found node has `id`, `type`, `props` as
-they would go to the tab, `children` and, on a table, `rows`. A chart
-has no `rows`. What it sends to the tab is in `props["data"]`. `page.text()` is every string a person reads on the page, for a quick
-"is it there". The name of an icon, a size, where a link goes and what
+they would go to the tab, `children`, which are the ids of the nodes under it, and, on a table, `rows`. A chart
+has no `rows`. What it sends to the tab is in `props["data"]`, where the
+column named by `x=` goes by `x` and the others keep their names. `page.text()` is every string a person can read on the page, for a quick
+"is it there". That takes in what is not shown at the moment, such as
+the inside of a closed sheet. The name of an icon, a size, where a link goes and what
 is in `cls` are not among them. `page.state` is the live state and `page.session` the session
 itself.
 
@@ -199,7 +211,8 @@ def test_the_export_is_its_makers_alone(app):
 
 `page.messages` is every message the server sent. `patches`,
 `last_patch`, `commands` (toasts, downloads, navigations, form issues),
-`toasts` as plain text, `notices` as toasts with their tone and title,
+`toasts` as plain text, `notices` as toasts with their `message`, `tone`
+and `title`,
 `stream` and `errors` are views on it.
 `toast_action("Undo")` presses the button of the latest toast that has
 one. `settle()` waits until the session has nothing left to do. Running

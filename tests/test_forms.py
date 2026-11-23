@@ -490,3 +490,92 @@ def test_a_choice_keeps_what_an_option_carries() -> None:
     # An icon the bundle does not draw fails here, as it does on an Option.
     with pytest.raises(ValueError, match="no icon named"):
         build(ui.Form(Model, labels={"tone": {"choices": [{"value": "a", "icon": "nope"}]}}))
+
+
+class Folder(BaseModel):
+    name: str = ""
+    folders: list["Folder"] = []
+
+
+class Reply(BaseModel):
+    text: str = ""
+    to: "Reply | None" = None
+
+
+class Shelf(BaseModel):
+    boxes: list["Box"] = []
+
+
+class Box(BaseModel):
+    shelf: Shelf | None = None
+
+
+class Pruned(BaseModel):
+    name: str = ""
+    folders: list["Pruned"] = Field(default=[], json_schema_extra={"hidden": True})
+
+
+class Pair(BaseModel):
+    left: Target
+    right: Target
+    more: list[Target] = []
+
+
+@pytest.mark.parametrize(
+    ("model", "place"),
+    [
+        (Folder, "Folder comes back at /folders"),
+        (Reply, "Reply comes back at /to"),
+        (Shelf, "Shelf comes back at /boxes/shelf"),
+    ],
+)
+def test_a_model_inside_itself_is_refused_with_the_place_it_comes_back(
+    model: type[BaseModel], place: str
+) -> None:
+    with pytest.raises(ValueError, match="a form cannot show a model inside itself") as refused:
+        field_spec(model)
+    assert place in str(refused.value)
+
+
+def test_a_model_inside_itself_is_a_form_once_the_field_is_left_out() -> None:
+    spec = field_spec(Pruned)
+    assert spec["title"] == "Pruned"
+    assert [f["name"] for f in spec["fields"]] == ["name"]
+    # The same model twice, side by side, is not a model inside itself.
+    assert [f["name"] for f in field_spec(Pair)["fields"]] == ["left", "right", "more"]
+
+
+class Counted(BaseModel):
+    kind: Literal["counted"] = "counted"
+    id: int | None = Field(default=None, json_schema_extra={"hidden": True})
+    title: str = ""
+    goal: float = 100
+
+
+class Reached(BaseModel):
+    kind: Literal["reached"] = "reached"
+    id: int | None = Field(default=None, json_schema_extra={"hidden": True})
+    title: str = ""
+
+
+class Stamped(BaseModel):
+    version: Literal[2] = 2
+
+
+class Aim(BaseModel):
+    result: Annotated[Counted | Reached, Field(discriminator="kind")]
+
+
+def test_a_variant_names_what_its_rows_hold_unseen() -> None:
+    (result,) = field_spec(Aim)["fields"]
+    assert [v["unseen"] for v in result["variants"]] == [["id"], ["id"]]
+    assert [[f["name"] for f in v["fields"]] for v in result["variants"]] == [
+        ["title", "goal"],
+        ["title"],
+    ]
+    # A field that holds one value says so, and the tag is no field at all.
+    (version,) = field_spec(Stamped)["fields"]
+    assert version["widget"] == "hidden" and version["fixed"] is True and version["default"] == 2
+    # A variant with nothing unseen says nothing of it.
+    (op,) = (f for f in field_spec(Plan)["fields"] if f["name"] == "operations")
+    assert all("unseen" not in v for v in op["item"]["variants"])

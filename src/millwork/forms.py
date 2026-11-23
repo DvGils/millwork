@@ -299,10 +299,14 @@ def field_spec(model: type[BaseModel]) -> dict[str, Any]:
     """The whole form as a spec: ``{"fields": [...], "title": ...}``."""
     schema = model.model_json_schema()
     walker = _Walker(schema.get("$defs", {}), factory_defaults(model))
-    return {"title": schema.get("title"), "fields": walker.fields(schema, "")}
+    # The schema of a model that holds itself is a reference to its own
+    # definition, which is where its title then is.
+    return {"title": walker.resolve(schema).get("title"), "fields": walker.fields(schema, "")}
 
 
-def factory_defaults(model: type[BaseModel], base: str = "") -> dict[str, Any]:
+def factory_defaults(
+    model: type[BaseModel], base: str = "", within: tuple[type[BaseModel], ...] = ()
+) -> dict[str, Any]:
     """The defaults the JSON schema leaves out, by pointer, so a form opens with
     today's date filled in. A ``default_factory`` is a default only when it
     makes the same value each time it is called. One that makes a new value per
@@ -322,7 +326,10 @@ def factory_defaults(model: type[BaseModel], base: str = "") -> dict[str, Any]:
                 if first == second:
                     out[pointer] = first
         for inner in _models_of(field.annotation):
-            out.update(factory_defaults(inner, pointer))
+            # A model that holds itself has no end to walk to. The walk over
+            # its fields is what refuses it, with the place it comes back.
+            if inner is not model and inner not in within:
+                out.update(factory_defaults(inner, pointer, (*within, model)))
     return out
 
 
@@ -336,10 +343,16 @@ def _models_of(annotation: Any) -> list[type[BaseModel]]:
     return []
 
 
+# Where a resolved schema keeps the name of the definition it came from.
+_FROM = "$from"
+
+
 class _Walker:
     def __init__(self, defs: Mapping[str, Any], defaults: Mapping[str, Any] = {}) -> None:
         self.defs = defs
         self.defaults = defaults
+        # The models whose fields are being walked, outermost first.
+        self.inside: list[str] = []
 
     def resolve(self, node: Mapping[str, Any]) -> dict[str, Any]:
         """Follow ``$ref`` and merge the referenced schema under the local keys."""
@@ -348,19 +361,34 @@ class _Walker:
             target = dict(self.defs[name])
             local = {k: v for k, v in node.items() if k != "$ref"}
             target.update(local)
+            target[_FROM] = name
             return target
         return dict(node)
 
     def fields(self, obj: Mapping[str, Any], base: str) -> list[dict[str, Any]]:
         obj = self.resolve(obj)
-        required = set(obj.get("required", []))
-        out: list[dict[str, Any]] = []
-        for name, prop in obj.get("properties", {}).items():
-            spec = self.field(name, prop, f"{base}/{name}", name in required)
-            if spec is not None:
-                out.append(spec)
-        out.sort(key=lambda f: f.get("order", 0))
-        return out
+        model = obj.get(_FROM)
+        if model in self.inside:
+            # A form is drawn whole, and a model inside itself has no end.
+            raise ValueError(
+                f"a form cannot show a model inside itself, and {model} comes back at "
+                f"{base}. Give each level a model of its own, or leave the field out of "
+                "the form with json_schema_extra={'hidden': True}"
+            )
+        if model is not None:
+            self.inside.append(model)
+        try:
+            required = set(obj.get("required", []))
+            out: list[dict[str, Any]] = []
+            for name, prop in obj.get("properties", {}).items():
+                spec = self.field(name, prop, f"{base}/{name}", name in required)
+                if spec is not None:
+                    out.append(spec)
+            out.sort(key=lambda f: f.get("order", 0))
+            return out
+        finally:
+            if model is not None:
+                self.inside.pop()
 
     def field(
         self, name: str, prop: Mapping[str, Any], pointer: str, required: bool
@@ -430,6 +458,9 @@ class _Walker:
         if "const" in prop:
             spec["widget"] = "hidden"
             spec["default"] = prop["const"]
+            # The one value the model takes here, which a row that becomes
+            # another variant does not bring along.
+            spec["fixed"] = True
             return
         t = prop.get("type")
         fmt = prop.get("format")
@@ -524,9 +555,13 @@ class _Walker:
                 tag = tag_schema.get("const") or (tag_schema.get("enum") or [None])[0]
             pointer = spec.get("pointer", "")
             fields = [f for f in self.fields(b, pointer) if f["name"] != key]
-            variants.append(
-                {"tag": tag, "label": b.get("title") or humanize(str(tag)), "fields": fields}
-            )
+            variant = {"tag": tag, "label": b.get("title") or humanize(str(tag)), "fields": fields}
+            # What the row holds and the form does not show, such as an id.
+            # A switch to another variant keeps the ones both have.
+            unseen = [n for n, p in props.items() if self.resolve(p).get("hidden")]
+            if unseen:
+                variant["unseen"] = unseen
+            variants.append(variant)
         spec["widget"] = "union"
         spec["discriminator"] = key
         spec["variants"] = variants

@@ -321,6 +321,144 @@ async def test_the_button_that_adds_a_row_says_so_in_the_themes_words() -> None:
         assert "/ranges/0/label" in await page.fields()
 
 
+LINES = """Object.fromEntries([...document.querySelectorAll("%s a")].map((a) => [
+  a.textContent.trim(), getComputedStyle(a).textDecorationLine,
+]))"""
+
+
+async def test_the_header_draws_a_line_under_the_link_of_the_page_it_is_on() -> None:
+    app = mw.App("places", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        def links() -> list[ui.Link]:
+            return [
+                ui.Link(label="Overview", href="/"),
+                ui.Link(label="Bills", href="/bills", active=True),
+            ]
+
+        return ui.Page(
+            ui.Header(title="Places", logo=False, links=links()), ui.Row(*links(), key="row")
+        )
+
+    async with Page(app) as page:
+        await wide(page)
+        assert await page.read(LINES % "header nav") == {"Overview": "none", "Bills": "underline"}
+        # Anywhere else a link is underlined, the current one and the others.
+        assert await page.read(LINES % "[data-node='root/row']") == {
+            "Overview": "underline",
+            "Bills": "underline",
+        }
+
+
+# Where a field of a form stands in the window, and how wide it is.
+PLACED = """(() => {
+  const at = (f) => document.querySelector(`[data-field="${f}"]`).getBoundingClientRect();
+  const box = (f) => [at(f).left, at(f).top, at(f).width].map(Math.round);
+  return Object.fromEntries(%s.map((f) => [f, box(f)]));
+})()"""
+
+
+async def test_a_row_that_becomes_another_variant_keeps_what_both_have() -> None:
+    class Part(BaseModel):
+        name: str = ""
+        amount: float = 1
+
+    class Oven(BaseModel):
+        kind: Literal["oven"] = "oven"
+        id: int | None = Field(default=None, json_schema_extra={"hidden": True})
+        ref: str = ""
+        title: str = ""
+        minutes: int = 30
+        degrees: int = 180
+
+    class Rest(BaseModel):
+        kind: Literal["rest"] = "rest"
+        id: int | None = Field(default=None, json_schema_extra={"hidden": True})
+        ref: str = ""
+        title: str = ""
+        minutes: int = 30
+
+    class Side(BaseModel):
+        parts: list[Part] = []
+
+    class Recipe(BaseModel):
+        name: str = ""
+        serves: int = 4
+        parts: list[Part] = []
+        step: Annotated[Oven | Rest, Field(discriminator="kind")] = Oven()
+        side: Side = Side()
+
+    got: list[dict[str, Any]] = []
+    app = mw.App("variants", public=None)
+    start = Recipe(
+        parts=[Part(name="Flour", amount=500)],
+        step=Oven(id=7, ref="r-7", minutes=12, degrees=250),
+        side=Side(parts=[Part(name="Oil", amount=2)]),
+    )
+
+    def made(s: mw.Session, recipe: Recipe) -> None:
+        got.append(recipe.step.model_dump())
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        # One field a row holds unseen is left out by the model, the other
+        # by the form.
+        hide = {"/step/ref": {"widget": "hidden"}}
+        return ui.Page(
+            ui.Form(
+                Recipe,
+                initial=start,
+                layout=2,
+                labels={"/side": {"label": "On the side"}},
+                overrides=hide,
+                submit="Make",
+                on_submit=made,
+            )
+        )
+
+    async with Page(app) as page:
+        await wide(page)
+        await page.type("/step/title", "Typed by hand")
+        await page.click('[data-field="/step"] [role=combobox]')
+        await page.click("[role=option]", "Rest")
+        assert "/step/degrees" not in await page.fields()
+        await page.press("Make")
+        # Back again, the oven has its own degrees and what the row kept.
+        await page.click('[data-field="/step"] [role=combobox]')
+        await page.click("[role=option]", "Oven")
+        await page.press("Make")
+        # In a form of two columns a list and a union lie across both, and
+        # the fields of a row stand in the same two.
+        fields = ["/name", "/serves", "/parts", "/parts/0/name", "/parts/0/amount", "/step"]
+        fields += ["/side", "/side/parts/0/name", "/side/parts/0/amount"]
+        at = await page.read(PLACED % json.dumps(fields))
+        heading = await page.read(
+            """document.querySelector('[data-field="/side"] > legend').textContent"""
+        )
+    assert got == [
+        {"kind": "rest", "id": 7, "ref": "r-7", "title": "Typed by hand", "minutes": 12},
+        {
+            "kind": "oven",
+            "id": 7,
+            "ref": "r-7",
+            "title": "Typed by hand",
+            "minutes": 12,
+            "degrees": 180,
+        },
+    ]
+    whole = at["/serves"][0] + at["/serves"][2] - at["/name"][0]
+    assert at["/parts"][2] == whole and at["/step"][2] == whole
+    assert at["/parts/0/name"][1] == at["/parts/0/amount"][1]
+    assert at["/parts/0/name"][0] < at["/parts/0/amount"][0]
+    # A model in the model is one column wide, where the fields of a row
+    # stand under each other, and it is headed by what the form calls it.
+    assert at["/side"][2] < whole / 2
+    assert at["/side/parts/0/name"][0] == at["/side/parts/0/amount"][0]
+    assert at["/side/parts/0/name"][1] < at["/side/parts/0/amount"][1]
+    assert heading == "On the side"
+
+
 async def test_a_select_given_new_options_and_a_value_of_them_keeps_that_value() -> None:
     class Choice(BaseModel):
         options: list[str] = ["a", "b"]

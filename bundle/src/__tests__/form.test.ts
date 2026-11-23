@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaults, getAt, rebase, setAt } from "../components/form";
+import { carried, defaults, getAt, rebase, setAt } from "../components/form";
 
 describe("form pointers", () => {
   it("places a field at its parent's place plus what its pointer adds", () => {
@@ -35,5 +35,53 @@ describe("form pointers", () => {
       },
     ]);
     expect(d).toEqual({ t: "", n: null, tags: [], on: true, target: { w: 1 }, op: { type: "recode", source: "" } });
+  });
+});
+
+describe("a row that becomes another variant", () => {
+  const title = { name: "title", pointer: "/item/title", label: "Name", widget: "input" };
+  const weight = { name: "weight", pointer: "/item/weight", label: "Weight", widget: "number", integer: true, default: 1 };
+  const counted = {
+    tag: "counted", label: "Counted", unseen: ["id", "source"],
+    fields: [
+      title, weight,
+      { name: "goal", pointer: "/item/goal", label: "Goal", widget: "number", default: 100 },
+      { name: "unit", pointer: "/item/unit", label: "Unit", widget: "select", options: [{ value: "eur", label: "Euro" }, { value: "pct", label: "Percent" }] },
+      { name: "version", pointer: "/item/version", label: "Version", widget: "hidden", default: 1, fixed: true },
+      { name: "ref", pointer: "/item/ref", label: "Ref", widget: "hidden" },
+      { name: "notes", pointer: "/item/notes", label: "Notes", widget: "list", item: { name: "notes", pointer: "/item/notes", label: "", widget: "fieldset", fields: [] } },
+    ],
+  };
+  const reached = {
+    tag: "reached", label: "Reached", unseen: ["id"],
+    fields: [
+      title,
+      { ...weight, integer: false },
+      { name: "goal", pointer: "/item/goal", label: "Goal", widget: "input" },
+      { name: "unit", pointer: "/item/unit", label: "Unit", widget: "select", options: [{ value: "eur", label: "Euro" }] },
+      { name: "version", pointer: "/item/version", label: "Version", widget: "hidden", default: 2, fixed: true },
+      { name: "ref", pointer: "/item/ref", label: "Ref", widget: "hidden" },
+      { name: "notes", pointer: "/item/notes", label: "Notes", widget: "list", item: { name: "notes", pointer: "/item/notes", label: "", widget: "fieldset", fields: [] } },
+      { name: "done", pointer: "/item/done", label: "Done", widget: "switch" },
+    ],
+  };
+  const row = { kind: "counted", id: 7, source: "import", title: "Typed by hand", weight: 3, goal: 250, unit: "pct", version: 1, ref: "r-7", notes: [{}] };
+
+  it("keeps what both variants show in the same way, and what both hold unseen", () => {
+    expect(carried(counted, reached, row)).toEqual({ id: 7, title: "Typed by hand", ref: "r-7", notes: [{}] });
+  });
+
+  it("keeps a choice the other variant has too", () => {
+    expect(carried(counted, reached, { ...row, unit: "eur" }).unit).toBe("eur");
+    expect(carried(reached, counted, { kind: "reached", unit: "eur", done: true })).toEqual({ unit: "eur" });
+  });
+
+  it("leaves an empty field to the other variant's default", () => {
+    expect(carried(counted, reached, { ...row, title: null }).title).toBeUndefined();
+  });
+
+  it("has nothing to keep for a row that was empty", () => {
+    expect(carried(undefined, reached, row)).toEqual({});
+    expect(carried(counted, reached, null)).toEqual({});
   });
 });
