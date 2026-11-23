@@ -537,6 +537,10 @@ export const Stat: Renderer = ({ props }) => {
 const navLook =
   "flex items-start gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-sidebar-accent-foreground";
 
+// A link in the header: no line under it, but for the current page.
+const headerLook =
+  "in-data-[slot=header]:no-underline in-data-[slot=header]:aria-[current=page]:underline in-data-[slot=header]:aria-[current=page]:decoration-current in-data-[slot=header]:aria-[current=page]:decoration-2 in-data-[slot=header]:aria-[current=page]:underline-offset-8";
+
 // A same-origin page link navigates on the session; anything else is a plain anchor.
 export const Link: Renderer = ({ props }) => {
   const Icon = icon(props.icon);
@@ -546,11 +550,12 @@ export const Link: Renderer = ({ props }) => {
       {...anchorProps(props.href, props.target)}
       aria-current={props.active ? "page" : undefined}
       // In the header a link is one of a row of places to go, and a row of
-      // underlined words is not how that reads.
+      // underlined words is not how that reads. The one line there is under
+      // the page the tab is on.
       className={cn(
         inSidebar
           ? navLook
-          : ["inline-flex items-center gap-1 text-sm text-primary aria-[current=page]:font-medium", linkLook, "in-data-[slot=header]:no-underline"],
+          : ["inline-flex items-center gap-1 text-sm text-primary aria-[current=page]:font-medium", linkLook, headerLook],
         props.cls as string,
       )}
     >

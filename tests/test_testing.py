@@ -1197,3 +1197,41 @@ async def test_the_text_of_a_page_is_what_a_person_reads_on_it(tmp_path: Path) -
         # Which icon, how it is styled, how big it is and where a link goes
         # are not read there, nor the name of the field that keys a table.
         assert not {"plus", "trash-2", "font-bold", "72rem", "64rem", "/orders", "id"} & set(text)
+
+
+async def test_the_text_of_a_form_is_what_stands_at_its_fields(tmp_path: Path) -> None:
+    from typing import Annotated, Literal
+
+    from pydantic import Field
+
+    class Card(BaseModel):
+        kind: Literal["card"] = "card"
+        number: str = Field("", title="Card number", description="Sixteen digits")
+
+    class Transfer(BaseModel):
+        kind: Literal["transfer"] = "transfer"
+        account: str = Field("", examples=["An account"])
+
+    class Line(BaseModel):
+        what: str = Field("", title="Item")
+
+    class Order(BaseModel):
+        size: Literal["small", "large"] = Field("small", json_schema_extra={"group": "The box"})
+        token: str = Field("", json_schema_extra={"widget": "hidden"})
+        lines: list[Line] = []
+        payment: Annotated[Card | Transfer, Field(discriminator="kind")] = Card()
+
+    app = mw.App("form-text", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Form(Order, key="order-form", submit="Place the order"))
+
+    async with TestApp(app).open("/") as page:
+        text = page.text().split("\n")
+        read = {"Place the order", "The box", "Size", "small", "large", "Lines", "Item", "Payment"}
+        read |= {"Card", "Card number", "Sixteen digits", "Transfer", "Account", "An account"}
+        assert read <= set(text)
+        # The key a button elsewhere submits the form by is not read, nor a
+        # field the form does not show.
+        assert not {"order-form", "Token", "kind", "Kind"} & set(text)

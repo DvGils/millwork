@@ -82,7 +82,18 @@ interface FieldSpec {
   fields?: FieldSpec[];
   title?: string | null;
   discriminator?: string | null;
-  variants?: { tag: string; label: string; fields: FieldSpec[] }[];
+  variants?: Variant[];
+  // The field holds one value, which its model names.
+  fixed?: boolean;
+}
+
+// One of the models a union field can hold. `unseen` names what a row of
+// it holds and the form does not show.
+interface Variant {
+  tag: string;
+  label: string;
+  fields: FieldSpec[];
+  unseen?: string[];
 }
 
 interface Issue {
@@ -154,6 +165,40 @@ function defaultFor(f: FieldSpec): unknown {
 export function defaults(fields: FieldSpec[]): Draft {
   const out: Draft = {};
   for (const f of fields) out[f.name] = defaultFor(f);
+  return out;
+}
+
+// Widgets whose value has a shape of its own, which two fields share only
+// when they are the same field.
+const SHAPED = new Set(["fieldset", "list", "union", "file", "files"]);
+
+// Whether what one field held fits another of the same name.
+function fits(was: FieldSpec, f: FieldSpec, value: unknown): boolean {
+  if (was.widget !== f.widget || was.fixed || f.fixed) return false;
+  if (SHAPED.has(f.widget)) return JSON.stringify(was) === JSON.stringify(f);
+  if (Boolean(was.integer) !== Boolean(f.integer)) return false;
+  if (f.options) {
+    const allowed = new Set(f.options.map((o) => o.value));
+    return (Array.isArray(value) ? value : [value]).every((v) => v === null || allowed.has(v as Opt["value"]));
+  }
+  return true;
+}
+
+// What a row keeps when it becomes another variant: the fields both show in
+// the same way, and what both hold unseen, such as the row's id. What was
+// typed in a name is not lost to a change of the row's type.
+export function carried(from: Variant | undefined, to: Variant, row: Draft | null): Draft {
+  const out: Draft = {};
+  if (!from || !row) return out;
+  for (const f of to.fields) {
+    const was = from.fields.find((g) => g.name === f.name);
+    // A field left empty takes the other variant's default, which may be
+    // a field that cannot be empty.
+    if (was && row[f.name] != null && fits(was, f, row[f.name])) out[f.name] = row[f.name];
+  }
+  for (const name of to.unseen ?? []) {
+    if (from.unseen?.includes(name) && name in row) out[name] = row[name];
+  }
   return out;
 }
 
@@ -252,7 +297,7 @@ export const Form: Renderer = ({ node, props, emit }) => {
   // A count of columns is for a screen wide enough to hold them. Below
   // that the fields are under each other.
   const gridCols = typeof layout === "number" ? layout : 0;
-  const ctx: Ctx = { node: node.id, draft, update, issueFor, disabled: disabled || readOnly, readOnly, orientation, dense: Boolean(props.dense) };
+  const ctx: Ctx = { node: node.id, draft, update, issueFor, disabled: disabled || readOnly, readOnly, orientation, dense: Boolean(props.dense), columns: gridCols > 0 };
 
   return (
     <form
@@ -295,12 +340,22 @@ interface Ctx {
   readOnly: boolean;
   orientation: "vertical" | "horizontal";
   dense: boolean;
+  // The form is laid out in columns, which the fields of a row and of a
+  // union follow.
+  columns: boolean;
 }
+
+// The columns of the form, for fields that are not its direct children. The
+// counts are variables of the form's own grid, handed down.
+const inColumns = "mw-grid grid gap-4";
 
 // Renders a list of fields whose schema pointers start at `schemaBase`, into the
 // draft at `base`. Grouped fields become fieldsets in order of first appearance.
 function Fields({ fields, base, schemaBase, ctx }: { fields: FieldSpec[]; base: string; schemaBase: string; ctx: Ctx }) {
   const groups: { name: string | null; fields: FieldSpec[] }[] = [];
+  // A group is one cell of a form in columns, and too narrow for columns
+  // of its own.
+  const inGroup = ctx.columns ? { ...ctx, columns: false } : ctx;
   for (const f of fields) {
     const g = f.group ?? null;
     let bucket = groups.find((b) => b.name === g);
@@ -318,7 +373,7 @@ function Fields({ fields, base, schemaBase, ctx }: { fields: FieldSpec[]; base: 
             <FieldLegend>{g.name}</FieldLegend>
             <FieldGroup>
               {g.fields.map((f) => (
-                <OneField key={f.pointer} f={f} base={base} schemaBase={schemaBase} ctx={ctx} />
+                <OneField key={f.pointer} f={f} base={base} schemaBase={schemaBase} ctx={inGroup} />
               ))}
             </FieldGroup>
           </FieldSet>
@@ -343,10 +398,11 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
   if (f.widget === "fieldset") {
     return (
       <FieldSet data-field={pointer}>
-        <FieldLegend>{f.title ?? f.label}</FieldLegend>
+        <FieldLegend>{f.label}</FieldLegend>
         {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
         <FieldGroup>
-          <Fields fields={f.fields ?? []} base={pointer} schemaBase={f.pointer} ctx={ctx} />
+          {/* A model in a model is one cell of a form in columns, as a group is. */}
+          <Fields fields={f.fields ?? []} base={pointer} schemaBase={f.pointer} ctx={ctx.columns ? { ...ctx, columns: false } : ctx} />
         </FieldGroup>
         {invalid ? <FieldError errors={errors} /> : null}
       </FieldSet>
@@ -358,7 +414,9 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
     const Plus = icon("plus");
     const Trash = icon("trash-2");
     return (
-      <FieldSet data-field={pointer}>
+      // Rows of fields want the form's whole width, so in a form laid out in
+      // columns a list and a union lie across all of them.
+      <FieldSet data-field={pointer} className="col-span-full">
         <FieldLegend>{f.label}</FieldLegend>
         {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
         <div className="flex flex-col gap-(--mw-field-gap)">
@@ -366,7 +424,7 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
             const itemPointer = `${pointer}/${i}`;
             return (
               <div key={i} className="flex items-start gap-2 rounded-lg border p-3">
-                <div className="flex grow flex-col gap-3">
+                <div className={cn("min-w-0 grow", ctx.columns ? inColumns : "flex flex-col gap-3")}>
                   <ItemField item={f.item!} pointer={itemPointer} schemaPointer={f.pointer} ctx={ctx} />
                 </div>
                 {!ctx.disabled ? (
@@ -391,9 +449,9 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
 
   if (f.widget === "union") {
     return (
-      <FieldSet data-field={pointer}>
+      <FieldSet data-field={pointer} className="col-span-full">
         <FieldLegend>{f.label}</FieldLegend>
-        <FieldGroup>
+        <FieldGroup className={ctx.columns ? inColumns : undefined}>
           <ItemField item={f} pointer={pointer} schemaPointer={f.pointer} ctx={ctx} />
         </FieldGroup>
         {invalid ? <FieldError errors={errors} /> : null}
@@ -451,7 +509,7 @@ function ItemField({ item, pointer, schemaPointer, ctx }: { item: FieldSpec; poi
             items={(item.variants ?? []).map((v) => ({ value: v.tag, label: v.label }))}
             onValueChange={(v) => {
               const next = item.variants?.find((x) => x.tag === v);
-              if (next) ctx.update(pointer, { ...defaults(next.fields), [disc]: next.tag });
+              if (next) ctx.update(pointer, { ...defaults(next.fields), ...carried(variant, next, current), [disc]: next.tag });
             }}
           >
             <SelectTrigger className="w-full">

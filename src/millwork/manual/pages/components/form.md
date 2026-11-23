@@ -126,6 +126,70 @@ ui.Form(
 )
 ```
 
+## Models in a model
+<!-- keywords: nested model, list of models, repeatable rows, discriminated union, variant, one of several types, polymorphic, hidden field, recursive -->
+
+A field that holds another model is a group of that model's fields,
+headed by the field's label. A list of models is a list of rows, with a button
+that adds a row and one on each row that removes it. The add button names
+a row by the title of the row's model. A list of several models has no
+one title to take, so it says the field's name until `overrides` gives
+the list an `item_label`.
+
+A field that is one of several models, a union with a discriminator, has
+a select of its type above the fields of the model that is chosen. The
+select's label is the theme's string `type`, and each choice is the title
+of its model. A change of type keeps what both models have, such as a
+name, and gives the rest the new model's defaults.
+
+```python live
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field
+
+
+class Email(BaseModel):
+    kind: Literal["email"] = "email"
+    name: str = Field("", title="Name")
+    address: str = Field("", title="Address")
+
+
+class Phone(BaseModel):
+    kind: Literal["phone"] = "phone"
+    name: str = Field("", title="Name")
+    number: str = Field("", title="Number")
+
+
+class Contact(BaseModel):
+    person: str = Field("", title="Person")
+    ways: list[Annotated[Email | Phone, Field(discriminator="kind")]] = Field(default=[], title="Ways to reach them")
+
+
+ui.Form(
+    Contact,
+    initial={"ways": [{"kind": "email", "name": "Office", "address": ""}]},
+    overrides={"/ways": {"item_label": "Way"}},
+    on_submit=lambda s, v: s.toast(f"{len(v.ways)} ways to reach {v.person or 'someone'}"),
+)
+```
+
+In a form laid out in columns, a list and a union lie across all of
+them, and the fields of a row stand in the same columns. In a group or
+in a nested model they keep to its one column.
+
+A field is kept off the page in two ways. The `hidden` widget, given in
+`overrides`, hides it in one form. `json_schema_extra={"hidden": True}`
+on the model's field leaves it out of every form. Either way, what
+`initial` holds of it comes back on submit, which is how a row keeps its
+id.
+
+A model that holds itself, such as a folder with a list of folders,
+cannot be a form, since a form is drawn whole. `ui.Form` refuses it and
+names the field where the model comes back. Each level gets a model of
+its own, or the field is left out with
+`json_schema_extra={"hidden": True}`. The `hidden` widget does not do
+that.
+
 ## Rejecting a valid draft
 <!-- keywords: server-side validation, custom error message -->
 

@@ -53,7 +53,10 @@ The `close` hook runs once per visit, when the session is done with the
 page, with the state still as the page left it. That is when the tab
 moves to another page, before that page's connect runs, which holds when
 the next page is this one with other parameters, and when the session
-ends. The session's tasks are canceled before the hook runs.
+ends. When the session ends, its tasks are canceled before the hook runs.
+A move to another page leaves them running, since a task is the
+session's. [Tasks](/components/tasks) shows how a page stops one of its
+own.
 
 A session can end while a connect is still running, when the person signs
 out or their sign-in runs out. The hook is stopped where it stands then.
