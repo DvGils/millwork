@@ -470,6 +470,136 @@ async def test_a_click_on_a_download_downloads_and_text_skips_choices(tmp_path: 
             assert choice not in text.split("\n"), choice
 
 
+async def test_a_download_waits_for_content_that_an_async_function_makes(tmp_path: Path) -> None:
+    app = mw.App("dl", state=State, public=None, bundle_dir=tmp_path)
+
+    async def export() -> bytes:
+        await asyncio.sleep(0)
+        return b"a,b\n"
+
+    async def broken() -> bytes:
+        raise RuntimeError("no rows")
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Download(label="Report", filename="report.csv", content=export, key="dl"),
+            ui.Download(label="Broken", filename="broken.csv", content=broken, key="bad"),
+        )
+
+    async with TestApp(app).open("/") as page:
+        await page.click("dl")
+        (sent,) = page.commands
+        assert sent.name == "download" and sent.args["filename"] == "report.csv"
+        assert page.session.files.get(sent.args["id"]).path.read_bytes() == b"a,b\n"
+        # One that fails says what a download that fails says.
+        with pytest.raises(RuntimeError, match="no rows"):
+            await page.click("bad")
+        page.failures.clear()
+        assert [c.name for c in page.commands] == ["download", "toast"]
+        assert [n.message for n in page.notices] == ["The download failed."]
+        # A handler awaits what it downloads, and is told so when it did not.
+        with pytest.raises(TypeError, match="A handler awaits it first"):
+            page.session.download("late.csv", export)
+
+
+async def test_a_path_that_a_route_of_the_app_serves_is_the_browsers_to_ask_for(
+    tmp_path: Path,
+) -> None:
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.testclient import TestClient
+
+    app = mw.App("routes", state=State, public=None, bundle_dir=tmp_path)
+
+    async def answer(request: Any) -> PlainTextResponse:
+        return PlainTextResponse("ok")
+
+    app.route("/raw/{name}", answer)
+    app.route("/hooks/mail", answer, methods=["POST"])
+    app.route("/both", answer, methods=["POST"])
+    app.mount("/api", Starlette())
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Link(label="File", href="/raw/a.txt?v=2#top", key="file"),
+            ui.Button("Docs", href="/api/docs", key="docs"),
+            ui.Button("Later", on_click=lambda s, _: s.navigate("/raw/b.txt"), key="later"),
+        )
+
+    @app.page("/both")
+    def both(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("A page next to a route that takes what is posted"))
+
+    def asked(page: Any) -> list[dict[str, Any]]:
+        return [c.args for c in page.commands if c.name == "load"]
+
+    async with TestApp(app).open("/") as page:
+        s = page.session
+        # The session stays on its page, and the tab is told to ask for
+        # the address itself, as it would for one that was typed.
+        await page.click("file")
+        await page.click("docs")
+        await page.click("later")
+        assert asked(page) == [
+            {"path": "/raw/a.txt?v=2", "hash": "top"},
+            {"path": "/api/docs"},
+            {"path": "/raw/b.txt"},
+        ]
+        assert s.path == "/" and s.ready and "File" in page.text()
+        # A route that takes no GET gives a browser that asks for its path
+        # a page, the one that has the path or the one for a page that is
+        # not there, and so it gives the session.
+        await page.navigate("/both")
+        assert s.path == "/both" and len(asked(page)) == 3
+        # A path a browser would not ask for as it is written is no route's.
+        unasked = ("/raw/../x", "/api/../../x", "/raw\\x", "//raw/x", "/api/%2e%2e/x")
+        for path in ("/hooks/mail", *unasked):
+            await page.navigate(path)
+            assert "Page not found" in page.text() and len(asked(page)) == 3, path
+        for path, served in {
+            "/raw/a.txt": True,
+            "/raw/a%20b.txt?x=1#y": True,
+            "/api": False,
+            "/api/": True,
+            "/raw": False,
+            "/raw/a/b": False,
+            "/hooks/mail": False,
+            "/_mw/health": False,
+            "/public/x.svg": False,
+            "https://example.com/raw/a": False,
+        }.items():
+            assert app.serves(path) is served, path
+    # What a browser gets when it asks is what the session went by.
+    with TestClient(app.asgi) as client:
+        assert client.get("/raw/a.txt").text == "ok"
+        assert client.get("/api/").status_code == 404 and "<html" not in client.get("/api/").text
+        for path in ("/hooks/mail", "/api", "/raw"):
+            answer = client.get(path, follow_redirects=False)
+            assert answer.status_code in (404, 503), path
+
+
+def test_a_route_behind_one_of_the_frameworks_own_is_not_the_browsers(tmp_path: Path) -> None:
+    from starlette.responses import PlainTextResponse
+
+    public = tmp_path / "public"
+    public.mkdir()
+    (public / "a.txt").write_text("a file")
+    app = mw.App("shadow", public=public, bundle_dir=tmp_path)
+
+    async def answer(request: Any) -> PlainTextResponse:
+        return PlainTextResponse("never asked")
+
+    app.route("/public/{name}", answer)
+    app.route("/favicon.ico", answer)
+    app.route("/files/{name}", answer)
+    # The folder and the favicon are asked first, so these two routes are
+    # never reached, and a session does not send a tab to them.
+    assert not app.serves("/public/a.txt") and not app.serves("/favicon.ico")
+    assert app.serves("/files/a.txt")
+
+
 async def test_a_handler_that_ends_its_session_lets_the_close_hook_finish(tmp_path: Path) -> None:
     app = mw.App("end", state=State, public=None, bundle_dir=tmp_path)
     seen: list[str] = []
@@ -619,6 +749,8 @@ async def test_confirm_buttons_speak_the_themes_language(tmp_path: Path) -> None
         await page.click("wipe")
         labels = [b.props["label"] for b in page.find_all(ui.Button, within=page.find(ui.Dialog))]
         assert labels == ["Laat maar", "Doe het"]
+        # The question and its buttons are all the dialog adds to the text.
+        assert set(page.text().split("\n")) == {"Ask", "Wipe", "Wipe it?", *labels}
         await page.answer(False)
         # Words given to the call win over the theme's.
         await page.click("ask")

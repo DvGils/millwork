@@ -193,9 +193,12 @@ def example(s):
 
 `ui.Download` is a button that saves a file. `content` is bytes, text, a
 path, a callable that makes any of those on click, or a `FileRef`, which
-saves straight away without a round trip. `s.download(filename, content)`
-does the same from a handler, without a button. It takes the `variant`
-and the `size` of a Button.
+saves straight away without a round trip. The button's callable may be
+async, for content that is read from a database when it is asked for.
+It takes the `variant` and the `size` of a Button.
+`s.download(filename, content)` does the same from a handler, without a
+button, and a handler awaits what an async function makes before it
+hands it over.
 
 Bytes, text and a path, given as they are or made by a callable, become
 a copy for the download, which counts against the session's storage

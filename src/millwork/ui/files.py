@@ -153,7 +153,8 @@ class Pdf(Component):
 
 
 class Download(Component):
-    """A button that downloads a file, bytes, text, or what a callable returns on click."""
+    """A button that downloads a file, bytes, text, or what a callable returns on
+    click. An async callable is awaited."""
 
     type: ClassVar[str] = "Download"
     needs_session: ClassVar[bool] = True

@@ -268,7 +268,7 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
   );
 });
 
-type Head = { id: string; header: ReactNode; sortable: boolean; filterable: boolean; size?: number; column?: Column };
+type Head = { id: string; header: ReactNode; sortable: boolean; filterable: boolean; size?: number | string; column?: Column };
 
 export const Table: Renderer = ({ node, props, emit }) => {
   const rows = (Array.isArray(props.rows) ? (props.rows as Record<string, unknown>[]) : NONE);
@@ -476,7 +476,8 @@ export const Table: Renderer = ({ node, props, emit }) => {
       header: c.header ?? c.key,
       sortable: c.sortable !== false && props.sortable !== false,
       filterable: c.filterable !== false,
-      size: typeof c.width === "number" ? c.width : undefined,
+      // A number is pixels, and text is a length as CSS writes one.
+      size: typeof c.width === "number" || (typeof c.width === "string" && c.width) ? c.width : undefined,
       column: c,
     });
   }

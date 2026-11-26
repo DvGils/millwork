@@ -125,6 +125,12 @@ still takes `cancel`.
 A click on a `Button` with `form=` submits that form in a browser. The
 draft is the test's to give, so the test calls `submit(form, draft)`.
 
+A click on a link to a path that `app.route` or `app.mount` serves
+leaves the session on its page. The browser is told to ask for the
+address, with the command named `load`, and its path is
+`page.commands[-1].args["path"]`. The route itself is tested with
+Starlette's `TestClient`.
+
 `request(node, name, payload)` asks a handler and returns its answer as
 the tab would get it. That is what a custom component does with
 `request`, and what a `Combobox` with `on_search` does as someone types,
@@ -171,7 +177,8 @@ What a handler put on the clipboard with `s.clipboard` is the command
 named `clipboard`, and its text is `page.commands[-1].args["text"]`.
 A handler that calls `s.confirm` or `s.ask` stops and waits. The test sees
 the dialog on the page and answers it with `page.answer(value)`, `False`,
-or `None` for a dismissal. A task started by a handler has run by the time
+or `None` for a dismissal. The question is the dialog's `title`, and the
+text under it is a `ui.Text` in the dialog, so `page.text()` has both. A task started by a handler has run by the time
 the action returns, and `page.session.tasks[-1]` has its `ok`, `result`
 and `progress`. A chat turn's chunks are in `page.stream`, in order, in
 the AI SDK's UI message stream format, where each

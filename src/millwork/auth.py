@@ -1295,6 +1295,18 @@ def _same_origin(request: Request, origins: list[str]) -> bool:
     return host is not None and urlsplit(origin).netloc.lower() == host.lower()
 
 
+# The longest way back that is kept through a sign-in, as the cookie spells
+# it. It rides in a cookie while the visitor is at a provider, and a
+# browser drops a cookie of more than four thousand bytes.
+NEXT_LIMIT = 2000
+
+
+def _carried(text: str) -> int:
+    """How long a way back is in the cookie that carries it, where a
+    character outside ASCII takes six or twelve."""
+    return len(json.dumps(text))
+
+
 def _safe_next(value: str | None) -> str:
     """Only a path inside the app: never an absolute URL, a scheme-relative one,
     a dot segment that could climb out of the app's prefix, or a framework route.
@@ -1313,6 +1325,10 @@ def _safe_next(value: str | None) -> str:
         return "/"
     if len(segments) > 1 and segments[1] == "_mw":
         return "/"
+    if _carried(value) > NEXT_LIMIT:
+        # A long query stays behind, and a path that is too long by itself
+        # is not gone back to.
+        return path if _carried(path) <= NEXT_LIMIT else "/"
     return value
 
 

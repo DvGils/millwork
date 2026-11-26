@@ -175,6 +175,49 @@ async def test_a_query_is_kept_as_an_address_that_passes_for_a_path(tmp_path: Pa
         assert boot["path"] == "/other?file=C:%5Ctemp"
 
 
+def test_an_address_is_no_longer_than_a_tab_may_name(tmp_path: Path) -> None:
+    from pydantic import ValidationError
+
+    from millwork.auth import NEXT_LIMIT, _safe_next
+    from millwork.protocol import PATH_LIMIT, unpack_client
+
+    app = make_app(tmp_path)
+    fits = "/other?q=" + "a" * (PATH_LIMIT - len("/other?q="))
+    with TestClient(app.asgi) as client:
+        assert client.get(fits).status_code == 200
+        assert client.get(fits + "a").status_code == 414
+    for kind in ("hello", "navigate"):
+        said = {"seq": 1, "msg": {"type": kind, "path": fits}}
+        assert unpack_client(json.dumps(said))[1].path == fits
+        said["msg"]["path"] += "a"
+        with pytest.raises(ValidationError):
+            unpack_client(json.dumps(said))
+    # The way back through a sign-in rides in a cookie, which holds less. A
+    # long query stays behind, and a path that is too long is not gone
+    # back to.
+    back = "/other?q=" + "a" * NEXT_LIMIT
+    assert _safe_next(back[: NEXT_LIMIT - 2]) == back[: NEXT_LIMIT - 2]
+    assert _safe_next(back) == "/other"
+    assert _safe_next("/" + "a" * NEXT_LIMIT) == "/"
+    # What counts is how long the cookie spells it, and a character
+    # outside ASCII is six there.
+    assert _safe_next("/other?q=" + "é" * 400) == "/other"
+    assert _safe_next("/other?q=" + "é" * 300) == "/other?q=" + "é" * 300
+    assert _safe_next("/" + "é" * 400) == "/"
+
+
+async def test_the_query_is_read_once_for_a_path(tmp_path: Path) -> None:
+    from millwork.testing import TestApp
+
+    app = make_app(tmp_path)
+    async with TestApp(app).open("/?view=open") as page:
+        s = page.session
+        first = s.query
+        assert first is s.query and first["view"] == "open"
+        await page.navigate("/other?view=done")
+        assert s.query is not first and s.query["view"] == "done"
+
+
 def test_auth_redirects_and_callbacks_are_under_the_prefix(tmp_path: Path) -> None:
     def on_login(identity: auth.Identity) -> auth.User:
         return auth.User(id=identity.subject, name=identity.subject)

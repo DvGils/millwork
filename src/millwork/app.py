@@ -32,16 +32,16 @@ from starlette.responses import (
     PlainTextResponse,
     RedirectResponse,
 )
-from starlette.routing import Mount, Route, WebSocketRoute, compile_path
+from starlette.routing import Match, Mount, Route, WebSocketRoute, compile_path
 from starlette.staticfiles import StaticFiles
 
 from millwork import __version__, context
 from millwork.access import ALLOWED, REFUSED, Rule, Verdict, ask, rule_for
-from millwork.auth import Auth, _same_origin
+from millwork.auth import Auth, _safe_next, _same_origin
 from millwork.files import Files
 from millwork.marks import spelled
 from millwork.nodes import Component
-from millwork.protocol import Command
+from millwork.protocol import PATH_LIMIT, Command
 from millwork.proxy import ASGIApp, Proxied
 from millwork.scope import Scope
 from millwork.shell import Shell, plain, root_of
@@ -361,6 +361,7 @@ class App:
         self._extra: list[_Extra] = []
         self._middleware: list[Middleware] = []
         self._asgi: ASGIApp | None = None
+        self._ahead: list[Any] | None = None
 
     # ------------------------------------------------------------- pages
 
@@ -437,6 +438,28 @@ class App:
         load. A page and its rule then see the same parameters whichever way
         the path came."""
         return self.resolve(unquote(url.split("?", 1)[0].split("#", 1)[0]))
+
+    def serves(self, url: str) -> bool:
+        """Whether a path of the app is one of its own routes or mounts and
+        no page, so that a browser that asks for it gets what the route
+        answers, which a session cannot show.
+
+        The answer is the one a page load gets, which is a GET, asked of
+        the same routes in the same order. A route of the app that takes it
+        comes before every page. One that has the path and takes no GET, a
+        webhook that is posted to, leaves the path to the pages, and so
+        does one that a route of the framework's own stands in front of. A
+        path a browser would rewrite before it asks, with a dot segment or
+        a backslash, is none of them, and neither is anything that is not
+        a path of the app."""
+        asked = url.split("?", 1)[0].split("#", 1)[0]
+        if _safe_next(asked) != asked:
+            return False
+        scope = {"type": "http", "method": "GET", "path": unquote(asked), "root_path": ""}
+        for route in self._before_pages():
+            if route.matches(scope)[0] is Match.FULL:
+                return any(route is own for own in self._routes)
+        return False
 
     def fallback(
         self, kind: str, path: str, message: str | None = None
@@ -525,6 +548,7 @@ class App:
         if guarded:
             route.app = _Guarded(self, route.app, rule, f"the route {path}")
         self._routes.append(route)
+        self._ahead = None
 
     def mount(
         self,
@@ -547,6 +571,7 @@ class App:
         if guarded:
             asgi_app = _Guarded(self, asgi_app, rule, f"the mount {path}")
         self._routes.append(Mount(path, app=asgi_app))
+        self._ahead = None
 
     def access(self) -> list[tuple[str, str, str]]:
         """Every page, route and mount with who may reach it, for reading the
@@ -672,7 +697,12 @@ class App:
             self._asgi = Proxied(self._build_asgi(), lambda: self.proxied)
         return self._asgi
 
-    def _build_asgi(self) -> Starlette:
+    def _before_pages(self) -> list[Any]:
+        """Every route that answers before a page does, in the order a
+        request is tried on them: the framework's own, the public folder,
+        then the app's routes and mounts."""
+        if self._ahead is not None:
+            return self._ahead
         from millwork.ws import websocket_endpoint
 
         routes: list[Any] = [
@@ -693,7 +723,11 @@ class App:
         if self.public_dir is not None and self.public_dir.is_dir():
             routes.append(Mount("/public", app=StaticFiles(directory=self.public_dir)))
         routes.extend(self._routes)
-        routes.append(Route("/{path:path}", self._serve_page))
+        self._ahead = routes
+        return routes
+
+    def _build_asgi(self) -> Starlette:
+        routes = [*self._before_pages(), Route("/{path:path}", self._serve_page)]
         middleware = [Middleware(_SecurityHeaders), *self._middleware]
         app = Starlette(
             routes=routes,
@@ -1023,6 +1057,10 @@ class App:
         # the page is found by it here, so the load and the session that
         # follows read one spelling the same way.
         address = _address(request.scope, path)
+        if len(address) > PATH_LIMIT:
+            # Longer than a tab may name the page it is on, so no session
+            # could open it.
+            return PlainTextResponse("The address is too long.", status_code=414)
         resolved = self.locate(address)
         status = 200
         if resolved is None:

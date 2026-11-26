@@ -638,6 +638,16 @@ function command(name: string, args: Record<string, unknown>) {
       closedForGood = true;
       void signOut();
       break;
+    case "load": {
+      // One of the app's routes or mounts, which is no page. The browser
+      // asks for it as it does for an address that is typed. What comes
+      // back may be a file to save, and the page then stays as it is.
+      const hash = args.hash ? String(args.hash) : pendingHash;
+      pendingHash = null;
+      const to = safeUrl(String(args.path ?? ""));
+      if (to !== "about:blank") window.location.assign(hash ? `${to}#${hash}` : to);
+      break;
+    }
     case "leave":
       // The sign-in behind this session is over: the page goes, not only its input.
       closedForGood = true;

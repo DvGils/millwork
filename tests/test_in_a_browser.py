@@ -381,6 +381,96 @@ async def test_the_query_of_an_address_is_the_pages_on_every_way_in() -> None:
         assert await says("view=all;seen=1") == "view=all;seen=1 at ''"
 
 
+async def test_a_link_to_a_route_of_the_app_is_followed_by_the_browser() -> None:
+    from starlette.responses import PlainTextResponse
+
+    app = mw.App("routes", state=Shelf, public=None)
+    asked: list[str] = []
+
+    async def file(request: Any) -> PlainTextResponse:
+        asked.append(str(request.url.path) + "?" + str(request.url.query))
+        save = {"Content-Disposition": 'attachment; filename="notes.txt"'}
+        return PlainTextResponse("notes", headers=save)
+
+    async def plain(request: Any) -> PlainTextResponse:
+        return PlainTextResponse("a page of the route's own")
+
+    app.route("/raw/{name}", file)
+    app.route("/plain", plain)
+
+    def more(s: mw.Session[Shelf], _: object) -> None:
+        s.state.seen += 1
+
+    @app.page("/")
+    def home(s: mw.Session[Shelf]) -> ui.Page:
+        return ui.Page(
+            ui.Text(f"seen={s.state.seen}", key="says"),
+            ui.Link(label="Notes", href="/raw/notes.txt?v=2"),
+            ui.Button("Later", on_click=lambda s, _: s.navigate("/raw/later.txt")),
+            ui.Markdown("[Plain](/plain)"),
+            ui.Button("More", on_click=more),
+        )
+
+    async with Page(app) as page:
+
+        async def until(script: str, want: object) -> object:
+            for _ in range(100):
+                if await page.read(script) == want:
+                    break
+                await asyncio.sleep(0.05)
+            return await page.read(script)
+
+        async def follow(label: str) -> None:
+            links = "[...document.querySelectorAll('a')]"
+            await page.read(f"void {links}.find((a) => a.textContent === '{label}').click()")
+
+        says = "document.querySelector(\"[data-node='root/says']\")?.textContent"
+        # A file to save: the browser asks the route for it, and the page
+        # stays as it is, with its session.
+        await follow("Notes")
+        for _ in range(100):
+            if asked:
+                break
+            await asyncio.sleep(0.05)
+        assert asked == ["/raw/notes.txt?v=2"]
+        await page.press("Later")
+        for _ in range(100):
+            if len(asked) > 1:
+                break
+            await asyncio.sleep(0.05)
+        assert asked[1:] == ["/raw/later.txt?"]
+        await page.press("More")
+        assert await until(says, "seen=1") == "seen=1"
+        assert await page.read("location.pathname") == "/"
+        # What a route answers with a page of its own is where the tab goes.
+        await follow("Plain")
+        assert await until("location.pathname", "/plain") == "/plain"
+        said = "a page of the route's own"
+        assert await until("document.body.innerText", said) == said
+
+
+WIDTHS = """[...document.querySelectorAll("[data-node='root/%s'] th")].map(
+  (th) => Math.round(th.getBoundingClientRect().width))"""
+
+
+async def test_a_column_is_as_wide_as_it_says_in_pixels_or_as_a_length() -> None:
+    app = mw.App("widths", public=None)
+    rows = [{"id": 1, "a": "x", "b": "y", "c": "z"}]
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Page:
+        def table(width: int | str, key: str) -> ui.Table:
+            columns = [ui.Column(key="a", width=width), ui.Column(key="b"), ui.Column(key="c")]
+            return ui.Table(rows=rows, columns=columns, row_key="id", key=key)
+
+        return ui.Page(table(320, "number"), table("20rem", "length"))
+
+    async with Page(app) as page:
+        await wide(page)
+        number, length = await page.read(WIDTHS % "number"), await page.read(WIDTHS % "length")
+        assert number[0] == 320 and length == number
+
+
 EDGES = """(() => {
   const card = document.querySelector("[data-node='root/%s'] [data-slot=card]");
   const box = card.getBoundingClientRect();

@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import inspect
 import logging
 import re
 import secrets
@@ -141,6 +142,8 @@ class Session[S]:
         self.page = page
         self.params = params
         self.path = path
+        # The query of the path, read once for each path the session is on.
+        self._query: tuple[str, QueryParams] | None = None
         self.user: Any = None
         # The time zone of the browser the tab runs in, as the tab named it
         # when it last connected. None when it named none, or one this
@@ -324,7 +327,10 @@ class Session[S]:
         comes more than once, and ``s.query.getlist("tag")`` is every value
         of a name. Each is text as the address spelled it, decoded, and it is
         whatever the person typed there, to be checked like any input."""
-        return QueryParams(self.path.split("#", 1)[0].partition("?")[2])
+        if self._query is None or self._query[0] != self.path:
+            asked = QueryParams(self.path.split("#", 1)[0].partition("?")[2])
+            self._query = (self.path, asked)
+        return self._query[1]
 
     @property
     def closed(self) -> bool:
@@ -637,6 +643,16 @@ class Session[S]:
         not go there at all."""
         path, _, fragment = want.path.partition("#")
         path = marks.spelled(path)
+        if self.app.serves(path):
+            # One of the app's own routes or mounts, which is no page. The
+            # browser asks for it itself, as it does when the address is
+            # typed, and the session stays on the page it has.
+            asked: dict[str, Any] = {"path": path}
+            if fragment:
+                asked["hash"] = fragment
+            self.command("load", **asked)
+            self._stays()
+            return None
         page, params = self.app.locate(path) or self.app.fallback("not_found", path)
         if self.app.auth is not None and not page.public and self.user is None:
             self.post(ServerError(message=self.text("sign_in_hint"), fatal=True))
@@ -1113,6 +1129,18 @@ class Session[S]:
         ref = content_to_file(self, content, filename, mime, passing=True)
         self.command("download", id=ref.id, filename=filename)
         return ref
+
+    def _download_made(self, component: Download, content: Any) -> None:
+        """Send what a ``Download`` holds, or what its callable made."""
+        try:
+            self.download(component.filename, content, component.mime)
+        except Exception as exc:
+            self._download_failed(component, exc)
+
+    def _download_failed(self, component: Download, exc: Exception) -> None:
+        log.error("download %s failed", component.filename, exc_info=exc)
+        self._failed(f"the download of {component.filename}", exc)
+        self.toast(self.text("download_failed"), tone="destructive")
 
     # ------------------------------------------------------------- chat
 
@@ -2103,11 +2131,22 @@ class Session[S]:
         if event.name == "download" and isinstance(component, Download):
             token = context.bind(self)
             try:
-                self.download(component.filename, component.content, component.mime)
+                content = component.content
+                if callable(content):
+                    content = content()
+                if inspect.isawaitable(content):
+                    # What an async function makes is waited for in a turn,
+                    # as a handler is.
+                    name = component.filename
+                    return Plan(
+                        work.awaited_download,
+                        (self, component, content),
+                        f"the download of {name}",
+                        f"download {name} failed",
+                    )
+                self._download_made(component, content)
             except Exception as exc:
-                log.exception("download %s failed", component.filename)
-                self._failed(f"the download of {component.filename}", exc)
-                self.toast(self.text("download_failed"), tone="destructive")
+                self._download_failed(component, exc)
             finally:
                 context.unbind(token)
             return None
@@ -2342,7 +2381,7 @@ class _ConfirmButtons(Component):
 
     type: ClassVar[str] = "Row"
     gap: int = 2
-    justify: str = "end"
+    justify: Literal["end"] = "end"
 
 
 _said_no_zones = False

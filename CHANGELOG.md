@@ -32,6 +32,30 @@ versions; a release says so here when it does.
 - The not-found page's `s.params["path"]` is the path without its query
   on every way in. After a navigation inside the session it used to hold
   the query as well.
+- A `ui.Link`, a button with `href`, a link in `ui.Markdown` or
+  `s.navigate` to a path that `app.route` or `app.mount` serves landed
+  on "Page not found", since the session took every path of the app for
+  a page. The browser now asks for such a path itself, as it does when
+  the address is typed. What a route sends as an attachment is saved and
+  the page stays where it is. In a test the session stays on its page
+  and the command `load` carries the path.
+- An address with a tab or a line break in it, such as `"/\t/host"`,
+  passed the tab's check for a path of the app, and a browser reads it as
+  `//host`, which is another site. An `href` built from text a visitor
+  wrote could lead off the app that way, on a middle click, in a new tab
+  or on the login page. Such an address is now refused, as one with a
+  backslash already was.
+- A path a tab names is at most 16 kB with its query, and a page asked
+  for at a longer address answers 414. The way back through a sign-in
+  keeps at most 2000 characters and leaves a longer query behind, since
+  it rides in a cookie that a browser drops when it grows too large.
+- `ui.Download(content=...)` with an async function failed with "cannot
+  download a coroutine". The function is now awaited. `s.download` with
+  one says that a handler awaits it first.
+- `ui.Column(width="20rem")` was accepted and not applied, since only a
+  number was. A width as text is now a CSS length.
+- In a test, `page.text()` held the word "end" while a question from
+  `s.confirm` stood on the page.
 
 ### Features
 
@@ -51,6 +75,11 @@ versions; a release says so here when it does.
   action of the app's own, feedback, regenerate and edit.
 - Layout says what `padding=False` does to a card.
 - Text and Custom components say that lucide's current names work.
+- Navigation and Routes and middleware say what a link to a route does.
+- Data says what a column's `width` takes and that a table short of room
+  gives a column less.
+- Testing says where the text of `s.confirm` stands in the dialog, and
+  what a click on a link to a route does in a test.
 
 ## 0.6.5
 

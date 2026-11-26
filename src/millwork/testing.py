@@ -285,7 +285,9 @@ class Page:
     async def click(self, node: Found | str) -> None:
         """Click it. A ``Download``'s button starts the download, so that is
         what clicking one does here, and a ``Link`` or a button with an
-        ``href`` to a page of the app takes the session there. One that
+        ``href`` to a page of the app takes the session there. One to a
+        route or a mount of the app leaves the session where it is, with a
+        ``load`` command for the tab. One that
         leaves the app does nothing here, as the session sees nothing of it.
         A ``Checkbox`` or a ``Switch`` whose value the page holds goes to the
         other of its two values. One that keeps its own value takes

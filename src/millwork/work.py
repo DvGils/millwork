@@ -267,6 +267,17 @@ async def event(s: Session[Any], event: Event, visit: int) -> None:
     await turn(s, plan)
 
 
+async def awaited_download(s: Session[Any], component: Any, content: Any) -> None:
+    """A download whose content an async function makes. It is waited for
+    here, in a turn, and sent by the session as any other is."""
+    try:
+        made = await content
+    except Exception as exc:
+        s._download_failed(component, exc)
+        return
+    s._download_made(component, made)
+
+
 async def turn(s: Session[Any], plan: Plan) -> None:
     """One turn: a handler, from the moment it gets the turn. The turn is
     given back by the session's scope when this is done, however it ends."""

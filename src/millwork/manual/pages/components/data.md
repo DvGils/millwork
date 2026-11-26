@@ -12,7 +12,9 @@ dataclasses. Columns come from the rows unless `columns` names them, each
 with a `header`, a `format`, a `width`, an `align`, and whether it is
 `sortable` or `filterable`. A column without a `header` is headed by its
 key exactly as written, which keeps the names of data the app did not
-make, an upload for one, as they are.
+make, an upload for one, as they are. A `width` is a number of pixels or
+a length as CSS writes one, such as `"20rem"`. It is what the column
+asks for, and a table that is short of room gives it less.
 
 ## A plain table
 
