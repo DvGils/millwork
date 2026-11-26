@@ -178,7 +178,11 @@ named `clipboard`, and its text is `page.commands[-1].args["text"]`.
 A handler that calls `s.confirm` or `s.ask` stops and waits. The test sees
 the dialog on the page and answers it with `page.answer(value)`, `False`,
 or `None` for a dismissal. The question is the dialog's `title`, and the
-text under it is a `ui.Text` in the dialog, so `page.text()` has both. A task started by a handler has run by the time
+text under it is a `ui.Text` in the dialog, so `page.text()` has both.
+A row action or a menu item with `confirm` asks the same way. So
+`page.action` and `page.choose` return with the question on the page,
+and the handler runs once `page.answer(True)` has answered it.
+A task started by a handler has run by the time
 the action returns, and `page.session.tasks[-1]` has its `ok`, `result`
 and `progress`. A chat turn's chunks are in `page.stream`, in order, in
 the AI SDK's UI message stream format, where each
@@ -238,8 +242,8 @@ def test_the_export_is_its_makers_alone(app):
 
 `page.messages` is every message the server sent. `patches`,
 `last_patch`, `commands` (toasts, downloads, navigations, form issues),
-`toasts` as plain text, `notices` as toasts with their `message`, `tone`
-and `title`,
+`toasts` as plain text, `notices` as toasts that each have a `message`,
+a `tone` and a `title`, as in `page.notices[-1].tone`,
 `stream` and `errors` are views on it.
 `toast_action("Undo")` presses the button of the latest toast that has
 one. `settle()` waits until the session has nothing left to do. Running

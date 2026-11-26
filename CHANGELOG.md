@@ -56,6 +56,13 @@ versions; a release says so here when it does.
   number was. A width as text is now a CSS length.
 - In a test, `page.text()` held the word "end" while a question from
   `s.confirm` stood on the page.
+- A row of a table that can be pressed, through `on_row_click` or
+  `selection="row"`, could not be reached from the keyboard. Tab now
+  stops at one row of such a table, the arrow keys, Home and End move
+  between the rows of the page, and Enter or Space presses the row.
+- A chart with `on_click` took no press from the keyboard. Enter or
+  Space now presses the point the tooltip is on, which the arrow keys
+  move. Tab stops at a pie chart once, where it stopped twice.
 
 ### Features
 
@@ -80,6 +87,12 @@ versions; a release says so here when it does.
   gives a column less.
 - Testing says where the text of `s.confirm` stands in the dialog, and
   what a click on a link to a route does in a test.
+- Data and Charts say how a row and a chart are pressed from the
+  keyboard.
+- Testing says that a row action with `confirm` waits for
+  `page.answer`, and that a notice is read as `page.notices[-1].tone`.
+- Custom components says that a component mounts a little after the
+  page shows.
 
 ## 0.6.5
 

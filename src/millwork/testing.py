@@ -244,7 +244,8 @@ class Page:
 
     @property
     def notices(self) -> list[Notice]:
-        """Every toast shown, with its tone and title."""
+        """Every toast shown, as a ``Notice`` with its ``message``, ``tone``
+        and ``title``."""
         return [
             Notice(
                 str(c.args.get("message", "")),
@@ -446,7 +447,8 @@ class Page:
     async def action(self, node: Found | str, action: str, key: Any = None) -> None:
         """A row action on a Table (``action`` and the row's key), a card
         action (``action``), or an action under an answer in a Chat
-        (``action`` and the message or its id)."""
+        (``action`` and the message or its id). A row action with
+        ``confirm`` then waits for ``answer``, like a button."""
         found = node if isinstance(node, Found) else self.find(node)
         if isinstance(found.component, Chat):
             message = getattr(key, "id", key)

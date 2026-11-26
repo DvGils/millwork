@@ -216,6 +216,13 @@ def example(s):
 `value` for a bar, and `values` for every series at that x. On a line or
 area chart the click lands on the nearest x.
 
+A chart with `on_click` takes the keyboard as well. Tab reaches the
+chart, the left and right arrow keys move its tooltip, and Enter or
+Space presses the point the tooltip is on. On a bar chart with several
+series that press has the `x` and the `values`, and no `series`. A chart
+the keyboard comes back to shows no tooltip, and Enter or an arrow key
+brings it back.
+
 ```python live
 from pydantic import BaseModel
 
@@ -285,7 +292,8 @@ ui.Grid(
 )
 ```
 
-`on_click` receives the slice, with its `x`, `value` and `share`.
+`on_click` receives the slice, with its `x`, `value` and `share`. From
+the keyboard, Enter or Space presses the slice the tooltip is on.
 
 ## Plotly and other libraries
 <!-- keywords: matplotlib, altair, echarts, d3, vega -->

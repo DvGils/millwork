@@ -1975,3 +1975,182 @@ async def test_what_is_hidden_deep_in_a_long_page_does_not_make_the_window_scrol
         )
         # Scrolled to its end, the body ends a little under its last child.
         assert 0 <= below < 80
+
+
+AT = "document.activeElement.dataset.part ?? document.activeElement.tagName"
+
+
+async def test_a_row_that_can_be_pressed_is_pressed_from_the_keyboard() -> None:
+    class Seen(BaseModel):
+        picked: list[int] = []
+        gone: list[int] = []
+
+    app = mw.App("rows", state=Seen, public=None)
+    clicked: list[int] = []
+    few = [{"id": n, "name": f"row {n}"} for n in range(1, 4)]
+    many = [{"id": n, "name": f"row {n}"} for n in range(1, 301)]
+
+    def pick(s: mw.Session[Seen], keys: list[int]) -> None:
+        s.state.picked = keys
+
+    def click(s: mw.Session[Seen], key: int) -> None:
+        clicked.append(key)
+
+    def dismiss(s: mw.Session[Seen], key: int) -> None:
+        s.state.gone.append(key)
+
+    @app.page("/")
+    def home(s: mw.Session[Seen]) -> ui.Component:
+        return ui.Page(
+            ui.Button("Before", key="before"),
+            ui.Table(
+                key="click",
+                rows=few,
+                on_row_click=click,
+                row_actions=[ui.MenuItem(id="edit", label="Edit")],
+                on_action=lambda s, _: None,
+            ),
+            ui.Table(
+                key="pick", rows=few, selection="row", selected=s.state.picked, on_select=pick
+            ),
+            ui.Table(key="plain", rows=few),
+            ui.Table(
+                key="inbox",
+                rows=[r for r in few if r["id"] not in s.state.gone],
+                on_row_click=dismiss,
+            ),
+            ui.Table(key="long", rows=many, height=300, on_row_click=click),
+        )
+
+    def rows_of(of: str, read: str) -> str:
+        rows = f"document.querySelectorAll(\"[data-node='root/{of}'] tbody tr\")"
+        return f"[...{rows}].map((r) => {read})"
+
+    def stops(of: str) -> str:
+        return rows_of(of, "r.getAttribute('tabindex')")
+
+    async with Page(app) as page:
+        await wide(page)
+        # One row of the table takes Tab, and rows nobody can press take none.
+        assert await page.read(stops("click")) == ["0", "-1", "-1"]
+        assert await page.read(stops("plain")) == [None, None, None]
+        await page.read("document.querySelector(\"[data-node='root/before']\").focus()")
+        await page.key("Tab", 9)
+        while await page.read("document.activeElement.tagName") == "BUTTON":
+            # The buttons that sort come before the rows.
+            await page.key("Tab", 9)
+        assert await page.read(AT) == "1"
+        await page.key("Enter", 13)
+        await page.key("ArrowDown", 40)
+        assert await page.read(AT) == "2"
+        # The row the keyboard is on shows it.
+        ring = "(() => { const s = getComputedStyle(document.activeElement);"
+        ring += " return [s.outlineStyle, s.outlineWidth, s.outlineOffset]; })()"
+        assert await page.read(ring) == ["solid", "3px", "-3px"]
+        await page.key(" ", 32)
+        await page.key("End", 35)
+        assert await page.read(AT) == "3"
+        await page.key("ArrowDown", 40)
+        assert await page.read(AT) == "3"
+        await page.key("Home", 36)
+        await page.key("ArrowUp", 38)
+        assert await page.read(AT) == "1"
+        await page.key("ArrowDown", 40)
+        # Tab goes on to what the row holds, and comes back to the row it left.
+        assert await page.read(stops("click")) == ["-1", "0", "-1"]
+        await page.key("Tab", 9)
+        assert await page.read("document.activeElement.tagName") == "BUTTON"
+        await page.key("Tab", 9, shift=True)
+        assert await page.read(AT) == "2"
+        # A key in the menu of a row is the menu's own.
+        await page.key("Tab", 9)
+        await page.key("Enter", 13)
+        await page.key("Escape", 27)
+        assert clicked == [1, 2]
+
+        # Space on a row of a table that lets one be picked picks it.
+        await page.read("document.querySelector(\"[data-node='root/pick'] tbody tr\").focus()")
+        await page.key("ArrowDown", 40)
+        await page.key(" ", 32)
+        assert await page.read(rows_of("pick", "r.dataset.state ?? ''")) == ["", "selected", ""]
+
+        # A row that goes when it is pressed leaves the keyboard on the row
+        # that took its place, and the last row leaves it on the one before.
+        await page.read("document.querySelector(\"[data-node='root/inbox'] tbody tr\").focus()")
+        await page.key("ArrowDown", 40)
+        await page.key("Enter", 13)
+        assert await page.read(rows_of("inbox", "r.dataset.part")) == ["1", "3"]
+        assert await page.read(AT) == "3"
+        await page.key("Enter", 13)
+        assert await page.read(AT) == "1"
+
+        # A long table draws some of its rows, and the keyboard reaches them all.
+        # A row it goes up to is not left under the header.
+        await page.read(
+            "document.querySelector(\"[data-node='root/long'] tbody tr[data-part]\").focus()"
+        )
+        await page.key("End", 35)
+        await page.rest()
+        assert await page.read(AT) == "300"
+        for _ in range(12):
+            await page.key("ArrowUp", 38)
+        assert await page.read(AT) == "288"
+        clear = """(() => {
+            const row = document.activeElement.getBoundingClientRect();
+            const head = document.querySelector("[data-node='root/long'] thead");
+            return row.top >= head.getBoundingClientRect().bottom - 1;
+        })()"""
+        assert await page.read(clear)
+        await page.key("Home", 36)
+        await page.rest()
+        assert await page.read(AT) == "1"
+        await page.key("Enter", 13)
+        assert clicked == [1, 2, 1]
+
+
+async def test_a_chart_that_can_be_pressed_is_pressed_from_the_keyboard() -> None:
+    app = mw.App("charts", public=None)
+    rows = [{"m": "Jan", "v": 3}, {"m": "Feb", "v": 5}]
+    clicks: list[dict[str, Any]] = []
+
+    def note(s: mw.Session, point: dict[str, Any]) -> None:
+        clicks.append(point)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.BarChart(rows, x="m", y="v", on_click=note, height=150, key="bar"),
+            ui.LineChart(rows, x="m", y="v", on_click=note, height=150, key="line"),
+            ui.PieChart(rows, x="m", y="v", on_click=note, height=150, key="pie"),
+            ui.BarChart(rows, x="m", y="v", height=150, key="still"),
+        )
+
+    async with Page(app) as page:
+        await wide(page)
+        for name in ("bar", "line", "pie", "still"):
+            chart = f"[data-node='root/{name}'] svg[role=application]"
+            await page.read(f'document.querySelector("{chart}").focus()')
+            await page.rest()
+            await page.key("Enter", 13)
+            await page.key("ArrowRight", 39)
+            await page.key(" ", 32)
+        # The bar of a chart with one series is the one pressed, as a pointer
+        # would press it. A line is pressed at its x.
+        assert [c["x"] for c in clicks] == ["Jan", "Feb"] * 3
+        assert clicks[0] == {"x": "Jan", "series": "v", "value": 3, "values": {"v": 3}}
+        assert clicks[2] == {"x": "Jan", "series": None, "value": None, "values": {"v": 3}}
+        assert clicks[5] == {"x": "Feb", "value": 5, "share": 0.625}
+        # A chart the keyboard comes back to shows no tooltip. Enter shows it
+        # again, as on a chart nobody can press, and the next one presses.
+        await page.read(
+            "document.querySelector(\"[data-node='root/bar'] svg[role=application]\").focus()"
+        )
+        await page.rest()
+        del clicks[:]
+        await page.key("Enter", 13)
+        assert clicks == []
+        await page.key("Enter", 13)
+        assert [c["x"] for c in clicks] == ["Feb"]
+        # The keyboard stops at a pie once.
+        stops = "document.querySelectorAll(\"[data-node='root/pie'] [tabindex='0']\").length"
+        assert await page.read(stops) == 1

@@ -79,6 +79,10 @@ receives the keys. `row_actions` adds a menu per row, and `on_action`
 receives `(action id, row key)`. `on_row_click` receives the key of the
 clicked row.
 
+A table whose rows can be pressed takes the keyboard as well. Tab stops
+at one of its rows, the arrow keys, Home and End move between the rows
+of the page, and Enter or Space presses the row.
+
 With `"rows"`, a press on a checkbox with shift held sets every row from
 the last checkbox used to that one to the same state, selected or
 cleared, in the order the table shows them.

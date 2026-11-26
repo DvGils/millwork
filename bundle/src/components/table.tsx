@@ -5,7 +5,7 @@
 import { partName, usePartMarks } from "../marks";
 import { asDate, dateFormat, dateTimeFormat, formatNumber } from "../format";
 import { t } from "../theme";
-import { type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent as KeyPress, type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
 import { type Sort, emptyFilter, equalsFilter, includesFilter, rangeFilter, sortRows } from "../table-rows";
 import { cn } from "cn";
@@ -205,13 +205,16 @@ interface RowProps {
   checkbox: boolean;
   actions: MenuItem[];
   clickable: boolean;
+  // Whether Tab stops at this row. One row of a table that can be pressed
+  // does, and the arrow keys go to the others from there.
+  stop: boolean;
   act: Act;
 }
 
 // One row, drawn again only when something it shows changed: the record is the
 // same object from one patch to the next unless the patch touched it, and
 // everything else here is a plain value or stable for the table's life.
-const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, columns, checkbox, actions, clickable, act }: RowProps) {
+const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, columns, checkbox, actions, clickable, stop, act }: RowProps) {
   // Whether shift was down for the press that is changing the checkbox. The
   // change itself does not say, and it comes during the click that does.
   const shift = useRef(false);
@@ -220,7 +223,8 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
       data-part={part}
       data-state={selected ? "selected" : undefined}
       data-press={clickable ? "" : undefined}
-      className={cn(tone && rowTone[tone], clickable && "cursor-pointer")}
+      tabIndex={clickable ? (stop ? 0 : -1) : undefined}
+      className={cn(tone && rowTone[tone], clickable && rowFocus)}
       onClick={(e) => {
         if (ownPress(e)) act("click", rowKey);
       }}
@@ -267,6 +271,11 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
     </TableRow>
   );
 });
+
+// How a row that can be pressed shows that the keyboard is on it: the ring of
+// a focused button, drawn inside the row, over whatever fill the row has. A
+// scroll that brings the row into view leaves room for the header over the rows.
+const rowFocus = "cursor-pointer scroll-mt-(--mw-head) focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ring/50";
 
 type Head = { id: string; header: ReactNode; sortable: boolean; filterable: boolean; size?: number | string; column?: Column };
 
@@ -417,6 +426,72 @@ export const Table: Renderer = ({ node, props, emit }) => {
   );
   useSteadyColumns(headRow, body, view.windowed, visible, drawn);
 
+  const clickable = selection === "row" || Boolean(props.on_row_click);
+  // The rows of a table that can be pressed are one stop for Tab: the row
+  // the keyboard was on last, or the first one drawn. The arrow keys, Home
+  // and End move between the rows of the page, and Enter or Space presses.
+  const [stop, setStop] = useState<string | null>(null);
+  const held = stop === null ? -1 : names.indexOf(stop);
+  const stopAt = held >= view.first && held < view.last ? held : view.first;
+  const spacer = view.before > 0 ? 1 : 0;
+  // Which row of the page an element is, when it is one of the rows.
+  const placeOf = (el: EventTarget | null): number => {
+    const rowsEl = body.current;
+    if (!clickable || !rowsEl || !(el instanceof HTMLElement) || el.parentElement !== rowsEl || el.dataset.part === undefined) return -1;
+    return view.first + Array.prototype.indexOf.call(rowsEl.children, el) - spacer;
+  };
+  const rowAt = (at: number) => body.current?.children[at - view.first + spacer] as HTMLElement | undefined;
+  // The row the keyboard is going to, while it is still to be drawn.
+  const aimed = useRef<string | null>(null);
+  // The row the keyboard is on, and its place on the page.
+  const on = useRef<{ name: string; at: number } | null>(null);
+  useLayoutEffect(() => {
+    // A row that goes while the keyboard is on it, as one that is pressed
+    // to be dismissed does, would take the keyboard off the page with it.
+    // The row that took its place gets it, or the last one.
+    const was = on.current;
+    if (was) {
+      const at = names.indexOf(was.name);
+      if (at >= view.first && at < view.last) was.at = at;
+      else if (at >= 0) on.current = null;
+      else {
+        on.current = null;
+        const lost = !document.activeElement || document.activeElement === document.body;
+        const to = Math.min(was.at, names.length - 1);
+        if (lost && to >= view.first && to < view.last) rowAt(to)?.focus();
+      }
+    }
+    if (aimed.current === null) return;
+    const at = names.indexOf(aimed.current);
+    if (at >= 0 && (at < view.first || at >= view.last)) return;
+    aimed.current = null;
+    if (at >= 0) rowAt(at)?.focus();
+  });
+  const rowKeys = (e: KeyPress) => {
+    const at = placeOf(e.target);
+    if (at < 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+    const to = e.key === "ArrowDown" ? at + 1 : e.key === "ArrowUp" ? at - 1 : e.key === "Home" ? 0 : e.key === "End" ? page.length - 1 : null;
+    if (to !== null) {
+      e.preventDefault();
+      if (to < 0 || to >= page.length || to === at) return;
+      setStop(names[to]);
+      if (to >= view.first && to < view.last) rowAt(to)?.focus();
+      else {
+        aimed.current = names[to];
+        view.bring(to);
+      }
+    } else if (e.key === "Enter" || e.key === " ") {
+      // Space would scroll the page, and a key held down is one press.
+      e.preventDefault();
+      if (!e.repeat) act("click", page[at].key);
+    }
+  };
+  // How tall the header that stays over the rows is, filters and all.
+  const [head, setHead] = useState(0);
+  useLayoutEffect(() => {
+    if (clickable) setHead(props.sticky_header !== false ? (headRow.current?.parentElement?.offsetHeight ?? 0) : 0);
+  });
+
   // A highlight on a row that asks to be brought into view: the table
   // turns to the row's page, and one that draws a window of its rows
   // scrolls to where the row is. The highlight itself does the rest once
@@ -483,7 +558,6 @@ export const Table: Renderer = ({ node, props, emit }) => {
   }
   if (actions.length) heads.push({ id: "__actions", sortable: false, filterable: false, header: "", size: 40 });
 
-  const clickable = selection === "row" || Boolean(props.on_row_click);
   const total = entries.length;
   const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown.length !== total ? t("rows_of", { shown: shown.length, n: total }) : total === 1 ? t("one_row") : t("rows", { n: total });
 
@@ -535,7 +609,28 @@ export const Table: Renderer = ({ node, props, emit }) => {
               </TableRow>
             ) : null}
           </TableHeader>
-          <TableBody ref={body}>
+          <TableBody
+            ref={body}
+            style={clickable && head ? ({ "--mw-head": `${head}px` } as CSSProperties) : undefined}
+            onKeyDown={clickable ? rowKeys : undefined}
+            onFocus={
+              clickable
+                ? (e) => {
+                    const at = placeOf(e.target);
+                    if (at < 0) return;
+                    setStop(names[at]);
+                    on.current = { name: names[at], at };
+                  }
+                : undefined
+            }
+            onBlur={
+              clickable
+                ? (e) => {
+                    if (placeOf(e.target) >= 0) on.current = null;
+                  }
+                : undefined
+            }
+          >
             {view.before > 0 ? (
               <tr aria-hidden="true">
                 <td colSpan={heads.length} className="p-0" style={{ height: view.before }} />
@@ -555,6 +650,7 @@ export const Table: Renderer = ({ node, props, emit }) => {
                   checkbox={selection === "rows"}
                   actions={actions}
                   clickable={clickable}
+                  stop={view.first + n === stopAt}
                   act={act}
                 />
               ))

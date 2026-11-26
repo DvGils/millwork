@@ -2,7 +2,7 @@
 // three kinds, so every chart reads the same way: values lead, the series name
 // follows, the mark's colour keys them.
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as KeyPress, type ReactElement } from "react";
 import { flushSync } from "react-dom";
 import {
   Area,
@@ -19,6 +19,7 @@ import {
   PieChart as RPieChart,
   Rectangle,
   Tooltip,
+  useActiveTooltipDataPoints,
   XAxis,
   YAxis,
 } from "recharts";
@@ -300,6 +301,35 @@ function PieTip({ active, payload, format, total }: { active?: boolean; payload?
   );
 }
 
+// A chart that can be pressed is pressed from the keyboard too. The arrow
+// keys move the tooltip over a chart that has the keyboard, and Enter or Space
+// presses the point the tooltip is on. `Pointed` goes inside the chart and
+// keeps that point where the keys can read it. A chart the keyboard comes
+// back to shows no tooltip, and there the keys stay the chart's own, whose
+// Enter shows the tooltip again.
+function usePointKeys<T>(press: ((point: T) => void) | null | undefined) {
+  const at = useRef<T | null>(null);
+  const keys = press
+    ? (e: KeyPress) => {
+        if ((e.key !== "Enter" && e.key !== " ") || !(e.target instanceof SVGSVGElement) || at.current === null) return;
+        // Space would scroll the page, and the chart would take Enter to
+        // hide its tooltip.
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.repeat) press(at.current);
+      }
+    : undefined;
+  return { at, keys };
+}
+
+function Pointed<T>({ at }: { at: { current: T | null } }) {
+  const points = useActiveTooltipDataPoints<T>();
+  useEffect(() => {
+    at.current = points?.[0] ?? null;
+  }, [at, points]);
+  return null;
+}
+
 // The one mark of a pie, by the name it reports under.
 const PIE = ["pie"];
 
@@ -325,6 +355,7 @@ function PieInner({ id, props, emit }: Omit<ChartProps, "kind">) {
         if (s) emit("click", { x: s.x ?? null, value: s.value, share: total > 0 ? s.value / total : null });
       }
     : undefined;
+  const point = usePointKeys<Slice>(click ? (s) => click({ payload: s }) : null);
   const share = (p: { percent?: number; x?: number; y?: number; textAnchor?: string }): ReactElement | null =>
     typeof p.percent === "number" && p.percent >= 0.04 && typeof p.x === "number" && typeof p.y === "number" ? (
       <text x={p.x} y={p.y} dy={4} textAnchor={p.textAnchor === "start" || p.textAnchor === "end" ? p.textAnchor : "middle"} className="fill-foreground text-[10px]">
@@ -332,14 +363,18 @@ function PieInner({ id, props, emit }: Omit<ChartProps, "kind">) {
       </text>
     ) : null;
   return (
-    <div className="flex w-full flex-col" data-press={click ? "" : undefined} onPointerDown={click ? press.down : undefined}>
+    <div className="flex w-full flex-col" data-press={click ? "" : undefined} onPointerDown={click ? press.down : undefined} onKeyDownCapture={point.keys}>
       <ChartContainer config={{}} className={cn("aspect-auto w-full", click && "cursor-pointer")} style={{ height: chartHeight(props) }} onSized={setShown}>
         <RPieChart key={draw} margin={{ top: 8, right: labels ? 24 : 8, bottom: 8, left: labels ? 24 : 8 }} accessibilityLayer>
           <Tooltip content={<PieTip format={format} total={total} />} isAnimationActive={false} />
+          {click ? <Pointed at={point.at} /> : null}
           <Pie
             data={rows}
             dataKey="value"
             nameKey="name"
+            // The chart itself is where the keyboard stops. The slices would
+            // be a second stop that takes no keys.
+            rootTabIndex={-1}
             innerRadius={donut ? "58%" : 0}
             outerRadius={labels ? "78%" : "92%"}
             paddingAngle={rows.length > 1 ? 1.5 : 0}
@@ -442,6 +477,10 @@ function AxisChart({ id, kind, props, emit }: ChartProps) {
           values: Object.fromEntries(series.map((s, j) => [s.key, row[slot(j)] ?? null])),
         })
     : null;
+  // From the keyboard a press means the x the tooltip is on. Where there is
+  // one series its bar is the one pressed, as a pointer would press it.
+  const point = usePointKeys<Row>(click ? (row) => click(row, kind === "bar" && series.length === 1 ? 0 : null) : null);
+  const pointed = click ? <Pointed at={point.at} /> : null;
   // A click anywhere on a line or area chart means the x under the pointer.
   const chartClick = click && kind !== "bar"
     ? (state: unknown) => {
@@ -612,6 +651,7 @@ function AxisChart({ id, kind, props, emit }: ChartProps) {
         {categoryAxis}
         {numberAxis}
         {tooltip}
+        {pointed}
         {bars}
       </RBarChart>
     );
@@ -622,6 +662,7 @@ function AxisChart({ id, kind, props, emit }: ChartProps) {
         {categoryAxis}
         {numberAxis}
         {tooltip}
+        {pointed}
         {series.map((s, i) => (
           <Line
             key={s.key}
@@ -646,6 +687,7 @@ function AxisChart({ id, kind, props, emit }: ChartProps) {
         {categoryAxis}
         {numberAxis}
         {tooltip}
+        {pointed}
         {series.map((s, i) => (
           <Area
             key={s.key}
@@ -668,7 +710,7 @@ function AxisChart({ id, kind, props, emit }: ChartProps) {
   }
 
   return (
-    <div className="flex w-full flex-col" data-press={click ? "" : undefined} onPointerDown={click && kind === "bar" ? press.down : undefined}>
+    <div className="flex w-full flex-col" data-press={click ? "" : undefined} onPointerDown={click && kind === "bar" ? press.down : undefined} onKeyDownCapture={point.keys}>
       <ChartContainer config={config} className="aspect-auto w-full" style={{ height: chartHeight(props) }} onSized={setShown}>
         {plot}
       </ChartContainer>

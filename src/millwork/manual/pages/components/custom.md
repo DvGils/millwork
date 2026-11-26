@@ -12,6 +12,10 @@ JSX. The file lives in the app's `components/` folder, gets compiled in
 the browser, and composes the same primitives the catalog is built
 from. Python reaches it by name with `ui.Custom`.
 
+Compiling takes a moment, so a custom component mounts a little after
+the rest of the page shows. One that listens on `window`, for keys say,
+hears nothing until then.
+
 ## The contract
 
 A component is a default export that receives `props` from Python, `emit`
