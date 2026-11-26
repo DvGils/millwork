@@ -442,8 +442,15 @@ class Page:
         await self.event(target, "move", {"key": found.id, "source": source.id, "to": to})
 
     async def action(self, node: Found | str, action: str, key: Any = None) -> None:
-        """A row action on a Table (``[action, key]``) or a card action (``action``)."""
-        await self.event(node, "action", [action, key] if key is not None else action)
+        """A row action on a Table (``action`` and the row's key), a card
+        action (``action``), or an action under an answer in a Chat
+        (``action`` and the message or its id)."""
+        found = node if isinstance(node, Found) else self.find(node)
+        if isinstance(found.component, Chat):
+            message = getattr(key, "id", key)
+            await self.event(found, "action", {"id": message, "action": action})
+            return
+        await self.event(found, "action", [action, key] if key is not None else action)
 
     def _store(self, node_id: str, path: Path | str, field: str | None = None) -> FileRef:
         """Store a file for a node under what the node allows, as an upload

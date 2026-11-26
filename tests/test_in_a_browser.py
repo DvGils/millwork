@@ -321,6 +321,104 @@ async def test_the_button_that_adds_a_row_says_so_in_the_themes_words() -> None:
         assert "/ranges/0/label" in await page.fields()
 
 
+class Shelf(BaseModel):
+    seen: int = 0
+
+
+async def test_the_query_of_an_address_is_the_pages_on_every_way_in() -> None:
+    app = mw.App("query", state=Shelf, public=None)
+
+    def more(s: mw.Session[Shelf], _: object) -> None:
+        s.state.seen += 1
+
+    @app.page("/")
+    def home(s: mw.Session[Shelf]) -> ui.Page:
+        return ui.Page(
+            ui.Text(f"view={s.query.get('view', 'all')};seen={s.state.seen}", key="says"),
+            ui.Link(label="Open", href="/?view=open"),
+            ui.Link(label="Done", href="/?view=done&tag=a%20b"),
+            ui.Link(label="All", href="/"),
+            ui.Button("More", on_click=more),
+        )
+
+    async with Page(app) as page:
+        origin = await page.read("location.origin")
+
+        async def says(want: str) -> str:
+            read = "document.querySelector(\"[data-node='root/says']\")?.textContent"
+            for _ in range(100):
+                if await page.read(read) == want:
+                    break
+                await asyncio.sleep(0.05)
+            return f"{await page.read(read)} at {await page.read('location.search')!r}"
+
+        async def follow(label: str) -> None:
+            links = "[...document.querySelectorAll('a')]"
+            await page.read(f"void {links}.find((a) => a.textContent === '{label}').click()")
+
+        # The address a person was sent, or typed, opens the page it names.
+        await page.tab.call("Page.navigate", url=origin + "/?view=open")
+        assert await says("view=open;seen=0") == "view=open;seen=0 at '?view=open'"
+        # A reload keeps the address, and with it the session and its state.
+        await page.press("More")
+        assert await says("view=open;seen=1") == "view=open;seen=1 at '?view=open'"
+        await page.tab.call("Page.reload")
+        assert await page.tab.value(DRAWN)
+        assert await says("view=open;seen=1") == "view=open;seen=1 at '?view=open'"
+        # A link to the same page with another query, and to it with none,
+        # each change the address, and the history goes back through them.
+        await follow("Done")
+        assert await says("view=done;seen=1") == "view=done;seen=1 at '?view=done&tag=a%20b'"
+        await follow("All")
+        assert await says("view=all;seen=1") == "view=all;seen=1 at ''"
+        await page.read("void history.back()")
+        assert await says("view=done;seen=1") == "view=done;seen=1 at '?view=done&tag=a%20b'"
+        await page.read("void history.back()")
+        assert await says("view=open;seen=1") == "view=open;seen=1 at '?view=open'"
+        await page.read("void history.forward()")
+        assert await says("view=done;seen=1") == "view=done;seen=1 at '?view=done&tag=a%20b'"
+        await page.read("void history.forward()")
+        assert await says("view=all;seen=1") == "view=all;seen=1 at ''"
+
+
+EDGES = """(() => {
+  const card = document.querySelector("[data-node='root/%s'] [data-slot=card]");
+  const box = card.getBoundingClientRect();
+  const row = card.querySelector("[data-slot=card-content] p").getBoundingClientRect();
+  const round = (n) => Math.round(n);
+  return [round(row.top - box.top), round(box.bottom - row.bottom), round(row.left - box.left)];
+})()"""
+
+
+async def test_a_card_without_padding_is_filled_to_its_edges() -> None:
+    app = mw.App("flush", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Page:
+        def row() -> ui.Text:
+            return ui.Text("Row", cls="block border-b px-4 py-3")
+
+        return ui.Page(
+            ui.Card(row(), padding=False, key="bare"),
+            ui.Card(row(), padding=False, title="Rows", key="titled"),
+            ui.Card(row(), padding=False, footer=ui.Text("Foot"), key="footed"),
+            ui.Card(row(), key="padded"),
+        )
+
+    async with Page(app) as page:
+        # Nothing between what the card holds and its edge on any side.
+        assert await page.read(EDGES % "bare") == [0, 0, 0]
+        # A title keeps the room above it, and what is under it still
+        # reaches the sides and the bottom.
+        top, bottom, left = await page.read(EDGES % "titled")
+        assert top > 40 and (bottom, left) == (0, 0)
+        # With a footer under it, it still starts at the top edge.
+        top, _, left = await page.read(EDGES % "footed")
+        assert (top, left) == (0, 0)
+        # A card with its padding has it all around.
+        assert await page.read(EDGES % "padded") == [16, 16, 16]
+
+
 LINES = """Object.fromEntries([...document.querySelectorAll("%s a")].map((a) => [
   a.textContent.trim(), getComputedStyle(a).textDecorationLine,
 ]))"""

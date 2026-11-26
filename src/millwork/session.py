@@ -27,6 +27,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
+from starlette.datastructures import QueryParams
+
 from millwork import context, marks, offers, outline, work
 from millwork.chat import ChatTurn, Thread, UIMessage
 from millwork.connection import REPLACED, Connection, End, Pipe
@@ -315,6 +317,16 @@ class Session[S]:
     # ------------------------------------------------------------- reading
 
     @property
+    def query(self) -> QueryParams:
+        """What follows the ``?`` of the path the tab is on, read like a dict.
+
+        ``s.query.get("view", "all")`` is one value, the last when the name
+        comes more than once, and ``s.query.getlist("tag")`` is every value
+        of a name. Each is text as the address spelled it, decoded, and it is
+        whatever the person typed there, to be checked like any input."""
+        return QueryParams(self.path.split("#", 1)[0].partition("?")[2])
+
+    @property
     def closed(self) -> bool:
         """Whether the session is over."""
         return self.over
@@ -385,7 +397,7 @@ class Session[S]:
         login page for a page that needs a sign-in, or its own public page."""
         if to is not None:
             return to
-        path = self.path.split("?", 1)[0].split("#", 1)[0]
+        path = self.path.split("#", 1)[0]
         return path if self.page.public else f"/_mw/login?{urlencode({'next': path})}"
 
     # ------------------------------------------------------------- ending
@@ -624,6 +636,7 @@ class Session[S]:
         the fragment. None, with the tab told, when the session's user may
         not go there at all."""
         path, _, fragment = want.path.partition("#")
+        path = marks.spelled(path)
         page, params = self.app.locate(path) or self.app.fallback("not_found", path)
         if self.app.auth is not None and not page.public and self.user is None:
             self.post(ServerError(message=self.text("sign_in_hint"), fatal=True))
@@ -1220,12 +1233,15 @@ class Session[S]:
         """The thread and the index of the message an action names, when it is
         one of this chat's with the expected role and the thread is free."""
         if component.key is None:
+            self._unheard(event, "has no key, so no thread")
             return None
         thread = self.chat(component.key)
         payload = event.payload if isinstance(event.payload, dict) else {}
         message_id = payload.get("id")
         index = thread.find(message_id) if isinstance(message_id, str) else None
         if index is None or thread.messages[index].role != role:
+            said = "message of the user's" if role == "user" else "answer"
+            self._unheard(event, f"has no {said} with the id {message_id!r}")
             return None
         return thread, index, payload
 
@@ -1238,6 +1254,7 @@ class Session[S]:
         thread, index, payload = target
         value = payload.get("value")
         if value not in ("up", "down", None):
+            self._unheard(event, f"takes 'up', 'down' or None as feedback, not {value!r}")
             return None
         comment = str(payload.get("comment") or "").strip()[:2000] or None
         message = thread.messages[index]
@@ -1260,17 +1277,22 @@ class Session[S]:
         thread, index, payload = target
         action = payload.get("action")
         if not any(a.id == action for a in component.actions):
+            self._unheard(event, f"has no action {action!r}")
             return None
         handler = self.tree.handler(event.node, "action") if self.tree else None
         if handler is not None:
             return self._plain(handler, thread.messages[index], action)
+        self._unheard(event, "has no handler for action")
         return None
 
     def _chat_regenerate(self, event: Event, component: Chat) -> None:
         """Answer a user message again: the assistant message named and everything
         after it go, and ``on_message`` runs for the user message before it."""
+        if not component.regenerate:
+            self._unheard(event, "does not answer again, with regenerate=False")
+            return
         target = self._chat_target(event, component, "assistant")
-        if target is None or not component.regenerate:
+        if target is None:
             return
         thread, index, _ = target
         if thread.busy:
@@ -1280,14 +1302,18 @@ class Session[S]:
             (i for i in range(index - 1, -1, -1) if thread.messages[i].role == "user"), None
         )
         if user is None:
+            self._unheard(event, "has no message before that answer to answer again")
             return
         thread.truncate(index)
         self._chat_run(event.node, thread, thread.messages[user])
 
     def _chat_edit(self, event: Event, component: Chat) -> None:
         """A user message with new text: what followed it goes, and it is answered again."""
+        if not component.edit:
+            self._unheard(event, "takes no edits, with edit=False")
+            return
         target = self._chat_target(event, component, "user")
-        if target is None or not component.edit:
+        if target is None:
             return
         thread, index, payload = target
         if thread.busy:
@@ -1300,6 +1326,7 @@ class Session[S]:
         message = thread.messages[index]
         files = [p for p in message.parts if p.get("type") == "file"]
         if not text and not files:
+            self._unheard(event, "takes no edit that leaves a message empty")
             return
         message.parts = ([{"type": "text", "text": text}] if text else []) + files
         thread.truncate(index + 1)

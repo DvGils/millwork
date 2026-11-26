@@ -154,3 +154,26 @@ PASCAL: tuple[str, ...] = (
     "XCircle",
     "Zap",
 )
+
+RENAMED: dict[str, str] = {
+    "BuildingComplex": "Building2",
+    "ChartColumn": "BarChart3",
+    "ChartLine": "LineChart",
+    "ChartPie": "PieChart",
+    "CircleAlert": "AlertCircle",
+    "CircleCheck": "CheckCircle2",
+    "CircleQuestionMark": "CircleHelp",
+    "CircleStop": "StopCircle",
+    "CircleX": "XCircle",
+    "Ellipsis": "MoreHorizontal",
+    "EllipsisVertical": "MoreVertical",
+    "FileBraces": "FileJson",
+    "Funnel": "Filter",
+    "House": "Home",
+    "LoaderCircle": "Loader2",
+    "LockOpen": "Unlock",
+    "RotateCcwClock": "History",
+    "Trash": "Trash2",
+    "TriangleAlert": "AlertTriangle",
+    "WandSparkles": "Wand2",
+}

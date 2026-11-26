@@ -84,6 +84,15 @@ def bare(path: str) -> str:
     return path.split("?")[0].split("#")[0]
 
 
+def spelled(path: str) -> str:
+    """A path with its query as a session keeps it. An empty query is no
+    query, so ``/orders?`` is ``/orders``. A backslash in a query is written
+    as its escape, which reads the same and lets the whole pass wherever a
+    path is checked for holding none."""
+    page, _, query = path.partition("?")
+    return f"{page}?{query.replace(chr(92), '%5C')}" if query else page
+
+
 def now(marks: list[Mark], find: Any) -> tuple[list[dict[str, Any]], list[str]]:
     """The marks of the page the session is on as the tab is given them,
     and the names among them that stand for nothing on the page.

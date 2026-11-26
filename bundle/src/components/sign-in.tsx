@@ -23,7 +23,7 @@ function loginBoot(): { next?: string } | undefined {
 
 function nextPath(): string {
   const login = loginBoot();
-  return login ? login.next || "/" : toApp(window.location.pathname);
+  return login ? login.next || "/" : toApp(window.location.pathname) + window.location.search;
 }
 
 // Said when a password is tried, so the login page takes down the reason an

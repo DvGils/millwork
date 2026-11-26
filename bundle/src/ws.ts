@@ -578,8 +578,9 @@ function command(name: string, args: Record<string, unknown>) {
       const browserPath = toBrowser(path);
       const target = pendingHash ? `${browserPath}#${pendingHash}` : browserPath;
       // Compared as app paths: the prefix with and without its slash is one page,
-      // so a popped history entry is never pushed over.
-      if (!samePath(toApp(window.location.pathname), path) || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
+      // so a popped history entry is never pushed over. The query is part
+      // of where the tab is.
+      if (!samePath(here(), path) || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
         keepScrollInHistory();
         window.history.pushState({ mw: true }, "", target);
       }
@@ -684,9 +685,14 @@ function command(name: string, args: Record<string, unknown>) {
   }
 }
 
+// Where the address bar is, as the app spells it: the path and its query.
+function here(): string {
+  return toApp(window.location.pathname) + window.location.search;
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
-    const path = toApp(window.location.pathname);
+    const path = here();
     if (!samePath(path, boot.path)) {
       poppedScroll = scrollFromHistory();
       navigate(path + window.location.hash);

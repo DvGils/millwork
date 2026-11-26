@@ -90,7 +90,8 @@ Each action is an event through the real dispatcher, followed by the real
 render. There is `click(node)`, `change(node, value)`, `submit(form,
 draft)` with a dict or a model instance, `select(table, keys)`,
 `choose(menu, item)` for an item of a `DropdownMenu` by its id or label,
-`action(node, id, key)` for a row or card action, `move(row, to,
+`action(node, id, key)` for a row or card action and for an action
+under an answer in a `Chat`, where the key is the message, `move(row, to,
 into=)` for a row of a `Sortable` dragged to a place in its list or in
 another, `upload(node, path,
 field=)`, which runs every check an upload gets and returns the `FileRef`,
@@ -177,6 +178,25 @@ the AI SDK's UI message stream format, where each
 `{"type": "text-delta", "delta": ...}` carries some of the reply's words.
 The finished reply is easier to check on the thread, as
 `page.session.chat(key).messages[-1].text`.
+
+What stands under a message is pressed by its event, with the message's
+id in the payload. An action of the app's own has `page.action` as well.
+
+```python
+async def test_what_is_under_a_message(app):
+    async with TestApp(app).open("/") as page:
+        await page.send("chat", "hi")
+        asked, answer = page.session.chat("chat").messages
+        await page.action("chat", "save", answer)
+        rated = {"id": answer.id, "value": "down", "comment": "Too short"}
+        await page.event("chat", "feedback", rated)
+        await page.event("chat", "regenerate", {"id": answer.id})
+        await page.event("chat", "edit", {"id": asked.id, "text": "hello"})
+```
+
+The `value` of feedback is `"up"`, `"down"` or `None` to take it back.
+An event that names no message of the chat, or an action the chat does
+not have, fails the test like any other the page does not take.
 
 ```python
 async def test_wiping_asks_first(app):

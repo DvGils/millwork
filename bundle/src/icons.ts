@@ -312,6 +312,32 @@ const byPascal: Record<string, LucideIcon> = {
   Zap,
 };
 
+// The name lucide gives an icon today, for each one the bundle carries under
+// an older name. Both names draw it.
+const renamed: Record<string, string> = {
+  BuildingComplex: "Building2",
+  ChartColumn: "BarChart3",
+  ChartLine: "LineChart",
+  ChartPie: "PieChart",
+  CircleAlert: "AlertCircle",
+  CircleCheck: "CheckCircle2",
+  CircleQuestionMark: "CircleHelp",
+  CircleStop: "StopCircle",
+  CircleX: "XCircle",
+  Ellipsis: "MoreHorizontal",
+  EllipsisVertical: "MoreVertical",
+  FileBraces: "FileJson",
+  Funnel: "Filter",
+  House: "Home",
+  LoaderCircle: "Loader2",
+  LockOpen: "Unlock",
+  RotateCcwClock: "History",
+  Trash: "Trash2",
+  TriangleAlert: "AlertTriangle",
+  WandSparkles: "Wand2",
+};
+for (const [now, was] of Object.entries(renamed)) byPascal[now] = byPascal[was];
+
 // Kebab-case names ("file-text", "chevron-down"), the way the catalogue's
 // `icon` prop and lucide's own docs spell them.
 const byKebab: Record<string, LucideIcon> = {};

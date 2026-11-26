@@ -217,9 +217,18 @@ const cardTone: Record<string, string> = {
   destructive: "ring-destructive/40",
 };
 
+// A card without padding has none of its own either, so what it holds
+// reaches its edges. Above a title the padding stays, which is the title's.
+const flush = (titled: boolean) => (titled ? "pb-0" : "py-0");
+
 export const Card: Renderer = ({ props, children, emit }) => (
   <UiCard
-    className={cn(props.tone ? cardTone[String(props.tone)] : undefined, props.on_click ? pressLook : undefined, props.cls as string)}
+    className={cn(
+      props.tone ? cardTone[String(props.tone)] : undefined,
+      props.on_click ? pressLook : undefined,
+      props.padding === false ? flush(Boolean(props.title || props.description)) : undefined,
+      props.cls as string,
+    )}
     {...(props.on_click ? pressable(() => emit("click")) : undefined)}
   >
     {props.title || props.description ? (

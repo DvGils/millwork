@@ -106,7 +106,9 @@ says what the icon means to someone who cannot see it. Without one it is
 decoration.
 
 `ui.Icon`, and every `icon` in the catalogue, takes one of two things. A
-name is one of lucide's that the bundle carries, the set in `mw.ICONS`. A
+name is one of lucide's that the bundle carries, the set in `mw.ICONS`.
+Lucide has since renamed some of them, and its current name works as
+well, so `circle-check` is the `check-circle-2` of the set. A
 path is a file of the app's own under `public/`, such as
 `/public/icons/rocket.svg`. A path whose file is not there draws nothing,
 and a [development warning](/state/warnings) says so when a page with

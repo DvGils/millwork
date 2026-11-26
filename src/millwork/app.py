@@ -39,6 +39,7 @@ from millwork import __version__, context
 from millwork.access import ALLOWED, REFUSED, Rule, Verdict, ask, rule_for
 from millwork.auth import Auth, _same_origin
 from millwork.files import Files
+from millwork.marks import spelled
 from millwork.nodes import Component
 from millwork.protocol import Command
 from millwork.proxy import ASGIApp, Proxied
@@ -202,9 +203,10 @@ class PageDef:
 
 def _address(scope: Any, decoded: str) -> str:
     """The app's path of a request as the client spelled it, percent signs
-    and all, which is also what the tab reads from its address bar. A server
-    hands the spelling over next to what it decoded it to. One that does not
-    gets the decoded path encoded again."""
+    and all, with its query, which is also what the tab reads from its
+    address bar. A server hands the spelling over next to what it decoded it
+    to. One that does not gets the decoded path encoded again."""
+    query = bytes(scope.get("query_string") or b"").decode("latin-1")
     raw = scope.get("raw_path")
     if isinstance(raw, bytes | bytearray):
         text = bytes(raw).decode("latin-1").split("?", 1)[0]
@@ -212,8 +214,8 @@ def _address(scope: Any, decoded: str) -> str:
         if root and (text == root or text.startswith(root + "/")):
             text = text[len(root) :] or "/"
         if text.startswith("/"):
-            return text
-    return quote(decoded)
+            return spelled(f"{text}?{query}")
+    return spelled(f"{quote(decoded)}?{query}")
 
 
 def _exactness(segment: str) -> int:
@@ -443,7 +445,8 @@ class App:
         the path that was asked for and the message connect raised with, if any."""
         # Shown to a person, so as they would read it and not as an address
         # spells it.
-        return self.error_pages[kind], {"path": unquote(path), "message": message or ""}
+        asked = path.split("?", 1)[0].split("#", 1)[0]
+        return self.error_pages[kind], {"path": unquote(asked), "message": message or ""}
 
     def _error_page_def(
         self,

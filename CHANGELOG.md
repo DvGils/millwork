@@ -3,6 +3,55 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.6
+
+### Bug fixes
+
+- The query of an address was lost on most ways into a page. A page
+  opened at `/tickets?view=open` by its address, by a reload or by the
+  forward button got `/tickets` as its `s.path`, and only a link inside
+  the session kept the query. A reload after such a link started a new
+  session, so the state went with it, and a link from there to the same
+  page without a query left the old one in the address bar. The
+  query is now part of where a tab is on every way in. It also comes
+  back after a sign-in, when the login page returns the visitor to the
+  page they asked for.
+- `ui.Card(padding=False)` kept sixteen pixels of its own above and below
+  what it holds, so a list, a table or a `ui.Chat` in it had an empty
+  band at the top and the bottom. The content now reaches all four
+  edges, and a title keeps the room above it. A card that wants the band
+  back says `cls="py-4"`.
+- In a test, `page.action` on a `ui.Chat` sent what a table's row action
+  sends, which the chat dropped without a word, so the test passed and
+  had checked nothing. `page.action(chat, id, message)` now presses the
+  action under that answer. A chat event that names no message of the
+  chat, an action the chat does not have, feedback that is not `"up"`,
+  `"down"` or `None`, and a regenerate or an edit that is switched off
+  now fail the test with a `LookupError`, as any other event the page
+  does not take.
+- The not-found page's `s.params["path"]` is the path without its query
+  on every way in. After a navigation inside the session it used to hold
+  the query as well.
+
+### Features
+
+- `s.query` is what follows the `?` of the address. `s.query.get("view",
+  "open")` gives one value and `s.query.getlist("tag")` every value of a
+  name that comes more than once.
+- An icon takes the name lucide gives it today as well as the older one
+  the bundle carries it under. `circle-check`, `triangle-alert`,
+  `chart-column`, `house` and sixteen more now work, in an `icon` prop
+  and in the import of a custom component. `mw.ICONS` still lists the 150
+  icons by the names they are carried under.
+
+### The manual
+
+- Path parameters has a section on the query.
+- Testing shows how a test presses what stands under a chat message, an
+  action of the app's own, feedback, regenerate and edit.
+- Layout says what `padding=False` does to a card.
+- Text and Custom components say that lucide's current names work.
+
 ## 0.6.5
 
 ### Bug fixes

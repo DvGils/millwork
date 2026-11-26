@@ -14,6 +14,25 @@ describe("icon", () => {
     expect(icon("trash2")).toBe(icon("trash-2"));
   });
 
+  it("takes the name lucide gives an icon today for one it carries under an older name", () => {
+    expect(icon("circle-check")).toBe(icon("check-circle-2"));
+    expect(icon("CircleCheck")).toBe(icon("check-circle-2"));
+    expect(icon("triangle-alert")).toBe(icon("alert-triangle"));
+    expect(icon("chart-column")).toBe(icon("bar-chart-3"));
+    expect(icon("house")).toBe(icon("home"));
+    expect(lucideForComponents.CircleCheck).toBe(icon("check-circle-2"));
+    expect(missingIcons('import { House, TriangleAlert } from "lucide-react";')).toEqual([]);
+  });
+
+  it("knows every carried icon by the name lucide gives it today", () => {
+    // lucide names a component after the icon as it is called now. A name
+    // that is not known here is a rename this table has yet to learn.
+    const carried = Object.entries(lucideForComponents).filter(([name]) => /^[A-Z]/.test(name));
+    expect(carried.length).toBeGreaterThan(150);
+    const unknown = carried.map(([, drawn]) => (drawn as { displayName: string }).displayName).filter((now) => !icon(now));
+    expect(unknown).toEqual([]);
+  });
+
   it("draws a file under public/ by its path, as the same component each time", () => {
     const rocket = icon("/public/icons/rocket.svg");
     expect(rocket).not.toBeNull();

@@ -151,6 +151,10 @@ press on a button, a field, a slider or any other control inside the card
 is that control's and does not click the card. Neither does a drag, to
 select text or to move a handle.
 
+`padding=False` takes the room around the content away, so a list, a
+table or a `ui.Chat` reaches the card's edges. A title keeps the room
+above it.
+
 ```python live
 ui.Grid(
     ui.Card(

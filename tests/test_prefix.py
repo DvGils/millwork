@@ -112,6 +112,69 @@ def test_the_session_speaks_app_paths_under_a_prefix(tmp_path: Path) -> None:
             assert session.path == "/other" and session.base == "/sales"
 
 
+def test_the_query_of_a_page_load_reaches_the_tab_and_the_page(tmp_path: Path) -> None:
+    app = make_app(tmp_path)
+    seen: list[Any] = []
+
+    @app.page("/list", title="List")
+    def listed(s: mw.Session) -> ui.Component:
+        seen.append((s.path, s.query.get("view", "all"), s.query.getlist("tag")))
+        return ui.Page(ui.Text("list", key="t"))
+
+    @app.not_found
+    def lost(s: mw.Session) -> ui.Component:
+        seen.append((s.path, s.params["path"]))
+        return ui.Page(ui.Text("lost", key="t"))
+
+    def opened(client: TestClient, ws_url: str, path: str) -> Any:
+        with client.websocket_connect(ws_url) as ws:
+            send(ws, {"type": "hello", "path": path})
+            assert recv(ws)["type"] == "session" and recv(ws)["type"] == "mount"
+        return seen[-1]
+
+    for root in ("", "/sales"):
+        with TestClient(app.asgi, root_path=root) as client:
+            # The tab is told the address as it was asked for, and says hello
+            # with it, so a reload and a link that was sent to someone open
+            # the page as it was.
+            asked = "/list?view=open&tag=a&tag=b%20c"
+            r = client.get(root + asked)
+            assert r.status_code == 200 and boot_of(r.text)["path"] == asked
+            assert opened(client, f"{root}/_mw/ws", asked) == (asked, "open", ["a", "b c"])
+            # Without a query there is none, and a name that is not there
+            # has no values. An empty query is none either.
+            for bare in ("/list", "/list?"):
+                assert boot_of(client.get(root + bare).text)["path"] == "/list"
+            assert opened(client, f"{root}/_mw/ws", "/list") == ("/list", "all", [])
+            # A page that is not there is not found by its path alone.
+            r = client.get(f"{root}/nope?x=1")
+            assert r.status_code == 404 and boot_of(r.text)["path"] == "/nope?x=1"
+            assert opened(client, f"{root}/_mw/ws", "/nope?x=1") == ("/nope?x=1", "/nope")
+
+
+async def test_a_query_is_kept_as_an_address_that_passes_for_a_path(tmp_path: Path) -> None:
+    from millwork.auth import _safe_next
+    from millwork.testing import TestApp
+
+    app = make_app(tmp_path)
+    async with TestApp(app).open("/") as page:
+        s = page.session
+        # A link built from no parameters ends in a question mark, and is
+        # the page without a query.
+        await page.navigate("/other?")
+        assert s.path == "/other" and dict(s.query) == {}
+        # A backslash is nothing a path may hold, where it reads as a
+        # slash. In a query it is a character like any other, so it is
+        # kept, spelled so that the way back to the page is still taken.
+        await page.navigate("/other?file=C:\\temp&n=1#top")
+        assert s.path == "/other?file=C:%5Ctemp&n=1"
+        assert s.query["file"] == "C:\\temp" and s.query["n"] == "1"
+        assert _safe_next(s.path) == s.path
+    with TestClient(app.asgi) as client:
+        boot = boot_of(client.get("/other?file=C:\\temp").text)
+        assert boot["path"] == "/other?file=C:%5Ctemp"
+
+
 def test_auth_redirects_and_callbacks_are_under_the_prefix(tmp_path: Path) -> None:
     def on_login(identity: auth.Identity) -> auth.User:
         return auth.User(id=identity.subject, name=identity.subject)
@@ -127,6 +190,11 @@ def test_auth_redirects_and_callbacks_are_under_the_prefix(tmp_path: Path) -> No
         r = client.get("/sales/other", follow_redirects=False)
         assert r.status_code == 302
         assert r.headers["location"] == "/sales/_mw/login?next=%2Fother"
+        # The query comes back with the page after the sign-in.
+        r = client.get("/sales/other?view=open&q=a%20b", follow_redirects=False)
+        assert r.headers["location"] == (
+            "/sales/_mw/login?next=%2Fother%3Fview%3Dopen%26q%3Da%2520b"
+        )
         login = client.get("/sales/_mw/login?next=/other")
         boot = boot_of(login.text)
         assert boot["base"] == "/sales" and boot["login"]["next"] == "/other"

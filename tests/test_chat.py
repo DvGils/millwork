@@ -249,19 +249,32 @@ async def test_message_actions_feedback_regenerate_edit(tmp_path: Path) -> None:
         assert shown["comment"] == "Too short"
         await page.event("main", "feedback", {"id": assistant.id, "value": None})
         assert "feedback" not in assistant.metadata
-        await page.event("main", "feedback", {"id": assistant.id, "value": "sideways"})
-        await page.event("main", "feedback", {"id": user.id, "value": "up"})
-        await page.event("main", "feedback", {"id": "nope", "value": "up"})
+        # What names nothing is a press that does nothing, and a test hears it.
+        with pytest.raises(LookupError, match="not 'sideways'"):
+            await page.event("main", "feedback", {"id": assistant.id, "value": "sideways"})
+        with pytest.raises(LookupError, match="has no answer with the id"):
+            await page.event("main", "feedback", {"id": user.id, "value": "up"})
+        with pytest.raises(LookupError, match="has no answer with the id 'nope'"):
+            await page.event("main", "feedback", {"id": "nope", "value": "up"})
         assert [s for s in seen if s[0] == "feedback"] == [
             ("feedback", assistant.id, "down", None),
             ("feedback", assistant.id, "down", "Too short"),
             ("feedback", assistant.id, None, None),
         ]
 
-        # An app action names the message; an unknown action id is ignored.
+        # An app action names the message, by itself or by its id. One the
+        # chat does not have is not taken, and neither is the shape a table's
+        # row action has.
         await page.event("main", "action", {"id": assistant.id, "action": "save"})
-        await page.event("main", "action", {"id": assistant.id, "action": "delete"})
-        assert [s for s in seen if s[0] == "action"] == [("action", assistant.id, "save")]
+        await page.action("main", "save", assistant)
+        await page.action("main", "save", assistant.id)
+        with pytest.raises(LookupError, match="has no action 'delete'"):
+            await page.action("main", "delete", assistant)
+        with pytest.raises(LookupError, match="has no answer with the id None"):
+            await page.event("main", "action", ["save", assistant.id])
+        with pytest.raises(LookupError, match="has no answer with the id None"):
+            await page.action("main", "save")
+        assert [s for s in seen if s[0] == "action"] == [("action", assistant.id, "save")] * 3
 
         # Regenerate answers the same user message again, command included.
         await page.event("main", "regenerate", {"id": assistant.id})
@@ -271,9 +284,13 @@ async def test_message_actions_feedback_regenerate_edit(tmp_path: Path) -> None:
         # Editing replaces the text, drops what followed, and answers again.
         await page.event("main", "edit", {"id": user.id, "text": "hello"})
         assert [m.text for m in chat.messages] == ["hello", "three:hello:shout"]
-        await page.event("main", "edit", {"id": user.id, "text": ""})
+        with pytest.raises(LookupError, match="leaves a message empty"):
+            await page.event("main", "edit", {"id": user.id, "text": ""})
         assert [m.text for m in chat.messages] == ["hello", "three:hello:shout"]
-        await page.event("main", "regenerate", {"id": user.id})
+        with pytest.raises(LookupError, match="has no answer with the id"):
+            await page.event("main", "regenerate", {"id": user.id})
+        with pytest.raises(LookupError, match="has no message of the user's with the id"):
+            await page.event("main", "edit", {"id": assistant.id, "text": "mine now"})
         assert len(chat.messages) == 2
 
 
@@ -296,8 +313,10 @@ async def test_message_actions_can_be_switched_off(tmp_path: Path) -> None:
         chat = page.session.chat("main")
         await page.event("main", "message", {"text": "hi", "files": [], "command": None})
         user, assistant = chat.messages
-        await page.event("main", "regenerate", {"id": assistant.id})
-        await page.event("main", "edit", {"id": user.id, "text": "changed"})
+        with pytest.raises(LookupError, match="regenerate=False"):
+            await page.event("main", "regenerate", {"id": assistant.id})
+        with pytest.raises(LookupError, match="edit=False"):
+            await page.event("main", "edit", {"id": user.id, "text": "changed"})
         assert [m.text for m in chat.messages] == ["hi", "ok"]
         props = page.find("main").props
         assert (props["regenerate"], props["edit"], props["copyable"]) == (False, False, False)
