@@ -1186,10 +1186,15 @@ async def test_what_a_handler_set_is_drawn_when_it_waits_on_a_task_started_befor
 
     async with TestApp(app).open("/") as page:
         pressed = asyncio.ensure_future(page.click("wait"))
-        for _ in range(50):
-            await asyncio.sleep(0.01)
-            if "count 1" in page.text():
+        # The handler sets the state and begins to wait in one step. The
+        # drawing that is due by then is made now, where a running app
+        # makes it after a moment: no clock is waited on, which a coarse
+        # one would let pass at once.
+        for _ in range(1000):
+            if page.state.count == 1:
                 break
+            await asyncio.sleep(0)
+        await flush(page.session)
         assert "count 1" in page.text()
         gate.set()
         await pressed
