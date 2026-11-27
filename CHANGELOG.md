@@ -15,6 +15,16 @@ versions; a release says so here when it does.
   up, is told the reply as far as it has come.
 - A reply was shown twice for as long as its handler went on after it,
   saving the thread say. It is shown once.
+- A `ui.Floating` that is `draggable` took the press on a menu item, on
+  an option of a select and on a button in a dialog that it declares,
+  so none of them did anything, and a drag inside such a dialog moved
+  the floating thing under it. What is drawn outside the floating thing
+  has its presses to itself, also at the edges of one that is
+  `resizable` and of the window of a `ui.Assistant`.
+- A floating thing was not moved by a drag that began inside a
+  selection of text, which the browser took for a drag of the text.
+  The button and the window of a `ui.Assistant` are dragged the same
+  way and have the same fix.
 
 ### Features
 
@@ -30,12 +40,17 @@ versions; a release says so here when it does.
   question open, `page.outline(as_text=True)` has it, and
   `page.answer("yes")` answers it. `reply.data` no longer takes the
   kind `ask`, which is this part's.
+- `ui.DragHandle` is the part a `ui.Floating` is dragged by. With one
+  inside, such as the row along its top, the floating thing is dragged
+  by that part alone, and the text in the rest of it can be selected.
+  Without one it is dragged by the whole of it, as before.
 
 ### The manual
 
 - Chat has a section on a question in a reply, with a check before a
   tool runs, a tool that lets the model ask, and a tool that runs in a
   thread. Testing says how a test answers one.
+- Layout shows a floating panel that is dragged by a handle.
 
 ## 0.6.7
 

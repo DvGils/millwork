@@ -531,7 +531,8 @@ class Floating(Component):
     lets the reader move it where they want it and ``resizable`` lets them
     pull its edges, down to a small floor, and the browser remembers both
     for this component. It never leaves the browser window and shrinks to
-    fit when the window does."""
+    fit when the window does. It is dragged by any part of it that is not
+    a control, or, with a ``DragHandle`` inside, by that part alone."""
 
     type: ClassVar[str] = "Floating"
     side: Literal["left", "right"] = "right"
@@ -549,6 +550,26 @@ class Floating(Component):
             side: Literal["left", "right"] = "right",
             draggable: bool = False,
             resizable: bool = False,
+        ) -> None: ...
+
+
+class DragHandle(Component):
+    """The part a ``Floating`` that is ``draggable`` is dragged by, such as
+    the row along its top. The rest of it then stays put under the pointer,
+    so its text can be selected. Controls in the handle keep their press.
+    A handle that is ``hidden`` is none, and the whole is dragged again.
+    Anywhere else it is a plain box around its children."""
+
+    type: ClassVar[str] = "DragHandle"
+
+    if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
+
+        def __init__(
+            self,
+            *children: Any,
+            key: str | None = None,
+            hidden: bool = False,
+            cls: str | None = None,
         ) -> None: ...
 
 
@@ -1988,6 +2009,7 @@ __all__ = [
     "Component",
     "Dialog",
     "Download",
+    "DragHandle",
     "FileCard",
     "FileRef",
     "FileUpload",

@@ -67,7 +67,7 @@ ui.Sidebar(
 ```
 
 ## Floating
-<!-- keywords: draggable window, popover, overlay -->
+<!-- keywords: draggable window, popover, overlay, drag handle, title bar, detached panel -->
 
 `ui.Floating` pins its children over the page in a bottom corner, where
 they stay while the page scrolls, for a status chip or a small panel that
@@ -96,6 +96,53 @@ def example(s):
             cls="self-start",
         ),
         ui.Floating(ui.Badge("3 tasks running", tone="primary"), side="left", draggable=True) if st.shown else None,
+        gap=3,
+    )
+```
+
+A floating thing that can be dragged is dragged by any part of it that
+is not a control. With a `ui.DragHandle` inside, such as the row along
+its top, it is dragged by that part alone. The rest then behaves as it
+would on the page, so its text can be selected. A button in the handle
+keeps its press.
+
+```python live
+from pydantic import BaseModel
+
+
+class Timer(BaseModel):
+    shown: bool = False
+
+
+def example(s):
+    st = s.state.timer
+
+    def toggle(s, _):
+        st.shown = not st.shown
+
+    panel = ui.Floating(
+        ui.Card(
+            ui.DragHandle(
+                ui.Row(
+                    ui.Text("Break timer", cls="font-medium"),
+                    ui.Button(icon="x", tooltip="Close", variant="ghost", size="sm", on_click=toggle),
+                    justify="between",
+                    align="center",
+                ),
+            ),
+            ui.Text("12 minutes left. This panel moves by its top row, and these words can be selected."),
+            cls="w-72",
+        ),
+        draggable=True,
+    )
+    return ui.Stack(
+        ui.Button(
+            "Close the panel" if st.shown else "Open a panel with a handle",
+            variant="outline",
+            on_click=toggle,
+            cls="self-start",
+        ),
+        panel if st.shown else None,
         gap=3,
     )
 ```

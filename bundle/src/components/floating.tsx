@@ -1,13 +1,15 @@
 // Things that float over the page: a button pinned in a corner, and a window
 // that is dragged by a handle and resized from its edges. Both remember where
 // the reader put them, per node, and both stay inside the browser window as
-// it changes size. `Floating` is the plain container; the Assistant's button
-// and window use the same hooks.
+// it changes size. `Floating` is the plain container, dragged as a whole or
+// by the `DragHandle` inside it; the Assistant's button and window use the
+// same hooks.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { cn } from "cn";
 import type { Renderer } from "../render";
 import { onControl } from "../press";
+import { useHiddenAbove } from "../veil";
 import {
   clampPosition,
   clampRect,
@@ -68,6 +70,14 @@ const isRect = (v: unknown): v is Rect =>
 
 type Drag = { from: Point; origin: Point; moved: boolean };
 
+// Whether the event happened inside the element that hears it. A dialog, a
+// menu or a list of options declared inside a floating thing is drawn
+// elsewhere on the page, and what happens there still reaches the floating
+// thing through React. A press there is not a press on it.
+function within(e: { target: EventTarget | null; currentTarget: EventTarget | null }): boolean {
+  return e.target instanceof Node && (e.currentTarget as Node).contains(e.target);
+}
+
 // A press is a drag once it has moved more than a few pixels; the click that
 // ends a drag is swallowed before it reaches anything. `reset` forgets a
 // gesture whose element went away under it.
@@ -75,7 +85,7 @@ function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, m
   const drag = useRef<Drag | null>(null);
   const dragged = useRef(false);
   const onPointerDown = (e: ReactPointerEvent<T>) => {
-    if (!enabled || e.button !== 0) return;
+    if (!enabled || e.button !== 0 || !within(e)) return;
     // A press on a control inside is that control's, not a drag: taking the
     // pointer here would take its click as well.
     if (onControl(e.target, e.currentTarget)) return;
@@ -108,18 +118,26 @@ function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, m
     e.preventDefault();
     e.stopPropagation();
   };
-  const onClick = () => onPress?.();
+  const onClick = (e: ReactMouseEvent<T>) => {
+    if (within(e)) onPress?.();
+  };
   const onLost = () => {
     const d = drag.current;
     drag.current = null;
     if (d?.moved) done();
+  };
+  // A press inside a selection, which may span this without holding any of
+  // its text, is to the browser the start of a drag of what is selected,
+  // and that takes the pointer away. The press is this drag's.
+  const onDragStart = (e: ReactDragEvent<T>) => {
+    if (drag.current) e.preventDefault();
   };
   const reset = useCallback(() => {
     drag.current = null;
     dragged.current = false;
   }, []);
   return {
-    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onLost, onLostPointerCapture: onLost, onClickCapture, onClick },
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onLost, onLostPointerCapture: onLost, onDragStart, onClickCapture, onClick },
     reset,
   };
 }
@@ -283,7 +301,7 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
   // never also starts a drag.
   const frameHandlers = {
     onPointerDownCapture: (e: ReactPointerEvent<T>) => {
-      if (!resizable || e.button !== 0) return;
+      if (!resizable || e.button !== 0 || !within(e)) return;
       const edges = edgesAt({ x: e.clientX, y: e.clientY }, current());
       if (!hasEdge(edges)) return;
       e.preventDefault();
@@ -300,7 +318,7 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
         return;
       }
       if (resizable) {
-        const next = cursorFor(edgesAt({ x: e.clientX, y: e.clientY }, current()));
+        const next = within(e) ? cursorFor(edgesAt({ x: e.clientX, y: e.clientY }, current())) : undefined;
         setCursor((c) => (c === next ? c : next));
       }
     },
@@ -361,6 +379,17 @@ function both<A extends Handlers, B extends Handlers>(a: A, b: B): A & B {
 // The least a plain floating thing can be resized to.
 const FLOATING_MIN: Size = { width: 48, height: 32 };
 
+// What a handle inside a floating thing needs to drag it: the handlers of
+// the drag, and a way to say it is there, which gives back the way to say
+// it is gone.
+interface Grip {
+  handlers: ReturnType<typeof useDrag<HTMLElement>>["handlers"];
+  claim: () => () => void;
+}
+const GripContext = createContext<Grip | null>(null);
+
+const GRAB = "cursor-grab touch-none select-none active:cursor-grabbing";
+
 export const Floating: Renderer = ({ node, props, children }) => {
   const draggable = props.draggable === true;
   const resizable = props.resizable === true;
@@ -374,19 +403,50 @@ export const Floating: Renderer = ({ node, props, children }) => {
     min: FLOATING_MIN,
     initial,
   });
+  // With a handle inside, it is dragged by the handle alone: the rest takes
+  // presses, selections and a finger that scrolls as anything else does.
+  const [handles, setHandles] = useState(0);
+  const claim = useCallback(() => {
+    setHandles((n) => n + 1);
+    return () => setHandles((n) => n - 1);
+  }, []);
+  const whole = draggable && handles === 0;
+  // A drag that was under way when a handle came or went has lost the
+  // element it was on, and is over.
+  const { reset } = win;
+  useEffect(() => reset, [handles, reset]);
+  const dragHandlers = win.dragHandlers;
+  const grip: Grip | null = draggable ? { handlers: dragHandlers, claim } : null;
   return (
     <div
       ref={win.ref}
       style={win.style}
-      {...(draggable ? both(win.frameHandlers, win.dragHandlers) : win.frameHandlers)}
+      {...(whole ? both(win.frameHandlers, dragHandlers) : win.frameHandlers)}
       className={cn(
         "fixed z-40 print:hidden",
-        draggable && "cursor-grab touch-none select-none active:cursor-grabbing",
+        whole && GRAB,
         resizable && "touch-none",
         !win.placed && (side === "left" ? "bottom-6 left-6" : "right-6 bottom-6"),
         props.cls as string,
       )}
     >
+      <GripContext.Provider value={grip}>{children}</GripContext.Provider>
+    </div>
+  );
+};
+
+// The part a floating thing is dragged by. Anywhere else, and in one that
+// cannot be dragged, it is a plain box around its children.
+export const DragHandle: Renderer = ({ props, children }) => {
+  const grip = useContext(GripContext);
+  // A handle that is not shown is none: the thing is then dragged by the
+  // whole of it, and not by a part nobody can reach.
+  const hidden = useHiddenAbove();
+  const claim = hidden ? undefined : grip?.claim;
+  // Before the first paint, so the whole of it is never shown as the handle.
+  useLayoutEffect(() => claim?.(), [claim]);
+  return (
+    <div {...(grip ? grip.handlers : {})} className={cn(grip && GRAB, props.cls as string)}>
       {children}
     </div>
   );

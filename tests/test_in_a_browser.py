@@ -2682,3 +2682,170 @@ async def test_in_a_horizontal_form_the_fields_start_on_one_line() -> None:
         assert tight["above"] and not tight["beside"] and tight["fits"]
         assert {tight["starts"][i] for i in (0, 1, 3, 4)} == {tight["left"]}
         assert tight["room"] > 250
+
+
+class Stopwatch(BaseModel):
+    pressed: list[str] = []
+    asking: bool = False
+    unit: str | None = None
+    bare: bool = False
+
+
+# Where a floating thing is in the window, by a class of its own.
+PLACE = """(() => {
+  const r = document.querySelector(%s).closest(".fixed").getBoundingClientRect();
+  return [Math.round(r.x), Math.round(r.y)];
+})()"""
+
+
+async def test_what_a_floating_thing_draws_elsewhere_keeps_its_presses() -> None:
+    """A menu, a list of options and a dialog are drawn outside what
+    declares them. A floating thing that can be dragged took the press on
+    one of them for the start of a drag, and its click with it."""
+    app = mw.App("stopwatch", public=None, state=Stopwatch)
+
+    def note(what: str) -> Any:
+        def noted(s: mw.Session[Stopwatch], value: Any = None) -> None:
+            s.state.pressed.append(what if value is None else f"{what} {value}")
+            s.state.asking = False
+
+        return noted
+
+    @app.page("/")
+    def home(s: mw.Session[Stopwatch]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.Text("; ".join(st.pressed), cls="pressed"),
+            ui.Floating(
+                ui.Card(
+                    ui.Text("Stopwatch", cls="its-name"),
+                    ui.DropdownMenu(
+                        trigger=ui.Button("More", variant="ghost"),
+                        items=[ui.MenuItem(id="lap", label="Lap")],
+                        on_select=note("menu"),
+                    ),
+                    ui.Select(
+                        options=["Seconds", "Minutes"],
+                        value=st.unit,
+                        placeholder="Unit",
+                        on_change=note("unit"),
+                    ),
+                    ui.Button("Reset", on_click=lambda s, _: setattr(s.state, "asking", True)),
+                    ui.Dialog(
+                        ui.Text("The laps go with it.", cls="its-warning"),
+                        open=st.asking,
+                        title="Reset the stopwatch?",
+                        footer=ui.Button("Yes, reset", on_click=note("reset")),
+                        on_close=lambda s, _: setattr(s.state, "asking", False),
+                    ),
+                    cls="w-72",
+                ),
+                draggable=True,
+                resizable=True,
+            ),
+        )
+
+    pressed = "document.querySelector('.pressed').textContent"
+    async with Page(app) as page:
+        await page.click("button", "More")
+        await page.click("[role=menuitem]", "Lap")
+        assert await page.read(pressed) == "menu lap"
+        await page.click("[role=combobox]")
+        await page.click("[role=option]", "Minutes")
+        assert await page.read(pressed) == "menu lap; unit Minutes"
+        await page.click("button", "Reset")
+        # A drag over the dialog's own words moves nothing under it.
+        before = await page.read(PLACE % json.dumps(".its-name"))
+        x, y = await page.middle(".its-warning")
+        await page.drag(".its-warning", (x + 60, y + 40))
+        assert await page.read(PLACE % json.dumps(".its-name")) == before
+        await page.click("button", "Yes, reset")
+        assert await page.read(pressed) == "menu lap; unit Minutes; reset"
+        # Nor does a press on what dims the page behind the dialog, where
+        # the edge of the floating thing lies under it, pull at that edge.
+        await page.click("button", "Reset")
+        box = """(() => { const r = document.querySelector(".its-name").closest(".fixed")
+          .getBoundingClientRect(); return [r.x, r.y + r.height / 2, Math.round(r.width)]; })()"""
+        x, y, width = await page.read(box)
+        mouse = {"button": "left", "clickCount": 1}
+        await page.tab.call("Input.dispatchMouseEvent", type="mousePressed", x=x + 2, y=y, **mouse)
+        await page.tab.call(
+            "Input.dispatchMouseEvent", type="mouseMoved", x=x - 60, y=y, buttons=1, **mouse
+        )
+        await page.let_go((x - 60, y))
+        assert (await page.read(box))[2] == width
+
+
+async def test_a_floating_thing_with_a_handle_is_dragged_by_the_handle_alone() -> None:
+    app = mw.App("stopwatch", public=None, state=Stopwatch)
+
+    def reset(s: mw.Session[Stopwatch], _: Any) -> None:
+        s.state.pressed.append("reset")
+
+    @app.page("/")
+    def home(s: mw.Session[Stopwatch]) -> ui.Component:
+        return ui.Page(
+            ui.Text(f"pressed {len(s.state.pressed)}", cls="count"),
+            ui.Button("Hide the handle", on_click=lambda s, _: setattr(s.state, "bare", True)),
+            ui.Floating(
+                ui.Card(
+                    ui.DragHandle(
+                        ui.Row(
+                            ui.Text("Stopwatch", cls="handle-words"),
+                            ui.Button("Reset", variant="ghost", on_click=reset),
+                            justify="between",
+                        ),
+                        hidden=s.state.bare,
+                        cls="handle",
+                    ),
+                    ui.Text("Four laps, the fastest in 58 seconds.", cls="body-words"),
+                    cls="w-72",
+                ),
+                draggable=True,
+            ),
+            ui.Floating(
+                ui.Card(ui.Text("No handle here.", cls="whole-words"), cls="w-48"),
+                side="left",
+                draggable=True,
+            ),
+        )
+
+    def place(of: str) -> str:
+        return PLACE % json.dumps(of)
+
+    look = "(() => { const s = getComputedStyle(document.querySelector(%s));"
+    look += " return [s.cursor, s.userSelect]; })()"
+    async with Page(app) as page:
+        start = await page.read(place(".handle"))
+        # By its body it stays where it is, and the words there are text
+        # like any other.
+        x, y = await page.middle(".body-words")
+        await page.drag(".body-words", (x - 120, y - 90))
+        assert await page.read(place(".handle")) == start
+        assert await page.read(look % json.dumps(".body-words")) == ["auto", "auto"]
+        assert (await page.read(look % json.dumps(".handle")))[0] == "grab"
+        # By its handle it goes along, also now that the drag before has
+        # left text selected around the handle, where a press is to the
+        # browser the start of a drag of that text.
+        assert await page.read("String(window.getSelection())") != ""
+        x, y = await page.middle(".handle-words")
+        await page.drag(".handle-words", (x - 120, y - 90))
+        moved = await page.read(place(".handle"))
+        assert [moved[0] - start[0], moved[1] - start[1]] == [-120, -90]
+        # A button in the handle is pressed, and is not a place to drag by.
+        await page.click("button", "Reset")
+        assert "pressed 1" in await page.read("document.querySelector('.count').textContent")
+        assert await page.read(place(".handle")) == moved
+        # One without a handle is dragged by the whole of it.
+        start = await page.read(place(".whole-words"))
+        x, y = await page.middle(".whole-words")
+        await page.drag(".whole-words", (x + 80, y - 60))
+        moved = await page.read(place(".whole-words"))
+        assert [moved[0] - start[0], moved[1] - start[1]] == [80, -60]
+        # And so is one whose handle is hidden, which nobody could reach.
+        await page.click("button", "Hide the handle")
+        start = await page.read(place(".body-words"))
+        x, y = await page.middle(".body-words")
+        await page.drag(".body-words", (x + 50, y - 40))
+        moved = await page.read(place(".body-words"))
+        assert [moved[0] - start[0], moved[1] - start[1]] == [50, -40]

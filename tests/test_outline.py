@@ -49,6 +49,7 @@ SAID: dict[str, list[str]] = {
     "DatePicker": ["max", "min", "placeholder", "value"],
     "Dialog": ["description", "title"],
     "Download": ["filename", "label"],
+    "DragHandle": [],
     "DropdownMenu": ["items.label"],
     "Empty": ["description", "title"],
     "Field": ["error", "help", "label"],
@@ -736,6 +737,7 @@ def test_a_kind_that_says_nothing_is_passed_over_when_it_only_places_or_is_read(
     assert passed == {
         # Places others.
         *("Page", "Stack", "Row", "Grid", "Split", "ScrollArea", "ButtonGroup", "Floating"),
+        "DragHandle",
         *("Field", "Card", "Accordion", "Sortable"),
         # Read.
         *("Text", "Markdown", "Code", "Kbd", "Badge", "Separator", "Icon", "Image", "Spinner"),

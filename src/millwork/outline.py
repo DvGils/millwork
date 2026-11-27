@@ -639,6 +639,7 @@ SAYS: dict[str, Says] = {
     "ScrollArea": Says(places=True),
     "ButtonGroup": Says(places=True),
     "Floating": Says(places=True),
+    "DragHandle": Says(places=True),
     "Field": Says(
         label=("label",),
         help=("help",),
