@@ -9,9 +9,10 @@ import { Render } from "../render";
 import { cn } from "cn";
 import { icon } from "../icons";
 import { safeUrl } from "../lib";
-import { fileType, onStream, runsNothing } from "../ws";
+import { fileType, runsNothing } from "../ws";
+import { rest, sent, useLiveReply } from "../replies";
 import { upload, useFileUrl } from "./files";
-import { applyChunk, seenRunning, type Part, type Transient, type UIMessage } from "../stream";
+import { seenRunning, type Part, type UIMessage } from "../stream";
 import { Markdown } from "./markdown";
 import { CopyButton } from "./copy";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CustomComponent } from "../custom";
+import { Question, type Asked } from "./question";
 import { Slot } from "../render";
 import { ChatContext, type ChatApi, type ChatFile } from "../chat-context";
 
@@ -107,49 +109,28 @@ export const Chat: Renderer = ({ node, props, emit }) => {
   const finished = (Array.isArray(props.messages) ? (props.messages as UIMessage[]) : []);
   const busy = Boolean(props.busy);
   const inline = (props.inline ?? {}) as Record<string, { $node: string }>;
-  const [inflight, setInflight] = useState<UIMessage | null>(null);
-  const [transient, setTransient] = useState<Transient>({});
-  // The reply has come to its end, though its handler may go on for a
-  // while: the answer is there and nothing more is on its way.
-  const [ended, setEnded] = useState(false);
-  // Chunks are applied synchronously against refs, then published: a state
-  // updater would run later and lose the transient parts.
-  const inflightRef = useRef<UIMessage | null>(null);
-  const transientRef = useRef<Transient>({});
-
-  useEffect(
-    () =>
-      onStream(node.id, (chunk) => {
-        const extra: Transient = { ...transientRef.current };
-        const applied = applyChunk(inflightRef.current, chunk as { type: string }, extra);
-        // On finish the message stays on screen until the server's props carry
-        // it (the busy flag dropping is what removes the stream copy).
-        const kind = (chunk as { type: string }).type;
-        if (kind === "start" || kind === "finish") setEnded(kind === "finish");
-        const next = kind === "finish" ? inflightRef.current : applied;
-        inflightRef.current = next;
-        transientRef.current = extra;
-        setInflight(next);
-        setTransient(extra);
-      }),
-    [node.id],
-  );
+  // The reply on its way is the stream's, kept outside this component: a
+  // chat that is drawn again has it as far as it had come.
+  const live = useLiveReply(node.id);
+  // Once the props carry the reply, its copy from the stream is over,
+  // also while the handler goes on after it and the chat is still busy,
+  // and also for a tab that missed the end of the stream.
+  const carried = live.message !== null && finished.some((m) => m.id === live.message?.id);
+  const inflight = carried ? null : live.message;
+  const transient = live.transient;
+  const ended = live.ended || carried;
 
   // When the server says the turn is over, its props carry the final message: drop the stream copy.
   useEffect(() => {
-    if (!busy) {
-      setEnded(false);
-      inflightRef.current = null;
-      transientRef.current = { ...transientRef.current, status: undefined };
-      setInflight(null);
-      setTransient(transientRef.current);
-    }
-  }, [busy, finished.length]);
+    if (!busy) rest(node.id);
+  }, [busy, finished.length, node.id]);
 
   const messages = useMemo(() => (inflight && busy ? [...finished, inflight] : finished), [finished, inflight, busy]);
   // A reply is under way and nothing on the page says so. The handler's
   // own status always shows.
-  const waiting = busy && !ended && (Boolean(transient.status) || !seenRunning(inflight?.parts ?? [], String(props.show_steps ?? "collapsed") !== "hidden"));
+  // Nor while the reply waits for the person: its question says so.
+  const asks = (inflight?.parts ?? []).some((p) => p.type === "data-ask" && Boolean((p.data as Asked | undefined)?.open));
+  const waiting = busy && !ended && !asks && (Boolean(transient.status) || !seenRunning(inflight?.parts ?? [], String(props.show_steps ?? "collapsed") !== "hidden"));
   const suggestions = (transient.suggestions ?? (props.live_suggestions as string[] | undefined) ?? []).length
     ? (transient.suggestions ?? (props.live_suggestions as string[]))
     : messages.length === 0
@@ -159,8 +140,7 @@ export const Chat: Renderer = ({ node, props, emit }) => {
   const sendMessage = (text: string, files: FileRefWire[], command: string | null) => {
     if (!props.on_message || busy) return;
     emit("message", { text, files, command });
-    transientRef.current = {};
-    setTransient({});
+    sent(node.id);
   };
 
   const tools: Tools = {
@@ -295,7 +275,7 @@ function ChatMessage({ message, inline, showSteps, streaming, tools, last, aids 
             onCancel={() => setEditing(false)}
           />
         ) : (
-          body.map((p, i) => <PartView key={i} part={p} user={user} inline={inline} />)
+          body.map((p, i) => <PartView key={i} part={p} user={user} inline={inline} live={streaming} emit={tools.emit} />)
         )}
         {/* The command a message was sent under, which is all there is to see
             of a message that was a command and nothing else. */}
@@ -437,8 +417,12 @@ function EditBox({ text, onSave, onCancel }: { text: string; onSave: (text: stri
   );
 }
 
-function PartView({ part, user, inline }: { part: Part; user: boolean; inline: Record<string, { $node: string }> }) {
+function PartView({ part, user, inline, live, emit }: { part: Part; user: boolean; inline: Record<string, { $node: string }>; live: boolean; emit: (name: string, payload?: unknown) => void }) {
   switch (part.type) {
+    case "data-ask":
+      // Keyed by whether it is open, so what was pressed is forgotten when
+      // the question comes back as it ended.
+      return <Question key={String(Boolean((part.data as Asked | undefined)?.open))} data={(part.data ?? {}) as Asked} live={live} onAnswer={(value) => emit("answer", { id: part.id, value })} />;
     case "text":
       return user ? (
         <Bubble align="end" variant="default">

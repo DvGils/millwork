@@ -14,6 +14,8 @@ import { markdownLoaded, needsMarkdown, preloadMarkdown } from "./components/mar
 import { keepScrollInHistory, restoreScroll, scrollFromHistory, watchScroll } from "./scroll";
 import { focusNode } from "./pointing";
 import { marks, parseMarks } from "./marks";
+import { feed, forgetReplies } from "./replies";
+import type { Chunk } from "./stream";
 
 interface Boot {
   path: string;
@@ -40,7 +42,6 @@ type Envelope<T> = { seq: number; msg: T };
 export type Status = "connecting" | "open" | "reconnecting" | "closed";
 
 const listeners = new Set<(s: Status) => void>();
-const streamListeners = new Map<string, Set<(chunk: Record<string, unknown>) => void>>();
 
 let socket: WebSocket | null = null;
 let status: Status = "connecting";
@@ -98,18 +99,6 @@ export function onStatus(l: (s: Status) => void): () => void {
   l(status);
   return () => {
     listeners.delete(l);
-  };
-}
-
-export function onStream(node: string, l: (chunk: Record<string, unknown>) => void): () => void {
-  let set = streamListeners.get(node);
-  if (!set) {
-    set = new Set();
-    streamListeners.set(node, set);
-  }
-  set.add(l);
-  return () => {
-    set!.delete(l);
   };
 }
 
@@ -466,6 +455,7 @@ function apply(m: ServerMessage) {
         lastSeq = 0;
         queue.length = 0;
         if (sessionId !== null) forgetFiles();
+        forgetReplies();
         // The marks were the other session's.
         marks.set([]);
       }
@@ -508,11 +498,9 @@ function apply(m: ServerMessage) {
     case "patch":
       store.patch(m.ops);
       break;
-    case "stream": {
-      const set = streamListeners.get(m.node);
-      if (set) for (const l of set) l(m.chunk);
+    case "stream":
+      feed(m.node, m.chunk as Chunk);
       break;
-    }
     case "command":
       command(m.name, m.args);
       break;

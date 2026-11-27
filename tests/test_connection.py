@@ -74,6 +74,9 @@ class FakeSession:
             return None
         return pack(self.outbox.seq, Command(name=f"mount of {self.drawn}"))
 
+    def replies(self) -> list[str]:
+        return []
+
     def event(self, msg: Any) -> None:
         self.steps.append(("event", msg.node, msg.name))
 

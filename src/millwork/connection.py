@@ -69,6 +69,7 @@ class Listener(Protocol):
 
     def hello(self) -> str: ...
     def mounted(self) -> str | None: ...
+    def replies(self) -> list[str]: ...
     def event(self, msg: Event) -> None: ...
     def answer(self, msg: Answer) -> None: ...
     def navigate(self, path: str) -> None: ...
@@ -349,8 +350,13 @@ class Connection:
                 # no page to show, a page being opened, it waits for one.
                 mount = session.mounted()
                 if mount is not None:
+                    # Taken with the page, before anything is waited for:
+                    # the two are of the same moment.
+                    live = session.replies()
                     self.cursor = outbox.seq
                     await socket.send_text(mount)
+                    for text in live:
+                        await socket.send_text(text)
                     self._caught_up()
                     continue
                 self.cursor = -1

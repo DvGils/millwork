@@ -415,19 +415,43 @@ def _shown_messages(props: dict[str, Any], limits: _Limits) -> list[Any]:
     return messages[-limits.rows :] if limits.rows else []
 
 
+def _question(data: dict[str, Any], waits: bool) -> str:
+    """A question a reply asked: what was answered, or what can be while
+    the reply ``waits`` for it. One in a message that is over is not open,
+    whatever was kept of it."""
+    labels = {
+        o.get("value"): o.get("label") or o.get("value")
+        for o in _list(data.get("options"))
+        if isinstance(o, dict)
+    }
+    asked = str(data.get("question") or "")
+    if waits and data.get("open"):
+        return f"{asked} (asks: {' / '.join(str(label) for label in labels.values())})"
+    answer = data.get("answer")
+    if answer is None:
+        return f"{asked} (not answered)"
+    return f"{asked} (answered: {labels.get(answer, answer)})"
+
+
 def _chat(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
     messages = _list(props.get("messages"))
     said = []
     for message in _shown_messages(props, limits):
-        text = " ".join(
-            str(p.get("text"))
-            for p in _list(_dict(message).get("parts"))
-            if isinstance(p, dict) and p.get("type") == "text" and p.get("text")
-        )
-        said.append([limits.cut(_dict(message).get("role") or ""), limits.cut(text)])
+        words = []
+        for p in _list(_dict(message).get("parts")):
+            if not isinstance(p, dict):
+                continue
+            if p.get("type") == "text" and p.get("text"):
+                words.append(str(p.get("text")))
+            elif p.get("type") == "data-ask":
+                words.append(_question(_dict(p.get("data")), False))
+        said.append([limits.cut(_dict(message).get("role") or ""), limits.cut(" ".join(words))])
     out: dict[str, Any] = {"message_count": len(messages)}
     if said:
         out["messages"] = said
+    asking = [_question(a, True) for a in _list(props.get("asking")) if isinstance(a, dict)]
+    if asking:
+        out["asking"] = [limits.cut(a) for a in asking]
     suggestions = [s for s in _list(props.get("suggestions")) if isinstance(s, str)]
     if suggestions and not messages:
         out.update(limits.some("items", suggestions))
@@ -1193,6 +1217,8 @@ def _lines(entry: dict[str, Any], depth: int, keys: dict[str, int]) -> Iterator[
                 yield pad + "..."
             for who, said in entry["messages"]:
                 yield f"{pad}{_word(who)}: {_quoted(said)}"
+        for asked in entry.get("asking", []):
+            yield f"{pad}waits for an answer: {_quoted(asked)}"
         if entry.get("fields"):
             # The form's name as its own line has it.
             key = entry.get("key")

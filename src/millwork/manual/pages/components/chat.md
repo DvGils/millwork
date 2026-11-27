@@ -193,6 +193,94 @@ An assistant that is asked about the page reads it with
 points at a component with `s.highlight`, which
 [Feedback](/components/feedback) shows.
 
+## A question in a reply
+<!-- keywords: ask, approve, approval, confirm, permission, human in the loop, choice, buttons -->
+
+`await reply.ask(question, description, options=...)` puts a question in
+the reply and waits for the person. The options are buttons, and the
+call returns the value of the one that was pressed. `options` takes what
+a `Select` takes, or a mapping of each value to its label. `primary`
+names the option that stands out. Once answered, the question shows what
+was chosen and its buttons are gone.
+
+```python live
+import asyncio
+
+
+async def tidy(s, turn):
+    async with turn.reply() as reply:
+        async with reply.step("Looking through Archive"):
+            await asyncio.sleep(0.4)
+        await reply.text("Archive holds 14 files that nothing links to.")
+        chosen = await reply.ask(
+            "Delete the 14 files?",
+            "They were added after the last backup.",
+            options={"no": "Keep them", "yes": "Delete"},
+            primary="yes",
+        )
+        if chosen == "yes":
+            async with reply.step("Deleting"):
+                await asyncio.sleep(0.4)
+            await reply.text("Deleted 14 files.")
+        else:
+            await reply.text("They are still there.")
+
+
+ui.Card(
+    ui.Chat(
+        key="tidy",
+        welcome="Ask for the archive to be tidied up.",
+        suggestions=["Tidy up the archive"],
+        on_message=tidy,
+        cls="h-[26rem]",
+    ),
+    padding=False,
+)
+```
+
+The composer stays closed while the question waits, and Stop is the way
+out. Stop cancels the turn as it does anywhere in a reply, so the line
+after `reply.ask` does not run, and the question ends as "Not answered".
+With `timeout=` the call returns `None` after that many seconds. The
+time a reply waited for the person is left out of how long it and its
+steps took.
+
+The question is a part of the message, of the type `data-ask`, with its
+options and its answer. A thread that is saved and loaded again shows it
+as it ended. A tab that is reloaded while the question waits gets it
+again and can still answer.
+
+Millwork does not need to know where a question comes from. Two places
+are common. One is your own check before a tool does something that is
+hard to undo. The other is a tool you give the model so that it can ask
+the person itself. In both the answer goes back to the model as the
+result of the tool.
+
+```python
+async def run_tool(reply, call):
+    if call.name == "delete_files":
+        chosen = await reply.ask(
+            f"Delete {len(call.input['paths'])} files?",
+            options={"no": "Keep them", "yes": "Delete"},
+            primary="yes",
+        )
+        if chosen != "yes":
+            return "The person said no. Leave the files as they are."
+    if call.name == "ask_person":
+        return await reply.ask(call.input["question"], options=call.input["options"])
+    return await TOOLS[call.name](**call.input)
+```
+
+A library that runs your tools in a thread asks through the event loop,
+with `asyncio.run_coroutine_threadsafe(reply.ask(...), loop).result()`
+and the `loop` taken in the handler. When the reply is stopped that call
+raises `concurrent.futures.CancelledError` in the thread. That one is an
+`Exception`, unlike the `asyncio.CancelledError` a handler gets, so a
+library that catches every exception of a tool takes it for a failed
+tool and goes on. Catch it in the tool and end the run there. A library
+that ends its run to ask, and is started again with the answer, is
+looped inside the one turn.
+
 ## Parts a reply can carry
 <!-- keywords: tool calls, reasoning, sources, citations -->
 
@@ -207,6 +295,7 @@ points at a component with `s.highlight`, which
 | `await reply.status(text)` | a marker that disappears when the reply ends |
 | `await reply.component(component)` | any catalog component inside the message |
 | `await reply.suggestions([...])` | follow-up chips |
+| `await reply.ask(question, options=...)` | a question with a button for each option, and what was chosen once it is answered |
 | `await reply.error(text)` | an error line |
 
 A handler that raises inside `turn.reply()` ends the reply as failed.

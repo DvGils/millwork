@@ -47,6 +47,7 @@ from millwork.protocol import (
     Request,
     ServerError,
     SessionInfo,
+    Stream,
     pack,
 )
 from millwork.scope import Scope, Timer
@@ -499,6 +500,17 @@ class Session[S]:
             # A reload is how a person tries a page that failed again. And
             # what changed while no tab was there has not been drawn.
             self.refresh()
+
+    def replies(self) -> list[str]:
+        """Every reply that is on its way, as far as it has come, for a tab
+        that was given the page as it stands: the page holds the finished
+        messages, and a reply that is being written is the stream's."""
+        return [
+            pack(0, Stream(node=thread.reply._node, chunk=chunk))
+            for thread in self._threads.values()
+            if thread.reply is not None
+            for chunk in thread.reply.said()
+        ]
 
     def in_zone(self, zone: ZoneInfo | None) -> None:
         """The tab said which time zone it is in. A tab that comes back from
@@ -1295,6 +1307,10 @@ class Session[S]:
     def _chat_done(self, thread: Thread) -> None:
         """A reply is over, however it ended: the chat is free again."""
         thread.turn_task = None
+        thread.reply = None
+        for asked in thread.asked.values():
+            asked.future.cancel()
+        thread.asked.clear()
         if thread.inflight is not None:
             thread.append(thread.inflight)
             thread.inflight = None
@@ -1306,6 +1322,20 @@ class Session[S]:
             thread.turn_task.cancel()
         handler = self.tree.handler(event.node, "stop") if self.tree else None
         return self._plain(handler, None) if handler is not None else None
+
+    def _chat_answer(self, event: Event, component: Chat) -> None:
+        """The person's answer to a question in the reply: one of the
+        values the question offers, while it is open."""
+        thread = self.chat(component.key) if component.key else None
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        ask_id, value = payload.get("id"), payload.get("value")
+        asked = thread.asked.get(ask_id) if thread and isinstance(ask_id, str) else None
+        if asked is None or asked.future.done():
+            self._unheard(event, f"has no open question with the id {ask_id!r}")
+        elif not isinstance(value, str) or value not in asked.values:
+            self._unheard(event, f"asks a question that does not offer {value!r}")
+        else:
+            asked.future.set_result(value)
 
     def _chat_target(
         self, event: Event, component: Chat, role: str
@@ -2176,6 +2206,7 @@ class Session[S]:
                 "action": self._chat_action,
                 "regenerate": self._chat_regenerate,
                 "edit": self._chat_edit,
+                "answer": self._chat_answer,
             }
             starts_a_reply = event.name in ("message", "regenerate", "edit")
             if starts_a_reply and self.tree.handler(event.node, "message") is None:
@@ -2509,10 +2540,11 @@ def _askable(component: Component) -> Component:
 def _despite_disabled(component: Component, event: Event) -> bool:
     """What a disabled component still takes. A disabled chat starts no
     reply: it takes no message, no edit and no second try. A reply can
-    still be stopped and rated, and a message's actions still run. A
-    disabled form takes no submit and can still be left."""
+    still be stopped and rated, a question it asks can be answered, and a
+    message's actions still run. A disabled form takes no submit and can
+    still be left."""
     if isinstance(component, Chat):
-        return event.name in ("stop", "feedback", "action")
+        return event.name in ("stop", "feedback", "action", "answer")
     return isinstance(component, Form) and event.name == "cancel"
 
 

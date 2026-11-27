@@ -720,6 +720,144 @@ async def test_copied_is_said_only_of_what_was_copied() -> None:
         assert "Copied" in await page.read(said)
 
 
+async def say(page: Page, within: str, text: str) -> None:
+    """Type ``text`` into the composer of the chat in ``within`` and send it."""
+    focused = await page.read(
+        f"(() => {{ const t = document.querySelector({json.dumps(within + ' textarea')});"
+        " if (!t) return false; t.focus(); return true; })()"
+    )
+    assert focused, f"no composer in {within}"
+    await page.tab.call("Input.insertText", text=text)
+    for kind in ("keyDown", "keyUp"):
+        await page.tab.call(
+            "Input.dispatchKeyEvent",
+            type=kind,
+            key="Enter",
+            code="Enter",
+            windowsVirtualKeyCode=13,
+            text="\r" if kind == "keyDown" else "",
+        )
+    # A spinner turns from here on, so the page does not come to rest.
+    await page.rest(800)
+
+
+async def shows(page: Page, words: str, within: str = "body") -> bool:
+    """Whether the page comes to say ``words``, given a few seconds."""
+    read = f"document.querySelector({json.dumps(within)})?.textContent ?? ''"
+    for _ in range(100):
+        if words in await page.read(read):
+            return True
+        await asyncio.sleep(0.05)
+    return False
+
+
+async def test_a_reply_on_its_way_is_there_after_a_reload_and_after_another_page() -> None:
+    import threading
+
+    more = threading.Event()
+    app = mw.App("midway", public=None)
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as reply:
+            await reply.text("The first half.")
+            async with reply.step("Looking it up"):
+                await asyncio.to_thread(more.wait, 20)
+            await reply.text("The second half.")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Chat(key="c", on_message=answer, show_steps="full", cls="h-[20rem]"),
+            ui.Link(label="Elsewhere", href="/b"),
+        )
+
+    @app.page("/b")
+    def other(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Link(label="Back", href="/"))
+
+    async def follow(page: Page, label: str) -> None:
+        links = "[...document.querySelectorAll('a')]"
+        await page.read(f"void {links}.find((a) => a.textContent === '{label}').click()")
+
+    try:
+        async with Page(app) as page:
+            await say(page, "main", "A question")
+            assert await shows(page, "The first half.")
+            # A tab that is loaded again has nothing of what was streamed
+            # to it before, and is told the reply as far as it has come.
+            await page.tab.call("Page.reload")
+            assert await page.tab.value(DRAWN)
+            assert await shows(page, "The first half."), "gone after a reload"
+            assert await shows(page, "Looking it up")
+            # A chat that left the page and came back has it as well.
+            await follow(page, "Elsewhere")
+            assert await shows(page, "Back")
+            await follow(page, "Back")
+            assert await shows(page, "The first half."), "gone after another page"
+            more.set()
+            assert await shows(page, "The second half.")
+            await page.rest()
+            said = await page.read("document.querySelector('main').textContent")
+            assert said.count("The first half.") == 1
+    finally:
+        more.set()
+
+
+async def test_a_question_in_a_reply_is_answered_with_a_button_and_says_what_was_chosen() -> None:
+    app = mw.App("asks", public=None)
+    got: list[str | None] = []
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as reply:
+            await reply.text("Archive holds 14 files.")
+            chosen = await reply.ask(
+                "Delete the 14 files?",
+                "Nothing links to them.",
+                options={"no": "Keep them", "yes": "Delete"},
+                primary="yes",
+            )
+            got.append(chosen)
+            await reply.text("Deleted." if chosen == "yes" else "Kept.")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Chat(key="c", on_message=answer, cls="h-[30rem]"))
+
+    questions = (
+        "[...document.querySelectorAll('[data-slot=question]')].map((q) => ["
+        "q.hasAttribute('data-open'), q.textContent,"
+        " [...q.querySelectorAll('button')].map((b) => b.textContent)])"
+    )
+    statuses = "[...document.querySelectorAll('[role=status]')].map((e) => e.textContent)"
+    async with Page(app) as page:
+        await say(page, "main", "Clean up")
+        assert await shows(page, "Delete the 14 files?")
+        asked = "Delete the 14 files?Nothing links to them.Keep themDelete"
+        assert await page.read(questions) == [[True, asked, ["Keep them", "Delete"]]]
+        # The question is what says that the reply waits, and Stop is there.
+        assert await page.read(statuses) == []
+        assert "Stop" in await page.read("document.querySelector('main').textContent")
+        # A tab that is loaded again has the question, and can answer it.
+        await page.tab.call("Page.reload")
+        assert await page.tab.value(DRAWN)
+        assert await shows(page, "Delete the 14 files?"), "gone after a reload"
+        assert await page.read(questions) == [[True, asked, ["Keep them", "Delete"]]]
+        await page.press("Delete")
+        assert await shows(page, "Deleted.")
+        await page.rest()
+        assert got == ["yes"]
+        # Answered, it says what was chosen and has no button left.
+        assert await page.read(questions) == [[False, "Delete the 14 files?Delete", []]]
+        # A reply that is stopped leaves its question as one nobody answered.
+        await say(page, "main", "Again")
+        assert await shows(page, "Nothing links to them.")
+        await page.press("Stop")
+        assert await shows(page, "Not answered")
+        await page.rest()
+        assert got == ["yes"]
+        assert (await page.read(questions))[1] == [False, "Delete the 14 files?Not answered", []]
+
+
 async def test_a_reply_on_its_way_is_said_in_the_chat_and_on_the_assistants_button() -> None:
     import asyncio
     import threading
@@ -748,25 +886,6 @@ async def test_a_reply_on_its_way_is_said_in_the_chat_and_on_the_assistants_butt
             ui.Assistant(ui.Chat(key="helper", on_message=answers("helper")), key="a"),
         )
 
-    async def say(page: Page, within: str, text: str) -> None:
-        focused = await page.read(
-            f"(() => {{ const t = document.querySelector({json.dumps(within + ' textarea')});"
-            " if (!t) return false; t.focus(); return true; })()"
-        )
-        assert focused, f"no composer in {within}"
-        await page.tab.call("Input.insertText", text=text)
-        for kind in ("keyDown", "keyUp"):
-            await page.tab.call(
-                "Input.dispatchKeyEvent",
-                type=kind,
-                key="Enter",
-                code="Enter",
-                windowsVirtualKeyCode=13,
-                text="\r" if kind == "keyDown" else "",
-            )
-        # A spinner turns from here on, so the page does not come to rest.
-        await page.rest(800)
-
     waiting = (
         "[...document.querySelectorAll('[role=status]')].map((e) => e.ariaLabel || e.textContent)"
     )
@@ -787,7 +906,8 @@ async def test_a_reply_on_its_way_is_said_in_the_chat_and_on_the_assistants_butt
         await page.rest()
         # The answer is there and its handler is not done: Stop still
         # shows, and nothing says that more is on its way.
-        assert "Answer from the page." in await page.read("document.body.textContent")
+        said = await page.read("document.body.textContent")
+        assert said.count("Answer from the page.") == 1
         assert await page.read(
             "[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Stop')"
         )

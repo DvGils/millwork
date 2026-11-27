@@ -183,6 +183,9 @@ text under it is a `ui.Text` in the dialog, so `page.text()` has both.
 A row action or a menu item with `confirm` asks the same way. So
 `page.action` and `page.choose` return with the question on the page,
 and the handler runs once `page.answer(True)` has answered it.
+A reply that calls `reply.ask` waits the same way. `page.send` returns
+with the question open, `page.outline(as_text=True)` has it with its
+options, and `page.answer("yes")` presses the option with that value.
 A task started by a handler has run by the time
 the action returns, and `page.session.tasks[-1]` has its `ok`, `result`
 and `progress`. A chat turn's chunks are in `page.stream`, in order, in
