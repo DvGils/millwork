@@ -328,7 +328,9 @@ export const Form: Renderer = ({ node, props, emit }) => {
       }}
     >
       <FieldGroup className={cn(gridCols > 0 && "mw-grid grid gap-4")} style={gridCols > 0 ? (gridColumns({ sm: 1, md: gridCols }) as CSSProperties) : undefined}>
-        <Fields fields={schema.fields} base="" schemaBase="" ctx={ctx} />
+        <Beside on={orientation === "horizontal"}>
+          <Fields fields={schema.fields} base="" schemaBase="" ctx={ctx} />
+        </Beside>
       </FieldGroup>
       {issueFor("").length ? <FieldError errors={issueFor("")} /> : null}
       {props.submit || props.cancel ? (
@@ -367,6 +369,16 @@ interface Ctx {
 // The columns of the form, for fields that are not its direct children. The
 // counts are variables of the form's own grid, handed down.
 const inColumns = "mw-grid grid gap-4";
+// The fields of a form with its labels beside them: the labels share one
+// column, and what belongs to a field stands under it in the other.
+const beside = "mw-beside grid gap-x-4";
+
+// The rows of such a form, inside the group they fill. The group is what
+// says how much room there is, and with too little of it the label goes
+// above its field.
+function Beside({ on, children }: { on: boolean; children: ReactNode }) {
+  return on ? <div className={cn(beside, "gap-y-5")}>{children}</div> : <>{children}</>;
+}
 
 // Renders a list of fields whose schema pointers start at `schemaBase`, into the
 // draft at `base`. Grouped fields become fieldsets in order of first appearance.
@@ -391,9 +403,11 @@ function Fields({ fields, base, schemaBase, ctx }: { fields: FieldSpec[]; base: 
           <FieldSet key={g.name}>
             <FieldLegend>{g.name}</FieldLegend>
             <FieldGroup>
-              {g.fields.map((f) => (
-                <OneField key={f.pointer} f={f} base={base} schemaBase={schemaBase} ctx={inGroup} />
-              ))}
+              <Beside on={ctx.orientation === "horizontal"}>
+                {g.fields.map((f) => (
+                  <OneField key={f.pointer} f={f} base={base} schemaBase={schemaBase} ctx={inGroup} />
+                ))}
+              </Beside>
             </FieldGroup>
           </FieldSet>
         ) : (
@@ -423,8 +437,10 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
         </FieldLegend>
         {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
         <FieldGroup>
-          {/* A model in a model is one cell of a form in columns, as a group is. */}
-          <Fields fields={f.fields ?? []} base={pointer} schemaBase={f.pointer} ctx={ctx.columns ? { ...ctx, columns: false } : ctx} />
+          <Beside on={ctx.orientation === "horizontal"}>
+            {/* A model in a model is one cell of a form in columns, as a group is. */}
+            <Fields fields={f.fields ?? []} base={pointer} schemaBase={f.pointer} ctx={ctx.columns ? { ...ctx, columns: false } : ctx} />
+          </Beside>
         </FieldGroup>
         {invalid ? <FieldError errors={errors} /> : null}
       </FieldSet>
@@ -449,7 +465,7 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
             const itemPointer = `${pointer}/${i}`;
             return (
               <div key={i} className="flex items-start gap-2 rounded-lg border p-3">
-                <div className={cn("min-w-0 grow", ctx.columns ? inColumns : "flex flex-col gap-3")}>
+                <div className={cn("min-w-0 grow", ctx.columns ? inColumns : ctx.orientation === "horizontal" ? cn(beside, "gap-y-3") : "flex flex-col gap-3")}>
                   <ItemField item={f.item!} pointer={itemPointer} schemaPointer={f.pointer} ctx={ctx} />
                 </div>
                 {!ctx.disabled ? (
@@ -480,7 +496,9 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
           {f.tooltip ? <InfoTip text={f.tooltip} /> : null}
         </FieldLegend>
         <FieldGroup className={ctx.columns ? inColumns : undefined}>
-          <ItemField item={f} pointer={pointer} schemaPointer={f.pointer} ctx={ctx} />
+          <Beside on={ctx.orientation === "horizontal"}>
+            <ItemField item={f} pointer={pointer} schemaPointer={f.pointer} ctx={ctx} />
+          </Beside>
         </FieldGroup>
         {invalid ? <FieldError errors={errors} /> : null}
       </FieldSet>
@@ -490,28 +508,38 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
   const control = <Control f={f} id={id} value={value} set={set} ctx={ctx} invalid={invalid} pointer={pointer} />;
   const inline = f.widget === "switch" || f.widget === "checkbox";
 
+  const switched = (
+    <>
+      {control}
+      <div className="flex flex-col gap-0.5">
+        <Marked text={f.tooltip}>
+          <FieldLabel htmlFor={id}>
+            <Tipped text={f.tooltip}>{f.label}</Tipped>
+          </FieldLabel>
+        </Marked>
+        {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
+      </div>
+    </>
+  );
+  const besideLabels = ctx.orientation === "horizontal";
+
   return (
     <Field
       data-field={pointer}
       orientation={inline ? "horizontal" : ctx.orientation}
       data-invalid={invalid || undefined}
-      className={counts(f) && ctx.orientation === "horizontal" ? "pb-5" : undefined}
+      // Beside its label a field is a row of the form's two columns, the
+      // label's text level with the first line of what the field holds.
+      className={besideLabels ? "grid grid-cols-subgrid items-baseline gap-x-4 gap-y-1.5" : undefined}
     >
       {inline ? (
-        <>
-          {control}
-          <div className="flex flex-col gap-0.5">
-            <Marked text={f.tooltip}>
-              <FieldLabel htmlFor={id}>
-                <Tipped text={f.tooltip}>{f.label}</Tipped>
-              </FieldLabel>
-            </Marked>
-            {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
-          </div>
-        </>
+        // A switch and a checkbox have their label after them, so in a
+        // form with its labels beside its fields both stand in the
+        // column of the fields.
+        besideLabels ? <div className="flex items-center gap-2">{switched}</div> : switched
       ) : (
         <>
-          <Marked text={f.tooltip} className="group-data-[orientation=horizontal]/field:flex-auto">
+          <Marked text={f.tooltip}>
             <FieldLabel htmlFor={id}>
               <Tipped text={f.tooltip}>{f.label}</Tipped>
               {f.required ? <span className="text-destructive"> *</span> : null}
@@ -632,7 +660,7 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
     case "files":
       return <FileControl f={f} id={id} value={value} set={set} ctx={ctx} pointer={pointer} multiple={f.widget === "files"} />;
     case "textarea":
-      return counted(f, id, str, ctx, <Textarea {...common} {...described(f, id)} value={str} rows={typeof f.rows === "number" ? f.rows : undefined} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
+      return counted(f, id, str, <Textarea {...common} {...described(f, id)} value={str} rows={typeof f.rows === "number" ? f.rows : undefined} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
     case "password":
       return <PasswordInput {...common} value={str} placeholder={f.placeholder ?? undefined} onChange={(e) => set(e.target.value || null)} />;
     case "number":
@@ -799,7 +827,7 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
     case "datetime":
       return <Input {...common} type="datetime-local" value={str.slice(0, 16)} onChange={(e) => set(e.target.value || null)} />;
     default:
-      return counted(f, id, str, ctx, <Input {...common} {...described(f, id)} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
+      return counted(f, id, str, <Input {...common} {...described(f, id)} value={str} maxLength={f.max_length} placeholder={f.placeholder ?? undefined} readOnly={ctx.readOnly} onChange={(e) => set(e.target.value || (f.clearable ? null : ""))} />);
   }
 }
 
@@ -809,12 +837,10 @@ function counts(f: FieldSpec): boolean {
 }
 
 // A text field that was asked to show its count, with the count under it.
-// Next to its label the count hangs below the row, in room the row keeps
-// for it, so the label stays level with the field.
-function counted(f: FieldSpec, id: string, text: string, ctx: Ctx, field: ReactElement) {
+function counted(f: FieldSpec, id: string, text: string, field: ReactElement) {
   if (!counts(f)) return field;
   return (
-    <div className={cn("flex w-full min-w-0 flex-col", ctx.orientation === "horizontal" && "-mb-5")}>
+    <div className="flex w-full min-w-0 flex-col">
       {field}
       <Count id={`${id}-count`} length={text.length} max={limitOf(f.max_length)} />
     </div>

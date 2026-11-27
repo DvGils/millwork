@@ -2489,3 +2489,76 @@ async def test_the_back_button_passes_a_page_that_sends_the_session_on() -> None
         assert await page.tab.value(DRAWN)
         await page.rest()
         assert await page.read(where) == ["/", "Home"]
+
+
+async def test_in_a_horizontal_form_the_fields_start_on_one_line() -> None:
+    app = mw.App("beside", public=None)
+
+    class Address(BaseModel):
+        street: str = Field("", title="Street and number")
+        city: str = Field("", title="City")
+
+    class Booking(BaseModel):
+        name: str = Field("", title="Name", min_length=1)
+        arrival: str = Field("", title="Day of arrival", description="Ready from three.")
+        breakfast: bool = Field(True, title="Breakfast")
+        note: str = Field("", title="Anything else that we should know before you come")
+        code: str = Field("", title="Thereisnoplacetobreakthislabelanywhereatall")
+        address: Address = Field(default_factory=Address, title="Address")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        def form(key: str) -> ui.Form:
+            return ui.Form(Booking, layout="horizontal", on_submit=lambda s, doc: None, key=key)
+
+        return ui.Page(
+            ui.Stack(form("roomy"), cls="max-w-xl"),
+            ui.Stack(form("tight"), cls="w-80"),
+        )
+
+    measured = """(() => {
+      const node = document.querySelector("[data-node$='/%s']");
+      const form = node.matches("form") ? node : node.querySelector("form");
+      const box = (e) => e.getBoundingClientRect();
+      const field = (p) => form.querySelector(`[data-field="${p}"]`);
+      const control = (p) => box(field(p).querySelector("input, [role=switch]"));
+      const label = (p) => box(field(p).querySelector("label"));
+      const round = (n) => Math.round(n);
+      const help = field("/arrival").querySelector("[data-slot=field-description]");
+      const said = field("/name").querySelector("[data-slot=field-error]");
+      return {
+        starts: ["/name", "/arrival", "/breakfast", "/note", "/code"].map(
+          (p) => round(control(p).left)),
+        section: ["/address/street", "/address/city"].map((p) => round(control(p).left)),
+        left: round(box(form).left),
+        beside: ["/name", "/note", "/code"].every((p) => label(p).right <= control(p).left),
+        above: ["/name", "/note", "/code"].every((p) => label(p).bottom <= control(p).top),
+        wrapped: [label("/note").height > 30, label("/code").height > 30],
+        room: round(control("/name").width),
+        help: [round(box(help).left), box(help).top >= control("/arrival").bottom],
+        issue: said ? [round(box(said).left), box(said).top >= control("/name").bottom] : null,
+        fits: form.scrollWidth <= form.clientWidth,
+      };
+    })()"""
+    async with Page(app) as page:
+        await wide(page)
+        await page.press("Save", 0)
+        await page.press("Save", 1)
+        seen = await page.read(measured % "roomy")
+        # The labels are one column and the fields start where it ends, a
+        # switch among them. A label too long for the column wraps, also
+        # one that is a single long word, and leaves the fields their room.
+        assert len(set(seen["starts"])) == 1 and seen["starts"][0] > seen["left"] + 100
+        assert seen["beside"] and seen["wrapped"] == [True, True]
+        assert seen["room"] > 250 and seen["fits"]
+        # A field's help and what is wrong with it stand under it.
+        assert seen["help"] == [seen["starts"][0], True]
+        assert seen["issue"] == [seen["starts"][0], True]
+        # A model in a model has a column of its own for its labels.
+        assert len(set(seen["section"])) == 1
+        # With little room, in a narrow part of a wide window as on a
+        # phone, the label is above its field.
+        tight = await page.read(measured % "tight")
+        assert tight["above"] and not tight["beside"] and tight["fits"]
+        assert {tight["starts"][i] for i in (0, 1, 3, 4)} == {tight["left"]}
+        assert tight["room"] > 250

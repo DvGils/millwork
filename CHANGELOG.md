@@ -15,6 +15,14 @@ versions; a release says so here when it does.
   out of the box and took its cross along, and it could not be taken
   out again. A chip is now cut to the box with its cross kept, and shows
   its whole label under the pointer.
+- In a `ui.Form` with `layout="horizontal"` each label was as wide as its
+  own text, so the fields started at different places, and a field's
+  help and what was wrong with it stood beside the field and squeezed
+  it. The labels now share a column as wide as the widest of them, a
+  long label wraps, and the help and the issue stand under the field. A
+  switch and a checkbox stand in the column of the fields. Where the
+  form has little room, on a phone or in a narrow dialog or card, the
+  label goes above its field.
 - A connect hook that sent the session on with `s.navigate` had its own
   page built and drawn first, and left that page in the browser's
   history, where the back button led to it and was sent on again. The

@@ -28,6 +28,27 @@ a `PydanticCustomError`.
 `"horizontal"` with the label beside it, or a number of columns from 1
 to 12. On a narrow screen the columns are one.
 
+In a horizontal form the labels share a column, as wide as the widest
+of them, so the fields start on one line. A long label wraps. A field's
+help and what is wrong with it stand under the field. A group of fields,
+a model in a model and each row of a list has a label column of its own.
+Where the form has little room, on a phone or in a narrow dialog or
+card, the label goes above its field.
+
+```python live
+from pydantic import BaseModel, Field
+
+
+class Room(BaseModel):
+    name: str = Field("", title="Name")
+    arrival: str = Field("", title="Day of arrival", description="The room is ready from three.")
+    nights: int = Field(2, title="Nights", ge=1)
+    breakfast: bool = Field(True, title="Breakfast")
+
+
+ui.Form(Room, layout="horizontal", submit="Book", on_submit=lambda s, v: s.toast("Booked."))
+```
+
 ```python live
 import datetime as dt
 from typing import Literal

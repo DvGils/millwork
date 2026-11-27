@@ -31,7 +31,8 @@ class Form(Component):
     layout: Literal["vertical", "horizontal"] | int = "vertical"
     """Where a field's label stands, above it or beside it, or a number of
     columns from 1 to 12 that the fields are laid out in, labels above. On
-    a narrow screen the columns are one."""
+    a narrow screen the columns are one. Beside their fields the labels
+    share a column, and a field's help stands under the field."""
     fields: list[str] | None = None
     labels: Mapping[str, Mapping[str, Any]] | None = None
     # pointer (or field name) to spec keys: widget, choices, placeholder, min, max, step, rows...
