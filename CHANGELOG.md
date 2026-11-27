@@ -15,6 +15,23 @@ versions; a release says so here when it does.
   out of the box and took its cross along, and it could not be taken
   out again. A chip is now cut to the box with its cross kept, and shows
   its whole label under the pointer.
+- A connect hook that sent the session on with `s.navigate` had its own
+  page built and drawn first, and left that page in the browser's
+  history, where the back button led to it and was sent on again. The
+  page is no longer drawn, and where the session lands takes its place
+  in the history. When that page's connect fails, or it is a route of
+  the app and no page, the page that sent the session on is drawn after
+  all. Pages that send the session on to one another without end are
+  stopped after twenty, with an error in the log.
+- A handler that set state and then waited on a task that was started
+  earlier, in a connect hook for one, did not show what it had set until
+  the task was done. The page is now drawn as the wait begins, as it was
+  for a task the handler had just started.
+- The chosen option of a `ui.Select`, or of a form's `select`, that was
+  too long for its box was cut off mid letter. It now ends in three
+  dots.
+- In a table of more than 200 rows the column of checkboxes was wider
+  than in a shorter one.
 - The cross of a `ui.Dialog` or a `ui.Sheet` lay over what was under it.
   A long title ran under the cross, and without a title the cross sat on
   the first thing in the dialog, right beside the cross of a field that
@@ -44,6 +61,9 @@ versions; a release says so here when it does.
   icon is a stop for Tab, answers to a tap, and has the explanation as
   its name for a screen reader. In a test, `page.text()` holds the
   tooltips.
+- In a test, `page.issues()` is what a form was told is wrong with the
+  draft it was last sent, as `(pointer, message)` pairs, and
+  `page.cancel(form)` presses a form's cancel button.
 - The button of a `ui.Form` turns while a submit takes more than a
   moment, as a `ui.Button` with `loading` does, so a save that takes a
   second no longer looks like a press that did nothing. It needs nothing
@@ -53,6 +73,17 @@ versions; a release says so here when it does.
   search reads all of it. A column with `lines` and no `width` takes the
   width the other columns leave, two such columns share it, and the
   columns beside them keep the width they asked for.
+
+### The manual
+
+- Tasks says that a page is drawn while its handler waits on a task, and
+  that `key=` with `replace=True` lets the last of two presses win.
+- Sessions has `s.navigate` from a connect hook, for an address that
+  leads to another.
+- Layout says that a `ui.Split` drawn where another stood keeps its
+  widths until it has a `key` of its own.
+- Theming has a test that names the strings a release added, which show
+  in English until the theme has them.
 
 ## 0.6.6
 

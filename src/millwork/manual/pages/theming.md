@@ -176,6 +176,20 @@ ui.Table(
 )
 ```
 
+A release can bring new strings. They show in English until the theme
+has them, and nothing says so. A test that holds the theme to the table
+names them on the day of the update.
+
+```python
+from pathlib import Path
+
+from millwork.theme import STRINGS, find_theme
+
+
+def test_the_theme_has_every_string():
+    assert set(find_theme(Path("public")).strings) == set(STRINGS)
+```
+
 ## Changing the theme while the app runs
 <!-- keywords: reload theme, live theme, runtime, rebrand, switch theme -->
 

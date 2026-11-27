@@ -1035,3 +1035,162 @@ async def test_what_was_typed_before_the_tab_went_is_cleared_when_it_is_back(
     ]
     assert told == ["hello", ""]
     await over(session)
+
+
+async def test_a_page_that_sends_the_session_on_from_its_connect_is_not_drawn(
+    tmp_path: Path,
+) -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("l", state=State, public=None, bundle_dir=tmp_path)
+    seen: list[str] = []
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Button("go", key="go", on_click=lambda s, _: s.navigate("/tab")))
+
+    @app.page("/tab")
+    def tab(s: mw.Session[State]) -> ui.Component:
+        seen.append("drawn /tab")
+        return ui.Page(ui.Text("the tab itself"))
+
+    @tab.connect
+    def to_its_first_part(s: mw.Session[State]) -> None:
+        seen.append("connect /tab")
+        s.navigate(["/tab/first", "/gone", "/file"][s.state.count])
+
+    async def file(request: Any) -> Any:
+        from starlette.responses import PlainTextResponse
+
+        return PlainTextResponse("a file")
+
+    app.route("/file", file)
+
+    @tab.close
+    def left(s: mw.Session[State]) -> None:
+        seen.append("close /tab")
+
+    @app.page("/tab/first")
+    def first(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("the first part"))
+
+    @app.page("/gone")
+    def gone(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("never"))
+
+    @gone.connect
+    def fails(s: mw.Session[State]) -> None:
+        raise RuntimeError("no such part")
+
+    def navigations(page: Any) -> list[tuple[str, bool]]:
+        told = [c.args for c in page.commands if c.name == "navigate"]
+        return [(a["path"], bool(a.get("replace"))) for a in told]
+
+    # A tab opened at the page's own address lands on where the hook sent
+    # it, which takes the address's place in the tab's history.
+    async with TestApp(app).open("/tab") as page:
+        await page.settle()
+        assert page.session.path == "/tab/first" and "the first part" in page.text()
+        assert seen == ["connect /tab", "close /tab"]
+        assert navigations(page) == [("/tab/first", True)]
+
+    # From a page of the session, the tab is told of the page it lands on
+    # and not of the one in between.
+    del seen[:]
+    async with TestApp(app).open("/") as page:
+        await page.click("go")
+        assert page.session.path == "/tab/first"
+        assert seen == ["connect /tab", "close /tab"]
+        assert navigations(page) == [("/tab/first", False)]
+
+    # Where it is sent does not come: the page that sent it is the page the
+    # session has, and is drawn after all.
+    del seen[:]
+    async with TestApp(app, strict=False).open("/", state=State(count=1)) as page:
+        await page.click("go")
+        await page.settle()
+        assert page.session.path == "/tab" and "the tab itself" in page.text()
+        assert seen == ["connect /tab", "close /tab", "drawn /tab"]
+        assert navigations(page) == [("/tab", False)]
+
+    # Where it is sent is no page but a route of the app, which the tab
+    # asks for itself: the session stays, and its page is drawn.
+    del seen[:]
+    async with TestApp(app).open("/", state=State(count=2)) as page:
+        await page.click("go")
+        await page.settle()
+        assert page.session.path == "/tab" and "the tab itself" in page.text()
+        assert [c.args["path"] for c in page.commands if c.name == "load"] == ["/file"]
+        assert navigations(page) == [("/tab", False)]
+
+
+async def test_pages_that_send_the_session_on_to_one_another_come_to_rest(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("l", state=State, public=None, bundle_dir=tmp_path)
+
+    @app.page("/a")
+    def a(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("a"))
+
+    @app.page("/b")
+    def b(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(ui.Text("b"))
+
+    @a.connect
+    def to_b(s: mw.Session[State]) -> None:
+        s.state.count += 1
+        s.navigate("/b")
+
+    @b.connect
+    def to_a(s: mw.Session[State]) -> None:
+        s.state.count += 1
+        s.navigate("/a")
+
+    async with TestApp(app).open("/a") as page:
+        await page.settle()
+        # It stops going round and is on one of the two, drawn.
+        assert page.state.count == 21 and page.text() in ("a", "b")
+        assert "pages in a row sent it on" in caplog.text
+
+
+async def test_what_a_handler_set_is_drawn_when_it_waits_on_a_task_started_before(
+    tmp_path: Path,
+) -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("l", state=State, public=None, bundle_dir=tmp_path)
+    gate = asyncio.Event()
+    held: dict[str, Any] = {}
+
+    async def slow() -> int:
+        await gate.wait()
+        return 7
+
+    async def wait(s: mw.Session[State], _: Any) -> None:
+        s.state.count = 1
+        s.state.count = await held["task"]
+
+    @app.page("/")
+    def home(s: mw.Session[State]) -> ui.Component:
+        return ui.Page(
+            ui.Text(f"count {s.state.count}", key="t"),
+            ui.Button("wait", key="wait", on_click=wait),
+        )
+
+    @home.connect
+    def start(s: mw.Session[State]) -> None:
+        held["task"] = s.task(slow, quiet=True)
+
+    async with TestApp(app).open("/") as page:
+        pressed = asyncio.ensure_future(page.click("wait"))
+        for _ in range(50):
+            await asyncio.sleep(0.01)
+            if "count 1" in page.text():
+                break
+        assert "count 1" in page.text()
+        gate.set()
+        await pressed
+        assert "count 7" in page.text()

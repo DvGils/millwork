@@ -664,7 +664,7 @@ function Control({ f, id, value, set, ctx, invalid, pointer }: { f: FieldSpec; i
       return <Checkbox id={id} checked={Boolean(value)} disabled={ctx.disabled} onCheckedChange={(c) => set(Boolean(c))} />;
     case "select":
       return (
-        <Select<string | number | boolean> value={value === undefined || value === "" ? null : (value as string | number | boolean | null)} disabled={ctx.disabled} items={(f.options ?? []).map((o) => ({ value: o.value, label: optionLabel(o) }))} onValueChange={(v) => set(v)}>
+        <Select<string | number | boolean> value={value === undefined || value === "" ? null : (value as string | number | boolean | null)} disabled={ctx.disabled} items={(f.options ?? []).map((o) => ({ value: o.value, label: optionLabel(o, "size-4", true) }))} onValueChange={(v) => set(v)}>
           <SelectTrigger id={id} className="w-full" aria-invalid={invalid || undefined}>
             <SelectValue placeholder={f.placeholder ?? t("choose")} />
           </SelectTrigger>

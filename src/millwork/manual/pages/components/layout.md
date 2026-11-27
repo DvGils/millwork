@@ -199,7 +199,10 @@ ui.Stack(
 `ui.Split` puts its children in resizable panes. `sizes` are the starting
 percentages, `min_sizes` the smallest each may be dragged to, and
 `collapsible` lets a pane fold away under its minimum. Give it a height with
-`cls`, since it fills what it is given.
+`cls`, since it fills what it is given. A split keeps the widths a person
+dragged it to. One that is drawn where another stood is the same split to
+the browser and keeps those widths, whatever its `sizes` say, until it
+has a `key` of its own.
 
 ```python live
 ui.Split(

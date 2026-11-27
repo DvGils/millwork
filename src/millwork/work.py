@@ -690,6 +690,10 @@ async def wait_for_task(s: Session[Any], task: Task[Any]) -> Any:
     handler can catch). A handler that is itself being cancelled, by its
     session ending or by a timeout of its own, gets that cancellation.
     """
+    # What the handler set before it began to wait is drawn as its turn
+    # comes free, also when the task was started long before and nothing
+    # else has asked for a drawing.
+    s.refresh()
     async with _lending(s):
         try:
             return await asyncio.shield(task.future)

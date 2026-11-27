@@ -238,6 +238,8 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
     >
       {checkbox ? (
         <TableCell
+          // The checkbox's column is as wide as it was told to be.
+          data-free=""
           className="py-(--mw-cell-y) whitespace-nowrap"
           onClickCapture={(e) => {
             shift.current = e.shiftKey;
@@ -263,9 +265,9 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
         return (
           <TableCell
             key={c.key}
-            // A column that is cut holds no width for its text, in a long
+            // A column that is cut keeps no width for its text, in a long
             // table too.
-            data-cut={lines > 0 ? "" : undefined}
+            data-free={lines > 0 ? "" : undefined}
             className={cn(
               "py-(--mw-cell-y)",
               c.align === "right" && "text-right tabular-nums",
@@ -290,7 +292,7 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
         );
       })}
       {actions.length ? (
-        <TableCell className="py-(--mw-cell-y) whitespace-nowrap">
+        <TableCell data-free="" className="py-(--mw-cell-y) whitespace-nowrap">
           <RowActions items={actions} onPick={(id) => act("action", rowKey, id)} />
         </TableCell>
       ) : null}

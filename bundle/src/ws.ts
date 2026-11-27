@@ -581,8 +581,13 @@ function command(name: string, args: Record<string, unknown>) {
       // so a popped history entry is never pushed over. The query is part
       // of where the tab is.
       if (!samePath(here(), path) || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
-        keepScrollInHistory();
-        window.history.pushState({ mw: true }, "", target);
+        // A page that sent the session on before it was drawn leaves no
+        // entry behind: the back button would only be sent on again.
+        if (args.replace) window.history.replaceState({ mw: true }, "", target);
+        else {
+          keepScrollInHistory();
+          window.history.pushState({ mw: true }, "", target);
+        }
       }
       if (args.title) document.title = String(args.title);
       // The mount that follows opens the page at the top, or where it was

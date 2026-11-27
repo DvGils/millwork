@@ -92,6 +92,8 @@ PAGE_API = (
     "click",
     "change",
     "submit",
+    "issues",
+    "cancel",
     "select",
     "choose",
     "action",

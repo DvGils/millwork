@@ -167,7 +167,9 @@ export const Select: Renderer = ({ props, emit }) => {
   const controlled = has(props, "value");
   const [current, setDraft] = useOwned<string | null>(controlled, (props.value as string | null) ?? null, (props.default as string | null) ?? null);
   // What the closed field shows for the chosen option, icon included.
-  const labels = items.map((o) => ({ value: o.value, label: optionLabel(o) }));
+  // The chosen option as the trigger shows it, cut with three dots where
+  // the trigger has no room for all of it.
+  const labels = items.map((o) => ({ value: o.value, label: optionLabel(o, "size-4", true) }));
   const Clear = icon("x");
   const clearable = Boolean(props.clearable) && current !== null && !props.disabled;
   const clear = () => {

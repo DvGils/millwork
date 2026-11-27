@@ -411,6 +411,23 @@ class Page:
             draft = draft.model_dump(mode="json")
         await self.event(found, "submit", draft)
 
+    def issues(self, form: Found | str | None = None) -> list[tuple[str, str]]:
+        """What a form was told is wrong with the draft it was last sent, as
+        ``(pointer, message)`` pairs: what its model refused and what its
+        handler raised as ``FormIssues``. Empty when the draft was taken.
+        Without ``form`` it is the form that was submitted last."""
+        node = None
+        if form is not None:
+            node = (form if isinstance(form, Found) else self.find(form)).id
+        for command in reversed(self.commands):
+            if command.name == "form_issues" and node in (None, command.args.get("node")):
+                return [(i["pointer"], i["message"]) for i in command.args["issues"]]
+        return []
+
+    async def cancel(self, form: Found | str) -> None:
+        """Press a form's cancel button."""
+        await self.event(form, "cancel", None)
+
     async def select(self, table: Found | str, keys: list[Any]) -> None:
         """Select rows of a table by key."""
         await self.event(table, "select", keys)

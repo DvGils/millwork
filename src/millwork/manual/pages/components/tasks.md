@@ -91,6 +91,22 @@ stops at its next check.
 A handler can `await` the task to use its result. Other handlers run
 while it waits, and the page shows what the handler set before it began
 to wait. The same goes for a wait on a question and on another page.
+The page is drawn as the wait begins, so its function runs while the
+task is at work and reads the state as it is then.
+
+Two presses in a row each wait on a task of their own, and the handler
+whose task ends last is the one that sets the state. A task started
+with a `key` and `replace=True` cancels the one before it with that key.
+The handler that waited on it gets `mw.Cancelled` and leaves it at that,
+so the last press wins.
+
+```python
+async def pick(s: mw.Session[State], name: str) -> None:
+    try:
+        s.state.counts = await s.task(count, name, key="count", replace=True)
+    except mw.Cancelled:
+        return
+```
 
 A handler that waits on anything else, `asyncio.to_thread` or a coroutine
 of its own, keeps the page as it was until it is done. So does one that

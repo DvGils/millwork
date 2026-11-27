@@ -181,6 +181,12 @@ class Session[S]:
         self.outbox = Outbox()
         self.conn: Connection | None = None
         self._wanted: deque[Want] = deque([Want(path, first=True)])
+        # Whether the address the tab opened at is a page the session went on
+        # from without drawing it, so that the page it lands on takes that
+        # address's place in the tab's history.
+        self._replaces = False
+        # How many pages in a row the session has gone on from undrawn.
+        self._passed = 0
         self._previous: (
             tuple[
                 PageDef,
@@ -452,11 +458,8 @@ class Session[S]:
         for ask in self._asks.values():
             if not ask.future.done():
                 ask.future.set_result(None)
-        while self._wanted:
-            # Nobody gets to the pages that were still wanted.
-            want = self._wanted.popleft()
-            if want.done is not None and not want.done.done():
-                want.done.set_result(None)
+        # Nobody gets to the pages that were still wanted.
+        self._drop_wanted()
         self.ended.set_result(None)
         if not self._wake.done():
             self._wake.set_result(None)
@@ -622,6 +625,14 @@ class Session[S]:
             self._wake.set_result(None)
         return done
 
+    def _drop_wanted(self) -> None:
+        """Give up on the pages that are still asked for. Whoever waits to
+        be on one of them goes on."""
+        while self._wanted:
+            want = self._wanted.popleft()
+            if want.done is not None and not want.done.done():
+                want.done.set_result(None)
+
     def idle(self) -> asyncio.Future[None]:
         """For the session's life: done when a page is wanted or the session
         is over."""
@@ -663,11 +674,36 @@ class Session[S]:
             return None
         return page, params, path, fragment
 
+    def _show(self, first: bool, fragment: str) -> None:
+        """Tell the tab which page the session is on now and put the page
+        there. A tab that opened at this page's own address has nothing to
+        be told."""
+        if not first or self._replaces:
+            args: dict[str, Any] = {"path": self.path, "title": self.page.title}
+            if fragment:
+                # A fragment names a heading: the tab scrolls to it after the mount.
+                args["hash"] = fragment
+            if self._replaces:
+                args["replace"] = True
+            self.command("navigate", **args)
+        self._replaces = False
+        self._passed = 0
+        self._mount()
+
     def _stays(self) -> None:
         """The page that was asked for does not come: the session is on the
         page it has, which is ready again. What was not drawn while it was
         on its way out is drawn now: what a handler changed before it asked
-        for the other page, and a tab that was opened meanwhile."""
+        for the other page, and a tab that was opened meanwhile.
+
+        A page that sent the session on before it was drawn has nothing on
+        the tab yet. It is the page the session has, so it is shown now,
+        unless yet another page is asked for."""
+        if self.tree is None:
+            if not self._wanted:
+                self.stage = READY
+                self._show(False, "")
+            return
         self.stage = READY
         if self._showing or self._render_due:
             self.refresh()
@@ -738,20 +774,33 @@ class Session[S]:
             return
         if outcome in ("ok", "unhooked"):
             self.owed = self.page if outcome == "ok" else None
-            self.stage = READY
             self.visit += 1
             for ask in list(self._asks.values()):
                 if not ask.future.done():
                     ask.future.set_result(None)
             self._asks.clear()
-            if not want.first:
+            if self._wanted and self._passed >= MAX_PASSED:
+                # Pages that send the session on to one another without
+                # end would keep the loop to themselves. It stays here.
+                log.error(
+                    "session %s: %d pages in a row sent it on from their connect; it stays on %s",
+                    self.id,
+                    self._passed,
+                    self.path,
+                )
+                self._drop_wanted()
+            if self._wanted:
+                # Another page was asked for while this one connected, by
+                # its hook or by the tab. The session goes on at once, so
+                # this page is not drawn and the tab is not told of it. A
+                # tab that was opened at this page's address has it in its
+                # history, and the page that does come takes its place there.
+                self._replaces = self._replaces or want.first
+                self._passed += 1
+            else:
+                self.stage = READY
                 _, _, fragment = want.path.partition("#")
-                args: dict[str, Any] = {"path": self.path, "title": self.page.title}
-                if fragment:
-                    # A fragment names a heading: the tab scrolls to it after the mount.
-                    args["hash"] = fragment
-                self.command("navigate", **args)
-            self._mount()
+                self._show(want.first, fragment)
             if not self.opened.done():
                 self.opened.set_result(None)
         elif want.first:
@@ -2482,6 +2531,10 @@ def _unlazy(part: Any) -> Any:
     is answered, so its parts are built when it is asked."""
     return part.result() if isinstance(part, Lazy) else part
 
+
+# Pages in a row that may send the session on from their connect without
+# one of them being drawn.
+MAX_PASSED = 20
 
 # A page function slower than this is doing more than building a tree.
 SLOW_PAGE_MS = 20

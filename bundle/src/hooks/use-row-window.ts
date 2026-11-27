@@ -253,9 +253,10 @@ export function useSteadyColumns(
     if (sample.length !== heads.length) return;
     const around = sample.map((cell) => {
       const style = getComputedStyle(cell);
-      // A cell that is cut holds no width either: its text is wider than
-      // the column is meant to be.
-      if (style.whiteSpace !== "nowrap" || cell.dataset.cut !== undefined) return -1;
+      // Nor does a cell that says so: one that is cut, whose text is wider
+      // than its column is meant to be, and one with a checkbox or a menu,
+      // whose column was told its width.
+      if (style.whiteSpace !== "nowrap" || cell.dataset.free !== undefined) return -1;
       return parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
     });
     const need = widths.map(() => 0);

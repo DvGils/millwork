@@ -2202,6 +2202,7 @@ async def test_a_chip_longer_than_its_box_is_cut_and_keeps_its_cross() -> None:
             ui.Stack(
                 ui.MultiSelect(options=options, default=["long", "Short"], key="plain"),
                 ui.MultiSelect(options=options, default=["long"], sortable=True, key="sorted"),
+                ui.Select(options=options, default="long", key="one"),
                 cls="w-72",
             ),
         )
@@ -2219,6 +2220,13 @@ async def test_a_chip_longer_than_its_box_is_cut_and_keeps_its_cross() -> None:
         assert await page.read(room % "sorted") == [[True, True]]
         # The whole label is there for the pointer.
         assert await page.read(titles) == [long, "Short", long]
+        # The chosen option of a select is cut the same way.
+        cut = """(() => {
+          const value = document.querySelector("[data-node$='/one'] [data-slot=select-value] span");
+          return value.scrollWidth > value.clientWidth
+            && getComputedStyle(value).textOverflow === "ellipsis";
+        })()"""
+        assert await page.read(cut)
         # The cross of the long chip can be pressed.
         await page.click("[data-node$='/plain'] [data-slot=combobox-chip-remove]")
         assert await page.read(titles) == ["Short", long]
@@ -2243,7 +2251,9 @@ async def test_a_table_that_fills_scrolls_in_the_room_left_and_cuts_a_long_colum
             ui.Column(key="text", lines=1),
             ui.Column(key="note"),
         ]
-        table = ui.Table(rows=rows, columns=columns, search=True, fill=True, key="t")
+        table = ui.Table(
+            rows=rows, columns=columns, search=True, fill=True, selection="rows", key="t"
+        )
         return ui.Page(
             ui.Split(
                 ui.Stack(ui.Text("Above the table"), table, fill=True, cls="p-4"),
@@ -2274,9 +2284,10 @@ async def test_a_table_that_fills_scrolls_in_the_room_left_and_cuts_a_long_colum
         assert seen["bottom"] <= 700 and seen["page"] == 700 and seen["scrolls"]
         # The long column takes what the others leave and is cut, with its
         # whole text for the pointer. A column that said its width has it,
-        # also in a table long enough to draw only the rows in view.
+        # and so has the column of checkboxes, also in a table long enough
+        # to draw only the rows in view.
         assert not seen["sideways"] and seen["cut"] and seen["title"] == long
-        assert seen["widths"][0] == 90 and seen["widths"][2] > 150
+        assert seen["widths"][:2] == [32, 90] and seen["widths"][3] > 150
         # The search reads what the cut hides.
         await page.read("document.querySelector(\"[data-node$='/t'] input\").focus()")
         await page.tab.call("Input.insertText", text="second bridge")
@@ -2444,3 +2455,37 @@ async def test_a_tooltip_is_behind_the_mark_the_theme_chooses(mark: str) -> None
         await asyncio.sleep(0.6)
         assert await page.read(shown) == ["For one room."]
         assert pressed == []
+
+
+async def test_the_back_button_passes_a_page_that_sends_the_session_on() -> None:
+    app = mw.App("onward", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("Home"))
+
+    @app.page("/tab")
+    def tab(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("The tab itself"))
+
+    @tab.connect
+    def to_its_first_part(s: mw.Session) -> None:
+        s.navigate("/tab/first")
+
+    @app.page("/tab/first")
+    def first(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("The first part"))
+
+    where = "[location.pathname, document.querySelector('[data-node] p')?.textContent]"
+    async with Page(app) as page:
+        # The tab opens at the page's own address and lands on its first part.
+        await page.tab.call("Page.navigate", url=await page.read("location.origin") + "/tab")
+        assert await page.tab.value(DRAWN)
+        await page.rest()
+        assert await page.read(where) == ["/tab/first", "The first part"]
+        # Back leaves the page, where it used to be sent on again.
+        await page.read("history.back()")
+        await asyncio.sleep(0.5)
+        assert await page.tab.value(DRAWN)
+        await page.rest()
+        assert await page.read(where) == ["/", "Home"]
