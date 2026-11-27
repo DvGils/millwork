@@ -144,18 +144,20 @@ class Task[T]:
         return self._session.wait_for_task(self).__await__()
 
     async def _in_thread(self, fn: Callable[[], Any]) -> Any:
-        """Run the work in a thread. In debug mode, state that changed while no
-        handler ran on the loop was changed by the thread, which is the one thing
-        a sync task may not do."""
+        """Run the work in a thread. In debug mode, state that changed while
+        no code of the app began on the loop, and none went on after a wait
+        of the session's, was changed by the thread, which is the one thing
+        a sync task may not do. Code that was running already and writes
+        after a wait of its own is not told apart from the thread."""
         session = self._session
         watch = session.app.debug
         before = _snapshot(session.state) if watch else None
-        runs = session._handler_runs
+        runs = session._runs
         result = await asyncio.to_thread(fn)
         reporter = _reporter.get()
         if reporter is not None:
             await reporter.drain()
-        if watch and before is not None and runs == session._handler_runs:
+        if watch and before is not None and runs == session._runs:
             if _snapshot(session.state) != before:
                 session.warn(
                     f"thread-state:{self.label}",
@@ -252,8 +254,10 @@ class Task[T]:
         try:
             coro: Any
             if inspect.iscoroutine(work):
+                self._session._code_runs()
                 coro = work
             elif inspect.iscoroutinefunction(work):
+                self._session._code_runs()
                 coro = work(*args, **kwargs)
             elif callable(work):
                 coro = self._in_thread(_in_context(copy_context(), work, *args, **kwargs))

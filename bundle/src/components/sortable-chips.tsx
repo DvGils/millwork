@@ -282,6 +282,7 @@ export function SortableChips({
         <ComboboxChip
           key={c.value}
           data-value={c.value}
+          title={c.label}
           aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
           onPointerDown={onPointerDown}
           onMouseDown={stopHere}
@@ -289,7 +290,7 @@ export function SortableChips({
           className={cn("touch-none", !disabled && "cursor-grab", drag?.value === c.value && "opacity-30")}
         >
           {Grip ? <Grip className="-ml-0.5 size-3 shrink-0 text-muted-foreground" /> : null}
-          {optionLabel(c, "size-3")}
+          {optionLabel(c, "size-3", true)}
         </ComboboxChip>
       ))}
       <span aria-live="polite" className="mw-said">
@@ -303,7 +304,7 @@ export function SortableChips({
               style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.width }}
             >
               {Grip ? <Grip className="-ml-0.5 size-3 shrink-0 text-muted-foreground" /> : null}
-              {held ? optionLabel(held, "size-3") : null}
+              {held ? optionLabel(held, "size-3", true) : null}
             </div>,
             document.body,
           )

@@ -63,6 +63,13 @@ async def _call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     return result
 
 
+async def _run(s: Session[Any], fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Call code of the app for a session: a handler, a hook of a page, a
+    chat's reply, the handler of a request. Each is counted as it begins."""
+    s._code_runs()
+    return await _call(fn, *args, **kwargs)
+
+
 # ------------------------------------------------------------------ the life
 
 
@@ -187,7 +194,7 @@ async def _run_connect(s: Session[Any]) -> None:
         return
     token = context.bind(s)
     try:
-        await _call(s.page.on_connect, s, **s.params)
+        await _run(s, s.page.on_connect, s, **s.params)
     finally:
         context.unbind(token)
 
@@ -201,7 +208,7 @@ async def close_page(s: Session[Any]) -> None:
         return
     try:
         async with asyncio.timeout(CLOSE_LIMIT_SECONDS):
-            await _call(page.on_close, s)
+            await _run(s, page.on_close, s)
     except TimeoutError:
         log.error(
             "close hook of %s took over %g s for session %s and was stopped",
@@ -301,7 +308,7 @@ async def turn(s: Session[Any], plan: Plan) -> None:
         _lent.set(0.0)
         started = time.monotonic()
         try:
-            await _call(plan.handler, *plan.args)
+            await _run(s, plan.handler, *plan.args)
         finally:
             s._handler_held(plan, time.monotonic() - started - _lent.get())
         if plan.event is not None:
@@ -344,7 +351,7 @@ async def chat_turn(s: Session[Any], handler: Callable[..., Any], turn: ChatTurn
     the scope sees this done."""
     token = context.bind(s)
     try:
-        await _call(handler, s, turn)
+        await _run(s, handler, s, turn)
     except Exception as exc:
         log.exception("chat handler failed")
         s._failed("the chat handler", exc)
@@ -428,7 +435,7 @@ async def _ask_handler(s: Session[Any], conn: Connection, msg: Request) -> None:
         return
     token = context.bind(s)
     try:
-        result = await _call(handler, s, payload)
+        result = await _run(s, handler, s, payload)
         answer = made(result)
         if msg.name == "search" and not own:
             s._searched(msg.node, answer)
@@ -620,6 +627,8 @@ async def _lending(s: Session[Any]) -> AsyncIterator[None]:
             yield
     finally:
         _lent.set(_lent.get() + time.monotonic() - began)
+        # Whoever waited goes on from here, and may write to the state.
+        s._code_runs()
 
 
 def _lender(s: Session[Any]) -> asyncio.Task[Any] | None:

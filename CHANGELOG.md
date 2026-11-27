@@ -3,6 +3,27 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.7
+
+### Bug fixes
+
+- Escape over the open list of a `ui.MultiSelect`, or of a form's
+  `multiselect`, also closed the dialog or the sheet the field was in,
+  and what was filled in there was gone. The key now closes the list and
+  goes no further. With the list closed it closes the dialog, as before.
+- A chip of a multiselect was as wide as its label, so a long one ran
+  out of the box and took its cross along, and it could not be taken
+  out again. A chip is now cut to the box with its cross kept, and shows
+  its whole label under the pointer.
+- In debug mode, a task in a thread was said to have changed the session
+  state when a page's `connect` or `close` hook had, on a change of page
+  while the task ran. The same went for a chat's reply or an async task
+  that began in that time, and for a handler that went on after waiting
+  for another task or for a question. The warning now holds back for all
+  of these. Code that was running already and writes after a wait of its
+  own, on `asyncio.sleep` or on a model's answer, is still taken for the
+  thread.
+
 ## 0.6.6
 
 ### Bug fixes

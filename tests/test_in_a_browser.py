@@ -2154,3 +2154,71 @@ async def test_a_chart_that_can_be_pressed_is_pressed_from_the_keyboard() -> Non
         # The keyboard stops at a pie once.
         stops = "document.querySelectorAll(\"[data-node='root/pie'] [tabindex='0']\").length"
         assert await page.read(stops) == 1
+
+
+async def test_escape_over_a_multiselects_open_list_leaves_its_dialog_open() -> None:
+    app = mw.App("escape", public=None)
+    closed: list[bool] = []
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Dialog(
+                ui.MultiSelect(options=["North", "South", "East"], key="plain"),
+                ui.MultiSelect(options=["North", "South", "East"], sortable=True, key="sorted"),
+                open=not closed,
+                title="Regions",
+                on_close=lambda s, _: closed.append(True),
+            ),
+        )
+
+    dialog = "!!document.querySelector('[data-slot=dialog-content]')"
+    listed = "!!document.querySelector('[role=listbox]')"
+    chosen = "document.querySelectorAll('[data-slot=combobox-chip]').length"
+    async with Page(app) as page:
+        for name in ("plain", "sorted"):
+            await page.click(f"[data-node$='/{name}'] input")
+            await page.key("ArrowDown", 40)
+            await page.key("Enter", 13)
+            assert await page.read(listed)
+            await page.key("Escape", 27)
+            # The key closed the list and went no further.
+            assert not await page.read(listed)
+            assert await page.read(dialog) and not closed
+        assert await page.read(chosen) == 2
+        # With no list open, Escape is the dialog's.
+        await page.key("Escape", 27)
+        assert closed == [True]
+
+
+async def test_a_chip_longer_than_its_box_is_cut_and_keeps_its_cross() -> None:
+    app = mw.App("chips", public=None)
+    long = "How satisfied were you with the answer you got, " * 3
+    options = ["Short", ui.Option(value="long", label=long, icon="star")]
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Stack(
+                ui.MultiSelect(options=options, default=["long", "Short"], key="plain"),
+                ui.MultiSelect(options=options, default=["long"], sortable=True, key="sorted"),
+                cls="w-72",
+            ),
+        )
+
+    # How far a chip and its cross stay inside the right edge of their box.
+    chips = "[data-node$='/%s'] [data-slot=combobox-chip]"
+    room = """[...document.querySelectorAll("CHIPS")].map((c) => {
+      const box = c.closest("[data-slot=combobox-chips]").getBoundingClientRect();
+      const cross = c.querySelector("[data-slot=combobox-chip-remove]").getBoundingClientRect();
+      return [box.right - c.getBoundingClientRect().right >= 0, box.right - cross.right >= 0];
+    })""".replace("CHIPS", chips)
+    titles = "[...document.querySelectorAll('[data-slot=combobox-chip]')].map((c) => c.title)"
+    async with Page(app) as page:
+        assert await page.read(room % "plain") == [[True, True], [True, True]]
+        assert await page.read(room % "sorted") == [[True, True]]
+        # The whole label is there for the pointer.
+        assert await page.read(titles) == [long, "Short", long]
+        # The cross of the long chip can be pressed.
+        await page.click("[data-node$='/plain'] [data-slot=combobox-chip-remove]")
+        assert await page.read(titles) == ["Short", long]

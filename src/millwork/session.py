@@ -302,7 +302,10 @@ class Session[S]:
         # Icon files already looked for in the public folder.
         self._icon_files: set[str] = set()
         self._slow_builds = 0
-        self._handler_runs = 0
+        # How often code of the app began for this session, or went on after
+        # a wait the session knows of. While it stands still, nothing on the
+        # loop has written to the state but what was running already.
+        self._runs = 0
         self._noop_watch: tuple[str, int] | None = None
         self._threads: dict[str, Thread] = {}
 
@@ -1445,8 +1448,12 @@ class Session[S]:
         if child is not None:
             self.turn.give_back(child)
 
+    def _code_runs(self) -> None:
+        """Code of the app begins for this session, or goes on after a wait
+        the session knows of: on a task, on the user, on another page."""
+        self._runs += 1
+
     def _handler_begins(self, event: Event | None = None) -> int:
-        self._handler_runs += 1
         if event is not None and event.name == "change":
             # From here on, not from where the handler ends: one that waits
             # for a task lets other handlers in before it is done, and one

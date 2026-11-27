@@ -117,7 +117,9 @@ export function MultiSelectControl({
                 <SortableChips chips={chosen.map((o) => ({ value: o.value, label: o.label ?? o.value, icon: o.icon }))} onReorder={onChange} disabled={disabled} />
               ) : (
                 chosen.map((o) => (
-                  <ComboboxChip key={o.value}>{optionLabel(o, "size-3")}</ComboboxChip>
+                  <ComboboxChip key={o.value} title={o.label ?? o.value}>
+                    {optionLabel(o, "size-3", true)}
+                  </ComboboxChip>
                 ))
               )}
               <ComboboxChipsInput
@@ -125,9 +127,12 @@ export function MultiSelectControl({
                 placeholder={chosen.length ? undefined : placeholder}
                 onKeyDown={(e: React.KeyboardEvent & { preventBaseUIHandler?: () => void }) => {
                   // Escape closes the list and nothing more: the primitive would
-                  // also drop every chosen chip.
+                  // also drop every chosen chip. Over an open list the key ends
+                  // here, so a dialog the field is in stays open. With the list
+                  // closed it goes on to the dialog.
                   if (e.key === "Escape") {
                     e.preventBaseUIHandler?.();
+                    if (open) e.stopPropagation();
                     setOpen(false);
                   }
                   // Enter with text in the field looks for something to add.

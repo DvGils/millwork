@@ -19,6 +19,11 @@ describe("optionLabel", () => {
     expect(html({ value: "ok", icon: "check" }, "size-3")).toMatch(/class="[^"]*size-3/);
   });
 
+  it("wraps the label so that a row with no room can cut it", () => {
+    expect(html({ value: "x", label: "A long one" }, "size-3", true)).toBe('<span class="min-w-0 truncate">A long one</span>');
+    expect(html({ value: "ok", label: "Done", icon: "check" }, "size-3", true).endsWith('</svg><span class="min-w-0 truncate">Done</span>')).toBe(true);
+  });
+
   it("draws a file of the app's own as it draws one of the bundle's", () => {
     const shown = html({ value: "go", label: "Launch", icon: "/public/icons/rocket.svg" });
     expect(shown).toContain('<image href="/public/icons/rocket.svg"');
