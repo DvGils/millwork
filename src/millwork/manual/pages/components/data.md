@@ -196,9 +196,9 @@ columns leave, and two such columns share it.
 
 ```python live
 NOTES = [
-    {"id": 1, "by": "Ada", "note": "The export to a spreadsheet drops the last column when a filter is on, and the totals row then adds up the wrong cells."},
-    {"id": 2, "by": "Grace", "note": "Works."},
-    {"id": 3, "by": "Edsger", "note": "A report with more than a hundred pages takes a minute to open, and the bar at the top says nothing in that time."},
+    {"id": 1, "by": "Ada", "note": "The path along the river is closed past the second bridge until the bank is mended, so the loop takes the road for a mile."},
+    {"id": 2, "by": "Grace", "note": "Open."},
+    {"id": 3, "by": "Edsger", "note": "The hut at the top has water again, but the stove is out and the shutters on the north side do not close."},
 ]
 
 ui.Table(

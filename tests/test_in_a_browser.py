@@ -2193,7 +2193,7 @@ async def test_escape_over_a_multiselects_open_list_leaves_its_dialog_open() -> 
 
 async def test_a_chip_longer_than_its_box_is_cut_and_keeps_its_cross() -> None:
     app = mw.App("chips", public=None)
-    long = "How satisfied were you with the answer you got, " * 3
+    long = "A room on the quiet side of the house, with a desk, " * 3
     options = ["Short", ui.Option(value="long", label=long, icon="star")]
 
     @app.page("/")
@@ -2229,9 +2229,9 @@ async def test_a_table_that_fills_scrolls_in_the_room_left_and_cuts_a_long_colum
     count: int,
 ) -> None:
     app = mw.App("fills", public=None)
-    long = "Which of these have you used in the past year, counting the ones you tried once?"
+    long = "Take the path along the river, cross at the second bridge and keep left at the fork."
     rows = [
-        {"id": i, "kind": "single", "text": long if i % 2 else "Age", "note": f"note {i}"}
+        {"id": i, "kind": "walk", "text": long if i % 2 else "Loop", "note": f"note {i}"}
         for i in range(1, count + 1)
     ]
 
@@ -2279,7 +2279,7 @@ async def test_a_table_that_fills_scrolls_in_the_room_left_and_cuts_a_long_colum
         assert seen["widths"][0] == 90 and seen["widths"][2] > 150
         # The search reads what the cut hides.
         await page.read("document.querySelector(\"[data-node$='/t'] input\").focus()")
-        await page.tab.call("Input.insertText", text="tried once")
+        await page.tab.call("Input.insertText", text="second bridge")
         await page.rest()
         summary = "document.querySelector(\"[data-node$='/t']\").lastElementChild.textContent"
         assert f"{count // 2} of {count} rows" in await page.read(summary)
@@ -2369,23 +2369,23 @@ async def test_a_tooltip_is_behind_the_mark_the_theme_chooses(mark: str) -> None
     app = mw.App("tips", public=None, theme=Theme(tooltip_mark=mark))  # type: ignore[arg-type]
     pressed: list[bool] = []
 
-    class Line(BaseModel):
-        text: str = ""
+    class Guest(BaseModel):
+        name: str = ""
 
-    class Export(BaseModel):
-        decimals: int = Field(1, json_schema_extra={"tooltip": "Rounded, not cut."})
-        totals: bool = Field(True, json_schema_extra={"tooltip": "A last row of sums."})
-        lines: list[Line] = Field([], json_schema_extra={"tooltip": "Above the table."})
+    class Booking(BaseModel):
+        nights: int = Field(1, json_schema_extra={"tooltip": "From the day you arrive."})
+        breakfast: bool = Field(True, json_schema_extra={"tooltip": "Served until ten."})
+        guests: list[Guest] = Field([], json_schema_extra={"tooltip": "Everyone who stays."})
         name: str = ""
 
     @app.page("/")
     def home(s: mw.Session) -> ui.Component:
         return ui.Page(
             ui.Card(
-                ui.Form(Export, on_submit=lambda s, doc: None, key="form"),
+                ui.Form(Booking, on_submit=lambda s, doc: None, key="form"),
                 ui.Field(ui.Input(key="zone"), label="Zone", tooltip="Of the dates."),
-                title="Export",
-                tooltip="Of the table as it is.",
+                title="Booking",
+                tooltip="For one room.",
                 on_click=lambda s, _: pressed.append(True),
                 key="card",
             ),
@@ -2407,13 +2407,13 @@ async def test_a_tooltip_is_behind_the_mark_the_theme_chooses(mark: str) -> None
         if mark == "underline":
             assert [m[0] for m in found] == ["SPAN"] * 5 and not any(m[1] for m in found)
             assert {m[3] for m in found} == {"dotted"}
-            assert [m[4] for m in found] == ["Export", "Decimals", "Totals", "Lines", "Zone"]
+            assert [m[4] for m in found] == ["Booking", "Nights", "Breakfast", "Guests", "Zone"]
             # The explanation is the text's description, for a screen reader.
-            assert found[1][5] == "Rounded, not cut."
+            assert found[1][5] == "From the day you arrive."
         else:
             assert [m[0] for m in found] == ["BUTTON"] * 5 and all(m[1] for m in found)
             # The explanation is the mark's name, for a screen reader.
-            assert found[0][2] == "Of the table as it is." and found[1][2] == "Rounded, not cut."
+            assert found[0][2] == "For one room." and found[1][2] == "From the day you arrive."
         # A label without a tooltip is as wide as its field, as it was.
         wide_as_field = """(() => {
           const field = document.querySelector('[data-field="/name"]');
@@ -2425,7 +2425,7 @@ async def test_a_tooltip_is_behind_the_mark_the_theme_chooses(mark: str) -> None
         await page.read("document.querySelectorAll('[data-slot=info-tip]')[1].focus()")
         await page.key("Shift", 16)
         await asyncio.sleep(0.8)
-        assert await page.read(shown) == ["Rounded, not cut."]
+        assert await page.read(shown) == ["From the day you arrive."]
         await page.key("Escape", 27)
         await page.read("document.activeElement.blur()")
         await asyncio.sleep(0.4)
@@ -2442,5 +2442,5 @@ async def test_a_tooltip_is_behind_the_mark_the_theme_chooses(mark: str) -> None
             points = [{"x": at[0], "y": at[1]}] if kind == "touchStart" else []
             await page.tab.call("Input.dispatchTouchEvent", type=kind, touchPoints=points)
         await asyncio.sleep(0.6)
-        assert await page.read(shown) == ["Of the table as it is."]
+        assert await page.read(shown) == ["For one room."]
         assert pressed == []
