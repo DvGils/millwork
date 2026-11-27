@@ -27,7 +27,9 @@ versions; a release says so here when it does.
   way and have the same fix.
 - `millwork shot` waited without end for a browser that had started
   and then stopped answering. It now gives up after a minute and says
-  what the browser did not answer.
+  what the browser did not answer. A browser that starts and then
+  says nothing, which happens now and then, is started again, up to
+  three times.
 
 ### Features
 

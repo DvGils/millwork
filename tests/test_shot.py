@@ -348,3 +348,40 @@ async def test_a_browser_that_stops_answering_is_not_waited_for_without_end(
     # A script that waits is given its own time on top.
     with pytest.raises(ShotError, match=r"did not answer Runtime.evaluate in 0.15 s"):
         await tab.value("new Promise(() => {})", at_most=0.1)
+
+
+async def test_a_browser_whose_tab_says_nothing_is_started_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from millwork.shot import _Silent, _Tab
+
+    starts: list[str] = []
+    silent = 2
+
+    async def start(self: _Tab, browser: str) -> None:
+        starts.append(browser)
+        if len(starts) <= silent:
+            raise _Silent(f"{browser} started and did not answer in 15 s")
+
+    monkeypatch.setattr(_Tab, "_start", start)
+    # Twice silent, and the third start of the same browser is the one used.
+    tab = await _Tab(["one", "two"]).__aenter__()
+    assert starts == ["one", "one", "one"] and tab.browser == "one"
+    # Always silent: each browser found has its tries, and all of it is said.
+    starts.clear()
+    silent = 99
+    with pytest.raises(ShotError) as refused:
+        await _Tab(["one", "two"]).__aenter__()
+    assert starts == ["one"] * 3 + ["two"] * 3
+    assert str(refused.value).count("started and did not answer") == 2
+    # One that will not start at all is not tried again.
+    starts.clear()
+
+    async def crash(self: _Tab, browser: str) -> None:
+        starts.append(browser)
+        raise ShotError(f"{browser} would not start")
+
+    monkeypatch.setattr(_Tab, "_start", crash)
+    with pytest.raises(ShotError, match="one would not start; two would not start"):
+        await _Tab(["one", "two"]).__aenter__()
+    assert starts == ["one", "two"]

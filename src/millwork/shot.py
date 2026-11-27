@@ -67,12 +67,22 @@ START = 30.0
 # top of what the thing itself is given. One that says nothing for that long
 # is not going to.
 ANSWER = 60.0
+# How long a browser that was just started gets for each of its first
+# answers, in seconds, and how often one that says nothing is started. Now
+# and then a browser starts and its tab never comes to life, and the next
+# start of the same browser is fine.
+AWAKE = 15.0
+TRIES = 3
 # How long the cookie of a user signed in for a picture is good for.
 SIGNED_IN = dt.timedelta(minutes=5)
 
 
 class ShotError(Exception):
     """Why no picture was made, in words for the person who asked for one."""
+
+
+class _Silent(ShotError):
+    """The browser was asked something and did not answer in its time."""
 
 
 @dataclass
@@ -174,16 +184,24 @@ class _Tab:
         failed: list[str] = []
         for browser in self.browsers:
             self.browser = browser
-            self._stack = contextlib.AsyncExitStack()
-            try:
-                await self._start(browser)
-                return self
-            except ShotError as exc:
-                await self._stack.aclose()
-                failed.append(str(exc))
-            except BaseException:
-                await self._stack.aclose()
-                raise
+            for _ in range(TRIES):
+                self._stack = contextlib.AsyncExitStack()
+                try:
+                    await self._start(browser)
+                    return self
+                except _Silent as exc:
+                    # Started and silent: the same browser is started again,
+                    # and what it did is said once.
+                    await self._stack.aclose()
+                    if str(exc) not in failed:
+                        failed.append(str(exc))
+                except ShotError as exc:
+                    await self._stack.aclose()
+                    failed.append(str(exc))
+                    break
+                except BaseException:
+                    await self._stack.aclose()
+                    raise
         why = "; ".join(failed)
         if "sandbox" in why.lower() and self.sandbox:
             why = why.rstrip(".") + (
@@ -255,13 +273,17 @@ class _Tab:
             self._ws = await self._stack.enter_async_context(
                 connect(f"ws://127.0.0.1:{port}{address}", max_size=None, proxy=None)
             )
-            # A browser that started gets as long to say so as it got to start.
-            target = await self._ask("Target.createTarget", {"url": "about:blank"}, START)
+            target = await self._ask("Target.createTarget", {"url": "about:blank"}, AWAKE)
             attach = {"targetId": target["targetId"], "flatten": True}
-            attached = await self._ask("Target.attachToTarget", attach, START)
+            attached = await self._ask("Target.attachToTarget", attach, AWAKE)
+            self._session = attached["sessionId"]
+            # The first thing asked of the tab itself, which a tab that never
+            # came to life does not answer.
+            await self._ask("Page.enable", {}, AWAKE)
         except (OSError, WebSocketException) as exc:
             raise ShotError(f"{browser} started and could not be reached: {exc}") from exc
-        self._session = attached["sessionId"]
+        except _Silent:
+            raise _Silent(f"{browser} started and did not answer in {AWAKE:g} s") from None
 
     async def __aexit__(self, *exc: object) -> None:
         # Asked to close, a browser ends its helpers and stops writing to its
@@ -302,7 +324,7 @@ class _Tab:
                         break
                     self.events.append(answer)
         except TimeoutError:
-            raise ShotError(f"the browser did not answer {method} in {within:g} s") from None
+            raise _Silent(f"the browser did not answer {method} in {within:g} s") from None
         if "error" in answer:
             raise ShotError(f"the browser refused {method}: {answer['error'].get('message')}")
         result: dict[str, Any] = answer.get("result", {})
