@@ -3,6 +3,96 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.7
+
+### Bug fixes
+
+- Escape over the open list of a `ui.MultiSelect`, or of a form's
+  `multiselect`, also closed the dialog or the sheet the field was in,
+  and what was filled in there was gone. The key now closes the list and
+  goes no further. With the list closed it closes the dialog, as before.
+- A chip of a multiselect was as wide as its label, so a long one ran
+  out of the box and took its cross along, and it could not be taken
+  out again. A chip is now cut to the box with its cross kept, and shows
+  its whole label under the pointer.
+- In a `ui.Form` with `layout="horizontal"` each label was as wide as its
+  own text, so the fields started at different places, and a field's
+  help and what was wrong with it stood beside the field and squeezed
+  it. The labels now share a column as wide as the widest of them, a
+  long label wraps, and the help and the issue stand under the field. A
+  switch and a checkbox stand in the column of the fields. Where the
+  form has little room, on a phone or in a narrow dialog or card, the
+  label goes above its field.
+- A connect hook that sent the session on with `s.navigate` had its own
+  page built and drawn first, and left that page in the browser's
+  history, where the back button led to it and was sent on again. The
+  page is no longer drawn, and where the session lands takes its place
+  in the history. When that page's connect fails, or it is a route of
+  the app and no page, the page that sent the session on is drawn after
+  all. Pages that send the session on to one another without end are
+  stopped after twenty, with an error in the log.
+- A handler that set state and then waited on a task that was started
+  earlier, in a connect hook for one, did not show what it had set until
+  the task was done. The page is now drawn as the wait begins, as it was
+  for a task the handler had just started.
+- The chosen option of a `ui.Select`, or of a form's `select`, that was
+  too long for its box was cut off mid letter. It now ends in three
+  dots.
+- In a table of more than 200 rows the column of checkboxes was wider
+  than in a shorter one.
+- The cross of a `ui.Dialog` or a `ui.Sheet` lay over what was under it.
+  A long title ran under the cross, and without a title the cross sat on
+  the first thing in the dialog, right beside the cross of a field that
+  can be cleared. A title now stops short of the cross, and a dialog or
+  a sheet without a title begins under it.
+- In debug mode, a task in a thread was said to have changed the session
+  state when a page's `connect` or `close` hook had, on a change of page
+  while the task ran. The same went for a chat's reply or an async task
+  that began in that time, and for a handler that went on after waiting
+  for another task or for a question. The warning now holds back for all
+  of these. Code that was running already and writes after a wait of its
+  own, on `asyncio.sleep` or on a model's answer, is still taken for the
+  thread.
+
+### Features
+
+- `ui.Table(fill=True)` gives a table the room that is left on a page
+  that fills the window, in place of a `height` worked out by hand. Its
+  rows scroll inside it. It works on a child of the page, in a
+  `ui.Stack` that fills and in a pane of a `ui.Split`.
+- A `tooltip` on a `ui.Card`, a `ui.Field` and a field of a `ui.Form`
+  is an explanation behind a mark beside the title or the label, shown
+  when the mark is pointed at or has the keyboard. A form takes it from
+  `labels`, `overrides` or the model's `json_schema_extra`. The theme's
+  new `tooltip_mark` says what the mark is: `help`, a question mark and
+  the default, `info`, or `underline`, a dotted line under the text. An
+  icon is a stop for Tab, answers to a tap, and has the explanation as
+  its name for a screen reader. In a test, `page.text()` holds the
+  tooltips.
+- In a test, `page.issues()` is what a form was told is wrong with the
+  draft it was last sent, as `(pointer, message)` pairs, and
+  `page.cancel(form)` presses a form's cancel button.
+- The button of a `ui.Form` turns while a submit takes more than a
+  moment, as a `ui.Button` with `loading` does, so a save that takes a
+  second no longer looks like a press that did nothing. It needs nothing
+  from the handler. A submit that is answered at once shows nothing.
+- `ui.Column(lines=1)` cuts a cell to that many lines, with three dots
+  where it ends. The whole text shows under the pointer and the table's
+  search reads all of it. A column with `lines` and no `width` takes the
+  width the other columns leave, two such columns share it, and the
+  columns beside them keep the width they asked for.
+
+### The manual
+
+- Tasks says that a page is drawn while its handler waits on a task, and
+  that `key=` with `replace=True` lets the last of two presses win.
+- Sessions has `s.navigate` from a connect hook, for an address that
+  leads to another.
+- Layout says that a `ui.Split` drawn where another stood keeps its
+  widths until it has a `key` of its own.
+- Theming has a test that names the strings a release added, which show
+  in English until the theme has them.
+
 ## 0.6.6
 
 ### Bug fixes

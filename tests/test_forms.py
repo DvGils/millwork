@@ -579,3 +579,28 @@ def test_a_variant_names_what_its_rows_hold_unseen() -> None:
     # A variant with nothing unseen says nothing of it.
     (op,) = (f for f in field_spec(Plan)["fields"] if f["name"] == "operations")
     assert all("unseen" not in v for v in op["item"]["variants"])
+
+
+def test_a_fields_tooltip_comes_from_the_model_the_labels_or_the_overrides() -> None:
+    from millwork.nodes import build
+
+    class Booking(BaseModel):
+        name: str = ""
+        nights: int | None = Field(None, json_schema_extra={"tooltip": "From the day you arrive."})
+        breakfast: bool = True
+
+    def tips(**how: object) -> dict[str, object]:
+        form = ui.Form(Booking, on_submit=lambda s, doc: None, **how)
+        fields = build(form).nodes["root"].props["schema"]["fields"]
+        return {f["name"]: f.get("tooltip") for f in fields}
+
+    assert tips() == {"name": None, "nights": "From the day you arrive.", "breakfast": None}
+    assert tips(labels={"name": {"tooltip": "As on the card."}})["name"] == "As on the card."
+    told = tips(overrides={"/nights": {"tooltip": "At least one."}})
+    assert told["nights"] == "At least one."
+
+
+def test_a_cards_tooltip_needs_a_title_to_stand_beside() -> None:
+    assert ui.Card(title="Booking", tooltip="For one room.").tooltip
+    with pytest.raises(ValueError, match="beside its title"):
+        ui.Card(tooltip="For one room.")

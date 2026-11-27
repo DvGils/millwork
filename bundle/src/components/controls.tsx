@@ -1,5 +1,6 @@
 // Catalogue components backed by shadcn: a thin wrapper each, props in, events out.
 
+import { InfoTip, Tipped } from "./info-tip";
 import { useId, useRef } from "react";
 import type { Renderer } from "../render";
 import { Slot } from "../render";
@@ -233,7 +234,12 @@ export const Card: Renderer = ({ props, children, emit }) => (
   >
     {props.title || props.description ? (
       <CardHeader>
-        {props.title ? <CardTitle>{String(props.title)}</CardTitle> : null}
+        {props.title ? (
+          <CardTitle className={props.tooltip ? "flex items-center gap-1.5" : undefined}>
+            <Tipped text={props.tooltip ? String(props.tooltip) : null}>{String(props.title)}</Tipped>
+            {props.tooltip ? <InfoTip text={String(props.tooltip)} /> : null}
+          </CardTitle>
+        ) : null}
         {props.description ? <CardDescription>{String(props.description)}</CardDescription> : null}
       </CardHeader>
     ) : null}

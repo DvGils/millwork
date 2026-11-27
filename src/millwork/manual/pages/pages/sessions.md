@@ -46,6 +46,18 @@ hook waits on a task. A page whose connect raises is reported with a
 toast, and the tab keeps the page it came from, already closed, with
 whatever the failed connect wrote to the state.
 
+A connect hook that calls `s.navigate(path)` sends the session on to
+that page. The page it belongs to is not drawn, and the page the session
+lands on takes its place in the browser's history, so the back button
+does not come back to it. That is how an address leads to another one,
+a section to its first part.
+
+```python
+@settings.connect
+def to_the_first_part(s: mw.Session[State]) -> None:
+    s.navigate("/settings/profile")
+```
+
 ## Close
 <!-- keywords: cleanup, on unmount, teardown -->
 

@@ -155,12 +155,17 @@ select text or to move a handle.
 table or a `ui.Chat` reaches the card's edges. A title keeps the room
 above it.
 
+`tooltip` explains the card behind a mark beside its title, shown when
+the mark is pointed at or has the keyboard. The theme's
+[`tooltip_mark`](/theming#options) says what the mark looks like.
+
 ```python live
 ui.Grid(
     ui.Card(
         ui.Text("The body of the card goes here, as children."),
         title="A card",
         description="With a description under the title.",
+        tooltip="And an explanation for whoever asks for it.",
         footer=ui.Button("Action", size="sm"),
     ),
     ui.Card(
@@ -194,7 +199,10 @@ ui.Stack(
 `ui.Split` puts its children in resizable panes. `sizes` are the starting
 percentages, `min_sizes` the smallest each may be dragged to, and
 `collapsible` lets a pane fold away under its minimum. Give it a height with
-`cls`, since it fills what it is given.
+`cls`, since it fills what it is given. A split keeps the widths a person
+dragged it to. One that is drawn where another stood is the same split to
+the browser and keeps those widths, whatever its `sizes` say, until it
+has a `key` of its own.
 
 ```python live
 ui.Split(
@@ -402,4 +410,7 @@ def channel(s: mw.Session[State]) -> ui.Component:
 fills. Anywhere else there is no height to take, and the stack or the
 area is as high as its content. `padding=False` on the `Page` takes the
 frame to the edges of the window. A `ui.Chat` and a `ui.Split` fill a
-page the same way without being told.
+page the same way without being told. A `ui.Table(fill=True)` takes the
+room that is left as well. Its rows scroll inside it, and what comes
+after it stands at the foot of the window. A `Stack` that fills works in
+a pane of a `Split` too.

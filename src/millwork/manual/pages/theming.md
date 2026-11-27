@@ -106,6 +106,12 @@ Layout belongs to the components.
 `density` is `comfortable` or `compact`. Compact tightens tables, forms,
 stacks and cards, which suits data tools. `scrollbars` is `thin`, the
 default, drawn in the page's own ink, or `auto` for the platform's.
+`tooltip_mark` is what shows that a card's title or a field's label has
+a `tooltip`. It is `help`, a question mark after the text, unless the
+theme says `info`, an info icon there, or `underline`, a dotted line
+under the text itself. An icon also answers to a tap on a phone, which
+the line does not. A tab that is open takes a new mark when it loads
+again.
 `locale` sets the page language and how dates and numbers are formatted,
 and `currency` is the ISO code the `currency` format uses, `EUR` unless
 the theme says otherwise.
@@ -168,6 +174,20 @@ ui.Table(
     row_key="key",
     height=320,
 )
+```
+
+A release can bring new strings. They show in English until the theme
+has them, and nothing says so. A test that holds the theme to the table
+names them on the day of the update.
+
+```python
+from pathlib import Path
+
+from millwork.theme import STRINGS, find_theme
+
+
+def test_the_theme_has_every_string():
+    assert set(find_theme(Path("public")).strings) == set(STRINGS)
 ```
 
 ## Changing the theme while the app runs

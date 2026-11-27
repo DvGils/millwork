@@ -660,13 +660,20 @@ yet. A row that changes place within its list keeps that.
 <!-- keywords: label, help text, error message, validation -->
 
 `ui.Field` puts a `label`, `help` and an `error` around one control, for a
-form built by hand rather than from a model.
+form built by hand rather than from a model. `tooltip` is an explanation
+behind a mark beside the label, where `help` is a line under the control.
 
 ```python live
 from pydantic import Field
 
 ui.Grid(
-    ui.Field(ui.Input(placeholder="Ada"), label="Name", required=True, help="As on your badge."),
+    ui.Field(
+        ui.Input(placeholder="Ada"),
+        label="Name",
+        required=True,
+        help="As on your badge.",
+        tooltip="The name the front desk prints.",
+    ),
     ui.Field(
         ui.Input(placeholder="ada@example.com", kind="email"),
         label="Email",

@@ -97,8 +97,10 @@ another, `upload(node, path,
 field=)`, which runs every check an upload gets and returns the `FileRef`,
 which for a form is the value of its file field in the draft,
 `send(chat, text, files=)`, `stop(chat)`, `navigate(path)`, and `event(node,
-name, payload)` for anything else. A draft that fails validation produces
-the same `form_issues` command the tab would get, at the same pointers.
+name, payload)` for anything else. A draft that is refused does not
+raise in the test. The form is told, as in a tab, and `page.issues()`
+has what it was told as `(pointer, message)` pairs, empty when the draft
+was taken. `cancel(form)` presses a form's cancel button.
 On an `Input` or a `Textarea`, `submit(field, text)` types the text and
 enters it, with Enter or with Ctrl+Enter in a `Textarea`, and sends what
 a tab sends then. That is the text to `on_change` when the field has
@@ -163,8 +165,7 @@ async def test_the_form_rejects_a_short_name(app):
     async with TestApp(app).open("/") as page:
         form = page.find(ui.Form)
         await page.submit(form, {"project_name": "x"})
-        assert page.commands[-1].name == "form_issues"
-        assert page.commands[-1].args["issues"][0]["pointer"] == "/project_name"
+        assert [pointer for pointer, _ in page.issues()] == ["/project_name"]
         assert page.state.settings is None
 ```
 

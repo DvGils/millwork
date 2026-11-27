@@ -27,6 +27,7 @@ _SAID: set[str] = set()
 Mode = Literal["light", "dark", "system"]
 Density = Literal["comfortable", "compact"]
 Scrollbars = Literal["auto", "thin"]
+TooltipMark = Literal["help", "info", "underline"]
 
 COLOUR_TOKENS = (
     "background",
@@ -306,6 +307,9 @@ class Theme(BaseModel):
     login_image: str | None = None
     scrollbars: Scrollbars = "thin"
     density: Density = "comfortable"
+    # What shows that a label or a title has a tooltip: a question mark or
+    # an info icon after it, or a dotted line under it.
+    tooltip_mark: TooltipMark = "help"
     locale: str = "en"
     currency: str = "EUR"
     strings: dict[str, str] = Field(default_factory=dict)
@@ -460,6 +464,7 @@ class Theme(BaseModel):
             "stylesheet": self.stylesheet,
             "density": self.density,
             "scrollbars": self.scrollbars,
+            "tooltip_mark": self.tooltip_mark,
             "locale": self.locale,
             "currency": self.currency,
             "strings": self.all_strings(),

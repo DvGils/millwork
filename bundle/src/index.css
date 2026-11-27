@@ -221,6 +221,48 @@ body.mw-dragging * {
     height: 1px;
     background: var(--border);
   }
+  /* A form with its labels beside its fields. The labels share a column as
+     wide as the widest of them, up to a limit past which a label wraps.
+     A field is a row of those two columns: its label in the first, and its
+     control, its help and what is wrong with it under each other in the
+     second. A group of fields, a model in a model and the rows of a list
+     lie across both and have two columns of their own, since a fieldset
+     does not pass its columns on. It goes by the room the group of fields
+     has, not by the window: with little of it, in a narrow dialog or card
+     as on a phone, there is one column and the label is on top. */
+  .mw-beside {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mw-beside > * {
+    grid-column: 1 / -1;
+  }
+  @container (min-width: 28rem) {
+    .mw-beside {
+      grid-template-columns: fit-content(14rem) minmax(0, 1fr);
+    }
+    .mw-beside > [data-slot="field"] > * {
+      grid-column: 2;
+    }
+    /* The label, or the label with the mark of its tooltip. */
+    .mw-beside > [data-slot="field"] > [data-slot="field-label"],
+    .mw-beside > [data-slot="field"] > :has(> [data-slot="field-label"]) {
+      grid-column: 1;
+    }
+    /* A word longer than the column breaks, so that one label cannot take
+       the room of every field. */
+    .mw-beside > [data-slot="field"] > :is([data-slot="field-label"], :has(> [data-slot="field-label"])) {
+      overflow-wrap: anywhere;
+    }
+  }
+  /* A table cell cut to a number of lines, with three dots where it ends. */
+  .mw-lines {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--mw-lines);
+    line-clamp: var(--mw-lines);
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
 }
 /* A Grid's columns. The count comes from the node as a variable per width,
    and each width takes the count of the one below until it has its own. */

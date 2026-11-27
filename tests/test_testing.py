@@ -1367,3 +1367,49 @@ async def test_the_text_of_a_form_is_what_stands_at_its_fields(tmp_path: Path) -
         # The key a button elsewhere submits the form by is not read, nor a
         # field the form does not show.
         assert not {"order-form", "Token", "kind", "Kind"} & set(text)
+
+
+async def test_what_a_form_was_told_and_its_cancel_button(tmp_path: Path) -> None:
+    class Name(BaseModel):
+        name: str = Field(min_length=2)
+
+    app = mw.App("t", public=None, bundle_dir=tmp_path)
+    seen: list[str] = []
+
+    def keep(s: mw.Session, doc: Name) -> None:
+        if doc.name == "taken":
+            raise ui.FormIssues([("/name", "That name is taken.")])
+        seen.append(doc.name)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Form(
+                Name,
+                on_submit=keep,
+                cancel="Cancel",
+                key="first",
+                on_cancel=lambda s, _: seen.append("canceled"),
+            ),
+            ui.Form(Name, on_submit=keep, key="second"),
+        )
+
+    async with TestApp(app, strict=False).open("/") as page:
+        assert page.issues() == []
+        # What the model refuses and what the handler raises are both told.
+        await page.submit("first", {"name": "x"})
+        assert [pointer for pointer, _ in page.issues()] == ["/name"]
+        await page.submit("second", {"name": "taken"})
+        assert page.issues() == [("/name", "That name is taken.")]
+        # By form, each has what it was told last.
+        assert page.issues("second") == page.issues()
+        assert page.issues("first") != page.issues("second")
+        # A draft that is taken leaves nothing.
+        await page.submit("second", {"name": "free"})
+        assert page.issues() == [] and page.issues("second") == [] and seen == ["free"]
+        assert page.issues("first")
+        await page.cancel("first")
+        assert seen == ["free", "canceled"]
+        # A form without the button takes no press of it.
+        with pytest.raises(LookupError, match="no handler for cancel"):
+            await page.cancel("second")

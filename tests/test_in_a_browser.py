@@ -2154,3 +2154,411 @@ async def test_a_chart_that_can_be_pressed_is_pressed_from_the_keyboard() -> Non
         # The keyboard stops at a pie once.
         stops = "document.querySelectorAll(\"[data-node='root/pie'] [tabindex='0']\").length"
         assert await page.read(stops) == 1
+
+
+async def test_escape_over_a_multiselects_open_list_leaves_its_dialog_open() -> None:
+    app = mw.App("escape", public=None)
+    closed: list[bool] = []
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Dialog(
+                ui.MultiSelect(options=["North", "South", "East"], key="plain"),
+                ui.MultiSelect(options=["North", "South", "East"], sortable=True, key="sorted"),
+                open=not closed,
+                title="Regions",
+                on_close=lambda s, _: closed.append(True),
+            ),
+        )
+
+    dialog = "!!document.querySelector('[data-slot=dialog-content]')"
+    listed = "!!document.querySelector('[role=listbox]')"
+    chosen = "document.querySelectorAll('[data-slot=combobox-chip]').length"
+    async with Page(app) as page:
+        for name in ("plain", "sorted"):
+            await page.click(f"[data-node$='/{name}'] input")
+            await page.key("ArrowDown", 40)
+            await page.key("Enter", 13)
+            assert await page.read(listed)
+            await page.key("Escape", 27)
+            # The key closed the list and went no further.
+            assert not await page.read(listed)
+            assert await page.read(dialog) and not closed
+        assert await page.read(chosen) == 2
+        # With no list open, Escape is the dialog's.
+        await page.key("Escape", 27)
+        assert closed == [True]
+
+
+async def test_a_chip_longer_than_its_box_is_cut_and_keeps_its_cross() -> None:
+    app = mw.App("chips", public=None)
+    long = "A room on the quiet side of the house, with a desk, " * 3
+    options = ["Short", ui.Option(value="long", label=long, icon="star")]
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Stack(
+                ui.MultiSelect(options=options, default=["long", "Short"], key="plain"),
+                ui.MultiSelect(options=options, default=["long"], sortable=True, key="sorted"),
+                ui.Select(options=options, default="long", key="one"),
+                cls="w-72",
+            ),
+        )
+
+    # How far a chip and its cross stay inside the right edge of their box.
+    chips = "[data-node$='/%s'] [data-slot=combobox-chip]"
+    room = """[...document.querySelectorAll("CHIPS")].map((c) => {
+      const box = c.closest("[data-slot=combobox-chips]").getBoundingClientRect();
+      const cross = c.querySelector("[data-slot=combobox-chip-remove]").getBoundingClientRect();
+      return [box.right - c.getBoundingClientRect().right >= 0, box.right - cross.right >= 0];
+    })""".replace("CHIPS", chips)
+    titles = "[...document.querySelectorAll('[data-slot=combobox-chip]')].map((c) => c.title)"
+    async with Page(app) as page:
+        assert await page.read(room % "plain") == [[True, True], [True, True]]
+        assert await page.read(room % "sorted") == [[True, True]]
+        # The whole label is there for the pointer.
+        assert await page.read(titles) == [long, "Short", long]
+        # The chosen option of a select is cut the same way.
+        cut = """(() => {
+          const value = document.querySelector("[data-node$='/one'] [data-slot=select-value] span");
+          return value.scrollWidth > value.clientWidth
+            && getComputedStyle(value).textOverflow === "ellipsis";
+        })()"""
+        assert await page.read(cut)
+        # The cross of the long chip can be pressed.
+        await page.click("[data-node$='/plain'] [data-slot=combobox-chip-remove]")
+        assert await page.read(titles) == ["Short", long]
+
+
+@pytest.mark.parametrize("count", [80, 300])
+async def test_a_table_that_fills_scrolls_in_the_room_left_and_cuts_a_long_column(
+    count: int,
+) -> None:
+    app = mw.App("fills", public=None)
+    long = "Take the path along the river, cross at the second bridge and keep left at the fork."
+    rows = [
+        {"id": i, "kind": "walk", "text": long if i % 2 else "Loop", "note": f"note {i}"}
+        for i in range(1, count + 1)
+    ]
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        columns = [
+            ui.Column(key="id", width=90),
+            ui.Column(key="kind", format="badge"),
+            ui.Column(key="text", lines=1),
+            ui.Column(key="note"),
+        ]
+        table = ui.Table(
+            rows=rows, columns=columns, search=True, fill=True, selection="rows", key="t"
+        )
+        return ui.Page(
+            ui.Split(
+                ui.Stack(ui.Text("Above the table"), table, fill=True, cls="p-4"),
+                ui.Text("Beside it"),
+                sizes=[50, 50],
+            ),
+        )
+
+    measured = """(() => {
+      const box = document.querySelector("[data-node$='/t'] .mw-scroll");
+      const at = box.getBoundingClientRect();
+      const heads = [...box.querySelectorAll("thead th")];
+      const cut = [...box.querySelectorAll("tbody td div[title]")].find((d) => d.title.length > 9);
+      return {
+        bottom: at.bottom,
+        page: document.documentElement.scrollHeight,
+        scrolls: box.scrollHeight > box.clientHeight,
+        sideways: box.scrollWidth > box.clientWidth,
+        widths: heads.map((h) => Math.round(h.getBoundingClientRect().width)),
+        cut: cut.scrollWidth > cut.clientWidth,
+        title: cut.title,
+      };
+    })()"""
+    async with Page(app) as page:
+        await wide(page)
+        seen = await page.read(measured)
+        # The table ends in the window and scrolls its own rows, not the page.
+        assert seen["bottom"] <= 700 and seen["page"] == 700 and seen["scrolls"]
+        # The long column takes what the others leave and is cut, with its
+        # whole text for the pointer. A column that said its width has it,
+        # and so has the column of checkboxes, also in a table long enough
+        # to draw only the rows in view.
+        assert not seen["sideways"] and seen["cut"] and seen["title"] == long
+        assert seen["widths"][:2] == [32, 90] and seen["widths"][3] > 150
+        # The search reads what the cut hides.
+        await page.read("document.querySelector(\"[data-node$='/t'] input\").focus()")
+        await page.tab.call("Input.insertText", text="second bridge")
+        await page.rest()
+        summary = "document.querySelector(\"[data-node$='/t']\").lastElementChild.textContent"
+        assert f"{count // 2} of {count} rows" in await page.read(summary)
+
+
+async def test_a_forms_button_turns_when_its_submit_takes_a_moment() -> None:
+    app = mw.App("saving", public=None)
+
+    class Name(BaseModel):
+        name: str = "Ada"
+
+    async def slow(s: mw.Session, doc: Name) -> None:
+        await s.task(asyncio.sleep, 0.9)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Form(Name, on_submit=slow, key="slow"),
+            ui.Form(Name, on_submit=lambda s, doc: None, key="fast"),
+        )
+
+    def button(form: str) -> str:
+        return (
+            f"(() => {{ const b = document.querySelector(\"[data-node$='/{form}'] "
+            'button[type=submit]"); return [b.disabled, !!b.querySelector("svg")]; })()'
+        )
+
+    def submit(form: str) -> str:
+        return f"document.querySelector(\"[data-node$='/{form}'] button[type=submit]\").click()"
+
+    async with Page(app) as page:
+        # A submit that is answered at once never turns its button.
+        turned = """new Promise((done) => {
+          const b = document.querySelector("[data-node$='/fast'] button[type=submit]");
+          let seen = false;
+          const watch = new MutationObserver(() => { seen ||= !!b.querySelector("svg"); });
+          watch.observe(b, { childList: true, subtree: true });
+          b.click();
+          setTimeout(() => done([b.disabled, seen]), 600);
+        })"""
+        assert await page.read(turned) == [False, False]
+        # One that takes a moment greys the button at once and turns it after.
+        await page.read(submit("slow"))
+        await asyncio.sleep(0.1)
+        assert await page.read(button("slow")) == [True, False]
+        await asyncio.sleep(0.45)
+        assert await page.read(button("slow")) == [True, True]
+        await asyncio.sleep(0.8)
+        await page.rest()
+        assert await page.read(button("slow")) == [False, False]
+
+
+@pytest.mark.parametrize("kind", ["dialog", "sheet"])
+async def test_the_cross_of_a_dialog_or_a_sheet_lies_over_nothing(kind: str) -> None:
+    app = mw.App("cross", public=None)
+    made = ui.Dialog if kind == "dialog" else ui.Sheet
+    long = "A title that is long enough to reach the far edge of what it is the title of"
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        titled = s.query.get("titled") == "1"
+        field = ui.Input(value="delivery", clearable=True, key="field")
+        return ui.Page(made(field, open=True, title=long if titled else None, key="over"))
+
+    # Whether the cross lies clear of the title and of the first thing under it.
+    clear = f"""(() => {{
+      const cross = document.querySelector("[data-slot={kind}-close]").getBoundingClientRect();
+      const apart = (e) => {{
+        const r = e.getBoundingClientRect();
+        return r.right <= cross.left || r.top >= cross.bottom;
+      }};
+      const title = document.querySelector("[data-slot={kind}-title]");
+      const field = document.querySelector("[data-slot={kind}-body] input");
+      return [title ? apart(title) : null, apart(field)];
+    }})()"""
+    async with Page(app) as page:
+        await wide(page)
+        assert await page.read(clear) == [None, True]
+        await page.tab.call("Page.navigate", url=await page.read("location.origin") + "/?titled=1")
+        assert await page.tab.value(DRAWN)
+        await page.rest()
+        assert await page.read(clear) == [True, True]
+
+
+@pytest.mark.parametrize("mark", ["help", "info", "underline"])
+async def test_a_tooltip_is_behind_the_mark_the_theme_chooses(mark: str) -> None:
+    app = mw.App("tips", public=None, theme=Theme(tooltip_mark=mark))  # type: ignore[arg-type]
+    pressed: list[bool] = []
+
+    class Guest(BaseModel):
+        name: str = ""
+
+    class Booking(BaseModel):
+        nights: int = Field(1, json_schema_extra={"tooltip": "From the day you arrive."})
+        breakfast: bool = Field(True, json_schema_extra={"tooltip": "Served until ten."})
+        guests: list[Guest] = Field([], json_schema_extra={"tooltip": "Everyone who stays."})
+        name: str = ""
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Card(
+                ui.Form(Booking, on_submit=lambda s, doc: None, key="form"),
+                ui.Field(ui.Input(key="zone"), label="Zone", tooltip="Of the dates."),
+                title="Booking",
+                tooltip="For one room.",
+                on_click=lambda s, _: pressed.append(True),
+                key="card",
+            ),
+        )
+
+    marks = """[...document.querySelectorAll("[data-slot=info-tip]")].map((m) => [
+      m.tagName, !!m.querySelector("svg"), m.getAttribute("aria-label"),
+      getComputedStyle(m).textDecorationStyle, m.textContent,
+      m.getAttribute("aria-description")])"""
+    shown = (
+        "[...document.querySelectorAll('[data-slot=tooltip-content]')].map((e) => e.textContent)"
+    )
+    title = "[data-slot=card-title] [data-slot=info-tip]"
+    async with Page(app) as page:
+        found = await page.read(marks)
+        # The card, three fields of the form, one of them a list, and the
+        # field built by hand. The field without a tooltip has no mark.
+        assert len(found) == 5
+        if mark == "underline":
+            assert [m[0] for m in found] == ["SPAN"] * 5 and not any(m[1] for m in found)
+            assert {m[3] for m in found} == {"dotted"}
+            assert [m[4] for m in found] == ["Booking", "Nights", "Breakfast", "Guests", "Zone"]
+            # The explanation is the text's description, for a screen reader.
+            assert found[1][5] == "From the day you arrive."
+        else:
+            assert [m[0] for m in found] == ["BUTTON"] * 5 and all(m[1] for m in found)
+            # The explanation is the mark's name, for a screen reader.
+            assert found[0][2] == "For one room." and found[1][2] == "From the day you arrive."
+        # A label without a tooltip is as wide as its field, as it was.
+        wide_as_field = """(() => {
+          const field = document.querySelector('[data-field="/name"]');
+          const label = field.querySelector("label").getBoundingClientRect();
+          return Math.round(label.width) === Math.round(field.getBoundingClientRect().width);
+        })()"""
+        assert await page.read(wide_as_field)
+        # The keyboard reaches a mark, and the explanation shows there.
+        await page.read("document.querySelectorAll('[data-slot=info-tip]')[1].focus()")
+        await page.key("Shift", 16)
+        await asyncio.sleep(0.8)
+        assert await page.read(shown) == ["From the day you arrive."]
+        await page.key("Escape", 27)
+        await page.read("document.activeElement.blur()")
+        await asyncio.sleep(0.4)
+        assert await page.read(shown) == []
+        if mark == "underline":
+            # The title of a card that can be pressed still presses it.
+            await page.click(title)
+            assert pressed == [True]
+            return
+        # A press on an icon is the icon's, and does not press the card it
+        # is in. It shows the explanation, which is how a finger asks.
+        at = await page.middle(title)
+        for kind in ("touchStart", "touchEnd"):
+            points = [{"x": at[0], "y": at[1]}] if kind == "touchStart" else []
+            await page.tab.call("Input.dispatchTouchEvent", type=kind, touchPoints=points)
+        await asyncio.sleep(0.6)
+        assert await page.read(shown) == ["For one room."]
+        assert pressed == []
+
+
+async def test_the_back_button_passes_a_page_that_sends_the_session_on() -> None:
+    app = mw.App("onward", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("Home"))
+
+    @app.page("/tab")
+    def tab(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("The tab itself"))
+
+    @tab.connect
+    def to_its_first_part(s: mw.Session) -> None:
+        s.navigate("/tab/first")
+
+    @app.page("/tab/first")
+    def first(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Text("The first part"))
+
+    where = "[location.pathname, document.querySelector('[data-node] p')?.textContent]"
+    async with Page(app) as page:
+        # The tab opens at the page's own address and lands on its first part.
+        await page.tab.call("Page.navigate", url=await page.read("location.origin") + "/tab")
+        assert await page.tab.value(DRAWN)
+        await page.rest()
+        assert await page.read(where) == ["/tab/first", "The first part"]
+        # Back leaves the page, where it used to be sent on again.
+        await page.read("history.back()")
+        await asyncio.sleep(0.5)
+        assert await page.tab.value(DRAWN)
+        await page.rest()
+        assert await page.read(where) == ["/", "Home"]
+
+
+async def test_in_a_horizontal_form_the_fields_start_on_one_line() -> None:
+    app = mw.App("beside", public=None)
+
+    class Address(BaseModel):
+        street: str = Field("", title="Street and number")
+        city: str = Field("", title="City")
+
+    class Booking(BaseModel):
+        name: str = Field("", title="Name", min_length=1)
+        arrival: str = Field("", title="Day of arrival", description="Ready from three.")
+        breakfast: bool = Field(True, title="Breakfast")
+        note: str = Field("", title="Anything else that we should know before you come")
+        code: str = Field("", title="Thereisnoplacetobreakthislabelanywhereatall")
+        address: Address = Field(default_factory=Address, title="Address")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        def form(key: str) -> ui.Form:
+            return ui.Form(Booking, layout="horizontal", on_submit=lambda s, doc: None, key=key)
+
+        return ui.Page(
+            ui.Stack(form("roomy"), cls="max-w-xl"),
+            ui.Stack(form("tight"), cls="w-80"),
+        )
+
+    measured = """(() => {
+      const node = document.querySelector("[data-node$='/%s']");
+      const form = node.matches("form") ? node : node.querySelector("form");
+      const box = (e) => e.getBoundingClientRect();
+      const field = (p) => form.querySelector(`[data-field="${p}"]`);
+      const control = (p) => box(field(p).querySelector("input, [role=switch]"));
+      const label = (p) => box(field(p).querySelector("label"));
+      const round = (n) => Math.round(n);
+      const help = field("/arrival").querySelector("[data-slot=field-description]");
+      const said = field("/name").querySelector("[data-slot=field-error]");
+      return {
+        starts: ["/name", "/arrival", "/breakfast", "/note", "/code"].map(
+          (p) => round(control(p).left)),
+        section: ["/address/street", "/address/city"].map((p) => round(control(p).left)),
+        left: round(box(form).left),
+        beside: ["/name", "/note", "/code"].every((p) => label(p).right <= control(p).left),
+        above: ["/name", "/note", "/code"].every((p) => label(p).bottom <= control(p).top),
+        wrapped: [label("/note").height > 30, label("/code").height > 30],
+        room: round(control("/name").width),
+        help: [round(box(help).left), box(help).top >= control("/arrival").bottom],
+        issue: said ? [round(box(said).left), box(said).top >= control("/name").bottom] : null,
+        fits: form.scrollWidth <= form.clientWidth,
+      };
+    })()"""
+    async with Page(app) as page:
+        await wide(page)
+        await page.press("Save", 0)
+        await page.press("Save", 1)
+        seen = await page.read(measured % "roomy")
+        # The labels are one column and the fields start where it ends, a
+        # switch among them. A label too long for the column wraps, also
+        # one that is a single long word, and leaves the fields their room.
+        assert len(set(seen["starts"])) == 1 and seen["starts"][0] > seen["left"] + 100
+        assert seen["beside"] and seen["wrapped"] == [True, True]
+        assert seen["room"] > 250 and seen["fits"]
+        # A field's help and what is wrong with it stand under it.
+        assert seen["help"] == [seen["starts"][0], True]
+        assert seen["issue"] == [seen["starts"][0], True]
+        # A model in a model has a column of its own for its labels.
+        assert len(set(seen["section"])) == 1
+        # With little room, in a narrow part of a wide window as on a
+        # phone, the label is above its field.
+        tight = await page.read(measured % "tight")
+        assert tight["above"] and not tight["beside"] and tight["fits"]
+        assert {tight["starts"][i] for i in (0, 1, 3, 4)} == {tight["left"]}
+        assert tight["room"] > 250

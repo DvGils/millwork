@@ -253,7 +253,10 @@ export function useSteadyColumns(
     if (sample.length !== heads.length) return;
     const around = sample.map((cell) => {
       const style = getComputedStyle(cell);
-      if (style.whiteSpace !== "nowrap") return -1;
+      // Nor does a cell that says so: one that is cut, whose text is wider
+      // than its column is meant to be, and one with a checkbox or a menu,
+      // whose column was told its width.
+      if (style.whiteSpace !== "nowrap" || cell.dataset.free !== undefined) return -1;
       return parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
     });
     const need = widths.map(() => 0);
@@ -272,7 +275,8 @@ export function useSteadyColumns(
       const w = Math.ceil(need[i] + around[i]);
       if (w > widths[i]) {
         widths[i] = w;
-        c.style.minWidth = `${w}px`;
+        // No less than the width the column was told to keep, when it was.
+        c.style.minWidth = `max(${w}px, var(--mw-keep, 0px))`;
       }
     });
   });

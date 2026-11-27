@@ -739,6 +739,55 @@ async def test_development_warnings_name_the_four_mistakes(tmp_path: Path) -> No
         assert sum("changed nothing" in w for w in warnings()) == 1
 
 
+@pytest.mark.parametrize("starts", ["the handler", "the close hook"])
+async def test_a_change_of_page_is_not_taken_for_a_threads_doing(
+    tmp_path: Path, starts: str
+) -> None:
+    import time
+
+    from millwork.testing import TestApp
+
+    class Where(BaseModel):
+        left: str = ""
+        at: str = ""
+
+    app = mw.App("w", state=Where, public=None, bundle_dir=tmp_path, debug=True)
+
+    def read(s: mw.Session[Where]) -> None:
+        s.task(lambda: time.sleep(0.2), label="reading")
+
+    def go(s: mw.Session[Where], _: Any) -> None:
+        if starts == "the handler":
+            read(s)
+        s.navigate("/b")
+
+    @app.page("/")
+    def home(s: mw.Session[Where]) -> ui.Component:
+        return ui.Page(ui.Button("go", key="go", on_click=go))
+
+    @home.close
+    def leave(s: mw.Session[Where]) -> None:
+        if starts == "the close hook":
+            read(s)
+        s.state.left = "home"
+
+    @app.page("/b")
+    def b(s: mw.Session[Where]) -> ui.Component:
+        return ui.Page(ui.Text(s.state.at))
+
+    @b.connect
+    def arrive(s: mw.Session[Where]) -> None:
+        s.state.at = "b"
+
+    async with TestApp(app).open("/") as page:
+        await page.click("go")
+        await page.settle()
+        assert (page.state.left, page.state.at) == ("home", "b")
+        assert all(t.done for t in page.session.tasks)
+        said = [c.args["message"] for c in page.commands if c.name == "toast"]
+        assert not any("from its thread" in w for w in said)
+
+
 async def test_only_a_press_that_shows_nothing_is_warned_about(tmp_path: Path) -> None:
     from millwork.testing import TestApp
 

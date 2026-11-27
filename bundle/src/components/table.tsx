@@ -42,6 +42,7 @@ interface Column {
   filterable?: boolean;
   hidden?: boolean;
   wrap?: boolean;
+  lines?: number | null;
 }
 
 interface MenuItem {
@@ -193,6 +194,11 @@ type Act = (what: "select" | "range" | "click" | "action", key: unknown, id?: st
 
 const NONE: never[] = [];
 
+// The lines a column's cells are cut to, or 0 for a column that is not cut.
+const cutTo = (c: Column): number => (typeof c.lines === "number" && c.lines >= 1 ? c.lines : 0);
+// Whether a column is cut and has no width, so takes the width left over.
+const takesTheRest = (c: Column): boolean => cutTo(c) > 0 && c.width == null;
+
 interface RowProps {
   row: Record<string, unknown>;
   rowKey: unknown;
@@ -215,6 +221,7 @@ interface RowProps {
 // same object from one patch to the next unless the patch touched it, and
 // everything else here is a plain value or stable for the table's life.
 const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, columns, checkbox, actions, clickable, stop, act }: RowProps) {
+  const takers = columns.filter(takesTheRest).length;
   // Whether shift was down for the press that is changing the checkbox. The
   // change itself does not say, and it comes during the click that does.
   const shift = useRef(false);
@@ -231,6 +238,8 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
     >
       {checkbox ? (
         <TableCell
+          // The checkbox's column is as wide as it was told to be.
+          data-free=""
           className="py-(--mw-cell-y) whitespace-nowrap"
           onClickCapture={(e) => {
             shift.current = e.shiftKey;
@@ -249,22 +258,41 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
       {columns.map((c) => {
         const cellTone_ = cellTones?.[c.key];
         const content = formatCell(row[c.key], c.format ?? "text", cellTone_);
+        const shown = cellTone_ && c.format !== "badge" && cellTone[cellTone_] ? <span className={cellTone[cellTone_]}>{content}</span> : content;
+        const lines = cutTo(c);
+        const value = row[c.key];
+        const whole = typeof content === "string" ? content : typeof value === "string" || typeof value === "number" ? String(value) : undefined;
         return (
           <TableCell
             key={c.key}
+            // A column that is cut keeps no width for its text, in a long
+            // table too.
+            data-free={lines > 0 ? "" : undefined}
             className={cn(
               "py-(--mw-cell-y)",
               c.align === "right" && "text-right tabular-nums",
               c.align === "center" && "text-center",
-              c.wrap ? "whitespace-normal" : "whitespace-nowrap",
+              c.wrap || lines > 1 ? "whitespace-normal" : "whitespace-nowrap",
+              // A cell that is cut asks for no width of its own, so its text
+              // cannot widen the column. The column is as wide as it says,
+              // or takes what the others leave.
+              lines > 0 && (c.width == null ? "max-w-0 min-w-32" : "max-w-0"),
             )}
+            // Columns that take what is left share it.
+            style={lines > 0 && c.width == null ? { width: `${100 / takers}%` } : undefined}
           >
-            {cellTone_ && c.format !== "badge" && cellTone[cellTone_] ? <span className={cellTone[cellTone_]}>{content}</span> : content}
+            {lines > 0 ? (
+              <div title={whole} className={lines === 1 ? "truncate" : "mw-lines"} style={lines > 1 ? ({ "--mw-lines": lines } as CSSProperties) : undefined}>
+                {shown}
+              </div>
+            ) : (
+              shown
+            )}
           </TableCell>
         );
       })}
       {actions.length ? (
-        <TableCell className="py-(--mw-cell-y) whitespace-nowrap">
+        <TableCell data-free="" className="py-(--mw-cell-y) whitespace-nowrap">
           <RowActions items={actions} onPick={(id) => act("action", rowKey, id)} />
         </TableCell>
       ) : null}
@@ -545,6 +573,7 @@ export const Table: Renderer = ({ node, props, emit }) => {
       ),
     });
   }
+  const takes = visible.some(takesTheRest);
   for (const c of visible) {
     heads.push({
       id: c.key,
@@ -562,12 +591,14 @@ export const Table: Renderer = ({ node, props, emit }) => {
   const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown.length !== total ? t("rows_of", { shown: shown.length, n: total }) : total === 1 ? t("one_row") : t("rows", { n: total });
 
   return (
-    <div className={cn("flex flex-col gap-2", props.cls as string)}>
+    <div className={cn("flex flex-col gap-2", props.fill ? "mw-fill min-h-24 grow" : undefined, props.cls as string)}>
       {props.search ? (
         <Input value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} placeholder={t("search")} className="max-w-xs" />
       ) : null}
       <div
-        className={cn("mw-scroll overflow-auto rounded-lg border", props.height ? "min-h-0" : undefined)}
+        // One that fills is as high as its rows, up to what the column it is
+        // in has left, and scrolls from there.
+        className={cn("mw-scroll overflow-auto rounded-lg border", props.height || props.fill ? "min-h-0" : undefined)}
         style={props.height ? { maxHeight: typeof props.height === "number" ? `${props.height}px` : String(props.height) } : undefined}
       >
         {/* The box above is the one scroller, both ways, so the header sticks to
@@ -583,9 +614,13 @@ export const Table: Renderer = ({ node, props, emit }) => {
                 return (
                   <TableHead
                     key={c.id}
-                    style={c.size !== undefined ? { width: c.size } : undefined}
+                    // Beside a column that takes what is left, a width is
+                    // kept: the room comes out of that column first. It is
+                    // kept as a variable, which a long table's own hold on
+                    // its columns reads and does not write over.
+                    style={c.size !== undefined ? ({ width: c.size, "--mw-keep": takes ? (typeof c.size === "number" ? `${c.size}px` : c.size) : undefined } as CSSProperties) : undefined}
+                    className={cn(takes && c.size !== undefined && "min-w-(--mw-keep)", c.column?.align === "right" && "text-right", c.column?.align === "center" && "text-center")}
                     aria-sort={sorted ? (sorted.desc ? "descending" : "ascending") : undefined}
-                    className={cn(c.column?.align === "right" && "text-right", c.column?.align === "center" && "text-center")}
                   >
                     {c.sortable ? (
                       <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={(e) => toggleSort(c.id, e.shiftKey)}>

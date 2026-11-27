@@ -1,6 +1,7 @@
 // Choices and dates: MultiSelect (chips over a combobox), DatePicker (a calendar
 // in a popover), DropdownMenu, ButtonGroup and Field.
 
+import { Marked, Tipped } from "./info-tip";
 import { useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
 import { Slot, isSlot } from "../render";
@@ -117,7 +118,9 @@ export function MultiSelectControl({
                 <SortableChips chips={chosen.map((o) => ({ value: o.value, label: o.label ?? o.value, icon: o.icon }))} onReorder={onChange} disabled={disabled} />
               ) : (
                 chosen.map((o) => (
-                  <ComboboxChip key={o.value}>{optionLabel(o, "size-3")}</ComboboxChip>
+                  <ComboboxChip key={o.value} title={o.label ?? o.value}>
+                    {optionLabel(o, "size-3", true)}
+                  </ComboboxChip>
                 ))
               )}
               <ComboboxChipsInput
@@ -125,9 +128,12 @@ export function MultiSelectControl({
                 placeholder={chosen.length ? undefined : placeholder}
                 onKeyDown={(e: React.KeyboardEvent & { preventBaseUIHandler?: () => void }) => {
                   // Escape closes the list and nothing more: the primitive would
-                  // also drop every chosen chip.
+                  // also drop every chosen chip. Over an open list the key ends
+                  // here, so a dialog the field is in stays open. With the list
+                  // closed it goes on to the dialog.
                   if (e.key === "Escape") {
                     e.preventBaseUIHandler?.();
+                    if (open) e.stopPropagation();
                     setOpen(false);
                   }
                   // Enter with text in the field looks for something to add.
@@ -364,12 +370,15 @@ export const ButtonGroup: Renderer = ({ props, children }) => (
 
 export const Field: Renderer = ({ props, children }) => {
   const error = props.error ? String(props.error) : null;
+  const tooltip = props.tooltip ? String(props.tooltip) : null;
   return (
     <UiField data-invalid={error ? true : undefined} className={props.cls as string}>
-      <FieldLabel>
-        {String(props.label ?? "")}
-        {props.required ? <span className="text-destructive"> *</span> : null}
-      </FieldLabel>
+      <Marked text={tooltip}>
+        <FieldLabel>
+          <Tipped text={tooltip}>{String(props.label ?? "")}</Tipped>
+          {props.required ? <span className="text-destructive"> *</span> : null}
+        </FieldLabel>
+      </Marked>
       <FieldContent>
         {children}
         {props.help ? <FieldDescription>{String(props.help)}</FieldDescription> : null}
