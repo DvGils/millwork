@@ -115,12 +115,19 @@ class Chat(Component):
         if s is None or self.key is None:
             return {"messages": [], "busy": False, "inline": {}}
         thread = s.chat(self.key)
-        return {
+        extra = {
             "messages": [m.model_dump(mode="json") for m in thread.messages],
             "busy": thread.busy,
             "live_suggestions": thread.suggestions,
             "inline": dict(thread.inline),
         }
+        # What the reply asks and waits on, which no finished message holds
+        # yet. The tab draws it from the stream; this is for who reads the
+        # page as an outline.
+        asking = [a.data for a in thread.asked.values() if not a.future.done()]
+        if asking:
+            extra["asking"] = asking
+        return extra
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 

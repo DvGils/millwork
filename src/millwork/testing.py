@@ -591,10 +591,13 @@ class Page:
 
     async def answer(self, payload: Any = None) -> None:
         """Answer the open ``ask``: ``True``/``False`` press OK or Cancel, a dict
-        or model submits the form inside, ``None`` closes the dialog."""
+        or model submits the form inside, ``None`` closes the dialog. With no
+        dialog open, a question a chat's reply asks is answered with the
+        value of one of its options."""
         asks = [a for a in self.session._asks.values() if not a.future.done()]
         if not asks:
-            raise LookupError("nothing is being asked")
+            await self._answer_reply(payload)
+            return
         ask = asks[-1]
         prefix = self.session._ask_root(ask.request)
         inside = [n for n in self.tree.values() if n.id == prefix or n.id.startswith(prefix + "/")]
@@ -612,6 +615,24 @@ class Page:
         if form is None:
             raise LookupError("the ask has no form to answer")
         await self.submit(form.id, payload)
+
+    async def _answer_reply(self, value: Any) -> None:
+        """Press an option of the question a reply asked last."""
+        asked = [
+            (ask_id, a)
+            for thread in self.session._threads.values()
+            for ask_id, a in thread.asked.items()
+            if not a.future.done()
+        ]
+        if not asked:
+            raise LookupError("nothing is being asked")
+        ask_id, last = asked[-1]
+        if value not in last.values:
+            raise LookupError(
+                f"the question {last.data['question']!r} is answered with one of "
+                f"{sorted(last.values)}, not with {value!r}"
+            )
+        await self.event(last.node, "answer", {"id": ask_id, "value": value})
 
     async def navigate(self, path: str) -> None:
         """Take the session to another page, and wait for it to connect and render."""
@@ -633,7 +654,9 @@ class Page:
         while True:
             await asyncio.sleep(0)
             await asyncio.sleep(0)
-            asking = any(not a.future.done() for a in s._asks.values())
+            asking = any(not a.future.done() for a in s._asks.values()) or any(
+                thread.asking for thread in s._threads.values()
+            )
             # Delayed tasks (``s.later``) are not waited for; a running task or
             # handler that is blocked on an open ask is left for ``answer``.
             running = [t for t in s.tasks if t.status == "running" and not t.quiet]

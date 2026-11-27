@@ -19,6 +19,8 @@ jobs:
   python:
     name: Python ${{ matrix.python }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # Several times what the tests take, so a run that hangs ends.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       # Every Python from the oldest allowed to the newest released on Linux,

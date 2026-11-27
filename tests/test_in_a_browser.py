@@ -102,7 +102,7 @@ class Page:
     async def rest(self, at_most: int = 5000) -> None:
         """Wait for the page to stop changing, for ``at_most`` milliseconds.
         A page with a spinner on it never does, and is waited for that long."""
-        await self.tab.value(_SETTLE % {"timeout": at_most, "still": STILL})
+        await self.tab.value(_SETTLE % {"timeout": at_most, "still": STILL}, at_most / 1000)
 
     async def read(self, script: str) -> Any:
         return await self.tab.value(script)
@@ -720,6 +720,144 @@ async def test_copied_is_said_only_of_what_was_copied() -> None:
         assert "Copied" in await page.read(said)
 
 
+async def say(page: Page, within: str, text: str) -> None:
+    """Type ``text`` into the composer of the chat in ``within`` and send it."""
+    focused = await page.read(
+        f"(() => {{ const t = document.querySelector({json.dumps(within + ' textarea')});"
+        " if (!t) return false; t.focus(); return true; })()"
+    )
+    assert focused, f"no composer in {within}"
+    await page.tab.call("Input.insertText", text=text)
+    for kind in ("keyDown", "keyUp"):
+        await page.tab.call(
+            "Input.dispatchKeyEvent",
+            type=kind,
+            key="Enter",
+            code="Enter",
+            windowsVirtualKeyCode=13,
+            text="\r" if kind == "keyDown" else "",
+        )
+    # A spinner turns from here on, so the page does not come to rest.
+    await page.rest(800)
+
+
+async def shows(page: Page, words: str, within: str = "body") -> bool:
+    """Whether the page comes to say ``words``, given a few seconds."""
+    read = f"document.querySelector({json.dumps(within)})?.textContent ?? ''"
+    for _ in range(100):
+        if words in await page.read(read):
+            return True
+        await asyncio.sleep(0.05)
+    return False
+
+
+async def test_a_reply_on_its_way_is_there_after_a_reload_and_after_another_page() -> None:
+    import threading
+
+    more = threading.Event()
+    app = mw.App("midway", public=None)
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as reply:
+            await reply.text("The first half.")
+            async with reply.step("Looking it up"):
+                await asyncio.to_thread(more.wait, 20)
+            await reply.text("The second half.")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Chat(key="c", on_message=answer, show_steps="full", cls="h-[20rem]"),
+            ui.Link(label="Elsewhere", href="/b"),
+        )
+
+    @app.page("/b")
+    def other(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Link(label="Back", href="/"))
+
+    async def follow(page: Page, label: str) -> None:
+        links = "[...document.querySelectorAll('a')]"
+        await page.read(f"void {links}.find((a) => a.textContent === '{label}').click()")
+
+    try:
+        async with Page(app) as page:
+            await say(page, "main", "A question")
+            assert await shows(page, "The first half.")
+            # A tab that is loaded again has nothing of what was streamed
+            # to it before, and is told the reply as far as it has come.
+            await page.tab.call("Page.reload")
+            assert await page.tab.value(DRAWN)
+            assert await shows(page, "The first half."), "gone after a reload"
+            assert await shows(page, "Looking it up")
+            # A chat that left the page and came back has it as well.
+            await follow(page, "Elsewhere")
+            assert await shows(page, "Back")
+            await follow(page, "Back")
+            assert await shows(page, "The first half."), "gone after another page"
+            more.set()
+            assert await shows(page, "The second half.")
+            await page.rest()
+            said = await page.read("document.querySelector('main').textContent")
+            assert said.count("The first half.") == 1
+    finally:
+        more.set()
+
+
+async def test_a_question_in_a_reply_is_answered_with_a_button_and_says_what_was_chosen() -> None:
+    app = mw.App("asks", public=None)
+    got: list[str | None] = []
+
+    async def answer(s: mw.Session, turn: mw.ChatTurn) -> None:
+        async with turn.reply() as reply:
+            await reply.text("Archive holds 14 files.")
+            chosen = await reply.ask(
+                "Delete the 14 files?",
+                "Nothing links to them.",
+                options={"no": "Keep them", "yes": "Delete"},
+                primary="yes",
+            )
+            got.append(chosen)
+            await reply.text("Deleted." if chosen == "yes" else "Kept.")
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(ui.Chat(key="c", on_message=answer, cls="h-[30rem]"))
+
+    questions = (
+        "[...document.querySelectorAll('[data-slot=question]')].map((q) => ["
+        "q.hasAttribute('data-open'), q.textContent,"
+        " [...q.querySelectorAll('button')].map((b) => b.textContent)])"
+    )
+    statuses = "[...document.querySelectorAll('[role=status]')].map((e) => e.textContent)"
+    async with Page(app) as page:
+        await say(page, "main", "Clean up")
+        assert await shows(page, "Delete the 14 files?")
+        asked = "Delete the 14 files?Nothing links to them.Keep themDelete"
+        assert await page.read(questions) == [[True, asked, ["Keep them", "Delete"]]]
+        # The question is what says that the reply waits, and Stop is there.
+        assert await page.read(statuses) == []
+        assert "Stop" in await page.read("document.querySelector('main').textContent")
+        # A tab that is loaded again has the question, and can answer it.
+        await page.tab.call("Page.reload")
+        assert await page.tab.value(DRAWN)
+        assert await shows(page, "Delete the 14 files?"), "gone after a reload"
+        assert await page.read(questions) == [[True, asked, ["Keep them", "Delete"]]]
+        await page.press("Delete")
+        assert await shows(page, "Deleted.")
+        await page.rest()
+        assert got == ["yes"]
+        # Answered, it says what was chosen and has no button left.
+        assert await page.read(questions) == [[False, "Delete the 14 files?Delete", []]]
+        # A reply that is stopped leaves its question as one nobody answered.
+        await say(page, "main", "Again")
+        assert await shows(page, "Nothing links to them.")
+        await page.press("Stop")
+        assert await shows(page, "Not answered")
+        await page.rest()
+        assert got == ["yes"]
+        assert (await page.read(questions))[1] == [False, "Delete the 14 files?Not answered", []]
+
+
 async def test_a_reply_on_its_way_is_said_in_the_chat_and_on_the_assistants_button() -> None:
     import asyncio
     import threading
@@ -748,25 +886,6 @@ async def test_a_reply_on_its_way_is_said_in_the_chat_and_on_the_assistants_butt
             ui.Assistant(ui.Chat(key="helper", on_message=answers("helper")), key="a"),
         )
 
-    async def say(page: Page, within: str, text: str) -> None:
-        focused = await page.read(
-            f"(() => {{ const t = document.querySelector({json.dumps(within + ' textarea')});"
-            " if (!t) return false; t.focus(); return true; })()"
-        )
-        assert focused, f"no composer in {within}"
-        await page.tab.call("Input.insertText", text=text)
-        for kind in ("keyDown", "keyUp"):
-            await page.tab.call(
-                "Input.dispatchKeyEvent",
-                type=kind,
-                key="Enter",
-                code="Enter",
-                windowsVirtualKeyCode=13,
-                text="\r" if kind == "keyDown" else "",
-            )
-        # A spinner turns from here on, so the page does not come to rest.
-        await page.rest(800)
-
     waiting = (
         "[...document.querySelectorAll('[role=status]')].map((e) => e.ariaLabel || e.textContent)"
     )
@@ -787,7 +906,8 @@ async def test_a_reply_on_its_way_is_said_in_the_chat_and_on_the_assistants_butt
         await page.rest()
         # The answer is there and its handler is not done: Stop still
         # shows, and nothing says that more is on its way.
-        assert "Answer from the page." in await page.read("document.body.textContent")
+        said = await page.read("document.body.textContent")
+        assert said.count("Answer from the page.") == 1
         assert await page.read(
             "[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Stop')"
         )
@@ -2562,3 +2682,207 @@ async def test_in_a_horizontal_form_the_fields_start_on_one_line() -> None:
         assert tight["above"] and not tight["beside"] and tight["fits"]
         assert {tight["starts"][i] for i in (0, 1, 3, 4)} == {tight["left"]}
         assert tight["room"] > 250
+
+
+class Stopwatch(BaseModel):
+    pressed: list[str] = []
+    asking: bool = False
+    unit: str | None = None
+    bare: bool = False
+
+
+# Where a floating thing is in the window, by a class of its own.
+PLACE = """(() => {
+  const r = document.querySelector(%s).closest(".fixed").getBoundingClientRect();
+  return [Math.round(r.x), Math.round(r.y)];
+})()"""
+
+
+async def test_what_a_floating_thing_draws_elsewhere_keeps_its_presses() -> None:
+    """A menu, a list of options and a dialog are drawn outside what
+    declares them. A floating thing that can be dragged took the press on
+    one of them for the start of a drag, and its click with it."""
+    app = mw.App("stopwatch", public=None, state=Stopwatch)
+
+    def note(what: str) -> Any:
+        def noted(s: mw.Session[Stopwatch], value: Any = None) -> None:
+            s.state.pressed.append(what if value is None else f"{what} {value}")
+            s.state.asking = False
+
+        return noted
+
+    @app.page("/")
+    def home(s: mw.Session[Stopwatch]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.Text("; ".join(st.pressed), cls="pressed"),
+            ui.Floating(
+                ui.Card(
+                    ui.Text("Stopwatch", cls="its-name"),
+                    ui.DropdownMenu(
+                        trigger=ui.Button("More", variant="ghost"),
+                        items=[ui.MenuItem(id="lap", label="Lap")],
+                        on_select=note("menu"),
+                    ),
+                    ui.Select(
+                        options=["Seconds", "Minutes"],
+                        value=st.unit,
+                        placeholder="Unit",
+                        on_change=note("unit"),
+                    ),
+                    ui.Button("Reset", on_click=lambda s, _: setattr(s.state, "asking", True)),
+                    ui.Dialog(
+                        ui.Text("The laps go with it.", cls="its-warning"),
+                        open=st.asking,
+                        title="Reset the stopwatch?",
+                        footer=ui.Button("Yes, reset", on_click=note("reset")),
+                        on_close=lambda s, _: setattr(s.state, "asking", False),
+                    ),
+                    cls="w-72",
+                ),
+                draggable=True,
+                resizable=True,
+            ),
+        )
+
+    pressed = "document.querySelector('.pressed').textContent"
+    async with Page(app) as page:
+        await page.click("button", "More")
+        await page.click("[role=menuitem]", "Lap")
+        assert await page.read(pressed) == "menu lap"
+        await page.click("[role=combobox]")
+        await page.click("[role=option]", "Minutes")
+        assert await page.read(pressed) == "menu lap; unit Minutes"
+        await page.click("button", "Reset")
+        # A drag over the dialog's own words moves nothing under it.
+        before = await page.read(PLACE % json.dumps(".its-name"))
+        x, y = await page.middle(".its-warning")
+        await page.drag(".its-warning", (x + 60, y + 40))
+        assert await page.read(PLACE % json.dumps(".its-name")) == before
+        await page.click("button", "Yes, reset")
+        assert await page.read(pressed) == "menu lap; unit Minutes; reset"
+        # Nor does a press on what dims the page behind the dialog, where
+        # the edge of the floating thing lies under it, pull at that edge.
+        await page.click("button", "Reset")
+        box = """(() => { const r = document.querySelector(".its-name").closest(".fixed")
+          .getBoundingClientRect(); return [r.x, r.y + r.height / 2, Math.round(r.width)]; })()"""
+        x, y, width = await page.read(box)
+        mouse = {"button": "left", "clickCount": 1}
+        await page.tab.call("Input.dispatchMouseEvent", type="mousePressed", x=x + 2, y=y, **mouse)
+        await page.tab.call(
+            "Input.dispatchMouseEvent", type="mouseMoved", x=x - 60, y=y, buttons=1, **mouse
+        )
+        await page.let_go((x - 60, y))
+        assert (await page.read(box))[2] == width
+
+
+async def test_a_floating_thing_with_a_handle_is_dragged_by_the_handle_alone() -> None:
+    app = mw.App("stopwatch", public=None, state=Stopwatch)
+
+    def reset(s: mw.Session[Stopwatch], _: Any) -> None:
+        s.state.pressed.append("reset")
+
+    @app.page("/")
+    def home(s: mw.Session[Stopwatch]) -> ui.Component:
+        return ui.Page(
+            ui.Text(f"pressed {len(s.state.pressed)}", cls="count"),
+            ui.Button("Hide the handle", on_click=lambda s, _: setattr(s.state, "bare", True)),
+            ui.Floating(
+                ui.Card(
+                    ui.DragHandle(
+                        ui.Row(
+                            ui.Text("Stopwatch", cls="handle-words"),
+                            ui.Button("Reset", variant="ghost", on_click=reset),
+                            justify="between",
+                        ),
+                        hidden=s.state.bare,
+                        cls="handle",
+                    ),
+                    ui.Text("Four laps, the fastest in 58 seconds.", cls="body-words"),
+                    cls="w-72",
+                ),
+                draggable=True,
+            ),
+            ui.Floating(
+                ui.Card(ui.Text("No handle here.", cls="whole-words"), cls="w-48"),
+                side="left",
+                draggable=True,
+            ),
+        )
+
+    def place(of: str) -> str:
+        return PLACE % json.dumps(of)
+
+    look = "(() => { const s = getComputedStyle(document.querySelector(%s));"
+    look += " return [s.cursor, s.userSelect]; })()"
+    async with Page(app) as page:
+        start = await page.read(place(".handle"))
+        # By its body it stays where it is, and the words there are text
+        # like any other.
+        x, y = await page.middle(".body-words")
+        await page.drag(".body-words", (x - 120, y - 90))
+        assert await page.read(place(".handle")) == start
+        assert await page.read(look % json.dumps(".body-words")) == ["auto", "auto"]
+        assert (await page.read(look % json.dumps(".handle")))[0] == "grab"
+        # By its handle it goes along, also now that the drag before has
+        # left text selected around the handle, where a press is to the
+        # browser the start of a drag of that text.
+        assert await page.read("String(window.getSelection())") != ""
+        x, y = await page.middle(".handle-words")
+        await page.drag(".handle-words", (x - 120, y - 90))
+        moved = await page.read(place(".handle"))
+        assert [moved[0] - start[0], moved[1] - start[1]] == [-120, -90]
+        # A button in the handle is pressed, and is not a place to drag by.
+        await page.click("button", "Reset")
+        assert "pressed 1" in await page.read("document.querySelector('.count').textContent")
+        assert await page.read(place(".handle")) == moved
+        # One without a handle is dragged by the whole of it.
+        start = await page.read(place(".whole-words"))
+        x, y = await page.middle(".whole-words")
+        await page.drag(".whole-words", (x + 80, y - 60))
+        moved = await page.read(place(".whole-words"))
+        assert [moved[0] - start[0], moved[1] - start[1]] == [80, -60]
+        # And so is one whose handle is hidden, which nobody could reach.
+        await page.click("button", "Hide the handle")
+        start = await page.read(place(".body-words"))
+        x, y = await page.middle(".body-words")
+        await page.drag(".body-words", (x + 50, y - 40))
+        moved = await page.read(place(".body-words"))
+        assert [moved[0] - start[0], moved[1] - start[1]] == [50, -40]
+
+
+async def test_a_floating_thing_ends_where_the_pointer_lets_go() -> None:
+    """The last move of a drag may not be drawn yet when the pointer lets
+    go, or may never have been said. Where it lets go is where the thing
+    ends, and how big."""
+    app = mw.App("stopwatch", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Floating(
+                ui.Card(ui.Text("Four laps.", cls="laps"), cls="h-full"),
+                draggable=True,
+                resizable=True,
+            )
+        )
+
+    box = """(() => { const r = document.querySelector(".laps").closest(".fixed")
+      .getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round); })()"""
+    async with Page(app) as page:
+        left, top, width, height = await page.read(box)
+        # Carried part of the way, and let go further on with no move there.
+        x, y = await page.middle(".laps")
+        await page.drag(".laps", (x - 60, y - 30), let_go=False)
+        await page.let_go((x - 100, y - 70))
+        assert await page.read(box) == [left - 100, top - 70, width, height]
+        # The same of an edge that is pulled: the left one, by its middle.
+        left, top = left - 100, top - 70
+        x, y = left + 2, top + height / 2
+        mouse = {"button": "left", "clickCount": 1}
+        await page.tab.call("Input.dispatchMouseEvent", type="mousePressed", x=x, y=y, **mouse)
+        await page.tab.call(
+            "Input.dispatchMouseEvent", type="mouseMoved", x=x - 30, y=y, buttons=1, **mouse
+        )
+        await page.let_go((x - 80, y))
+        assert await page.read(box) == [left - 80, top, width + 80, height]

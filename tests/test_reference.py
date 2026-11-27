@@ -25,7 +25,7 @@ INSIDE_THE_SESSION = {
     *("detached", "dismiss", "enter", "event", "fall_back", "flush", "has_tab", "hello"),
     "in_zone",
     *("idle", "inflight", "kept_part", "leave", "leaving_for", "marked", "mounted"),
-    *("open_ask", "owns_resume", "place", "post", "ready", "render", "request"),
+    *("open_ask", "owns_resume", "place", "post", "ready", "render", "replies", "request"),
     *("settle_page", "shown", "sort", "stay_current", "stream", "take_owed", "take_wanted"),
     *("upload_spec", "visitor", "wait_for_task", "want", "warn", "watch_sign_in", "watch_user"),
 }

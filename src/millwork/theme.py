@@ -91,6 +91,7 @@ STRINGS: dict[str, str] = {
     "working": "Working",
     "thinking": "Thinking",
     "thought": "Thought",
+    "not_answered": "Not answered",
     "steps": "{n} steps",
     "one_step": "1 step",
     "send": "Send",

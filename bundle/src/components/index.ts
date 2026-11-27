@@ -42,7 +42,7 @@ import { Chat } from "./chat";
 import { Assistant } from "./assistant";
 import { Sortable } from "./sortable";
 import { ColorPicker } from "./color";
-import { Floating } from "./floating";
+import { DragHandle, Floating } from "./floating";
 import { SignIn } from "./sign-in";
 import { Download, FileCard, FileUpload, Image, Pdf } from "./files";
 import { AreaChart, BarChart, LineChart, PieChart } from "./charts";
@@ -106,6 +106,7 @@ export const registry: Record<string, Renderer> = {
   Assistant,
   Sortable,
   Floating,
+  DragHandle,
   SignIn,
   FileUpload,
   FileCard,

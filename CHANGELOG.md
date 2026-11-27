@@ -3,6 +3,64 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.7.0
+
+### Bug fixes
+
+- A reply that was still being written was lost to a tab that was
+  loaded again, and to a chat that left the page and came back: the tab
+  showed "Thinking" until the reply was over, and only then the whole of
+  it. The tab now keeps a reply on its way wherever its chat is, and a
+  tab that is loaded again, or that fell too far behind to be caught
+  up, is told the reply as far as it has come.
+- A reply was shown twice for as long as its handler went on after it,
+  saving the thread say. It is shown once.
+- A `ui.Floating` that is `draggable` took the press on a menu item, on
+  an option of a select and on a button in a dialog that it declares,
+  so none of them did anything, and a drag inside such a dialog moved
+  the floating thing under it. What is drawn outside the floating thing
+  has its presses to itself, also at the edges of one that is
+  `resizable` and of the window of a `ui.Assistant`.
+- A floating thing was not moved by a drag that began inside a
+  selection of text, which the browser took for a drag of the text.
+  The button and the window of a `ui.Assistant` are dragged the same
+  way and have the same fix.
+- A floating thing, and the window of a `ui.Assistant`, that was let
+  go right after the last move of a drag or a resize ended one move
+  short of where the pointer was. Where it ended was read off the page,
+  which had not drawn that move yet. It ends where the pointer lets go.
+- `millwork shot` waited without end for a browser that had started
+  and then stopped answering. It now gives up after a minute and says
+  what the browser did not answer. A browser that starts and then
+  says nothing, which happens now and then, is started again, up to
+  three times.
+
+### Features
+
+- `await reply.ask(question, description, options=...)` asks the person
+  a question inside a chat's reply and waits for the answer. The
+  options are buttons, the call returns the value of the one pressed,
+  and the question then shows what was chosen. `primary` names the
+  option that stands out and `timeout` ends the wait with `None`. A
+  reply that is stopped ends its question as not answered. The question
+  is a part of the message, `data-ask`, so a thread that is saved and
+  loaded shows it as it ended, and the time it waited is left out of
+  how long the reply took. In a test `page.send` returns with the
+  question open, `page.outline(as_text=True)` has it, and
+  `page.answer("yes")` answers it. `reply.data` no longer takes the
+  kind `ask`, which is this part's.
+- `ui.DragHandle` is the part a `ui.Floating` is dragged by. With one
+  inside, such as the row along its top, the floating thing is dragged
+  by that part alone, and the text in the rest of it can be selected.
+  Without one it is dragged by the whole of it, as before.
+
+### The manual
+
+- Chat has a section on a question in a reply, with a check before a
+  tool runs, a tool that lets the model ask, and a tool that runs in a
+  thread. Testing says how a test answers one.
+- Layout shows a floating panel that is dragged by a handle.
+
 ## 0.6.7
 
 ### Bug fixes
