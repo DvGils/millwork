@@ -25,6 +25,10 @@ versions; a release says so here when it does.
   selection of text, which the browser took for a drag of the text.
   The button and the window of a `ui.Assistant` are dragged the same
   way and have the same fix.
+- A floating thing, and the window of a `ui.Assistant`, that was let
+  go right after the last move of a drag or a resize ended one move
+  short of where the pointer was. Where it ended was read off the page,
+  which had not drawn that move yet. It ends where the pointer lets go.
 - `millwork shot` waited without end for a browser that had started
   and then stopped answering. It now gives up after a minute and says
   what the browser did not answer. A browser that starts and then

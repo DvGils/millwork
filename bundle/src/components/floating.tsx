@@ -68,7 +68,13 @@ const isPoint = (v: unknown): v is Point =>
 const isRect = (v: unknown): v is Rect =>
   isPoint(v) && typeof (v as Rect).width === "number" && typeof (v as Rect).height === "number";
 
-type Drag = { from: Point; origin: Point; moved: boolean };
+// `to` is where the last move carried it.
+type Drag = { from: Point; origin: Point; moved: boolean; to: Point | null };
+
+// Where a drag has carried its thing, with the pointer at `now`.
+function carried(d: Drag, now: Point): Point {
+  return { x: d.origin.x + now.x - d.from.x, y: d.origin.y + now.y - d.from.y };
+}
 
 // Whether the event happened inside the element that hears it. A dialog, a
 // menu or a list of options declared inside a floating thing is drawn
@@ -79,9 +85,11 @@ function within(e: { target: EventTarget | null; currentTarget: EventTarget | nu
 }
 
 // A press is a drag once it has moved more than a few pixels; the click that
-// ends a drag is swallowed before it reaches anything. `reset` forgets a
-// gesture whose element went away under it.
-function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, move: (to: Point) => void, done: () => void, onPress?: () => void) {
+// ends a drag is swallowed before it reaches anything. `done` is told where
+// the drag ended. That is where the pointer let go, which no move may have
+// said, and which is not to be read off the page: the last move may not be
+// drawn there yet. `reset` forgets a gesture whose element went away under it.
+function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, move: (to: Point) => void, done: (to: Point) => void, onPress?: () => void) {
   const drag = useRef<Drag | null>(null);
   const dragged = useRef(false);
   const onPointerDown = (e: ReactPointerEvent<T>) => {
@@ -90,7 +98,7 @@ function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, m
     // pointer here would take its click as well.
     if (onControl(e.target, e.currentTarget)) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { from: { x: e.clientX, y: e.clientY }, origin: origin(), moved: false };
+    drag.current = { from: { x: e.clientX, y: e.clientY }, origin: origin(), moved: false, to: null };
   };
   const onPointerMove = (e: ReactPointerEvent<T>) => {
     const d = drag.current;
@@ -98,19 +106,21 @@ function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, m
     const now = { x: e.clientX, y: e.clientY };
     if (!d.moved && isClick(d.from, now)) return;
     d.moved = true;
-    move({ x: d.origin.x + now.x - d.from.x, y: d.origin.y + now.y - d.from.y });
+    d.to = carried(d, now);
+    move(d.to);
   };
   const onPointerUp = (e: ReactPointerEvent<T>) => {
     const d = drag.current;
     drag.current = null;
     if (!d) return;
     e.currentTarget.releasePointerCapture(e.pointerId);
-    if (!d.moved) return;
+    const now = { x: e.clientX, y: e.clientY };
+    if (!d.moved && isClick(d.from, now)) return;
     // Only the click of this same gesture is swallowed: it comes right after
     // this event, or not at all when the pointer let go somewhere else.
     dragged.current = true;
     window.setTimeout(() => (dragged.current = false), 0);
-    done();
+    done(carried(d, now));
   };
   const onClickCapture = (e: ReactMouseEvent<T>) => {
     if (!dragged.current) return;
@@ -124,7 +134,7 @@ function useDrag<T extends HTMLElement>(enabled: boolean, origin: () => Point, m
   const onLost = () => {
     const d = drag.current;
     drag.current = null;
-    if (d?.moved) done();
+    if (d?.to) done(d.to);
   };
   // A press inside a selection, which may span this without holding any of
   // its text, is to the browser the start of a drag of what is selected,
@@ -189,10 +199,7 @@ export function useFloating<T extends HTMLElement>({ storageKey, side, draggable
     draggable,
     () => place(),
     (to) => setAt(clampPosition(to, measured(), viewport())),
-    () => {
-      const r = place();
-      write(storageKey, { x: r.x, y: r.y });
-    },
+    moveTo,
     onPress,
   );
 
@@ -241,7 +248,7 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
     return { at: { x: r.x, y: r.y }, size: geometry.size || defaultSize ? { width: r.width, height: r.height } : null };
   }, [geometry, nominal, defaultSize, min, screen]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const resizing = useRef<{ edges: Edges; from: Rect; start: Point } | null>(null);
+  const resizing = useRef<{ edges: Edges; from: Rect; start: Point; to: Rect } | null>(null);
 
   const current = useCallback((): Rect => {
     const el = ref.current;
@@ -287,13 +294,21 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
       moved.current = true;
       setGeometry((g) => ({ at: clampPosition(to, current(), viewport()), size: g?.size ?? null }));
     },
-    () => keep(current(), sized.current),
+    (to) => {
+      // The page is asked for the size alone, which a drag leaves as it is.
+      const now = current();
+      moved.current = true;
+      keep({ ...clampPosition(to, now, viewport()), width: now.width, height: now.height }, sized.current);
+    },
   );
 
+  // A resize ends at the size its last move or its release gave it, which
+  // the page may not show yet.
   const endResize = () => {
-    if (!resizing.current) return;
+    const r = resizing.current;
+    if (!r) return;
     resizing.current = null;
-    keep(current(), true);
+    keep(r.to, true);
   };
 
   // Resizing takes hold at the edges of the frame. It sees the press before
@@ -307,13 +322,15 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
       e.preventDefault();
       e.stopPropagation();
       e.currentTarget.setPointerCapture(e.pointerId);
-      resizing.current = { edges, from: current(), start: { x: e.clientX, y: e.clientY } };
+      const from = current();
+      resizing.current = { edges, from, start: { x: e.clientX, y: e.clientY }, to: from };
     },
     onPointerMove: (e: ReactPointerEvent<T>) => {
       const r = resizing.current;
       if (r) {
         const next = resizeRect(r.from, r.edges, e.clientX - r.start.x, e.clientY - r.start.y, viewport(), min);
         moved.current = true;
+        r.to = next;
         setGeometry({ at: { x: next.x, y: next.y }, size: { width: next.width, height: next.height } });
         return;
       }
@@ -323,8 +340,13 @@ export function useWindow<T extends HTMLElement>({ storageKey, draggable, resiza
       }
     },
     onPointerUp: (e: ReactPointerEvent<T>) => {
-      if (!resizing.current) return;
+      const r = resizing.current;
+      if (!r) return;
       e.currentTarget.releasePointerCapture(e.pointerId);
+      const dx = e.clientX - r.start.x;
+      const dy = e.clientY - r.start.y;
+      r.to = resizeRect(r.from, r.edges, dx, dy, viewport(), min);
+      if (dx !== 0 || dy !== 0) moved.current = true;
       endResize();
     },
     // The pointer gone, or taken by something else: the resize is over where it stands.

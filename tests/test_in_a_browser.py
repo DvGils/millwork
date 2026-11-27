@@ -2849,3 +2849,40 @@ async def test_a_floating_thing_with_a_handle_is_dragged_by_the_handle_alone() -
         await page.drag(".body-words", (x + 50, y - 40))
         moved = await page.read(place(".body-words"))
         assert [moved[0] - start[0], moved[1] - start[1]] == [50, -40]
+
+
+async def test_a_floating_thing_ends_where_the_pointer_lets_go() -> None:
+    """The last move of a drag may not be drawn yet when the pointer lets
+    go, or may never have been said. Where it lets go is where the thing
+    ends, and how big."""
+    app = mw.App("stopwatch", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Floating(
+                ui.Card(ui.Text("Four laps.", cls="laps"), cls="h-full"),
+                draggable=True,
+                resizable=True,
+            )
+        )
+
+    box = """(() => { const r = document.querySelector(".laps").closest(".fixed")
+      .getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round); })()"""
+    async with Page(app) as page:
+        left, top, width, height = await page.read(box)
+        # Carried part of the way, and let go further on with no move there.
+        x, y = await page.middle(".laps")
+        await page.drag(".laps", (x - 60, y - 30), let_go=False)
+        await page.let_go((x - 100, y - 70))
+        assert await page.read(box) == [left - 100, top - 70, width, height]
+        # The same of an edge that is pulled: the left one, by its middle.
+        left, top = left - 100, top - 70
+        x, y = left + 2, top + height / 2
+        mouse = {"button": "left", "clickCount": 1}
+        await page.tab.call("Input.dispatchMouseEvent", type="mousePressed", x=x, y=y, **mouse)
+        await page.tab.call(
+            "Input.dispatchMouseEvent", type="mouseMoved", x=x - 30, y=y, buttons=1, **mouse
+        )
+        await page.let_go((x - 80, y))
+        assert await page.read(box) == [left - 80, top, width + 80, height]
