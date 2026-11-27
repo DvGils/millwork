@@ -402,4 +402,7 @@ def channel(s: mw.Session[State]) -> ui.Component:
 fills. Anywhere else there is no height to take, and the stack or the
 area is as high as its content. `padding=False` on the `Page` takes the
 frame to the edges of the window. A `ui.Chat` and a `ui.Split` fill a
-page the same way without being told.
+page the same way without being told. A `ui.Table(fill=True)` takes the
+room that is left as well. Its rows scroll inside it, and what comes
+after it stands at the foot of the window. A `Stack` that fills works in
+a pane of a `Split` too.

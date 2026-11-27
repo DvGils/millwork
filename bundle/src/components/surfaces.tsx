@@ -288,11 +288,15 @@ export const Dialog: Renderer = ({ node, props, children, emit }) => {
       overlayClassName={urgent ? URGENT : undefined}
       showCloseButton={props.dismissable !== false}
     >
+      {/* The cross has the top right corner to itself: a title stops short of
+          it, and a dialog without a title begins under it. */}
       {props.title || props.description ? (
-        <DialogHeader>
+        <DialogHeader className={props.dismissable !== false ? "pr-8" : undefined}>
           {props.title ? <DialogTitle>{String(props.title)}</DialogTitle> : null}
           {props.description ? <DialogDescription>{String(props.description)}</DialogDescription> : null}
         </DialogHeader>
+      ) : props.dismissable !== false ? (
+        <div className="h-2 shrink-0" />
       ) : null}
       {/* The body reaches the dialog's edges, so a focus ring at its side is not
           cut off. It is a plain box that scrolls, with the column inside it: a

@@ -446,11 +446,15 @@ export const Sheet: Renderer = ({ node, props, children, emit }) => {
     }}
   >
     <SheetContent showCloseButton={props.dismissable !== false} data-node={node.id} side={(props.side as "left" | "right" | "top" | "bottom") ?? "right"} overlayClassName={urgent ? URGENT : undefined} className={cn("flex flex-col gap-4", sheetSize[String(props.size ?? "sm")], urgent && URGENT, props.cls as string)}>
+      {/* The cross has the top right corner to itself: a title stops short of
+          it, and a sheet without a title begins under it. */}
       {props.title || props.description ? (
-        <SheetHeader>
+        <SheetHeader className={props.dismissable !== false ? "pr-12" : undefined}>
           {props.title ? <SheetTitle>{String(props.title)}</SheetTitle> : null}
           {props.description ? <SheetDescription>{String(props.description)}</SheetDescription> : null}
         </SheetHeader>
+      ) : props.dismissable !== false ? (
+        <div className="h-7 shrink-0" />
       ) : null}
       <div data-slot="sheet-body" className="min-h-0 min-w-0 overflow-auto px-4 pb-4 wrap-break-word">
         <div className="flex flex-col gap-4">{children}</div>

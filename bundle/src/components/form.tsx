@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -217,6 +218,9 @@ export function rebase(base: string, schemaPointer: string, schemaBase: string):
 
 // ------------------------------------------------------------- the component
 
+// How long a submit may take before the form's button says that it is under way.
+const SLOW_MS = 300;
+
 export const Form: Renderer = ({ node, props, emit }) => {
   const schema = (props.schema ?? { fields: [] }) as { title?: string; fields: FieldSpec[] };
   const initial = (props.initial ?? null) as Draft | null;
@@ -238,6 +242,18 @@ export const Form: Renderer = ({ node, props, emit }) => {
 
   // A reconnect means the pending submit may never be answered: let the user try again.
   useEffect(() => onStatus((s) => s !== "open" && setSubmitting(false)), []);
+
+  // A submit that takes a moment says so on the button. One that is answered
+  // at once shows nothing, so the button does not flicker on every save.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!submitting) {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), SLOW_MS);
+    return () => clearTimeout(timer);
+  }, [submitting]);
 
   useEffect(() => {
     const onIssues = (e: Event) => {
@@ -316,7 +332,8 @@ export const Form: Renderer = ({ node, props, emit }) => {
       {props.submit || props.cancel ? (
         <div className="flex items-center gap-2">
           {props.submit ? (
-            <Button type="submit" disabled={disabled || readOnly || submitting}>
+            <Button type="submit" disabled={disabled || readOnly || submitting} aria-busy={slow || undefined}>
+              {slow ? <Spinner /> : null}
               {String(props.submit)}
             </Button>
           ) : null}

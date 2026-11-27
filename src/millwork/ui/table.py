@@ -13,7 +13,7 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from millwork.icons import check_icon
@@ -63,6 +63,11 @@ class Column(BaseModel):
     filterable: bool = True
     hidden: bool = False
     wrap: bool = False
+    lines: int | None = Field(default=None, ge=1)
+    """At most this many lines of a cell show, and the rest is cut with
+    three dots. The whole text shows under the pointer, and the table's
+    search reads all of it. A column that has no ``width`` then takes the
+    width the other columns leave."""
 
 
 class MenuItem(BaseModel):
@@ -213,6 +218,9 @@ class Table(Component):
     columns: list[Column] | None = None
     row_key: str = "id"
     height: int | str | None = None
+    fill: bool = False
+    """The table takes the room that is left, on a page or in a ``Stack``
+    that fills, and its rows scroll inside it. In place of a ``height``."""
     sticky_header: bool = True
     sortable: bool = True
     default_sort: list[tuple[str, Literal["asc", "desc"]]] = []
@@ -232,6 +240,12 @@ class Table(Component):
     on_action: Any = None
     on_sort: Any = None
     on_filter: Any = None
+
+    @model_validator(mode="after")
+    def _one_height(self) -> Table:
+        if self.fill and self.height is not None:
+            raise ValueError("a table has a height or fills the room that is left, not both")
+        return self
 
     @field_validator("columns", mode="before")
     @classmethod
@@ -316,6 +330,7 @@ class Table(Component):
             columns: Sequence[Column | str | Mapping[str, Any]] | None = None,
             row_key: str = "id",
             height: int | str | None = None,
+            fill: bool = False,
             sticky_header: bool = True,
             sortable: bool = True,
             default_sort: list[tuple[str, Literal["asc", "desc"]]] = ...,

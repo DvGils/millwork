@@ -37,6 +37,7 @@ def test_table_wire_shape() -> None:
         "filterable": True,
         "hidden": False,
         "wrap": False,
+        "lines": None,
     }
     assert node.props["tone_rows"] == [None, "destructive"]
     assert node.props["selected"] == [2] and node.props["on_select"] is True
@@ -321,3 +322,13 @@ async def test_table_events_reach_handlers_as_sent(tmp_path) -> None:
         await page.action(t, "rm", "b")
         await page.answer(True)
         assert seen[-1] == ("action", ["rm", "b"])
+
+
+def test_a_column_is_cut_to_whole_lines_and_a_table_fills_or_has_a_height() -> None:
+    table = ui.Table(rows=[], columns=[ui.Column(key="text", lines=2)], fill=True)
+    node = build(table).nodes["root"]
+    assert node.props["columns"][0]["lines"] == 2 and node.props["fill"] is True
+    with pytest.raises(ValueError, match="greater than or equal to 1"):
+        ui.Column(key="text", lines=0)
+    with pytest.raises(ValueError, match="a height or fills"):
+        ui.Table(rows=[], fill=True, height=300)

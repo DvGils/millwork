@@ -163,8 +163,12 @@ in view and a margin around them, so the page holds a few hundred cells
 however long the table is. The browser's own find then sees the rows
 that are drawn, which is what `search=True` is for. A change to the rows
 sends the rows that changed and draws those again, so a task can add to
-a long table as it runs. `wrap=True` on a column lets its text wrap
-instead of widening the table.
+a long table as it runs.
+
+`fill=True` takes the place of a `height` on
+[a page that fills the window](/components/layout#a-page-that-fills-the-window).
+The table then takes the room that is left, and its rows scroll inside
+it.
 
 ```python live
 LONG = [{"id": i, "customer": f"Customer {i}", "amount": 12.5 * i} for i in range(1, 2001)]
@@ -177,6 +181,33 @@ ui.Table(
         ui.Column(key="amount", format="currency", align="right"),
     ],
     height=320,
+)
+```
+
+## Long text
+<!-- keywords: truncate, ellipsis, clamp, overflow, wrap, long cell, remaining width -->
+
+A cell is one line, and a long text widens its column until the table
+scrolls sideways. `wrap=True` on a column lets the text wrap instead.
+`lines` cuts a cell to that many lines, with three dots where it ends.
+The whole text shows under the pointer, and `search=True` reads all of
+it. A column with `lines` and no `width` takes the width the other
+columns leave, and two such columns share it.
+
+```python live
+NOTES = [
+    {"id": 1, "by": "Ada", "note": "The export to a spreadsheet drops the last column when a filter is on, and the totals row then adds up the wrong cells."},
+    {"id": 2, "by": "Grace", "note": "Works."},
+    {"id": 3, "by": "Edsger", "note": "A report with more than a hundred pages takes a minute to open, and the bar at the top says nothing in that time."},
+]
+
+ui.Table(
+    rows=NOTES,
+    columns=[
+        ui.Column(key="id", width=60),
+        ui.Column(key="by", header="By"),
+        ui.Column(key="note", header="Note", lines=1),
+    ],
 )
 ```
 

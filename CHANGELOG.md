@@ -15,6 +15,11 @@ versions; a release says so here when it does.
   out of the box and took its cross along, and it could not be taken
   out again. A chip is now cut to the box with its cross kept, and shows
   its whole label under the pointer.
+- The cross of a `ui.Dialog` or a `ui.Sheet` lay over what was under it.
+  A long title ran under the cross, and without a title the cross sat on
+  the first thing in the dialog, right beside the cross of a field that
+  can be cleared. A title now stops short of the cross, and a dialog or
+  a sheet without a title begins under it.
 - In debug mode, a task in a thread was said to have changed the session
   state when a page's `connect` or `close` hook had, on a change of page
   while the task ran. The same went for a chat's reply or an async task
@@ -23,6 +28,22 @@ versions; a release says so here when it does.
   of these. Code that was running already and writes after a wait of its
   own, on `asyncio.sleep` or on a model's answer, is still taken for the
   thread.
+
+### Features
+
+- `ui.Table(fill=True)` gives a table the room that is left on a page
+  that fills the window, in place of a `height` worked out by hand. Its
+  rows scroll inside it. It works on a child of the page, in a
+  `ui.Stack` that fills and in a pane of a `ui.Split`.
+- The button of a `ui.Form` turns while a submit takes more than a
+  moment, as a `ui.Button` with `loading` does, so a save that takes a
+  second no longer looks like a press that did nothing. It needs nothing
+  from the handler. A submit that is answered at once shows nothing.
+- `ui.Column(lines=1)` cuts a cell to that many lines, with three dots
+  where it ends. The whole text shows under the pointer and the table's
+  search reads all of it. A column with `lines` and no `width` takes the
+  width the other columns leave, two such columns share it, and the
+  columns beside them keep the width they asked for.
 
 ## 0.6.6
 

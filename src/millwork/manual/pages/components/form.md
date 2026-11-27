@@ -225,6 +225,9 @@ async def register(s, v: Signup):
 ui.Form(Signup, on_submit=register, submit="Register", cancel="Clear")
 ```
 
+The form's button is greyed from the press until the handler is done,
+and it turns when that takes more than a moment.
+
 ## Submitting from outside
 
 `submit=None` hides the form's own button, and a `ui.Button(form=key)`

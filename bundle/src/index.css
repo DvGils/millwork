@@ -221,6 +221,15 @@ body.mw-dragging * {
     height: 1px;
     background: var(--border);
   }
+  /* A table cell cut to a number of lines, with three dots where it ends. */
+  .mw-lines {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--mw-lines);
+    line-clamp: var(--mw-lines);
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
 }
 /* A Grid's columns. The count comes from the node as a variable per width,
    and each width takes the count of the one below until it has its own. */
