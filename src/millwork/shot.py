@@ -63,6 +63,10 @@ TALLEST = 16000
 STILL = 300
 # How long the app and the browser each get to start, in seconds.
 START = 30.0
+# How long a browser gets to answer one thing asked of it, in seconds, on
+# top of what the thing itself is given. One that says nothing for that long
+# is not going to.
+ANSWER = 60.0
 # How long the cookie of a user signed in for a picture is good for.
 SIGNED_IN = dt.timedelta(minutes=5)
 
@@ -251,10 +255,10 @@ class _Tab:
             self._ws = await self._stack.enter_async_context(
                 connect(f"ws://127.0.0.1:{port}{address}", max_size=None, proxy=None)
             )
-            target = await self.call("Target.createTarget", url="about:blank")
-            attached = await self.call(
-                "Target.attachToTarget", targetId=target["targetId"], flatten=True
-            )
+            # A browser that started gets as long to say so as it got to start.
+            target = await self._ask("Target.createTarget", {"url": "about:blank"}, START)
+            attach = {"targetId": target["targetId"], "flatten": True}
+            attached = await self._ask("Target.attachToTarget", attach, START)
         except (OSError, WebSocketException) as exc:
             raise ShotError(f"{browser} started and could not be reached: {exc}") from exc
         self._session = attached["sessionId"]
@@ -282,26 +286,34 @@ class _Tab:
             await proc.wait()
 
     async def call(self, method: str, **params: Any) -> dict[str, Any]:
+        return await self._ask(method, params, ANSWER)
+
+    async def _ask(self, method: str, params: dict[str, Any], within: float) -> dict[str, Any]:
         self._n += 1
         message: dict[str, Any] = {"id": self._n, "method": method, "params": params}
         if self._session is not None:
             message["sessionId"] = self._session
-        await self._ws.send(json.dumps(message))
-        while True:
-            answer = json.loads(await self._ws.recv())
-            if answer.get("id") != self._n:
-                self.events.append(answer)
-                continue
-            if "error" in answer:
-                raise ShotError(f"the browser refused {method}: {answer['error'].get('message')}")
-            result: dict[str, Any] = answer.get("result", {})
-            return result
+        try:
+            async with asyncio.timeout(within):
+                await self._ws.send(json.dumps(message))
+                while True:
+                    answer = json.loads(await self._ws.recv())
+                    if answer.get("id") == self._n:
+                        break
+                    self.events.append(answer)
+        except TimeoutError:
+            raise ShotError(f"the browser did not answer {method} in {within:g} s") from None
+        if "error" in answer:
+            raise ShotError(f"the browser refused {method}: {answer['error'].get('message')}")
+        result: dict[str, Any] = answer.get("result", {})
+        return result
 
-    async def value(self, script: str) -> Any:
-        """What a script comes to in the page, a promise awaited."""
-        answer = await self.call(
-            "Runtime.evaluate", expression=script, returnByValue=True, awaitPromise=True
-        )
+    async def value(self, script: str, at_most: float = 0.0) -> Any:
+        """What a script comes to in the page, a promise awaited. A script
+        that waits for something says for how long ``at_most``, in seconds,
+        and is given that long to answer and a while more."""
+        asked = {"expression": script, "returnByValue": True, "awaitPromise": True}
+        answer = await self._ask("Runtime.evaluate", asked, ANSWER + at_most)
         if "exceptionDetails" in answer:
             raise ShotError("the page could not be read: " + answer["exceptionDetails"]["text"])
         return answer["result"].get("value")
@@ -473,7 +485,7 @@ async def _shoot(
         went = await tab.call("Page.navigate", url=base + path)
         if went.get("errorText"):
             raise ShotError(f"the browser could not open the page: {went['errorText']}")
-        still = bool(await tab.value(_SETTLE % {"timeout": wait, "still": STILL}))
+        still = bool(await tab.value(_SETTLE % {"timeout": wait, "still": STILL}, wait / 1000))
         cut = False
         if full:
             below = int(await tab.value(_BELOW))
@@ -482,7 +494,7 @@ async def _shoot(
                 height = min(height + below, TALLEST)
                 await tab.call("Emulation.setDeviceMetricsOverride", height=height, **metrics)
                 # What comes into view may have waited for that to load.
-                again = await tab.value(_SETTLE % {"timeout": min(wait, 3000), "still": STILL})
+                again = await tab.value(_SETTLE % {"timeout": min(wait, 3000), "still": STILL}, 3)
                 still = still and bool(again)
         picture = await tab.call("Page.captureScreenshot", format="png")
         ended = urlsplit(str(await tab.value("location.href")))

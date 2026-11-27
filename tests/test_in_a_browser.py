@@ -102,7 +102,7 @@ class Page:
     async def rest(self, at_most: int = 5000) -> None:
         """Wait for the page to stop changing, for ``at_most`` milliseconds.
         A page with a spinner on it never does, and is waited for that long."""
-        await self.tab.value(_SETTLE % {"timeout": at_most, "still": STILL})
+        await self.tab.value(_SETTLE % {"timeout": at_most, "still": STILL}, at_most / 1000)
 
     async def read(self, script: str) -> Any:
         return await self.tab.value(script)

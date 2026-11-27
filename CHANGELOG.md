@@ -25,6 +25,9 @@ versions; a release says so here when it does.
   selection of text, which the browser took for a drag of the text.
   The button and the window of a `ui.Assistant` are dragged the same
   way and have the same fix.
+- `millwork shot` waited without end for a browser that had started
+  and then stopped answering. It now gives up after a minute and says
+  what the browser did not answer.
 
 ### Features
 
