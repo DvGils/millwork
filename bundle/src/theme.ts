@@ -15,6 +15,7 @@ export interface ThemeBoot {
   stylesheet?: string | null;
   density: "comfortable" | "compact";
   scrollbars: "auto" | "thin";
+  tooltip_mark?: "help" | "info" | "underline";
   locale: string;
   currency?: string;
   strings: Record<string, string>;
@@ -53,6 +54,11 @@ export function locale(): string {
 
 export function currency(): string {
   return boot().currency ?? "EUR";
+}
+
+// What shows that a label or a title has a tooltip.
+export function tooltipMark(): "help" | "info" | "underline" {
+  return boot().tooltip_mark ?? "help";
 }
 
 export function getMode(): Mode {

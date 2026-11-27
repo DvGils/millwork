@@ -35,6 +35,15 @@ versions; a release says so here when it does.
   that fills the window, in place of a `height` worked out by hand. Its
   rows scroll inside it. It works on a child of the page, in a
   `ui.Stack` that fills and in a pane of a `ui.Split`.
+- A `tooltip` on a `ui.Card`, a `ui.Field` and a field of a `ui.Form`
+  is an explanation behind a mark beside the title or the label, shown
+  when the mark is pointed at or has the keyboard. A form takes it from
+  `labels`, `overrides` or the model's `json_schema_extra`. The theme's
+  new `tooltip_mark` says what the mark is: `help`, a question mark and
+  the default, `info`, or `underline`, a dotted line under the text. An
+  icon is a stop for Tab, answers to a tap, and has the explanation as
+  its name for a screen reader. In a test, `page.text()` holds the
+  tooltips.
 - The button of a `ui.Form` turns while a submit takes more than a
   moment, as a `ui.Button` with `loading` does, so a save that takes a
   second no longer looks like a press that did nothing. It needs nothing

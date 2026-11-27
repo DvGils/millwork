@@ -104,7 +104,7 @@ class Form(Component):
 
 
 def _apply_labels(fields: list[dict[str, Any]], labels: Mapping[str, Mapping[str, Any]]) -> None:
-    _apply(fields, labels, keys=("label", "help", "placeholder"))
+    _apply(fields, labels, keys=("label", "help", "placeholder", "tooltip"))
 
 
 def _apply_overrides(

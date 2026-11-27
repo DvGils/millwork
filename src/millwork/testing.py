@@ -735,7 +735,7 @@ _NOT_READ = frozenset(
 
 def _form_text(fields: list[dict[str, Any]]) -> list[str]:
     """What a person reads at a form's fields, in the order they stand: each
-    field's label, help and placeholder, the name of its group, its choices,
+    field's label, help, tooltip and placeholder, the name of its group, its choices,
     and the same of the fields under it."""
     out: list[str] = []
     groups: set[str] = set()
@@ -746,7 +746,7 @@ def _form_text(fields: list[dict[str, Any]]) -> list[str]:
         if group and group not in groups:
             groups.add(group)
             out.append(group)
-        out.extend(str(f[k]) for k in ("label", "help", "placeholder") if f.get(k))
+        out.extend(str(f[k]) for k in ("label", "help", "tooltip", "placeholder") if f.get(k))
         out.extend(str(o["label"]) for o in f.get("options", []) if o.get("label"))
         out.extend(_form_text(f.get("fields", [])))
         item = f.get("item")

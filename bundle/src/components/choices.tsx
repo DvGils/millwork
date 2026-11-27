@@ -1,6 +1,7 @@
 // Choices and dates: MultiSelect (chips over a combobox), DatePicker (a calendar
 // in a popover), DropdownMenu, ButtonGroup and Field.
 
+import { Marked, Tipped } from "./info-tip";
 import { useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
 import { Slot, isSlot } from "../render";
@@ -369,12 +370,15 @@ export const ButtonGroup: Renderer = ({ props, children }) => (
 
 export const Field: Renderer = ({ props, children }) => {
   const error = props.error ? String(props.error) : null;
+  const tooltip = props.tooltip ? String(props.tooltip) : null;
   return (
     <UiField data-invalid={error ? true : undefined} className={props.cls as string}>
-      <FieldLabel>
-        {String(props.label ?? "")}
-        {props.required ? <span className="text-destructive"> *</span> : null}
-      </FieldLabel>
+      <Marked text={tooltip}>
+        <FieldLabel>
+          <Tipped text={tooltip}>{String(props.label ?? "")}</Tipped>
+          {props.required ? <span className="text-destructive"> *</span> : null}
+        </FieldLabel>
+      </Marked>
       <FieldContent>
         {children}
         {props.help ? <FieldDescription>{String(props.help)}</FieldDescription> : null}

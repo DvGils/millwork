@@ -401,6 +401,7 @@ class _Walker:
             "pointer": pointer,
             "label": prop.get("title") or humanize(name),
             "help": prop.get("description"),
+            "tooltip": prop.get("tooltip"),
             "placeholder": (prop.get("examples") or [None])[0],
             "required": required and "default" not in prop and pointer not in self.defaults,
             "group": prop.get("group"),

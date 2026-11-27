@@ -579,3 +579,28 @@ def test_a_variant_names_what_its_rows_hold_unseen() -> None:
     # A variant with nothing unseen says nothing of it.
     (op,) = (f for f in field_spec(Plan)["fields"] if f["name"] == "operations")
     assert all("unseen" not in v for v in op["item"]["variants"])
+
+
+def test_a_fields_tooltip_comes_from_the_model_the_labels_or_the_overrides() -> None:
+    from millwork.nodes import build
+
+    class Export(BaseModel):
+        name: str = ""
+        decimals: int | None = Field(None, json_schema_extra={"tooltip": "Rounded, not cut."})
+        totals: bool = True
+
+    def tips(**how: object) -> dict[str, object]:
+        form = ui.Form(Export, on_submit=lambda s, doc: None, **how)
+        fields = build(form).nodes["root"].props["schema"]["fields"]
+        return {f["name"]: f.get("tooltip") for f in fields}
+
+    assert tips() == {"name": None, "decimals": "Rounded, not cut.", "totals": None}
+    assert tips(labels={"name": {"tooltip": "On the cover."}})["name"] == "On the cover."
+    told = tips(overrides={"/decimals": {"tooltip": "Of every number."}})
+    assert told["decimals"] == "Of every number."
+
+
+def test_a_cards_tooltip_needs_a_title_to_stand_beside() -> None:
+    assert ui.Card(title="Export", tooltip="Of the table as it is.").tooltip
+    with pytest.raises(ValueError, match="beside its title"):
+        ui.Card(tooltip="Of the table as it is.")

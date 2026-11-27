@@ -64,7 +64,11 @@ def example(s):
 <!-- keywords: customize a field, widget, placeholder -->
 
 `labels` maps a field's pointer, or its name, to a `label`, `help`,
-`placeholder` and `choices`, so the model stays free of interface copy.
+`placeholder`, `tooltip` and `choices`, so the model stays free of
+interface copy. `help` is a line under the field. A `tooltip` is an
+explanation behind a mark beside the label, shown when the mark is
+pointed at or has the keyboard, for a form that reads calmer without the
+line. The model can carry it too, as `json_schema_extra={"tooltip": ...}`.
 `overrides` maps a pointer to any spec key, such as a `widget`, `min`,
 `max`, `step` or `rows`. `counter` shows under a text field how much it
 holds, against its `max_length`. `fields` picks a subset in order.
@@ -116,7 +120,10 @@ class Prefs(BaseModel):
 ui.Form(
     Prefs,
     fields=["name", "mood", "level", "tags"],
-    labels={"name": {"label": "Display name", "help": "Shown to other users."}},
+    labels={
+        "name": {"label": "Display name", "help": "Shown to other users."},
+        "level": {"tooltip": "From 0, just looking, to 5, here every day."},
+    },
     overrides={
         "/mood": {"choices": [("ok", "Fine"), ("bad", "Not fine")]},
         "/level": {"widget": "slider", "min": 0, "max": 5},

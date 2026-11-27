@@ -2362,3 +2362,85 @@ async def test_the_cross_of_a_dialog_or_a_sheet_lies_over_nothing(kind: str) -> 
         assert await page.tab.value(DRAWN)
         await page.rest()
         assert await page.read(clear) == [True, True]
+
+
+@pytest.mark.parametrize("mark", ["help", "info", "underline"])
+async def test_a_tooltip_is_behind_the_mark_the_theme_chooses(mark: str) -> None:
+    app = mw.App("tips", public=None, theme=Theme(tooltip_mark=mark))  # type: ignore[arg-type]
+    pressed: list[bool] = []
+
+    class Line(BaseModel):
+        text: str = ""
+
+    class Export(BaseModel):
+        decimals: int = Field(1, json_schema_extra={"tooltip": "Rounded, not cut."})
+        totals: bool = Field(True, json_schema_extra={"tooltip": "A last row of sums."})
+        lines: list[Line] = Field([], json_schema_extra={"tooltip": "Above the table."})
+        name: str = ""
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Card(
+                ui.Form(Export, on_submit=lambda s, doc: None, key="form"),
+                ui.Field(ui.Input(key="zone"), label="Zone", tooltip="Of the dates."),
+                title="Export",
+                tooltip="Of the table as it is.",
+                on_click=lambda s, _: pressed.append(True),
+                key="card",
+            ),
+        )
+
+    marks = """[...document.querySelectorAll("[data-slot=info-tip]")].map((m) => [
+      m.tagName, !!m.querySelector("svg"), m.getAttribute("aria-label"),
+      getComputedStyle(m).textDecorationStyle, m.textContent,
+      m.getAttribute("aria-description")])"""
+    shown = (
+        "[...document.querySelectorAll('[data-slot=tooltip-content]')].map((e) => e.textContent)"
+    )
+    title = "[data-slot=card-title] [data-slot=info-tip]"
+    async with Page(app) as page:
+        found = await page.read(marks)
+        # The card, three fields of the form, one of them a list, and the
+        # field built by hand. The field without a tooltip has no mark.
+        assert len(found) == 5
+        if mark == "underline":
+            assert [m[0] for m in found] == ["SPAN"] * 5 and not any(m[1] for m in found)
+            assert {m[3] for m in found} == {"dotted"}
+            assert [m[4] for m in found] == ["Export", "Decimals", "Totals", "Lines", "Zone"]
+            # The explanation is the text's description, for a screen reader.
+            assert found[1][5] == "Rounded, not cut."
+        else:
+            assert [m[0] for m in found] == ["BUTTON"] * 5 and all(m[1] for m in found)
+            # The explanation is the mark's name, for a screen reader.
+            assert found[0][2] == "Of the table as it is." and found[1][2] == "Rounded, not cut."
+        # A label without a tooltip is as wide as its field, as it was.
+        wide_as_field = """(() => {
+          const field = document.querySelector('[data-field="/name"]');
+          const label = field.querySelector("label").getBoundingClientRect();
+          return Math.round(label.width) === Math.round(field.getBoundingClientRect().width);
+        })()"""
+        assert await page.read(wide_as_field)
+        # The keyboard reaches a mark, and the explanation shows there.
+        await page.read("document.querySelectorAll('[data-slot=info-tip]')[1].focus()")
+        await page.key("Shift", 16)
+        await asyncio.sleep(0.8)
+        assert await page.read(shown) == ["Rounded, not cut."]
+        await page.key("Escape", 27)
+        await page.read("document.activeElement.blur()")
+        await asyncio.sleep(0.4)
+        assert await page.read(shown) == []
+        if mark == "underline":
+            # The title of a card that can be pressed still presses it.
+            await page.click(title)
+            assert pressed == [True]
+            return
+        # A press on an icon is the icon's, and does not press the card it
+        # is in. It shows the explanation, which is how a finger asks.
+        at = await page.middle(title)
+        for kind in ("touchStart", "touchEnd"):
+            points = [{"x": at[0], "y": at[1]}] if kind == "touchStart" else []
+            await page.tab.call("Input.dispatchTouchEvent", type=kind, touchPoints=points)
+        await asyncio.sleep(0.6)
+        assert await page.read(shown) == ["Of the table as it is."]
+        assert pressed == []

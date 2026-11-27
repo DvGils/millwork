@@ -6,6 +6,7 @@ import { cn } from "cn";
 import { icon } from "../icons";
 import { Count, grouped, limitOf, PasswordInput } from "./inputs";
 import { optionLabel } from "./option-label";
+import { InfoTip, Marked, Tipped } from "./info-tip";
 import { t } from "../theme";
 import { onStatus } from "../ws";
 import { formatSize, upload, type FileRef } from "./files";
@@ -73,6 +74,7 @@ interface FieldSpec {
   step?: number;
   item?: FieldSpec;
   item_label?: string;
+  tooltip?: string | null;
   accept?: string[] | null;
   max_files?: number;
   max_items?: number | null;
@@ -415,7 +417,10 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
   if (f.widget === "fieldset") {
     return (
       <FieldSet data-field={pointer}>
-        <FieldLegend>{f.label}</FieldLegend>
+        <FieldLegend className={f.tooltip ? "flex items-center gap-1.5" : undefined}>
+          <Tipped text={f.tooltip}>{f.label}</Tipped>
+          {f.tooltip ? <InfoTip text={f.tooltip} /> : null}
+        </FieldLegend>
         {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
         <FieldGroup>
           {/* A model in a model is one cell of a form in columns, as a group is. */}
@@ -434,7 +439,10 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
       // Rows of fields want the form's whole width, so in a form laid out in
       // columns a list and a union lie across all of them.
       <FieldSet data-field={pointer} className="col-span-full">
-        <FieldLegend>{f.label}</FieldLegend>
+        <FieldLegend className={f.tooltip ? "flex items-center gap-1.5" : undefined}>
+          <Tipped text={f.tooltip}>{f.label}</Tipped>
+          {f.tooltip ? <InfoTip text={f.tooltip} /> : null}
+        </FieldLegend>
         {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
         <div className="flex flex-col gap-(--mw-field-gap)">
           {items.map((_, i) => {
@@ -467,7 +475,10 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
   if (f.widget === "union") {
     return (
       <FieldSet data-field={pointer} className="col-span-full">
-        <FieldLegend>{f.label}</FieldLegend>
+        <FieldLegend className={f.tooltip ? "flex items-center gap-1.5" : undefined}>
+          <Tipped text={f.tooltip}>{f.label}</Tipped>
+          {f.tooltip ? <InfoTip text={f.tooltip} /> : null}
+        </FieldLegend>
         <FieldGroup className={ctx.columns ? inColumns : undefined}>
           <ItemField item={f} pointer={pointer} schemaPointer={f.pointer} ctx={ctx} />
         </FieldGroup>
@@ -490,16 +501,22 @@ function OneField({ f, base, schemaBase, ctx }: { f: FieldSpec; base: string; sc
         <>
           {control}
           <div className="flex flex-col gap-0.5">
-            <FieldLabel htmlFor={id}>{f.label}</FieldLabel>
+            <Marked text={f.tooltip}>
+              <FieldLabel htmlFor={id}>
+                <Tipped text={f.tooltip}>{f.label}</Tipped>
+              </FieldLabel>
+            </Marked>
             {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
           </div>
         </>
       ) : (
         <>
-          <FieldLabel htmlFor={id}>
-            {f.label}
-            {f.required ? <span className="text-destructive"> *</span> : null}
-          </FieldLabel>
+          <Marked text={f.tooltip} className="group-data-[orientation=horizontal]/field:flex-auto">
+            <FieldLabel htmlFor={id}>
+              <Tipped text={f.tooltip}>{f.label}</Tipped>
+              {f.required ? <span className="text-destructive"> *</span> : null}
+            </FieldLabel>
+          </Marked>
           {control}
           {f.help ? <FieldDescription>{f.help}</FieldDescription> : null}
         </>

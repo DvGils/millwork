@@ -228,6 +228,17 @@ def test_currency_is_an_iso_code_and_reaches_the_boot() -> None:
         Theme(currency="euro")
 
 
+def test_the_mark_of_a_tooltip_is_the_themes_and_a_question_mark_unless_it_says() -> None:
+    import pytest
+
+    from millwork.theme import Theme
+
+    assert Theme().boot()["tooltip_mark"] == "help"
+    assert Theme(tooltip_mark="underline").boot()["tooltip_mark"] == "underline"
+    with pytest.raises(ValueError):
+        Theme(tooltip_mark="star")
+
+
 def test_a_font_service_is_let_in_by_the_pages_policy_and_said_once(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

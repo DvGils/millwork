@@ -267,10 +267,20 @@ class Card(Component):
     }
     title: str | None = None
     description: str | None = None
+    tooltip: str | None = None
+    """An explanation of the card, shown when the mark beside its title is
+    pointed at or has the keyboard. The theme's ``tooltip_mark`` says what
+    the mark is."""
     footer: Component | None = None
     padding: bool = True
     tone: Tone | None = None
     on_click: Any = None
+
+    @model_validator(mode="after")
+    def _a_tooltip_has_a_title(self) -> Card:
+        if self.tooltip and not self.title:
+            raise ValueError("a card's tooltip stands beside its title, and this card has none")
+        return self
 
     if TYPE_CHECKING:  # the signature a type checker sees; written by scripts/typed_inits.py
 
@@ -282,6 +292,7 @@ class Card(Component):
             cls: str | None = None,
             title: str | None = None,
             description: str | None = None,
+            tooltip: str | None = None,
             footer: Component | None = None,
             padding: bool = True,
             tone: Tone | None = None,
@@ -1137,6 +1148,9 @@ class Field(Component):
     type: ClassVar[str] = "Field"
     label: str
     help: str | None = None
+    tooltip: str | None = None
+    """An explanation shown when the mark beside the label is pointed at or
+    has the keyboard, where ``help`` is a line under the control."""
     error: str | None = None
     required: bool = False
 
@@ -1150,6 +1164,7 @@ class Field(Component):
             cls: str | None = None,
             label: str,
             help: str | None = None,
+            tooltip: str | None = None,
             error: str | None = None,
             required: bool = False,
         ) -> None: ...

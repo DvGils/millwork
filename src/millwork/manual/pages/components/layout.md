@@ -155,12 +155,17 @@ select text or to move a handle.
 table or a `ui.Chat` reaches the card's edges. A title keeps the room
 above it.
 
+`tooltip` explains the card behind a mark beside its title, shown when
+the mark is pointed at or has the keyboard. The theme's
+[`tooltip_mark`](/theming#options) says what the mark looks like.
+
 ```python live
 ui.Grid(
     ui.Card(
         ui.Text("The body of the card goes here, as children."),
         title="A card",
         description="With a description under the title.",
+        tooltip="And an explanation for whoever asks for it.",
         footer=ui.Button("Action", size="sm"),
     ),
     ui.Card(
