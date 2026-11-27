@@ -321,6 +321,194 @@ async def test_the_button_that_adds_a_row_says_so_in_the_themes_words() -> None:
         assert "/ranges/0/label" in await page.fields()
 
 
+class Shelf(BaseModel):
+    seen: int = 0
+
+
+async def test_the_query_of_an_address_is_the_pages_on_every_way_in() -> None:
+    app = mw.App("query", state=Shelf, public=None)
+
+    def more(s: mw.Session[Shelf], _: object) -> None:
+        s.state.seen += 1
+
+    @app.page("/")
+    def home(s: mw.Session[Shelf]) -> ui.Page:
+        return ui.Page(
+            ui.Text(f"view={s.query.get('view', 'all')};seen={s.state.seen}", key="says"),
+            ui.Link(label="Open", href="/?view=open"),
+            ui.Link(label="Done", href="/?view=done&tag=a%20b"),
+            ui.Link(label="All", href="/"),
+            ui.Button("More", on_click=more),
+        )
+
+    async with Page(app) as page:
+        origin = await page.read("location.origin")
+
+        async def says(want: str) -> str:
+            read = "document.querySelector(\"[data-node='root/says']\")?.textContent"
+            for _ in range(100):
+                if await page.read(read) == want:
+                    break
+                await asyncio.sleep(0.05)
+            return f"{await page.read(read)} at {await page.read('location.search')!r}"
+
+        async def follow(label: str) -> None:
+            links = "[...document.querySelectorAll('a')]"
+            await page.read(f"void {links}.find((a) => a.textContent === '{label}').click()")
+
+        # The address a person was sent, or typed, opens the page it names.
+        await page.tab.call("Page.navigate", url=origin + "/?view=open")
+        assert await says("view=open;seen=0") == "view=open;seen=0 at '?view=open'"
+        # A reload keeps the address, and with it the session and its state.
+        await page.press("More")
+        assert await says("view=open;seen=1") == "view=open;seen=1 at '?view=open'"
+        await page.tab.call("Page.reload")
+        assert await page.tab.value(DRAWN)
+        assert await says("view=open;seen=1") == "view=open;seen=1 at '?view=open'"
+        # A link to the same page with another query, and to it with none,
+        # each change the address, and the history goes back through them.
+        await follow("Done")
+        assert await says("view=done;seen=1") == "view=done;seen=1 at '?view=done&tag=a%20b'"
+        await follow("All")
+        assert await says("view=all;seen=1") == "view=all;seen=1 at ''"
+        await page.read("void history.back()")
+        assert await says("view=done;seen=1") == "view=done;seen=1 at '?view=done&tag=a%20b'"
+        await page.read("void history.back()")
+        assert await says("view=open;seen=1") == "view=open;seen=1 at '?view=open'"
+        await page.read("void history.forward()")
+        assert await says("view=done;seen=1") == "view=done;seen=1 at '?view=done&tag=a%20b'"
+        await page.read("void history.forward()")
+        assert await says("view=all;seen=1") == "view=all;seen=1 at ''"
+
+
+async def test_a_link_to_a_route_of_the_app_is_followed_by_the_browser() -> None:
+    from starlette.responses import PlainTextResponse
+
+    app = mw.App("routes", state=Shelf, public=None)
+    asked: list[str] = []
+
+    async def file(request: Any) -> PlainTextResponse:
+        asked.append(str(request.url.path) + "?" + str(request.url.query))
+        save = {"Content-Disposition": 'attachment; filename="notes.txt"'}
+        return PlainTextResponse("notes", headers=save)
+
+    async def plain(request: Any) -> PlainTextResponse:
+        return PlainTextResponse("a page of the route's own")
+
+    app.route("/raw/{name}", file)
+    app.route("/plain", plain)
+
+    def more(s: mw.Session[Shelf], _: object) -> None:
+        s.state.seen += 1
+
+    @app.page("/")
+    def home(s: mw.Session[Shelf]) -> ui.Page:
+        return ui.Page(
+            ui.Text(f"seen={s.state.seen}", key="says"),
+            ui.Link(label="Notes", href="/raw/notes.txt?v=2"),
+            ui.Button("Later", on_click=lambda s, _: s.navigate("/raw/later.txt")),
+            ui.Markdown("[Plain](/plain)"),
+            ui.Button("More", on_click=more),
+        )
+
+    async with Page(app) as page:
+
+        async def until(script: str, want: object) -> object:
+            for _ in range(100):
+                if await page.read(script) == want:
+                    break
+                await asyncio.sleep(0.05)
+            return await page.read(script)
+
+        async def follow(label: str) -> None:
+            links = "[...document.querySelectorAll('a')]"
+            await page.read(f"void {links}.find((a) => a.textContent === '{label}').click()")
+
+        says = "document.querySelector(\"[data-node='root/says']\")?.textContent"
+        # A file to save: the browser asks the route for it, and the page
+        # stays as it is, with its session.
+        await follow("Notes")
+        for _ in range(100):
+            if asked:
+                break
+            await asyncio.sleep(0.05)
+        assert asked == ["/raw/notes.txt?v=2"]
+        await page.press("Later")
+        for _ in range(100):
+            if len(asked) > 1:
+                break
+            await asyncio.sleep(0.05)
+        assert asked[1:] == ["/raw/later.txt?"]
+        await page.press("More")
+        assert await until(says, "seen=1") == "seen=1"
+        assert await page.read("location.pathname") == "/"
+        # What a route answers with a page of its own is where the tab goes.
+        await follow("Plain")
+        assert await until("location.pathname", "/plain") == "/plain"
+        said = "a page of the route's own"
+        assert await until("document.body.innerText", said) == said
+
+
+WIDTHS = """[...document.querySelectorAll("[data-node='root/%s'] th")].map(
+  (th) => Math.round(th.getBoundingClientRect().width))"""
+
+
+async def test_a_column_is_as_wide_as_it_says_in_pixels_or_as_a_length() -> None:
+    app = mw.App("widths", public=None)
+    rows = [{"id": 1, "a": "x", "b": "y", "c": "z"}]
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Page:
+        def table(width: int | str, key: str) -> ui.Table:
+            columns = [ui.Column(key="a", width=width), ui.Column(key="b"), ui.Column(key="c")]
+            return ui.Table(rows=rows, columns=columns, row_key="id", key=key)
+
+        return ui.Page(table(320, "number"), table("20rem", "length"))
+
+    async with Page(app) as page:
+        await wide(page)
+        number, length = await page.read(WIDTHS % "number"), await page.read(WIDTHS % "length")
+        assert number[0] == 320 and length == number
+
+
+EDGES = """(() => {
+  const card = document.querySelector("[data-node='root/%s'] [data-slot=card]");
+  const box = card.getBoundingClientRect();
+  const row = card.querySelector("[data-slot=card-content] p").getBoundingClientRect();
+  const round = (n) => Math.round(n);
+  return [round(row.top - box.top), round(box.bottom - row.bottom), round(row.left - box.left)];
+})()"""
+
+
+async def test_a_card_without_padding_is_filled_to_its_edges() -> None:
+    app = mw.App("flush", public=None)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Page:
+        def row() -> ui.Text:
+            return ui.Text("Row", cls="block border-b px-4 py-3")
+
+        return ui.Page(
+            ui.Card(row(), padding=False, key="bare"),
+            ui.Card(row(), padding=False, title="Rows", key="titled"),
+            ui.Card(row(), padding=False, footer=ui.Text("Foot"), key="footed"),
+            ui.Card(row(), key="padded"),
+        )
+
+    async with Page(app) as page:
+        # Nothing between what the card holds and its edge on any side.
+        assert await page.read(EDGES % "bare") == [0, 0, 0]
+        # A title keeps the room above it, and what is under it still
+        # reaches the sides and the bottom.
+        top, bottom, left = await page.read(EDGES % "titled")
+        assert top > 40 and (bottom, left) == (0, 0)
+        # With a footer under it, it still starts at the top edge.
+        top, _, left = await page.read(EDGES % "footed")
+        assert (top, left) == (0, 0)
+        # A card with its padding has it all around.
+        assert await page.read(EDGES % "padded") == [16, 16, 16]
+
+
 LINES = """Object.fromEntries([...document.querySelectorAll("%s a")].map((a) => [
   a.textContent.trim(), getComputedStyle(a).textDecorationLine,
 ]))"""
@@ -1787,3 +1975,182 @@ async def test_what_is_hidden_deep_in_a_long_page_does_not_make_the_window_scrol
         )
         # Scrolled to its end, the body ends a little under its last child.
         assert 0 <= below < 80
+
+
+AT = "document.activeElement.dataset.part ?? document.activeElement.tagName"
+
+
+async def test_a_row_that_can_be_pressed_is_pressed_from_the_keyboard() -> None:
+    class Seen(BaseModel):
+        picked: list[int] = []
+        gone: list[int] = []
+
+    app = mw.App("rows", state=Seen, public=None)
+    clicked: list[int] = []
+    few = [{"id": n, "name": f"row {n}"} for n in range(1, 4)]
+    many = [{"id": n, "name": f"row {n}"} for n in range(1, 301)]
+
+    def pick(s: mw.Session[Seen], keys: list[int]) -> None:
+        s.state.picked = keys
+
+    def click(s: mw.Session[Seen], key: int) -> None:
+        clicked.append(key)
+
+    def dismiss(s: mw.Session[Seen], key: int) -> None:
+        s.state.gone.append(key)
+
+    @app.page("/")
+    def home(s: mw.Session[Seen]) -> ui.Component:
+        return ui.Page(
+            ui.Button("Before", key="before"),
+            ui.Table(
+                key="click",
+                rows=few,
+                on_row_click=click,
+                row_actions=[ui.MenuItem(id="edit", label="Edit")],
+                on_action=lambda s, _: None,
+            ),
+            ui.Table(
+                key="pick", rows=few, selection="row", selected=s.state.picked, on_select=pick
+            ),
+            ui.Table(key="plain", rows=few),
+            ui.Table(
+                key="inbox",
+                rows=[r for r in few if r["id"] not in s.state.gone],
+                on_row_click=dismiss,
+            ),
+            ui.Table(key="long", rows=many, height=300, on_row_click=click),
+        )
+
+    def rows_of(of: str, read: str) -> str:
+        rows = f"document.querySelectorAll(\"[data-node='root/{of}'] tbody tr\")"
+        return f"[...{rows}].map((r) => {read})"
+
+    def stops(of: str) -> str:
+        return rows_of(of, "r.getAttribute('tabindex')")
+
+    async with Page(app) as page:
+        await wide(page)
+        # One row of the table takes Tab, and rows nobody can press take none.
+        assert await page.read(stops("click")) == ["0", "-1", "-1"]
+        assert await page.read(stops("plain")) == [None, None, None]
+        await page.read("document.querySelector(\"[data-node='root/before']\").focus()")
+        await page.key("Tab", 9)
+        while await page.read("document.activeElement.tagName") == "BUTTON":
+            # The buttons that sort come before the rows.
+            await page.key("Tab", 9)
+        assert await page.read(AT) == "1"
+        await page.key("Enter", 13)
+        await page.key("ArrowDown", 40)
+        assert await page.read(AT) == "2"
+        # The row the keyboard is on shows it.
+        ring = "(() => { const s = getComputedStyle(document.activeElement);"
+        ring += " return [s.outlineStyle, s.outlineWidth, s.outlineOffset]; })()"
+        assert await page.read(ring) == ["solid", "3px", "-3px"]
+        await page.key(" ", 32)
+        await page.key("End", 35)
+        assert await page.read(AT) == "3"
+        await page.key("ArrowDown", 40)
+        assert await page.read(AT) == "3"
+        await page.key("Home", 36)
+        await page.key("ArrowUp", 38)
+        assert await page.read(AT) == "1"
+        await page.key("ArrowDown", 40)
+        # Tab goes on to what the row holds, and comes back to the row it left.
+        assert await page.read(stops("click")) == ["-1", "0", "-1"]
+        await page.key("Tab", 9)
+        assert await page.read("document.activeElement.tagName") == "BUTTON"
+        await page.key("Tab", 9, shift=True)
+        assert await page.read(AT) == "2"
+        # A key in the menu of a row is the menu's own.
+        await page.key("Tab", 9)
+        await page.key("Enter", 13)
+        await page.key("Escape", 27)
+        assert clicked == [1, 2]
+
+        # Space on a row of a table that lets one be picked picks it.
+        await page.read("document.querySelector(\"[data-node='root/pick'] tbody tr\").focus()")
+        await page.key("ArrowDown", 40)
+        await page.key(" ", 32)
+        assert await page.read(rows_of("pick", "r.dataset.state ?? ''")) == ["", "selected", ""]
+
+        # A row that goes when it is pressed leaves the keyboard on the row
+        # that took its place, and the last row leaves it on the one before.
+        await page.read("document.querySelector(\"[data-node='root/inbox'] tbody tr\").focus()")
+        await page.key("ArrowDown", 40)
+        await page.key("Enter", 13)
+        assert await page.read(rows_of("inbox", "r.dataset.part")) == ["1", "3"]
+        assert await page.read(AT) == "3"
+        await page.key("Enter", 13)
+        assert await page.read(AT) == "1"
+
+        # A long table draws some of its rows, and the keyboard reaches them all.
+        # A row it goes up to is not left under the header.
+        await page.read(
+            "document.querySelector(\"[data-node='root/long'] tbody tr[data-part]\").focus()"
+        )
+        await page.key("End", 35)
+        await page.rest()
+        assert await page.read(AT) == "300"
+        for _ in range(12):
+            await page.key("ArrowUp", 38)
+        assert await page.read(AT) == "288"
+        clear = """(() => {
+            const row = document.activeElement.getBoundingClientRect();
+            const head = document.querySelector("[data-node='root/long'] thead");
+            return row.top >= head.getBoundingClientRect().bottom - 1;
+        })()"""
+        assert await page.read(clear)
+        await page.key("Home", 36)
+        await page.rest()
+        assert await page.read(AT) == "1"
+        await page.key("Enter", 13)
+        assert clicked == [1, 2, 1]
+
+
+async def test_a_chart_that_can_be_pressed_is_pressed_from_the_keyboard() -> None:
+    app = mw.App("charts", public=None)
+    rows = [{"m": "Jan", "v": 3}, {"m": "Feb", "v": 5}]
+    clicks: list[dict[str, Any]] = []
+
+    def note(s: mw.Session, point: dict[str, Any]) -> None:
+        clicks.append(point)
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.BarChart(rows, x="m", y="v", on_click=note, height=150, key="bar"),
+            ui.LineChart(rows, x="m", y="v", on_click=note, height=150, key="line"),
+            ui.PieChart(rows, x="m", y="v", on_click=note, height=150, key="pie"),
+            ui.BarChart(rows, x="m", y="v", height=150, key="still"),
+        )
+
+    async with Page(app) as page:
+        await wide(page)
+        for name in ("bar", "line", "pie", "still"):
+            chart = f"[data-node='root/{name}'] svg[role=application]"
+            await page.read(f'document.querySelector("{chart}").focus()')
+            await page.rest()
+            await page.key("Enter", 13)
+            await page.key("ArrowRight", 39)
+            await page.key(" ", 32)
+        # The bar of a chart with one series is the one pressed, as a pointer
+        # would press it. A line is pressed at its x.
+        assert [c["x"] for c in clicks] == ["Jan", "Feb"] * 3
+        assert clicks[0] == {"x": "Jan", "series": "v", "value": 3, "values": {"v": 3}}
+        assert clicks[2] == {"x": "Jan", "series": None, "value": None, "values": {"v": 3}}
+        assert clicks[5] == {"x": "Feb", "value": 5, "share": 0.625}
+        # A chart the keyboard comes back to shows no tooltip. Enter shows it
+        # again, as on a chart nobody can press, and the next one presses.
+        await page.read(
+            "document.querySelector(\"[data-node='root/bar'] svg[role=application]\").focus()"
+        )
+        await page.rest()
+        del clicks[:]
+        await page.key("Enter", 13)
+        assert clicks == []
+        await page.key("Enter", 13)
+        assert [c["x"] for c in clicks] == ["Feb"]
+        # The keyboard stops at a pie once.
+        stops = "document.querySelectorAll(\"[data-node='root/pie'] [tabindex='0']\").length"
+        assert await page.read(stops) == 1

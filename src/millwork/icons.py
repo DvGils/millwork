@@ -6,7 +6,7 @@ from __future__ import annotations
 import difflib
 import re
 
-from millwork._icons import PASCAL
+from millwork._icons import PASCAL, RENAMED
 
 
 def _kebab(name: str) -> str:
@@ -20,10 +20,20 @@ def _kebab(name: str) -> str:
 ICONS: tuple[str, ...] = tuple(sorted(_kebab(name) for name in PASCAL))
 """Every icon the bundle ships, by its lucide name: ``"file-text"``, ``"trash-2"``."""
 
+# The name lucide gives an icon today, for each one the bundle carries under
+# an older name: ``circle-check`` for ``check-circle-2``. Both draw it.
+_LATER: tuple[str, ...] = tuple(sorted(_kebab(name) for name in RENAMED))
+
 # The spellings the tab resolves: the kebab name, the same with its digit
 # attached ("trash2"), and the PascalCase export.
 _ACCEPTED: frozenset[str] = frozenset(
-    {*ICONS, *(re.sub(r"-([0-9])", r"\1", name) for name in ICONS), *PASCAL}
+    {
+        *ICONS,
+        *_LATER,
+        *(re.sub(r"-([0-9])", r"\1", name) for name in (*ICONS, *_LATER)),
+        *PASCAL,
+        *RENAMED,
+    }
 )
 
 
@@ -67,7 +77,7 @@ def check_icon(name: str | None) -> str | None:
             f"such as /public/icons/rocket.svg, got {_shown(name)}"
         )
     close = (
-        difflib.get_close_matches(name.lower(), ICONS, n=3, cutoff=0.5)
+        difflib.get_close_matches(name.lower(), (*ICONS, *_LATER), n=3, cutoff=0.5)
         if len(name) <= _NAME_LIMIT
         else []
     )

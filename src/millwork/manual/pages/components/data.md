@@ -12,7 +12,9 @@ dataclasses. Columns come from the rows unless `columns` names them, each
 with a `header`, a `format`, a `width`, an `align`, and whether it is
 `sortable` or `filterable`. A column without a `header` is headed by its
 key exactly as written, which keeps the names of data the app did not
-make, an upload for one, as they are.
+make, an upload for one, as they are. A `width` is a number of pixels or
+a length as CSS writes one, such as `"20rem"`. It is what the column
+asks for, and a table that is short of room gives it less.
 
 ## A plain table
 
@@ -76,6 +78,10 @@ ui.Table(rows=ROWS, search=True, filters=True, page_size=3, summary="People in t
 receives the keys. `row_actions` adds a menu per row, and `on_action`
 receives `(action id, row key)`. `on_row_click` receives the key of the
 clicked row.
+
+A table whose rows can be pressed takes the keyboard as well. Tab stops
+at one of its rows, the arrow keys, Home and End move between the rows
+of the page, and Enter or Space presses the row.
 
 With `"rows"`, a press on a checkbox with shift held sets every row from
 the last checkbox used to that one to the same state, selected or

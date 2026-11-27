@@ -155,9 +155,14 @@ ServerMessage = Annotated[
 # ---------------------------------------------------------------- client -> server
 
 
+# As long as the path of a page gets, with its query: what a server takes
+# as the address of a request is no longer than this.
+PATH_LIMIT = 16 * 1024
+
+
 class Hello(Wire):
     type: Literal["hello"] = "hello"
-    path: str
+    path: str = Field(max_length=PATH_LIMIT)
     session: str | None = None
     resume: str | None = None
     seq: int = 0
@@ -184,7 +189,7 @@ class Answer(Wire):
 
 class Navigate(Wire):
     type: Literal["navigate"] = "navigate"
-    path: str
+    path: str = Field(max_length=PATH_LIMIT)
 
 
 # Printable ASCII, short: it goes into every binary frame's header as is.

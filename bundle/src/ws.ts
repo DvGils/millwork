@@ -578,8 +578,9 @@ function command(name: string, args: Record<string, unknown>) {
       const browserPath = toBrowser(path);
       const target = pendingHash ? `${browserPath}#${pendingHash}` : browserPath;
       // Compared as app paths: the prefix with and without its slash is one page,
-      // so a popped history entry is never pushed over.
-      if (!samePath(toApp(window.location.pathname), path) || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
+      // so a popped history entry is never pushed over. The query is part
+      // of where the tab is.
+      if (!samePath(here(), path) || window.location.hash !== (pendingHash ? `#${pendingHash}` : "")) {
         keepScrollInHistory();
         window.history.pushState({ mw: true }, "", target);
       }
@@ -637,6 +638,16 @@ function command(name: string, args: Record<string, unknown>) {
       closedForGood = true;
       void signOut();
       break;
+    case "load": {
+      // One of the app's routes or mounts, which is no page. The browser
+      // asks for it as it does for an address that is typed. What comes
+      // back may be a file to save, and the page then stays as it is.
+      const hash = args.hash ? String(args.hash) : pendingHash;
+      pendingHash = null;
+      const to = safeUrl(String(args.path ?? ""));
+      if (to !== "about:blank") window.location.assign(hash ? `${to}#${hash}` : to);
+      break;
+    }
     case "leave":
       // The sign-in behind this session is over: the page goes, not only its input.
       closedForGood = true;
@@ -684,9 +695,14 @@ function command(name: string, args: Record<string, unknown>) {
   }
 }
 
+// Where the address bar is, as the app spells it: the path and its query.
+function here(): string {
+  return toApp(window.location.pathname) + window.location.search;
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
-    const path = toApp(window.location.pathname);
+    const path = here();
     if (!samePath(path, boot.path)) {
       poppedScroll = scrollFromHistory();
       navigate(path + window.location.hash);

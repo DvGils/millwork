@@ -3,6 +3,97 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.6.6
+
+### Bug fixes
+
+- The query of an address was lost on most ways into a page. A page
+  opened at `/tickets?view=open` by its address, by a reload or by the
+  forward button got `/tickets` as its `s.path`, and only a link inside
+  the session kept the query. A reload after such a link started a new
+  session, so the state went with it, and a link from there to the same
+  page without a query left the old one in the address bar. The
+  query is now part of where a tab is on every way in. It also comes
+  back after a sign-in, when the login page returns the visitor to the
+  page they asked for.
+- `ui.Card(padding=False)` kept sixteen pixels of its own above and below
+  what it holds, so a list, a table or a `ui.Chat` in it had an empty
+  band at the top and the bottom. The content now reaches all four
+  edges, and a title keeps the room above it. A card that wants the band
+  back says `cls="py-4"`.
+- In a test, `page.action` on a `ui.Chat` sent what a table's row action
+  sends, which the chat dropped without a word, so the test passed and
+  had checked nothing. `page.action(chat, id, message)` now presses the
+  action under that answer. A chat event that names no message of the
+  chat, an action the chat does not have, feedback that is not `"up"`,
+  `"down"` or `None`, and a regenerate or an edit that is switched off
+  now fail the test with a `LookupError`, as any other event the page
+  does not take.
+- The not-found page's `s.params["path"]` is the path without its query
+  on every way in. After a navigation inside the session it used to hold
+  the query as well.
+- A `ui.Link`, a button with `href`, a link in `ui.Markdown` or
+  `s.navigate` to a path that `app.route` or `app.mount` serves landed
+  on "Page not found", since the session took every path of the app for
+  a page. The browser now asks for such a path itself, as it does when
+  the address is typed. What a route sends as an attachment is saved and
+  the page stays where it is. In a test the session stays on its page
+  and the command `load` carries the path.
+- An address with a tab or a line break in it, such as `"/\t/host"`,
+  passed the tab's check for a path of the app, and a browser reads it as
+  `//host`, which is another site. An `href` built from text a visitor
+  wrote could lead off the app that way, on a middle click, in a new tab
+  or on the login page. Such an address is now refused, as one with a
+  backslash already was.
+- A path a tab names is at most 16 kB with its query, and a page asked
+  for at a longer address answers 414. The way back through a sign-in
+  keeps at most 2000 characters and leaves a longer query behind, since
+  it rides in a cookie that a browser drops when it grows too large.
+- `ui.Download(content=...)` with an async function failed with "cannot
+  download a coroutine". The function is now awaited. `s.download` with
+  one says that a handler awaits it first.
+- `ui.Column(width="20rem")` was accepted and not applied, since only a
+  number was. A width as text is now a CSS length.
+- In a test, `page.text()` held the word "end" while a question from
+  `s.confirm` stood on the page.
+- A row of a table that can be pressed, through `on_row_click` or
+  `selection="row"`, could not be reached from the keyboard. Tab now
+  stops at one row of such a table, the arrow keys, Home and End move
+  between the rows of the page, and Enter or Space presses the row.
+- A chart with `on_click` took no press from the keyboard. Enter or
+  Space now presses the point the tooltip is on, which the arrow keys
+  move. Tab stops at a pie chart once, where it stopped twice.
+
+### Features
+
+- `s.query` is what follows the `?` of the address. `s.query.get("view",
+  "open")` gives one value and `s.query.getlist("tag")` every value of a
+  name that comes more than once.
+- An icon takes the name lucide gives it today as well as the older one
+  the bundle carries it under. `circle-check`, `triangle-alert`,
+  `chart-column`, `house` and sixteen more now work, in an `icon` prop
+  and in the import of a custom component. `mw.ICONS` still lists the 150
+  icons by the names they are carried under.
+
+### The manual
+
+- Path parameters has a section on the query.
+- Testing shows how a test presses what stands under a chat message, an
+  action of the app's own, feedback, regenerate and edit.
+- Layout says what `padding=False` does to a card.
+- Text and Custom components say that lucide's current names work.
+- Navigation and Routes and middleware say what a link to a route does.
+- Data says what a column's `width` takes and that a table short of room
+  gives a column less.
+- Testing says where the text of `s.confirm` stands in the dialog, and
+  what a click on a link to a route does in a test.
+- Data and Charts say how a row and a chart are pressed from the
+  keyboard.
+- Testing says that a row action with `confirm` waits for
+  `page.answer`, and that a notice is read as `page.notices[-1].tone`.
+- Custom components says that a component mounts a little after the
+  page shows.
+
 ## 0.6.5
 
 ### Bug fixes

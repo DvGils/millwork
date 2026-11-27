@@ -636,8 +636,8 @@ def test_a_session_ends_when_its_sign_in_runs_out(tmp_path: Path) -> None:
         # and one on a public page. Bob's hook names a destination, and Cy's
         # fails.
         sign_in_for(app, client, ada, 2)
-        gated, _ = tab()
-        public, _ = tab("/terms")
+        gated, _ = tab("/?view=open")
+        public, _ = tab("/terms?part=2")
         sign_in_for(app, client, bob, 2)
         sent, _ = tab()
         sign_in_for(app, client, cy, 2)
@@ -646,9 +646,10 @@ def test_a_session_ends_when_its_sign_in_runs_out(tmp_path: Path) -> None:
         sign_in_for(app, client, ada, 3600)
         _, kept = tab()
         # The gated tab goes to the login page and back to its page, the
-        # public one reloads where it is, for a visitor.
-        assert left_for(gated) == "/_mw/login?next=%2F"
-        assert left_for(public) == "/terms"
+        # public one reloads where it is, for a visitor. Each comes back to
+        # its page with the query it had.
+        assert left_for(gated) == "/_mw/login?next=%2F%3Fview%3Dopen"
+        assert left_for(public) == "/terms?part=2"
         assert left_for(sent) == "/terms"
         assert left_for(failed) == "/_mw/login?next=%2F"
         # Asked once for Ada's two tabs, and her lasting sign-in goes on.

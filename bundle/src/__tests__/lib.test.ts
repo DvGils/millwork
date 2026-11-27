@@ -48,6 +48,17 @@ describe("relative links", () => {
       expect(safeUrl(bad)).toBe("about:blank");
     }
   });
+
+  it("takes no address with a control character, which a browser reads without it", () => {
+    // "/\t/evil.example" is "//evil.example" to a browser, another site.
+    for (const bad of ["/\t/evil.example", "/\n/evil.example", "/\r/evil.example", "/a\u0000b", "x\t/y", "/a?q=\tb"]) {
+      expect(safeUrl(bad)).toBe("about:blank");
+      expect(isSameOriginPath(bad)).toBe(false);
+      expect(isInternalPath(bad)).toBe(false);
+    }
+    // Around an address they are no part of it.
+    expect(safeUrl(" /orders\n")).toBe("/orders");
+  });
 });
 
 describe("signOutUrl", () => {

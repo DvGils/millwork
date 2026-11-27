@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import inspect
 import logging
 import re
 import secrets
@@ -26,6 +27,8 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
+
+from starlette.datastructures import QueryParams
 
 from millwork import context, marks, offers, outline, work
 from millwork.chat import ChatTurn, Thread, UIMessage
@@ -139,6 +142,8 @@ class Session[S]:
         self.page = page
         self.params = params
         self.path = path
+        # The query of the path, read once for each path the session is on.
+        self._query: tuple[str, QueryParams] | None = None
         self.user: Any = None
         # The time zone of the browser the tab runs in, as the tab named it
         # when it last connected. None when it named none, or one this
@@ -315,6 +320,19 @@ class Session[S]:
     # ------------------------------------------------------------- reading
 
     @property
+    def query(self) -> QueryParams:
+        """What follows the ``?`` of the path the tab is on, read like a dict.
+
+        ``s.query.get("view", "all")`` is one value, the last when the name
+        comes more than once, and ``s.query.getlist("tag")`` is every value
+        of a name. Each is text as the address spelled it, decoded, and it is
+        whatever the person typed there, to be checked like any input."""
+        if self._query is None or self._query[0] != self.path:
+            asked = QueryParams(self.path.split("#", 1)[0].partition("?")[2])
+            self._query = (self.path, asked)
+        return self._query[1]
+
+    @property
     def closed(self) -> bool:
         """Whether the session is over."""
         return self.over
@@ -385,7 +403,7 @@ class Session[S]:
         login page for a page that needs a sign-in, or its own public page."""
         if to is not None:
             return to
-        path = self.path.split("?", 1)[0].split("#", 1)[0]
+        path = self.path.split("#", 1)[0]
         return path if self.page.public else f"/_mw/login?{urlencode({'next': path})}"
 
     # ------------------------------------------------------------- ending
@@ -624,6 +642,17 @@ class Session[S]:
         the fragment. None, with the tab told, when the session's user may
         not go there at all."""
         path, _, fragment = want.path.partition("#")
+        path = marks.spelled(path)
+        if self.app.serves(path):
+            # One of the app's own routes or mounts, which is no page. The
+            # browser asks for it itself, as it does when the address is
+            # typed, and the session stays on the page it has.
+            asked: dict[str, Any] = {"path": path}
+            if fragment:
+                asked["hash"] = fragment
+            self.command("load", **asked)
+            self._stays()
+            return None
         page, params = self.app.locate(path) or self.app.fallback("not_found", path)
         if self.app.auth is not None and not page.public and self.user is None:
             self.post(ServerError(message=self.text("sign_in_hint"), fatal=True))
@@ -1101,6 +1130,18 @@ class Session[S]:
         self.command("download", id=ref.id, filename=filename)
         return ref
 
+    def _download_made(self, component: Download, content: Any) -> None:
+        """Send what a ``Download`` holds, or what its callable made."""
+        try:
+            self.download(component.filename, content, component.mime)
+        except Exception as exc:
+            self._download_failed(component, exc)
+
+    def _download_failed(self, component: Download, exc: Exception) -> None:
+        log.error("download %s failed", component.filename, exc_info=exc)
+        self._failed(f"the download of {component.filename}", exc)
+        self.toast(self.text("download_failed"), tone="destructive")
+
     # ------------------------------------------------------------- chat
 
     def chat(self, key: str) -> Thread:
@@ -1220,12 +1261,15 @@ class Session[S]:
         """The thread and the index of the message an action names, when it is
         one of this chat's with the expected role and the thread is free."""
         if component.key is None:
+            self._unheard(event, "has no key, so no thread")
             return None
         thread = self.chat(component.key)
         payload = event.payload if isinstance(event.payload, dict) else {}
         message_id = payload.get("id")
         index = thread.find(message_id) if isinstance(message_id, str) else None
         if index is None or thread.messages[index].role != role:
+            said = "message of the user's" if role == "user" else "answer"
+            self._unheard(event, f"has no {said} with the id {message_id!r}")
             return None
         return thread, index, payload
 
@@ -1238,6 +1282,7 @@ class Session[S]:
         thread, index, payload = target
         value = payload.get("value")
         if value not in ("up", "down", None):
+            self._unheard(event, f"takes 'up', 'down' or None as feedback, not {value!r}")
             return None
         comment = str(payload.get("comment") or "").strip()[:2000] or None
         message = thread.messages[index]
@@ -1260,17 +1305,22 @@ class Session[S]:
         thread, index, payload = target
         action = payload.get("action")
         if not any(a.id == action for a in component.actions):
+            self._unheard(event, f"has no action {action!r}")
             return None
         handler = self.tree.handler(event.node, "action") if self.tree else None
         if handler is not None:
             return self._plain(handler, thread.messages[index], action)
+        self._unheard(event, "has no handler for action")
         return None
 
     def _chat_regenerate(self, event: Event, component: Chat) -> None:
         """Answer a user message again: the assistant message named and everything
         after it go, and ``on_message`` runs for the user message before it."""
+        if not component.regenerate:
+            self._unheard(event, "does not answer again, with regenerate=False")
+            return
         target = self._chat_target(event, component, "assistant")
-        if target is None or not component.regenerate:
+        if target is None:
             return
         thread, index, _ = target
         if thread.busy:
@@ -1280,14 +1330,18 @@ class Session[S]:
             (i for i in range(index - 1, -1, -1) if thread.messages[i].role == "user"), None
         )
         if user is None:
+            self._unheard(event, "has no message before that answer to answer again")
             return
         thread.truncate(index)
         self._chat_run(event.node, thread, thread.messages[user])
 
     def _chat_edit(self, event: Event, component: Chat) -> None:
         """A user message with new text: what followed it goes, and it is answered again."""
+        if not component.edit:
+            self._unheard(event, "takes no edits, with edit=False")
+            return
         target = self._chat_target(event, component, "user")
-        if target is None or not component.edit:
+        if target is None:
             return
         thread, index, payload = target
         if thread.busy:
@@ -1300,6 +1354,7 @@ class Session[S]:
         message = thread.messages[index]
         files = [p for p in message.parts if p.get("type") == "file"]
         if not text and not files:
+            self._unheard(event, "takes no edit that leaves a message empty")
             return
         message.parts = ([{"type": "text", "text": text}] if text else []) + files
         thread.truncate(index + 1)
@@ -2076,11 +2131,22 @@ class Session[S]:
         if event.name == "download" and isinstance(component, Download):
             token = context.bind(self)
             try:
-                self.download(component.filename, component.content, component.mime)
+                content = component.content
+                if callable(content):
+                    content = content()
+                if inspect.isawaitable(content):
+                    # What an async function makes is waited for in a turn,
+                    # as a handler is.
+                    name = component.filename
+                    return Plan(
+                        work.awaited_download,
+                        (self, component, content),
+                        f"the download of {name}",
+                        f"download {name} failed",
+                    )
+                self._download_made(component, content)
             except Exception as exc:
-                log.exception("download %s failed", component.filename)
-                self._failed(f"the download of {component.filename}", exc)
-                self.toast(self.text("download_failed"), tone="destructive")
+                self._download_failed(component, exc)
             finally:
                 context.unbind(token)
             return None
@@ -2315,7 +2381,7 @@ class _ConfirmButtons(Component):
 
     type: ClassVar[str] = "Row"
     gap: int = 2
-    justify: str = "end"
+    justify: Literal["end"] = "end"
 
 
 _said_no_zones = False

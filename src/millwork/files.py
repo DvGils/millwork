@@ -8,6 +8,7 @@ bytes travel over the session's own socket, so a file has no URL.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import logging
 import mimetypes
 import os
@@ -541,6 +542,13 @@ def content_to_file(
     A file made here with ``passing`` is the session's until the tab has it."""
     if callable(content):
         content = content()
+    if inspect.isawaitable(content):
+        if inspect.iscoroutine(content):
+            content.close()
+        raise TypeError(
+            f"the content of {name} is still to be awaited. A handler awaits it "
+            "first, as in s.download(name, await make())"
+        )
     if isinstance(content, FileRef):
         return content
     if isinstance(content, bytes | bytearray):

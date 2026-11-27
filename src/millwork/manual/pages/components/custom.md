@@ -12,6 +12,10 @@ JSX. The file lives in the app's `components/` folder, gets compiled in
 the browser, and composes the same primitives the catalog is built
 from. Python reaches it by name with `ui.Custom`.
 
+Compiling takes a moment, so a custom component mounts a little after
+the rest of the page shows. One that listens on `window`, for keys say,
+hears nothing until then.
+
 ## The contract
 
 A component is a default export that receives `props` from Python, `emit`
@@ -102,7 +106,8 @@ def example(s):
 A custom component can import React, the lucide icons the bundle
 carries, and every `@/components/ui/*` module the catalog uses. Those
 icons are the ones in `mw.ICONS`, by lucide's own names, so `trash-2`
-there is `Trash2` here. A component that asks for another one is not
+there is `Trash2` here, and the name lucide gives one today imports it
+too. A component that asks for another one is not
 drawn, and says which icon it asked for. An icon of your own is an SVG
 file under `public/`. Tailwind classes work, and
 ones the bundle never saw are compiled in the browser on first use.

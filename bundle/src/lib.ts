@@ -1,5 +1,10 @@
 // Small shared helpers.
 
+// A tab, a line break or any other control character. A browser takes these
+// out of an address before it reads it, so "/\t/host" is "//host" to it,
+// which is another site.
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
 // Only URLs a browser may navigate to or embed: http(s), mailto, same-origin
 // paths, and blob/data images where the caller allows them. Anything else
 // (javascript:, vbscript:, data:text/html) becomes "about:blank".
@@ -10,14 +15,14 @@
 export function safeUrl(value: unknown, opts: { image?: boolean } = {}): string {
   if (typeof value !== "string") return "about:blank";
   const v = value.trim();
-  if (v.startsWith("/") && !v.startsWith("//") && !v.includes("\\") && !hasDotSegment(v)) return toBrowser(v);
+  if (v.startsWith("/") && !v.startsWith("//") && !v.includes("\\") && !CONTROL.test(v) && !hasDotSegment(v)) return toBrowser(v);
   const lower = v.toLowerCase();
   if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("mailto:")) return v;
   // A fragment, or a path relative to the page: the browser resolves it under
   // the page's own URL, prefix included, so it needs no mapping. A scheme would
   // show as a colon before any slash.
   if (v.startsWith("#")) return v;
-  if (!v.startsWith("/") && !v.includes("\\") && !/^[^/?#]*:/.test(v) && !hasDotSegment(v)) return v;
+  if (!v.startsWith("/") && !v.includes("\\") && !CONTROL.test(v) && !/^[^/?#]*:/.test(v) && !hasDotSegment(v)) return v;
   if (opts.image && (lower.startsWith("blob:") || lower.startsWith("data:image/"))) return v;
   return "about:blank";
 }
@@ -111,9 +116,17 @@ export function hasDotSegment(path: string): boolean {
   });
 }
 
-// A path inside the app's origin: no scheme, no host, no backslash, no dot segment.
+// A path inside the app's origin: no scheme, no host, no backslash, no
+// control character, no dot segment.
 export function isSameOriginPath(value: unknown): value is string {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") && !hasDotSegment(value);
+  return (
+    typeof value === "string" &&
+    value.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.includes("\\") &&
+    !CONTROL.test(value) &&
+    !hasDotSegment(value)
+  );
 }
 
 // A path the session navigates to: inside the app, not a framework route or a

@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 import millwork as mw
 from millwork import ui
-from millwork._icons import PASCAL
+from millwork._icons import PASCAL, RENAMED
 from millwork.icons import ICONS, check_icon
 
 ICONS_TS = Path(__file__).resolve().parents[1] / "bundle" / "src" / "icons.ts"
@@ -32,10 +32,27 @@ def test_names_resolve_the_way_the_tab_resolves_them() -> None:
         check_icon("file_text")
 
 
+def test_the_name_lucide_gives_an_icon_today_is_taken_too() -> None:
+    source = ICONS_TS.read_text(encoding="utf-8")
+    table = re.search(r"const renamed[^{]*\{([^}]*)\}", source)
+    assert table is not None
+    pairs = dict(re.findall(r"(\w+): \"(\w+)\"", table.group(1)))
+    assert pairs == RENAMED, "run the bundle build; it regenerates src/millwork/_icons.py"
+    # Each stands for one the bundle carries, and is none of those itself.
+    assert set(RENAMED.values()) <= set(PASCAL) and not set(RENAMED) & set(PASCAL)
+    for name in ("circle-check", "CircleCheck", "triangle-alert", "chart-column", "house"):
+        assert check_icon(name) == name
+        assert ui.Icon(name).name == name
+    # The list of what is carried stays the list of what is carried.
+    assert "circle-check" not in ICONS and "check-circle-2" in ICONS
+    with pytest.raises(ValueError, match="closest are .*circle-check"):
+        check_icon("circle_check")
+
+
 def test_a_component_refuses_an_unknown_icon() -> None:
     assert ui.Button("Save", icon="save").icon == "save"
-    with pytest.raises(ValidationError, match="no icon named 'house'"):
-        ui.Button("Home", icon="house")
+    with pytest.raises(ValidationError, match="no icon named 'cottage'"):
+        ui.Button("Home", icon="cottage")
     with pytest.raises(ValidationError, match="no icon named"):
         ui.MenuItem(id="x", label="X", icon="banknote")
     with pytest.raises(ValidationError, match="no icon named"):

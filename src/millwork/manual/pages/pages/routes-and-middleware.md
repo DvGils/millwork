@@ -27,6 +27,10 @@ app.route("/api/export", export)
 app.mount("/api", fastapi_app)
 ```
 
+A page links to a route by its path, with a `ui.Link` or a button with
+`href`, and the browser follows the link as [Navigation](/pages/navigation)
+describes.
+
 In an app with auth a route and a mount need a sign-in like a page does,
 unless they are marked `public=True`, and a route takes `allow=` like a
 page. [Access rules](/sign-in/access-rules) has the rules. The endpoint

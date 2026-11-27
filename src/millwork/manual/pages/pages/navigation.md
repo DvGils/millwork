@@ -30,6 +30,12 @@ A link to another site is an ordinary link. Give it `target="_blank"` to
 open a new tab. A link inside `ui.Markdown` behaves the same way. A path
 of the app opens on the session, anything else opens a new tab.
 
+A path that `app.route` or `app.mount` serves is no page, so the browser
+asks for it itself, as it does when the address is typed. What a route
+sends as an attachment is saved, and the page stays where it is. Anything
+else the browser shows in place of the page, and the back button returns
+to it. `s.navigate` to such a path does the same.
+
 ## In the header and the sidebar
 
 `ui.Header(links=[...])` puts links in the app bar, and `ui.Sidebar` holds

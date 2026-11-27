@@ -244,7 +244,8 @@ class Page:
 
     @property
     def notices(self) -> list[Notice]:
-        """Every toast shown, with its tone and title."""
+        """Every toast shown, as a ``Notice`` with its ``message``, ``tone``
+        and ``title``."""
         return [
             Notice(
                 str(c.args.get("message", "")),
@@ -285,7 +286,9 @@ class Page:
     async def click(self, node: Found | str) -> None:
         """Click it. A ``Download``'s button starts the download, so that is
         what clicking one does here, and a ``Link`` or a button with an
-        ``href`` to a page of the app takes the session there. One that
+        ``href`` to a page of the app takes the session there. One to a
+        route or a mount of the app leaves the session where it is, with a
+        ``load`` command for the tab. One that
         leaves the app does nothing here, as the session sees nothing of it.
         A ``Checkbox`` or a ``Switch`` whose value the page holds goes to the
         other of its two values. One that keeps its own value takes
@@ -442,8 +445,16 @@ class Page:
         await self.event(target, "move", {"key": found.id, "source": source.id, "to": to})
 
     async def action(self, node: Found | str, action: str, key: Any = None) -> None:
-        """A row action on a Table (``[action, key]``) or a card action (``action``)."""
-        await self.event(node, "action", [action, key] if key is not None else action)
+        """A row action on a Table (``action`` and the row's key), a card
+        action (``action``), or an action under an answer in a Chat
+        (``action`` and the message or its id). A row action with
+        ``confirm`` then waits for ``answer``, like a button."""
+        found = node if isinstance(node, Found) else self.find(node)
+        if isinstance(found.component, Chat):
+            message = getattr(key, "id", key)
+            await self.event(found, "action", {"id": message, "action": action})
+            return
+        await self.event(found, "action", [action, key] if key is not None else action)
 
     def _store(self, node_id: str, path: Path | str, field: str | None = None) -> FileRef:
         """Store a file for a node under what the node allows, as an upload

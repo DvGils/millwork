@@ -90,7 +90,8 @@ Each action is an event through the real dispatcher, followed by the real
 render. There is `click(node)`, `change(node, value)`, `submit(form,
 draft)` with a dict or a model instance, `select(table, keys)`,
 `choose(menu, item)` for an item of a `DropdownMenu` by its id or label,
-`action(node, id, key)` for a row or card action, `move(row, to,
+`action(node, id, key)` for a row or card action and for an action
+under an answer in a `Chat`, where the key is the message, `move(row, to,
 into=)` for a row of a `Sortable` dragged to a place in its list or in
 another, `upload(node, path,
 field=)`, which runs every check an upload gets and returns the `FileRef`,
@@ -123,6 +124,12 @@ still takes `cancel`.
 
 A click on a `Button` with `form=` submits that form in a browser. The
 draft is the test's to give, so the test calls `submit(form, draft)`.
+
+A click on a link to a path that `app.route` or `app.mount` serves
+leaves the session on its page. The browser is told to ask for the
+address, with the command named `load`, and its path is
+`page.commands[-1].args["path"]`. The route itself is tested with
+Starlette's `TestClient`.
 
 `request(node, name, payload)` asks a handler and returns its answer as
 the tab would get it. That is what a custom component does with
@@ -170,13 +177,37 @@ What a handler put on the clipboard with `s.clipboard` is the command
 named `clipboard`, and its text is `page.commands[-1].args["text"]`.
 A handler that calls `s.confirm` or `s.ask` stops and waits. The test sees
 the dialog on the page and answers it with `page.answer(value)`, `False`,
-or `None` for a dismissal. A task started by a handler has run by the time
+or `None` for a dismissal. The question is the dialog's `title`, and the
+text under it is a `ui.Text` in the dialog, so `page.text()` has both.
+A row action or a menu item with `confirm` asks the same way. So
+`page.action` and `page.choose` return with the question on the page,
+and the handler runs once `page.answer(True)` has answered it.
+A task started by a handler has run by the time
 the action returns, and `page.session.tasks[-1]` has its `ok`, `result`
 and `progress`. A chat turn's chunks are in `page.stream`, in order, in
 the AI SDK's UI message stream format, where each
 `{"type": "text-delta", "delta": ...}` carries some of the reply's words.
 The finished reply is easier to check on the thread, as
 `page.session.chat(key).messages[-1].text`.
+
+What stands under a message is pressed by its event, with the message's
+id in the payload. An action of the app's own has `page.action` as well.
+
+```python
+async def test_what_is_under_a_message(app):
+    async with TestApp(app).open("/") as page:
+        await page.send("chat", "hi")
+        asked, answer = page.session.chat("chat").messages
+        await page.action("chat", "save", answer)
+        rated = {"id": answer.id, "value": "down", "comment": "Too short"}
+        await page.event("chat", "feedback", rated)
+        await page.event("chat", "regenerate", {"id": answer.id})
+        await page.event("chat", "edit", {"id": asked.id, "text": "hello"})
+```
+
+The `value` of feedback is `"up"`, `"down"` or `None` to take it back.
+An event that names no message of the chat, or an action the chat does
+not have, fails the test like any other the page does not take.
 
 ```python
 async def test_wiping_asks_first(app):
@@ -211,8 +242,8 @@ def test_the_export_is_its_makers_alone(app):
 
 `page.messages` is every message the server sent. `patches`,
 `last_patch`, `commands` (toasts, downloads, navigations, form issues),
-`toasts` as plain text, `notices` as toasts with their `message`, `tone`
-and `title`,
+`toasts` as plain text, `notices` as toasts that each have a `message`,
+a `tone` and a `title`, as in `page.notices[-1].tone`,
 `stream` and `errors` are views on it.
 `toast_action("Undo")` presses the button of the latest toast that has
 one. `settle()` waits until the session has nothing left to do. Running
