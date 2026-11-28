@@ -100,6 +100,24 @@ class MenuItem(BaseModel):
         return check_icon(name)
 
 
+# The most rows a table has when they can be dragged, which is the most a
+# table draws all of. A longer one draws the rows in view alone, and a row
+# cannot be carried past rows that are not there.
+MOVABLE = 200
+
+
+class RowMove(BaseModel):
+    """A row of a ``Table`` that was dragged, as ``on_move`` gets it. ``key``
+    is the row's key and ``to`` its new place among the rows, counted from 0
+    with the row itself left out, so that ``rows.insert(move.to, row)``
+    after taking the row out puts it there."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: Any
+    to: int
+
+
 def _wire_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
     """Every row as a JSON-ready dict of its own. A model is its own dump. The
     rest, dicts for the most part, go through the serializer in one call for
@@ -222,6 +240,7 @@ class Table(Component):
         "on_action": "[action_id, row_key]",
         "on_sort": "[[column, 'asc' | 'desc'], ...]",
         "on_filter": "{'columns': {column: value}, 'search': text}",
+        "on_move": "a RowMove: the row's key and its new place",
     }
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"tones", "rows"})
 
@@ -251,11 +270,42 @@ class Table(Component):
     on_action: Any = None
     on_sort: Any = None
     on_filter: Any = None
+    on_move: Any = None
+    """With a handler here the rows have a grip and are dragged into
+    another order, or moved a place at a time with Alt and an arrow key.
+    The handler gets a ``RowMove`` and changes the rows, and the table
+    drawn from them is where the row ends up: a handler that leaves the
+    rows as they were sends the row back. Such a table shows its rows in
+    the order they have, so it is not sorted by a column, filtered,
+    searched or paged, and it has at most 200 rows, each with a key."""
 
     @model_validator(mode="after")
     def _one_height(self) -> Table:
         if self.fill and self.height is not None:
             raise ValueError("a table has a height or fills the room that is left, not both")
+        return self
+
+    @model_validator(mode="after")
+    def _dragged_rows_keep_their_order(self) -> Table:
+        if self.on_move is None:
+            return self
+        other = [
+            name
+            for name, on in (
+                ("filters", self.filters),
+                ("search", self.search),
+                ("page_size", self.page_size is not None),
+                ("default_sort", bool(self.default_sort)),
+                ("on_sort", self.on_sort is not None),
+                ("on_filter", self.on_filter is not None),
+            )
+            if on
+        ]
+        if other:
+            raise ValueError(
+                "a table whose rows are dragged shows them in the order they have, so "
+                f"on_move does not go with {' or '.join(other)}"
+            )
         return self
 
     @field_validator("columns", mode="before")
@@ -304,12 +354,20 @@ class Table(Component):
         # on them, would take two rows for one or have no name for a row.
         row_key = self.row_key
         row_keys: list[Any] = list(range(len(rows)))
+        keyed = False
         if any(row_key in row for row in rows):
             named = [row.get(row_key) for row in rows]
             clash = _clash(named)
             if clash is None:
                 row_keys = named
-            elif self.selection != "none" or self.on_row_click or self.row_actions or self.selected:
+                keyed = True
+            elif (
+                self.selection != "none"
+                or self.on_row_click
+                or self.row_actions
+                or self.selected
+                or self.on_move
+            ):
                 if len(clash) == 1:
                     said = f"row {clash[0]} has no {row_key!r}"
                 else:
@@ -318,8 +376,19 @@ class Table(Component):
                     if named[first] != named[second]:
                         said += f" and {named[second]!r}, which are one value in a browser"
                 raise ValueError(
-                    f"table {said}; a table that selects, opens or acts on a row needs "
-                    "a row_key whose values tell its rows apart"
+                    f"table {said}; a table that selects, opens, moves or acts on a row "
+                    "needs a row_key whose values tell its rows apart"
+                )
+        if self.on_move is not None:
+            if rows and not keyed:
+                raise ValueError(
+                    f"a table whose rows are dragged names each row by its {row_key!r}, "
+                    "and these rows have none"
+                )
+            if len(rows) > MOVABLE:
+                raise ValueError(
+                    f"a table whose rows are dragged has at most {MOVABLE} rows, "
+                    f"and this one has {len(rows)}"
                 )
         return {
             "rows": Wired(rows),
@@ -361,4 +430,5 @@ class Table(Component):
             on_action: Any = None,
             on_sort: Any = None,
             on_filter: Any = None,
+            on_move: Any = None,
         ) -> None: ...

@@ -701,6 +701,11 @@ body.mw-dragging * {
         border-bottom-color: transparent;
         background-color: var(--accent);
     }
+    /* In a table of the catalogue the header sticks over the rows, the
+       one that is held among them. */
+    [data-slot="table-body"] > tr[data-mw-dragged] {
+        z-index: 5;
+    }
     .mw-editable {
         display: block;
         width: 100%;

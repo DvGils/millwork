@@ -372,3 +372,70 @@ async def test_columns_of_one_group_share_a_heading_and_the_outline_names_it() -
         # told apart by the group.
         assert said["columns"] == ["region", "2023 / Q3", "2023 / Q4", "2024 / Q3"]
         assert said["state"] == ['shown sorted by "2024 / Q3" asc']
+
+
+class Setlist(BaseModel):
+    songs: list[dict[str, Any]] = [
+        {"id": "a", "title": "Opening theme"},
+        {"id": "b", "title": "Slow one"},
+        {"id": "c", "title": "Encore"},
+    ]
+    moves: list[tuple[Any, int]] = []
+
+
+async def test_a_row_that_is_dragged_reaches_the_handler_as_a_key_and_a_place() -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("setlist", state=Setlist, public=None)
+
+    def move(s: mw.Session[Setlist], moved: ui.RowMove) -> None:
+        songs = s.state.songs
+        s.state.moves.append((moved.key, moved.to))
+        at = next(i for i, song in enumerate(songs) if song["id"] == moved.key)
+        songs.insert(moved.to, songs.pop(at))
+
+    @app.page("/")
+    def home(s: mw.Session[Setlist]) -> ui.Component:
+        return ui.Page(ui.Table(rows=s.state.songs, on_move=move, key="songs"))
+
+    async with TestApp(app).open("/") as page:
+        await page.move_row("songs", "a", 2)
+        assert [song["id"] for song in page.state.songs] == ["b", "c", "a"]
+        assert page.state.moves == [("a", 2)]
+        assert "rows can be dragged into another order" in page.outline(as_text=True)
+        # What is no row of the table, or no place in it, is not sent on.
+        for key, to in (("z", 0), ("a", 3), ("a", -1), ("a", "1"), ("a", True), (None, 0)):
+            with pytest.raises(LookupError):
+                await page.move_row("songs", key, to)
+        with pytest.raises(LookupError):
+            await page.event("songs", "move", ["a", 0])
+        assert page.state.moves == [("a", 2)]
+
+
+def test_a_table_whose_rows_are_dragged_shows_them_in_their_own_order() -> None:
+    def move(s: Any, moved: ui.RowMove) -> None:
+        return None
+
+    rows = [{"id": i, "name": f"n{i}"} for i in range(3)]
+    for other in (
+        {"filters": True},
+        {"search": True},
+        {"page_size": 10},
+        {"default_sort": [("name", "asc")]},
+        {"on_sort": move},
+        {"on_filter": move},
+    ):
+        with pytest.raises(ValueError, match=f"on_move does not go with {next(iter(other))}"):
+            ui.Table(rows=rows, on_move=move, **other)
+    # Each row has a key, the keys tell the rows apart, and there are no
+    # more rows than a table draws all of.
+    with pytest.raises(ValueError, match="names each row by its 'id'"):
+        build(ui.Table(rows=[{"name": "a"}, {"name": "b"}], on_move=move))
+    with pytest.raises(ValueError, match="rows 0 and 1 share the 'id' 1"):
+        build(ui.Table(rows=[{"id": 1}, {"id": 1}], on_move=move))
+    with pytest.raises(ValueError, match="at most 200 rows, and this one has 201"):
+        build(ui.Table(rows=[{"id": i} for i in range(201)], on_move=move))
+    node = build(ui.Table(rows=[{"id": i} for i in range(200)], on_move=move)).nodes["root"]
+    assert node.props["on_move"] is True and len(node.props["keys"]) == 200
+    # An empty table can be one whose rows will be dragged.
+    build(ui.Table(rows=[], on_move=move))

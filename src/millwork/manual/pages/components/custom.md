@@ -265,11 +265,12 @@ the page gave them and gives back four things.
 keyboard, with the row's new place counted from 0. `disabled` turns the
 grips off. `inset={{ top, bottom }}` says how many pixels of the box
 that scrolls are covered by a header or a footer that stays, so a row
-held near what is left of an edge scrolls the box. The rows can be the
-rows of a table. Rows that have no grip, such as a total at the foot, go
-in another parent and stay where they are. A row moves by a transform
-while it is held and only the rows it passes are touched, so the page is
-laid out once, at the drop.
+held near what is left of an edge scrolls the box. A component that
+has a ref of its own on the element that holds the rows passes it as
+`list`. The rows can be the rows of a table. Rows that have no grip,
+such as a total at the foot, go in another parent and stay where they
+are. A row moves by a transform while it is held and only the rows it
+passes are touched, so the page is laid out once, at the drop.
 
 `Editable` takes `value`, `onCommit(text)`, a `label` for a screen
 reader, a `placeholder` for a text that is empty, `disabled` and a

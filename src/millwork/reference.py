@@ -98,6 +98,7 @@ PAGE_API = (
     "choose",
     "action",
     "move",
+    "move_row",
     "upload",
     "send",
     "stop",

@@ -404,6 +404,19 @@ def _row_action(tree: Tree, node: Node, payload: Any) -> Any:
     return [action, _row(key, _rows(node))]
 
 
+def _row_move(tree: Tree, node: Node, payload: Any) -> Any:
+    from millwork.ui.table import RowMove
+
+    if not isinstance(payload, dict):
+        raise Refused(f"was sent {_short(payload)}, which is not a row and a place")
+    rows = _rows(node)
+    key = _row(payload.get("key"), rows)
+    to = payload.get("to")
+    if type(to) is not int or not 0 <= to < len(rows):
+        raise Refused(f"was sent the place {_short(to)}, and it has {len(rows)} rows")
+    return RowMove(key=key, to=to)
+
+
 def _columns(node: Node, able: str) -> set[Any]:
     return {c.get("key") for c in node.props.get("columns") or [] if c.get(able, True)}
 
@@ -545,6 +558,7 @@ _CHECKS: dict[tuple[str, str], Check] = {
     ("Table", "action"): _row_action,
     ("Table", "sort"): _sort,
     ("Table", "filter"): _filter,
+    ("Table", "move"): _row_move,
     ("BarChart", "click"): _mapping("a place in a chart"),
     ("LineChart", "click"): _mapping("a place in a chart"),
     ("AreaChart", "click"): _mapping("a place in a chart"),

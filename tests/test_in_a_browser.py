@@ -3116,3 +3116,119 @@ async def test_columns_of_one_group_stand_under_one_heading() -> None:
         assert tops[0] in (0, 1) and tops[1] > tops[0]
         cells = f"{scroller}.querySelector('tbody tr[data-slot=table-row]').children.length"
         assert await page.read(cells) == 5
+
+
+class Songs(BaseModel):
+    songs: list[dict[str, Any]] = [
+        {"id": i, "title": title}
+        for i, title in enumerate(["Opening", "Harbor", "Slow", "Loud", "Encore", "Finale"])
+    ]
+    picked: list[int] = []
+    one: list[int] = []
+    said: list[str] = []
+
+
+async def test_rows_of_a_table_are_dragged_and_selected_in_the_order_they_are_shown() -> None:
+    app = mw.App("songs", state=Songs, public=None)
+
+    def move(s: mw.Session[Songs], moved: ui.RowMove) -> None:
+        songs = s.state.songs
+        s.state.said.append(f"move {moved.key} {moved.to}")
+        # The finale is last, and stays there.
+        if moved.key != 5:
+            at = next(i for i, song in enumerate(songs) if song["id"] == moved.key)
+            songs.insert(moved.to, songs.pop(at))
+
+    @app.page("/")
+    def home(s: mw.Session[Songs]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.Text(f"{'; '.join(st.said)} | {st.picked} | {st.one}", cls="said"),
+            ui.Table(
+                rows=st.songs,
+                columns=[ui.Column(key="title", header="Title", group="Set")],
+                on_move=move,
+                selection="rows",
+                selected=st.picked,
+                on_select=lambda s, keys: setattr(s.state, "picked", keys),
+                key="many",
+            ),
+            ui.Table(
+                rows=st.songs,
+                columns=["title"],
+                on_move=move,
+                selection="row",
+                selected=st.one,
+                on_select=lambda s, keys: setattr(s.state, "one", keys),
+                key="one",
+            ),
+        )
+
+    def titles(table: str) -> str:
+        return (
+            f"[...document.querySelectorAll(\"[data-node='root/{table}'] tbody tr\")]"
+            ".map((r) => r.lastElementChild.textContent).join(' ')"
+        )
+
+    def grip(table: str, n: int) -> str:
+        return f"[data-node='root/{table}'] tbody tr:nth-child({n}) .mw-row-grip"
+
+    said = "document.querySelector('.said').textContent"
+    async with Page(app) as page:
+        # Both tables in view, so a press at a row of the second lands on it.
+        await page.tab.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=900,
+            height=1000,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        await page.rest()
+        assert await page.read(titles("many")) == "Opening Harbor Slow Loud Encore Finale"
+        # A table whose rows are dragged is not sorted by its columns.
+        assert not await page.read("document.querySelectorAll('thead button').length")
+        row = "document.querySelector(\"[data-node='root/many'] tbody tr\")"
+        high = await page.read(f"{row}.getBoundingClientRect().height")
+        # The second row is carried past two others and dropped.
+        x, y = await page.middle(grip("many", 2))
+        await page.drag(grip("many", 2), (x, y + 2 * high + 4))
+        assert await page.read(titles("many")) == "Opening Slow Loud Harbor Encore Finale"
+        assert await page.read(titles("one")) == "Opening Slow Loud Harbor Encore Finale"
+        assert (await page.read(said)).startswith("move 1 3 |")
+        # A range picked with shift is the rows from the first to the third
+        # as they are shown now, and not as they were.
+        box = "[data-node='root/many'] tbody tr:nth-child({}) [role=checkbox]"
+        await page.click(box.format(1))
+        await page.click(box.format(3), shift=True)
+        assert (await page.read(said)).split(" | ")[1] == "[0, 2, 3]"
+        # A row that is one of several selected is moved alone, and the
+        # others stay selected.
+        x, y = await page.middle(grip("many", 1))
+        await page.drag(grip("many", 1), (x, y + high + 4))
+        assert await page.read(titles("many")) == "Slow Opening Loud Harbor Encore Finale"
+        assert (await page.read(said)).split(" | ")[1] == "[0, 2, 3]"
+        picked = "[...document.querySelectorAll(\"[data-node='root/many'] tbody tr\")]"
+        assert await page.read(f"{picked}.map((r) => r.dataset.state === 'selected')") == [
+            True,
+            True,
+            True,
+            False,
+            False,
+            False,
+        ]
+        # In a table whose rows are selected by a press, a press on the
+        # grip is not one on the row, and a press beside it is.
+        await page.click(grip("one", 2))
+        assert (await page.read(said)).split(" | ")[2] == "[]"
+        await page.click("[data-node='root/one'] tbody tr:nth-child(2) td:last-child")
+        assert (await page.read(said)).split(" | ")[2] == "[0]"
+        # A row the page does not move is back at once.
+        x, y = await page.middle(grip("one", 6))
+        await page.drag(grip("one", 6), (x, y - 2 * high - 4))
+        assert (await page.read(said)).split(" | ")[0].endswith("move 5 3")
+        assert await page.read(titles("one")) == "Slow Opening Loud Harbor Encore Finale"
+        # A place at a time by the keyboard, which stays on the grip.
+        await page.read(f"document.querySelector({json.dumps(grip('one', 1))}).focus()")
+        await page.key("ArrowDown", 40, alt=True)
+        assert await page.read(titles("one")) == "Opening Slow Loud Harbor Encore Finale"
+        assert await page.read("document.activeElement.className") == "mw-row-grip"

@@ -273,6 +273,8 @@ def _table(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
         state.append("rows can be selected")
     if props.get("on_row_click"):
         state.append("rows can be pressed")
+    if props.get("on_move"):
+        state.append("rows can be dragged into another order")
     if props.get("search"):
         state.append("has a search box")
     if props.get("filters"):

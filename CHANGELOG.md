@@ -25,6 +25,12 @@ versions; a release says so here when it does.
   that stand next to each other and name the same group, such as a
   year over its quarters. An outline names such a column by its group
   and its header.
+- `ui.Table(on_move=...)` gives each row a grip to drag it into another
+  order by, or to move it a place at a time with Alt and an arrow key.
+  The handler gets a `ui.RowMove` with the row's key and its new place,
+  and a row the handler leaves where it was goes back. Such a table is
+  not sorted, filtered, searched or paged, and has at most two hundred
+  rows. In a test `page.move_row(table, key, to)` drags one.
 - `emit` in a custom component gives a promise that is over when the
   session is done with the event and the page is drawn, whether a
   handler took it or not. In a test such an event leaves a `heard`

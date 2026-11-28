@@ -24,6 +24,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ownPress } from "../press";
+import { emitHeard } from "../ws";
+import { type Grip, RowGrip, useRowDrag } from "../lent";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -216,18 +218,23 @@ interface RowProps {
   // does, and the arrow keys go to the others from there.
   stop: boolean;
   act: Act;
+  // What a row that can be dragged carries, and its grip. The same objects
+  // from one drawing to the next.
+  mark?: { "data-mw-row": string };
+  grip?: Grip;
 }
 
 // One row, drawn again only when something it shows changed: the record is the
 // same object from one patch to the next unless the patch touched it, and
 // everything else here is a plain value or stable for the table's life.
-const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, columns, checkbox, actions, clickable, stop, act }: RowProps) {
+const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, columns, checkbox, actions, clickable, stop, act, mark, grip }: RowProps) {
   const takers = columns.filter(takesTheRest).length;
   // Whether shift was down for the press that is changing the checkbox. The
   // change itself does not say, and it comes during the click that does.
   const shift = useRef(false);
   return (
     <TableRow
+      {...mark}
       data-part={part}
       data-state={selected ? "selected" : undefined}
       data-press={clickable ? "" : undefined}
@@ -237,6 +244,12 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
         if (ownPress(e)) act("click", rowKey);
       }}
     >
+      {grip ? (
+        <TableCell data-free="" className="py-(--mw-cell-y) pr-0 whitespace-nowrap">
+          {/* Named by what the row starts with, so a screen reader says which row it moves. */}
+          <RowGrip {...grip} label={`${t("move_row")} ${columns.length ? String(row[columns[0].key] ?? "") : ""}`.trim()} />
+        </TableCell>
+      ) : null}
       {checkbox ? (
         <TableCell
           // The checkbox's column is as wide as it was told to be.
@@ -457,16 +470,44 @@ export const Table: Renderer = ({ node, props, emit }) => {
   useEffect(() => {
     if (pageIndex >= pageCount) setPageIndex(pageCount - 1);
   }, [pageIndex, pageCount]);
-  const page = useMemo(
+  const given = useMemo(
     () => (pageSize ? shown.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize) : shown),
     [shown, pageSize, pageIndex],
   );
-  now.current.page = page;
 
   const body = useRef<HTMLTableSectionElement>(null);
   const headRow = useRef<HTMLTableRowElement>(null);
+  // How tall the header that stays over the rows is, filters and all.
+  const [head, setHead] = useState(0);
   // Rows go by their key where keys tell them apart, by their place otherwise.
-  const names = useMemo(() => page.map((e) => (distinct ? e.id : `#${e.i}`)), [page, distinct]);
+  const givenNames = useMemo(() => given.map((e) => (distinct ? e.id : `#${e.i}`)), [given, distinct]);
+  // Rows that are dragged into another order. Such a table shows its rows
+  // as the page gave them, with nothing sorted, filtered or paged, and
+  // after a drop in the dropped order until the page has answered. That
+  // is the order everything below goes by: a range of rows selected with
+  // shift, the keyboard, the rows as they are drawn.
+  const movable = Boolean(props.on_move);
+  // A table whose rows stay put, which may be a very long one, pays
+  // nothing for this: no names are handed over and none are looked up.
+  const byName = useMemo(() => new Map(movable ? given.map((e, i) => [givenNames[i], e]) : []), [movable, given, givenNames]);
+  const drag = useRowDrag({
+    keys: movable ? givenNames : NONE,
+    onMove: (name, to) => {
+      const moved = byName.get(name);
+      return moved ? emitHeard(node.id, "move", { key: moved.key, to }) : undefined;
+    },
+    disabled: !movable,
+    list: body,
+    // The header covers the top of the box only where the box is what
+    // scrolls. A table as high as its rows scrolls with the page.
+    inset: { top: props.height || props.fill ? head : 0 },
+  });
+  const names = movable ? drag.order : givenNames;
+  const page = useMemo(
+    () => (movable ? names.map((name) => byName.get(name)).filter((e): e is Entry => e !== undefined) : given),
+    [movable, names, byName, given],
+  );
+  now.current.page = page;
   const view = useRowWindow(body, names);
   const drawn = useMemo(
     () => (view.windowed ? page.slice(view.first, view.last) : page),
@@ -534,10 +575,8 @@ export const Table: Renderer = ({ node, props, emit }) => {
       if (!e.repeat) act("click", page[at].key);
     }
   };
-  // How tall the header that stays over the rows is, filters and all.
-  const [head, setHead] = useState(0);
   useLayoutEffect(() => {
-    if (clickable) setHead(props.sticky_header !== false ? (headRow.current?.parentElement?.offsetHeight ?? 0) : 0);
+    if (clickable || movable) setHead(props.sticky_header !== false ? (headRow.current?.parentElement?.offsetHeight ?? 0) : 0);
   });
 
   // A highlight on a row that asks to be brought into view: the table
@@ -574,6 +613,7 @@ export const Table: Renderer = ({ node, props, emit }) => {
   }, [wanted, names, distinct, bring]);
 
   const heads: Head[] = [];
+  if (movable) heads.push({ id: "__grip", sortable: false, filterable: false, header: "", size: 28 });
   if (selection === "rows") {
     heads.push({
       id: "__select",
@@ -598,7 +638,7 @@ export const Table: Renderer = ({ node, props, emit }) => {
     heads.push({
       id: c.key,
       header: c.header ?? c.key,
-      sortable: c.sortable !== false && props.sortable !== false,
+      sortable: c.sortable !== false && props.sortable !== false && !movable,
       filterable: c.filterable !== false,
       // A number is pixels, and text is a length as CSS writes one.
       size: typeof c.width === "number" || (typeof c.width === "string" && c.width) ? c.width : undefined,
@@ -727,6 +767,8 @@ export const Table: Renderer = ({ node, props, emit }) => {
                   clickable={clickable}
                   stop={view.first + n === stopAt}
                   act={act}
+                  mark={movable ? drag.row(names[view.first + n]) : undefined}
+                  grip={movable ? drag.grip(names[view.first + n]) : undefined}
                 />
               ))
             ) : (

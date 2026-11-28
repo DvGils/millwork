@@ -144,6 +144,60 @@ def example(s):
     )
 ```
 
+## Rows that are dragged
+<!-- keywords: reorder rows, drag and drop, sortable rows, row order, grip, on_move, RowMove -->
+
+`on_move` gives each row a grip to drag it into another order by. Alt
+with an arrow key on the grip moves the row a place at a time. The
+handler gets a `ui.RowMove` with the row's `key` and the place it was
+moved `to`, counted from 0, and changes the rows. The table drawn from
+them is where the row ends up, so a handler that leaves the rows as
+they were sends the row back.
+
+```python live
+from pydantic import BaseModel
+
+
+class Stage(BaseModel):
+    name: str
+    hours: float
+
+
+class Route(BaseModel):
+    stages: list[Stage] = [
+        Stage(name="Trailhead to the ford", hours=2.5),
+        Stage(name="Ford to the saddle", hours=3.0),
+        Stage(name="Saddle to the hut", hours=1.5),
+        Stage(name="Hut to the summit", hours=4.0),
+        Stage(name="Summit to the road", hours=3.5),
+    ]
+
+
+def example(s):
+    stages = s.state.route.stages
+
+    def move(s, moved):
+        at = next(i for i, stage in enumerate(stages) if stage.name == moved.key)
+        stages.insert(moved.to, stages.pop(at))
+
+    return ui.Table(
+        rows=stages,
+        row_key="name",
+        columns=[
+            ui.Column(key="name", header="Stage"),
+            ui.Column(key="hours", header="Hours", format="number", align="right"),
+        ],
+        on_move=move,
+    )
+```
+
+Such a table shows its rows in the order they have. So it is not sorted
+by a column, and `on_move` does not go with `filters`, `search`,
+`page_size` or `default_sort`. Every row has a key that tells it from
+the others, and there are at most two hundred rows. Selection works
+beside it. A range picked with shift goes by the order the rows are
+shown in, and a selected row that is dragged moves alone.
+
 ## Tones
 
 `tones` colors rows. It is a function of the row returning a tone, or a

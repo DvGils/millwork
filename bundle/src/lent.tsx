@@ -97,7 +97,7 @@ function fit(mine: string[], keys: string[]): string[] {
   return [...kept, ...keys.filter((key) => !seen.has(key))];
 }
 
-type Grip = Pick<
+export type Grip = Pick<
   ButtonHTMLAttributes<HTMLButtonElement>,
   "onPointerDown" | "onPointerMove" | "onPointerUp" | "onPointerCancel" | "onLostPointerCapture" | "onKeyDown" | "disabled" | "aria-keyshortcuts" | "style"
 >;
@@ -117,6 +117,9 @@ export interface RowDragOptions {
   // what stays there, a header that sticks say, in pixels. A row held near
   // what is left of an edge scrolls the box.
   inset?: { top?: number; bottom?: number };
+  // The ref of the element whose children are the rows, for a component
+  // that has one of its own. `list` in what comes back is then this one.
+  list?: RefObject<HTMLElement | null>;
 }
 
 export interface RowDrag {
@@ -158,8 +161,9 @@ interface Held {
 // pointer by a transform and the rows it passes make room the same way, so
 // the page is not laid out again until the row is dropped. Only the rows it
 // passes are touched: in a long table a style on every row is a slow frame.
-export function useRowDrag({ keys, onMove, disabled = false, inset }: RowDragOptions): RowDrag {
-  const list = useRef<HTMLElement>(null);
+export function useRowDrag({ keys, onMove, disabled = false, inset, list: theirs }: RowDragOptions): RowDrag {
+  const own = useRef<HTMLElement>(null);
+  const list = theirs ?? own;
   const held = useRef<Held | null>(null);
   const given = keys.join("\n");
   const [mine, stand] = useStandIn<string[]>(given);
@@ -242,8 +246,11 @@ export function useRowDrag({ keys, onMove, disabled = false, inset }: RowDragOpt
     stand(moved(from, at, to), onMove(key, to));
   };
 
-  // The rows changed under a row that is held: it is let go where it was.
-  useEffect(() => () => end(false), [given]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The rows changed under a row that is held, or the page put them back
+  // in the order they had: the row is let go where it was. What it was
+  // measured against is no longer what is drawn.
+  const drawnAs = mine ? order.join("\n") : given;
+  useEffect(() => () => end(false), [drawnAs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const down = (key: string, e: PointerEvent<HTMLButtonElement>) => {
     const parent = list.current;

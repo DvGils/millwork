@@ -454,6 +454,11 @@ class Page:
             raise LookupError(f"the item {item!r} of {found!r} is disabled")
         await self.event(found, "select", match.id)
 
+    async def move_row(self, table: Found | str, key: Any, to: int) -> None:
+        """Drag the row of a ``Table`` that has this key to another place,
+        counted from 0 among the other rows."""
+        await self.event(table, "move", {"key": key, "to": to})
+
     async def move(self, row: Found | str, to: int, *, into: Found | str | None = None) -> None:
         """Drag a row of a ``Sortable`` to another place: ``to`` among the
         other rows of its list, or of the list ``into`` names, counted
