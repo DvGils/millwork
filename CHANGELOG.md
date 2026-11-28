@@ -21,6 +21,10 @@ versions; a release says so here when it does.
   that becomes a field when it is pressed, said on Enter or on leaving
   the field and left alone on Escape. Both show what was done at once,
   and set it back when the page did not take it.
+- `ui.Column(group=...)` puts one heading over the columns of a table
+  that stand next to each other and name the same group, such as a
+  year over its quarters. An outline names such a column by its group
+  and its header.
 - `emit` in a custom component gives a promise that is over when the
   session is done with the event and the page is drawn, whether a
   handler took it or not. In a test such an event leaves a `heard`

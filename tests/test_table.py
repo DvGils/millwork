@@ -30,6 +30,7 @@ def test_table_wire_shape() -> None:
     assert node.props["columns"][1] == {
         "key": "type",
         "header": "Type",
+        "group": None,
         "width": None,
         "align": "left",
         "format": "badge",
@@ -332,3 +333,42 @@ def test_a_column_is_cut_to_whole_lines_and_a_table_fills_or_has_a_height() -> N
         ui.Column(key="text", lines=0)
     with pytest.raises(ValueError, match="a height or fills"):
         ui.Table(rows=[], fill=True, height=300)
+
+
+async def test_columns_of_one_group_share_a_heading_and_the_outline_names_it() -> None:
+    from millwork.testing import TestApp
+
+    table = ui.Table(
+        rows=[{"region": "North", "q3": 1, "q4": 2, "q1": 3}],
+        columns=[
+            "region",
+            ui.Column(key="q3", header="Q3", group="2023"),
+            ui.Column(key="q4", header="Q4", group="2023"),
+            ui.Column(key="q1", header="Q3", group="2024"),
+        ],
+        default_sort=[("q1", "asc")],
+        key="sales",
+    )
+    sent = table.wire_extra()["columns"]
+    assert [c["group"] for c in sent] == [None, "2023", "2023", "2024"]
+    # A group of nothing but spaces is no group.
+    assert ui.Column(key="a", group="  ").group is None
+    assert ui.Column(key="a", group=" 2023 ").group == "2023"
+
+    app = mw.App("sales", public=None)
+    app.page("/")(lambda s: ui.Page(table))
+
+    def find(entry: dict[str, Any], name: str) -> dict[str, Any]:
+        if entry.get("key") == name:
+            return entry
+        for child in entry.get("children", []):
+            if found := find(child, name):
+                return found
+        return {}
+
+    async with TestApp(app).open("/") as page:
+        said = find(page.outline(), "sales")
+        # Two columns may have one header under different groups, and are
+        # told apart by the group.
+        assert said["columns"] == ["region", "2023 / Q3", "2023 / Q4", "2024 / Q3"]
+        assert said["state"] == ['shown sorted by "2024 / Q3" asc']

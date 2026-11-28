@@ -35,6 +35,7 @@ import {
 interface Column {
   key: string;
   header?: string | null;
+  group?: string | null;
   width?: number | string | null;
   align?: "left" | "center" | "right";
   format?: string;
@@ -305,7 +306,26 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
 // scroll that brings the row into view leaves room for the header over the rows.
 const rowFocus = "cursor-pointer scroll-mt-(--mw-head) focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ring/50";
 
-type Head = { id: string; header: ReactNode; sortable: boolean; filterable: boolean; size?: number | string; column?: Column };
+type Head = { id: string; header: ReactNode; sortable: boolean; filterable: boolean; size?: number | string; column?: Column; group?: string | null; edge?: boolean };
+
+// The cells of the row over the headers, when columns are grouped: one
+// over each run of columns of the same group, and an empty one over each
+// run of columns that have none. A head where another group begins, or
+// where one ends, is marked as an edge, which draws a line there.
+function bandsOf(heads: Head[]): { label: string | null; span: number; edge: boolean }[] {
+  const bands: { label: string | null; span: number; edge: boolean }[] = [];
+  heads.forEach((head, i) => {
+    const group = head.group || null;
+    const before = i > 0 ? heads[i - 1].group || null : null;
+    if (i > 0 && group === before) {
+      bands[bands.length - 1].span++;
+      return;
+    }
+    head.edge = i > 0;
+    bands.push({ label: group, span: 1, edge: i > 0 });
+  });
+  return bands;
+}
 
 export const Table: Renderer = ({ node, props, emit }) => {
   const rows = (Array.isArray(props.rows) ? (props.rows as Record<string, unknown>[]) : NONE);
@@ -583,9 +603,11 @@ export const Table: Renderer = ({ node, props, emit }) => {
       // A number is pixels, and text is a length as CSS writes one.
       size: typeof c.width === "number" || (typeof c.width === "string" && c.width) ? c.width : undefined,
       column: c,
+      group: c.group,
     });
   }
   if (actions.length) heads.push({ id: "__actions", sortable: false, filterable: false, header: "", size: 40 });
+  const bands = heads.some((h) => h.group) ? bandsOf(heads) : null;
 
   const total = entries.length;
   const summary = props.summary === false ? null : typeof props.summary === "string" ? props.summary : shown.length !== total ? t("rows_of", { shown: shown.length, n: total }) : total === 1 ? t("one_row") : t("rows", { n: total });
@@ -607,7 +629,25 @@ export const Table: Renderer = ({ node, props, emit }) => {
         <div data-slot="table-container" className="relative w-full">
         <table data-slot="table" className="w-full caption-bottom text-sm">
           <TableHeader className={cn(props.sticky_header !== false && "sticky top-0 z-10 bg-background shadow-[0_1px_0_var(--border)]")}>
-            <TableRow ref={headRow}>
+            {bands ? (
+              // The row of the headers under it stays one cell a column,
+              // which a long table measures its columns by.
+              <TableRow className="border-b-0! hover:bg-transparent">
+                {bands.map((band, i) =>
+                  band.label ? (
+                    // A header of every column it is over, which a screen
+                    // reader then says before the column's own.
+                    <TableHead key={i} colSpan={band.span} scope="col" className={cn("h-8 border-b text-center", band.edge && "border-l")}>
+                      {band.label}
+                    </TableHead>
+                  ) : (
+                    // Nothing to read out over columns that have no group.
+                    <td key={i} colSpan={band.span} className={cn("h-8", band.edge && "border-l")} />
+                  ),
+                )}
+              </TableRow>
+            ) : null}
+            <TableRow ref={headRow} className={bands ? "hover:bg-transparent" : undefined}>
               {heads.map((c) => {
                 const sorted = sorting.find((s) => s.id === c.id);
                 const Arrow = sorted ? icon(sorted.desc ? "arrow-down" : "arrow-up") : icon("arrow-up-down");
@@ -619,7 +659,7 @@ export const Table: Renderer = ({ node, props, emit }) => {
                     // kept as a variable, which a long table's own hold on
                     // its columns reads and does not write over.
                     style={c.size !== undefined ? ({ width: c.size, "--mw-keep": takes ? (typeof c.size === "number" ? `${c.size}px` : c.size) : undefined } as CSSProperties) : undefined}
-                    className={cn(takes && c.size !== undefined && "min-w-(--mw-keep)", c.column?.align === "right" && "text-right", c.column?.align === "center" && "text-center")}
+                    className={cn(takes && c.size !== undefined && "min-w-(--mw-keep)", c.column?.align === "right" && "text-right", c.column?.align === "center" && "text-center", c.edge && "border-l")}
                     aria-sort={sorted ? (sorted.desc ? "descending" : "ascending") : undefined}
                   >
                     {c.sortable ? (
@@ -637,7 +677,7 @@ export const Table: Renderer = ({ node, props, emit }) => {
             {props.filters ? (
               <TableRow>
                 {heads.map((c) => (
-                  <TableHead key={c.id} className="py-1">
+                  <TableHead key={c.id} className={cn("py-1", c.edge && "border-l")}>
                     {c.filterable ? <FilterCell kind={kinds[c.id] ?? { kind: "text" }} value={filters[c.id]} onChange={(v) => setFilter(c.id, v)} /> : null}
                   </TableHead>
                 ))}

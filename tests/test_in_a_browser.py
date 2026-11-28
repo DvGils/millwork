@@ -3042,3 +3042,77 @@ async def test_rows_of_a_custom_component_are_dragged_and_a_text_is_typed_over(
         await page.key("Enter", 13)
         assert await page.read(said) == "rename r3 nobody"
         assert await page.read(names) == ["Runner 2", "Runner 0", "Ada", "Runner 1"]
+
+
+async def test_columns_of_one_group_stand_under_one_heading() -> None:
+    app = mw.App("sales", public=None)
+    columns = [
+        ui.Column(key="region", header="Region"),
+        ui.Column(key="q3", header="Q3", group="2023", align="right"),
+        ui.Column(key="q4", header="Q4", group="2023", align="right"),
+        ui.Column(key="q1", header="Q1", group="2024", align="right"),
+        ui.Column(key="growth", header="Growth", format="percent", align="right"),
+    ]
+
+    def rows(n: int) -> list[dict[str, Any]]:
+        return [
+            {"id": i, "region": f"Region {i}", "q3": 100 + i, "q4": 300 - i, "q1": i, "growth": 0.1}
+            for i in range(n)
+        ]
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Table(rows=rows(4), columns=columns, selection="rows", filters=True, key="short"),
+            ui.Table(rows=rows(400), columns=columns, height=200, key="long"),
+        )
+
+    def head(table: str) -> str:
+        return (
+            f"[...document.querySelectorAll(\"[data-node='root/{table}'] thead tr\")]"
+            ".map((r) => [...r.children].map((c) => [c.colSpan, c.textContent.trim()]))"
+        )
+
+    async with Page(app) as page:
+        groups, heads, filters = await page.read(head("short"))
+        # One cell over each run of columns: the checkbox and Region have
+        # no group, the two quarters of 2023 share theirs, and Growth is
+        # alone again. The headers and the filters stay one cell a column.
+        assert groups == [[2, ""], [2, "2023"], [1, "2024"], [1, ""]]
+        assert [text for _, text in heads] == ["", "Region", "Q3", "Q4", "Q1", "Growth"]
+        # A group is a header of the columns under it, and the cell over
+        # columns without one is no header at all.
+        tags = "[...document.querySelector(\"[data-node='root/short'] thead tr\").children]"
+        assert await page.read(f"{tags}.map((c) => c.tagName + (c.scope || ''))") == [
+            "TD",
+            "THcol",
+            "THcol",
+            "TD",
+        ]
+        assert len(filters) == 6 and all(span == 1 for span, _ in heads + filters)
+        # A column under a group is sorted by as any other.
+        first = (
+            "document.querySelector(\"[data-node='root/short'] tbody tr\").children[1].textContent"
+        )
+        assert await page.read(first) == "Region 0"
+        await page.click("[data-node='root/short'] thead button", "Q4")
+        await page.click("[data-node='root/short'] thead button", "Q4")
+        assert await page.read(first) == "Region 0"
+        await page.click("[data-node='root/short'] thead button", "Q1")
+        await page.click("[data-node='root/short'] thead button", "Q1")
+        assert await page.read(first) == "Region 3"
+        # A long table measures its columns by the row of headers, which
+        # is the last one, and both rows stay over the rows as they scroll.
+        groups, heads = await page.read(head("long"))
+        assert groups == [[1, ""], [2, "2023"], [1, "2024"], [1, ""]] and len(heads) == 5
+        scroller = "document.querySelector(\"[data-node='root/long'] .mw-scroll\")"
+        await page.read(f"{scroller}.scrollTop = 5000")
+        await page.rest()
+        tops = await page.read(
+            f"(() => {{ const box = {scroller}.getBoundingClientRect();"
+            f" return [...{scroller}.querySelectorAll('thead tr')]"
+            ".map((r) => Math.round(r.getBoundingClientRect().top - box.top)); })()"
+        )
+        assert tops[0] in (0, 1) and tops[1] > tops[0]
+        cells = f"{scroller}.querySelector('tbody tr[data-slot=table-row]').children.length"
+        assert await page.read(cells) == 5

@@ -39,7 +39,7 @@ ui.Table(rows=ROWS)
 ```
 
 ## Columns and formats
-<!-- keywords: currency, number format, date format, column header -->
+<!-- keywords: currency, number format, date format, column header, grouped headers, column groups, spanning header, multi-level header -->
 
 `format` renders a value as `text`, `number`, `integer`, `percent`,
 `currency`, `date`, `datetime`, `bool`, `badge`, `link` or `code`.
@@ -57,6 +57,33 @@ ui.Table(
         ui.Column(key="active", header="Active", format="bool", align="center"),
     ],
     default_sort=[("score", "desc")],
+)
+```
+
+A `group` puts one heading over columns that stand next to each other,
+such as a year over its quarters. Columns with the same `group` share
+the heading, and a column without one stands on its own. The columns
+under a heading sort and filter like any other.
+
+```python live
+SALES = [
+    {"region": "North", "q3": 120, "q4": 140, "q1": 150, "q2": 170, "growth": 0.04},
+    {"region": "South", "q3": 127, "q4": 145, "q1": 153, "q2": 172, "growth": 0.05},
+    {"region": "East", "q3": 134, "q4": 150, "q1": 156, "q2": 174, "growth": 0.06},
+    {"region": "West", "q3": 141, "q4": 155, "q1": 159, "q2": 176, "growth": 0.07},
+]
+
+ui.Table(
+    rows=SALES,
+    row_key="region",
+    columns=[
+        ui.Column(key="region", header="Region"),
+        ui.Column(key="q3", header="Q3", group="2023", align="right"),
+        ui.Column(key="q4", header="Q4", group="2023", align="right"),
+        ui.Column(key="q1", header="Q1", group="2024", align="right"),
+        ui.Column(key="q2", header="Q2", group="2024", align="right"),
+        ui.Column(key="growth", header="Growth", format="percent", align="right"),
+    ],
 )
 ```
 

@@ -56,6 +56,10 @@ class Column(BaseModel):
 
     key: str
     header: str | None = None
+    group: str | None = None
+    """A heading over this column and the columns shown next to it that
+    name the same group, such as a year over its quarters. Columns that
+    are not shown next to each other each get a heading of their own."""
     width: int | str | None = None
     align: Literal["left", "center", "right"] = "left"
     format: Format = "text"
@@ -68,6 +72,13 @@ class Column(BaseModel):
     three dots. The whole text shows under the pointer, and the table's
     search reads all of it. A column that has no ``width`` then takes the
     width the other columns leave."""
+
+    @field_validator("group")
+    @classmethod
+    def _a_group_has_a_name(cls, group: str | None) -> str | None:
+        """A group that is empty or only spaces is no group, here as in
+        the tab, which would draw a heading with nothing in it."""
+        return (group.strip() or None) if group is not None else None
 
 
 class MenuItem(BaseModel):
