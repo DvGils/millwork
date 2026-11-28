@@ -404,6 +404,67 @@ def _row_action(tree: Tree, node: Node, payload: Any) -> Any:
     return [action, _row(key, _rows(node))]
 
 
+# As long as a text typed into a cell gets.
+CELL_TEXT = 10_000
+
+
+def _cell_edit(tree: Tree, node: Node, payload: Any) -> Any:
+    from millwork.ui.table import CellEdit
+
+    if not isinstance(payload, dict):
+        raise Refused(f"was sent {_short(payload)}, which is not a cell and a value")
+    key = _row(payload.get("key"), _rows(node))
+    name = payload.get("column")
+    column = next(
+        (
+            c
+            for c in node.props.get("columns") or []
+            if c.get("key") == name and c.get("editable") and not c.get("hidden")
+        ),
+        None,
+    )
+    if not isinstance(name, str) or column is None:
+        raise Refused(f"was sent the column {_short(name)}, whose cells are not typed over")
+    value = payload.get("value")
+    kind = column.get("format") or "text"
+    if kind == "text":
+        if type(value) is not str or len(value) > CELL_TEXT:
+            raise Refused(f"was sent {_short(value)} for a text of at most {CELL_TEXT} characters")
+    elif kind == "bool":
+        if type(value) is not bool:
+            raise Refused(f"was sent {_short(value)} for a yes or no")
+    elif value is not None:
+        if type(value) not in (int, float):
+            raise Refused(f"was sent {_short(value)} for a number")
+        try:
+            # A whole number too large to be a float is none a tab sends.
+            number = float(value)
+        except OverflowError:
+            number = math.inf
+        if not math.isfinite(number):
+            raise Refused(f"was sent {_short(value)} for a number")
+        if kind == "integer":
+            if not number.is_integer():
+                raise Refused(f"was sent {_short(value)} for a whole number")
+            value = int(value)
+        else:
+            value = number
+    return CellEdit(key=key, column=name, value=value)
+
+
+def _row_move(tree: Tree, node: Node, payload: Any) -> Any:
+    from millwork.ui.table import RowMove
+
+    if not isinstance(payload, dict):
+        raise Refused(f"was sent {_short(payload)}, which is not a row and a place")
+    rows = _rows(node)
+    key = _row(payload.get("key"), rows)
+    to = payload.get("to")
+    if type(to) is not int or not 0 <= to < len(rows):
+        raise Refused(f"was sent the place {_short(to)}, and it has {len(rows)} rows")
+    return RowMove(key=key, to=to)
+
+
 def _columns(node: Node, able: str) -> set[Any]:
     return {c.get("key") for c in node.props.get("columns") or [] if c.get(able, True)}
 
@@ -545,6 +606,8 @@ _CHECKS: dict[tuple[str, str], Check] = {
     ("Table", "action"): _row_action,
     ("Table", "sort"): _sort,
     ("Table", "filter"): _filter,
+    ("Table", "move"): _row_move,
+    ("Table", "edit"): _cell_edit,
     ("BarChart", "click"): _mapping("a place in a chart"),
     ("LineChart", "click"): _mapping("a place in a chart"),
     ("AreaChart", "click"): _mapping("a place in a chart"),

@@ -154,6 +154,37 @@ export function answer(request: string, payload: unknown) {
   send({ type: "answer", request, payload });
 }
 
+// ------------------------------------------------------------ events heard
+//
+// A component of the app's own may wait to hear that the session is done
+// with an event it sent: the handler has run, or there was none, and the
+// page is drawn. Such an event goes with a tag, and the session says the
+// tag back. A session that says nothing, its connection gone or the page
+// the event was for left behind, is not waited for longer than this. It is
+// long, so that a handler that takes its time is waited for.
+const HEARD_WITHIN = 30000;
+const unheard = new Map<string, () => void>();
+let tagged = 0;
+
+export function emitHeard(node: string, name: string, payload: unknown = null): Promise<void> {
+  const tag = String(++tagged);
+  send({ type: "event", node, name, payload, tag });
+  return new Promise((resolve) => {
+    const done = () => {
+      if (!unheard.delete(tag)) return;
+      globalThis.clearTimeout(timer);
+      resolve();
+    };
+    const timer = globalThis.setTimeout(done, HEARD_WITHIN);
+    unheard.set(tag, done);
+  });
+}
+
+// Another session: what was sent to the one before is heard by nobody.
+function forgetHeard() {
+  for (const done of Array.from(unheard.values())) done();
+}
+
 // ---------------------------------------------------------------- requests
 //
 // A request is something the session answers over the socket without a render:
@@ -456,6 +487,7 @@ function apply(m: ServerMessage) {
         queue.length = 0;
         if (sessionId !== null) forgetFiles();
         forgetReplies();
+        forgetHeard();
         // The marks were the other session's.
         marks.set([]);
       }
@@ -664,6 +696,9 @@ function command(name: string, args: Record<string, unknown>) {
       break;
     case "moved":
       window.dispatchEvent(new CustomEvent("mw:moved", { detail: { node: String(args.node) } }));
+      break;
+    case "heard":
+      unheard.get(String(args.tag))?.();
       break;
     case "reset":
       store.reset(Array.isArray(args.ids) ? args.ids.map(String) : []);

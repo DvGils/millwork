@@ -2886,3 +2886,515 @@ async def test_a_floating_thing_ends_where_the_pointer_lets_go() -> None:
         )
         await page.let_go((x - 80, y))
         assert await page.read(box) == [left - 80, top, width + 80, height]
+
+
+LINEUP = """
+import { memo } from "react";
+import { useRowDrag, RowGrip, Editable } from "millwork";
+
+const Row = memo(function Row({ runner, row, grip, emit }) {
+  window.__drawn = (window.__drawn || 0) + 1;
+  return (
+    <tr {...row}>
+      <td className="h-6 w-6 border-b"><RowGrip {...grip} label={`Move ${runner.name}`} /></td>
+      <td className="h-6 w-56 border-b">
+        <Editable
+          value={runner.name}
+          label="Name"
+          onCommit={(name) => emit("rename", { key: runner.key, name })}
+        />
+      </td>
+    </tr>
+  );
+});
+
+export default function Lineup({ props, emit }) {
+  const runners = new Map(props.runners.map((r) => [r.key, r]));
+  const drag = useRowDrag({
+    keys: props.runners.map((r) => r.key),
+    onMove: (key, to) => emit("move", { key, to }),
+  });
+  return (
+    <table className="border-separate border-spacing-0 text-xs">
+      <tbody ref={drag.list}>
+        {drag.order.map((key) => (
+          <Row
+            key={key}
+            runner={runners.get(key)}
+            row={drag.row(key)}
+            grip={drag.grip(key)}
+            emit={emit}
+          />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+"""
+
+
+class Runners(BaseModel):
+    runners: list[dict[str, str]] = [{"key": f"r{i}", "name": f"Runner {i}"} for i in range(20)]
+    said: list[str] = []
+
+
+async def test_rows_of_a_custom_component_are_dragged_and_a_text_is_typed_over(
+    tmp_path: Any,
+) -> None:
+    (tmp_path / "components").mkdir()
+    (tmp_path / "components" / "Lineup.jsx").write_text(LINEUP, encoding="utf-8")
+    app = mw.App("lineup", state=Runners, public=None, components=tmp_path / "components")
+
+    def move(s: mw.Session[Runners], asked: dict[str, Any]) -> None:
+        rows = s.state.runners
+        at = next(i for i, r in enumerate(rows) if r["key"] == asked["key"])
+        s.state.said.append(f"move {asked['key']} {asked['to']}")
+        # One runner has a place that is not the page's to change.
+        if asked["key"] != "r5":
+            rows.insert(asked["to"], rows.pop(at))
+
+    def rename(s: mw.Session[Runners], asked: dict[str, Any]) -> None:
+        s.state.said.append(f"rename {asked['key']} {asked['name']}")
+        if asked["name"] != "nobody":
+            next(r for r in s.state.runners if r["key"] == asked["key"])["name"] = asked["name"]
+
+    @app.page("/")
+    def home(s: mw.Session[Runners]) -> ui.Component:
+        return ui.Page(
+            ui.Text("; ".join(s.state.said), cls="said"),
+            ui.Custom(
+                "Lineup",
+                props={"runners": s.state.runners},
+                events={"move": move, "rename": rename},
+                key="lineup",
+            ),
+        )
+
+    order = "[...document.querySelectorAll('tbody tr')].map((r) => r.dataset.mwRow).join(' ')"
+    said = "document.querySelector('.said').textContent.split('; ').pop()"
+    names = "[...document.querySelectorAll('tbody tr')].slice(0, 4).map((r) => r.textContent)"
+
+    def grip(key: str) -> str:
+        return f"tr[data-mw-row='{key}'] .mw-row-grip"
+
+    def name(key: str) -> str:
+        return f"tr[data-mw-row='{key}'] .mw-editable"
+
+    start = " ".join(f"r{i}" for i in range(20))
+    async with Page(app) as page:
+        assert await shows(page, "Runner 19")
+        await page.rest()
+        assert await page.read(order) == start
+        high = await page.read("document.querySelector('tbody tr').getBoundingClientRect().height")
+        # Carried down past two rows, a row is dropped in the third's place.
+        x, y = await page.middle(grip("r1"))
+        await page.drag(grip("r1"), (x, y + 2 * high + 3))
+        assert await page.read(said) == "move r1 3"
+        assert (await page.read(order)).startswith("r0 r2 r3 r1 r4")
+        # A row the page does not move is back in its place as soon as the
+        # page has said so, and not after a wait.
+        x, y = await page.middle(grip("r5"))
+        await page.drag(grip("r5"), (x, y - 2 * high - 3))
+        assert await page.read(said) == "move r5 3"
+        assert (await page.read(order)).startswith("r0 r2 r3 r1 r4 r5 r6")
+        # A place at a time by the keyboard, which stays on the grip.
+        await page.read(f"document.querySelector({json.dumps(grip('r0'))}).focus()")
+        await page.key("ArrowDown", 40, alt=True)
+        assert (await page.read(order)).startswith("r2 r0 r3 r1")
+        assert (
+            await page.read("document.activeElement.getAttribute('aria-label')") == "Move Runner 0"
+        )
+        # Three places in quick succession, none of them waited for: each
+        # goes from where the one before left the row, and the row does not
+        # jump back as the page answers the first.
+        down = {"key": "ArrowDown", "code": "ArrowDown", "windowsVirtualKeyCode": 40}
+        for _ in range(3):
+            for kind in ("keyDown", "keyUp"):
+                await page.tab.call("Input.dispatchKeyEvent", type=kind, modifiers=ALT, **down)
+        assert (await page.read(order)).startswith("r2 r3 r1 r4 r0 r5")
+        await page.rest()
+        assert (await page.read(order)).startswith("r2 r3 r1 r4 r0 r5")
+        assert (
+            await page.read("document.activeElement.getAttribute('aria-label')") == "Move Runner 0"
+        )
+        await page.read(f"document.querySelector({json.dumps(grip('r0'))}).focus()")
+        for _ in range(3):
+            await page.key("ArrowUp", 38, alt=True)
+        assert (await page.read(order)).startswith("r2 r0 r3 r1")
+        # A name is typed over, and only its own row is drawn again.
+        await page.read("window.__drawn = 0")
+        await page.click(name("r3"))
+        await page.tab.call("Input.insertText", text="Ada")
+        await page.key("Enter", 13)
+        assert await page.read(said) == "rename r3 Ada"
+        assert await page.read(names) == ["Runner 2", "Runner 0", "Ada", "Runner 1"]
+        assert await page.read("window.__drawn") == 1
+        assert await page.read("document.activeElement.textContent") == "Ada"
+        # Escape leaves it as it was and says nothing.
+        await page.click(name("r3"))
+        await page.tab.call("Input.insertText", text="Grace")
+        await page.key("Escape", 27)
+        assert await page.read(names) == ["Runner 2", "Runner 0", "Ada", "Runner 1"]
+        assert await page.read(said) == "rename r3 Ada"
+        # A name the page does not take is the old one again at once.
+        await page.click(name("r3"))
+        await page.tab.call("Input.insertText", text="nobody")
+        await page.key("Enter", 13)
+        assert await page.read(said) == "rename r3 nobody"
+        assert await page.read(names) == ["Runner 2", "Runner 0", "Ada", "Runner 1"]
+
+
+async def test_columns_of_one_group_stand_under_one_heading() -> None:
+    app = mw.App("sales", public=None)
+    columns = [
+        ui.Column(key="region", header="Region"),
+        ui.Column(key="q3", header="Q3", group="2023", align="right"),
+        ui.Column(key="q4", header="Q4", group="2023", align="right"),
+        ui.Column(key="q1", header="Q1", group="2024", align="right"),
+        ui.Column(key="growth", header="Growth", format="percent", align="right"),
+    ]
+
+    def rows(n: int) -> list[dict[str, Any]]:
+        return [
+            {"id": i, "region": f"Region {i}", "q3": 100 + i, "q4": 300 - i, "q1": i, "growth": 0.1}
+            for i in range(n)
+        ]
+
+    @app.page("/")
+    def home(s: mw.Session) -> ui.Component:
+        return ui.Page(
+            ui.Table(rows=rows(4), columns=columns, selection="rows", filters=True, key="short"),
+            ui.Table(rows=rows(400), columns=columns, height=200, key="long"),
+        )
+
+    def head(table: str) -> str:
+        return (
+            f"[...document.querySelectorAll(\"[data-node='root/{table}'] thead tr\")]"
+            ".map((r) => [...r.children].map((c) => [c.colSpan, c.textContent.trim()]))"
+        )
+
+    async with Page(app) as page:
+        groups, heads, filters = await page.read(head("short"))
+        # One cell over each run of columns: the checkbox and Region have
+        # no group, the two quarters of 2023 share theirs, and Growth is
+        # alone again. The headers and the filters stay one cell a column.
+        assert groups == [[2, ""], [2, "2023"], [1, "2024"], [1, ""]]
+        assert [text for _, text in heads] == ["", "Region", "Q3", "Q4", "Q1", "Growth"]
+        # A group is a header of the columns under it, and the cell over
+        # columns without one is no header at all.
+        tags = "[...document.querySelector(\"[data-node='root/short'] thead tr\").children]"
+        assert await page.read(f"{tags}.map((c) => c.tagName + (c.scope || ''))") == [
+            "TD",
+            "THcol",
+            "THcol",
+            "TD",
+        ]
+        assert len(filters) == 6 and all(span == 1 for span, _ in heads + filters)
+        # A column under a group is sorted by as any other.
+        first = (
+            "document.querySelector(\"[data-node='root/short'] tbody tr\").children[1].textContent"
+        )
+        assert await page.read(first) == "Region 0"
+        await page.click("[data-node='root/short'] thead button", "Q4")
+        await page.click("[data-node='root/short'] thead button", "Q4")
+        assert await page.read(first) == "Region 0"
+        await page.click("[data-node='root/short'] thead button", "Q1")
+        await page.click("[data-node='root/short'] thead button", "Q1")
+        assert await page.read(first) == "Region 3"
+        # A long table measures its columns by the row of headers, which
+        # is the last one, and both rows stay over the rows as they scroll.
+        groups, heads = await page.read(head("long"))
+        assert groups == [[1, ""], [2, "2023"], [1, "2024"], [1, ""]] and len(heads) == 5
+        scroller = "document.querySelector(\"[data-node='root/long'] .mw-scroll\")"
+        await page.read(f"{scroller}.scrollTop = 5000")
+        await page.rest()
+        tops = await page.read(
+            f"(() => {{ const box = {scroller}.getBoundingClientRect();"
+            f" return [...{scroller}.querySelectorAll('thead tr')]"
+            ".map((r) => Math.round(r.getBoundingClientRect().top - box.top)); })()"
+        )
+        assert tops[0] in (0, 1) and tops[1] > tops[0]
+        cells = f"{scroller}.querySelector('tbody tr[data-slot=table-row]').children.length"
+        assert await page.read(cells) == 5
+
+
+class Songs(BaseModel):
+    songs: list[dict[str, Any]] = [
+        {"id": i, "title": title}
+        for i, title in enumerate(["Opening", "Harbor", "Slow", "Loud", "Encore", "Finale"])
+    ]
+    picked: list[int] = []
+    one: list[int] = []
+    said: list[str] = []
+
+
+async def test_rows_of_a_table_are_dragged_and_selected_in_the_order_they_are_shown() -> None:
+    app = mw.App("songs", state=Songs, public=None)
+
+    def move(s: mw.Session[Songs], moved: ui.RowMove) -> None:
+        songs = s.state.songs
+        s.state.said.append(f"move {moved.key} {moved.to}")
+        # The finale is last, and stays there.
+        if moved.key != 5:
+            at = next(i for i, song in enumerate(songs) if song["id"] == moved.key)
+            songs.insert(moved.to, songs.pop(at))
+
+    @app.page("/")
+    def home(s: mw.Session[Songs]) -> ui.Component:
+        st = s.state
+        return ui.Page(
+            ui.Text(f"{'; '.join(st.said)} | {st.picked} | {st.one}", cls="said"),
+            ui.Table(
+                rows=st.songs,
+                columns=[ui.Column(key="title", header="Title", group="Set")],
+                on_move=move,
+                selection="rows",
+                selected=st.picked,
+                on_select=lambda s, keys: setattr(s.state, "picked", keys),
+                key="many",
+            ),
+            ui.Table(
+                rows=st.songs,
+                columns=["title"],
+                on_move=move,
+                selection="row",
+                selected=st.one,
+                on_select=lambda s, keys: setattr(s.state, "one", keys),
+                key="one",
+            ),
+        )
+
+    def titles(table: str) -> str:
+        return (
+            f"[...document.querySelectorAll(\"[data-node='root/{table}'] tbody tr\")]"
+            ".map((r) => r.lastElementChild.textContent).join(' ')"
+        )
+
+    def grip(table: str, n: int) -> str:
+        return f"[data-node='root/{table}'] tbody tr:nth-child({n}) .mw-row-grip"
+
+    said = "document.querySelector('.said').textContent"
+    async with Page(app) as page:
+        # Both tables in view, so a press at a row of the second lands on it.
+        await page.tab.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=900,
+            height=1000,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        await page.rest()
+        assert await page.read(titles("many")) == "Opening Harbor Slow Loud Encore Finale"
+        # A table whose rows are dragged is not sorted by its columns.
+        assert not await page.read("document.querySelectorAll('thead button').length")
+        row = "document.querySelector(\"[data-node='root/many'] tbody tr\")"
+        high = await page.read(f"{row}.getBoundingClientRect().height")
+        # The second row is carried past two others and dropped.
+        x, y = await page.middle(grip("many", 2))
+        await page.drag(grip("many", 2), (x, y + 2 * high + 4))
+        assert await page.read(titles("many")) == "Opening Slow Loud Harbor Encore Finale"
+        assert await page.read(titles("one")) == "Opening Slow Loud Harbor Encore Finale"
+        assert (await page.read(said)).startswith("move 1 3 |")
+        # A range picked with shift is the rows from the first to the third
+        # as they are shown now, and not as they were.
+        box = "[data-node='root/many'] tbody tr:nth-child({}) [role=checkbox]"
+        await page.click(box.format(1))
+        await page.click(box.format(3), shift=True)
+        assert (await page.read(said)).split(" | ")[1] == "[0, 2, 3]"
+        # A row that is one of several selected is moved alone, and the
+        # others stay selected.
+        x, y = await page.middle(grip("many", 1))
+        await page.drag(grip("many", 1), (x, y + high + 4))
+        assert await page.read(titles("many")) == "Slow Opening Loud Harbor Encore Finale"
+        assert (await page.read(said)).split(" | ")[1] == "[0, 2, 3]"
+        picked = "[...document.querySelectorAll(\"[data-node='root/many'] tbody tr\")]"
+        assert await page.read(f"{picked}.map((r) => r.dataset.state === 'selected')") == [
+            True,
+            True,
+            True,
+            False,
+            False,
+            False,
+        ]
+        # In a table whose rows are selected by a press, a press on the
+        # grip is not one on the row, and a press beside it is.
+        await page.click(grip("one", 2))
+        assert (await page.read(said)).split(" | ")[2] == "[]"
+        await page.click("[data-node='root/one'] tbody tr:nth-child(2) td:last-child")
+        assert (await page.read(said)).split(" | ")[2] == "[0]"
+        # A row the page does not move is back at once.
+        x, y = await page.middle(grip("one", 6))
+        await page.drag(grip("one", 6), (x, y - 2 * high - 4))
+        assert (await page.read(said)).split(" | ")[0].endswith("move 5 3")
+        assert await page.read(titles("one")) == "Slow Opening Loud Harbor Encore Finale"
+        # A place at a time by the keyboard, which stays on the grip.
+        await page.read(f"document.querySelector({json.dumps(grip('one', 1))}).focus()")
+        await page.key("ArrowDown", 40, alt=True)
+        assert await page.read(titles("one")) == "Opening Slow Loud Harbor Encore Finale"
+        assert await page.read("document.activeElement.className") == "mw-row-grip"
+
+
+class Stages(BaseModel):
+    stages: list[dict[str, Any]] = [
+        {
+            "id": i,
+            "stage": name,
+            "hours": 2.5 + i / 2,
+            "climb": 300 + i * 120,
+            "shade": 0.1,
+            "open": i % 2 == 0,
+        }
+        for i, name in enumerate(["Ford", "Saddle", "Hut", "Summit"])
+    ]
+    said: list[str] = []
+
+
+async def test_the_cells_of_a_table_are_typed_over_by_the_mouse_and_the_keyboard() -> None:
+    app = mw.App("stages", state=Stages, public=None)
+
+    def edit(s: mw.Session[Stages], typed: ui.CellEdit) -> None:
+        s.state.said.append(f"{typed.key}.{typed.column}={typed.value!r}")
+        row = next(r for r in s.state.stages if r["id"] == typed.key)
+        # A stage has a name: one that is emptied stays as it was. And one
+        # that is called off is no stage any more.
+        if typed.value == "Called off":
+            s.state.stages.remove(row)
+        elif typed.column != "stage" or typed.value:
+            row[typed.column] = typed.value
+
+    @app.page("/")
+    def home(s: mw.Session[Stages]) -> ui.Component:
+        return ui.Page(
+            ui.Text(" | ".join(s.state.said), cls="said"),
+            ui.Table(
+                rows=s.state.stages,
+                columns=[
+                    ui.Column(key="stage", header="Stage", editable=True),
+                    ui.Column(key="hours", header="Hours", format="number", editable=True),
+                    ui.Column(key="climb", header="Climb", format="integer"),
+                    ui.Column(key="shade", header="Shade", format="percent", editable=True),
+                    ui.Column(key="open", header="Open", format="bool", editable=True),
+                ],
+                sortable=False,
+                on_edit=edit,
+                key="route",
+            ),
+        )
+
+    last = "document.querySelector('.said').textContent.split(' | ').pop()"
+    on = (
+        "(() => { const a = document.activeElement; const r = a.closest('tr');"
+        " return [a.tagName, a.dataset.col ?? '', r ? r.dataset.part : '']; })()"
+    )
+
+    def cell(row: int, column: str) -> str:
+        return f"tbody tr:nth-child({row}) [data-col='{column}']"
+
+    def says(row: int, column: str) -> str:
+        return f"document.querySelector({json.dumps(cell(row, column))}).textContent"
+
+    async def keys(text: str) -> None:
+        for character in text:
+            press = {"key": character, "text": character}
+            await page.tab.call("Input.dispatchKeyEvent", type="keyDown", **press)
+            await page.tab.call("Input.dispatchKeyEvent", type="keyUp", key=character)
+        await page.rest()
+
+    async with Page(app) as page:
+        # The cells that are typed over are one stop for Tab.
+        assert await page.read("document.querySelectorAll('tbody [tabindex=\"0\"]').length") == 1
+        widths = "[...document.querySelectorAll('thead th')].map((c) => c.offsetWidth)"
+        before = await page.read(widths)
+        # A press opens a cell with what it holds selected, and the field
+        # changes no column's width. Enter says it and goes down.
+        await page.click(cell(1, "stage"))
+        assert await page.read("document.activeElement.value") == "Ford"
+        await page.tab.call("Input.insertText", text="Ford to the pass, by the long way round")
+        assert await page.read(widths) == before
+        await page.key("Enter", 13)
+        assert await page.read(last) == "0.stage='Ford to the pass, by the long way round'"
+        assert await page.read(on) == ["BUTTON", "stage", "1"]
+        # A character typed on a cell opens it and is the first one in it.
+        # Tab says it and goes to the next cell that is typed over.
+        await keys("Pass")
+        assert await page.read("document.activeElement.value") == "Pass"
+        await page.key("Tab", 9)
+        assert await page.read(last) == "1.stage='Pass'"
+        assert await page.read(on) == ["BUTTON", "hours", "1"]
+        # A number, and Tab again, which passes the column that is not typed over.
+        await page.key("Enter", 13)
+        assert await page.read("document.activeElement.value") == "3"
+        await page.tab.call("Input.insertText", text="4.25")
+        await page.key("Tab", 9)
+        assert await page.read(last) == "1.hours=4.25"
+        assert await page.read(on) == ["BUTTON", "shade", "1"]
+        # What is no number keeps the field open and says so. Escape then
+        # leaves the cell as it was, with the keyboard on it.
+        await page.key("F2", 113)
+        await page.tab.call("Input.insertText", text="lots")
+        await page.key("Enter", 13)
+        assert await page.read(
+            "[document.activeElement.tagName, document.activeElement.getAttribute('aria-invalid')]"
+        ) == ["INPUT", "true"]
+        await page.key("Escape", 27)
+        assert await page.read(last) == "1.hours=4.25"
+        assert await page.read(on) == ["BUTTON", "shade", "1"]
+        # A percent is typed as it is shown.
+        await keys("40")
+        await page.key("Enter", 13)
+        assert await page.read(last) == "1.shade=0.4" and await page.read(says(2, "shade")) == "40%"
+        assert await page.read(on) == ["BUTTON", "shade", "2"]
+        # The arrow keys go between the cells that are typed over, and a
+        # yes or no is set where it stands.
+        await page.key("ArrowRight", 39)
+        assert (await page.read(on))[1:] == ["open", "2"]
+        await page.tab.call(
+            "Input.dispatchKeyEvent", type="keyDown", key=" ", code="Space", text=" "
+        )
+        await page.tab.call("Input.dispatchKeyEvent", type="keyUp", key=" ", code="Space")
+        await page.rest()
+        assert await page.read(last) == "2.open=False"
+        for _ in range(3):
+            await page.key("ArrowLeft", 37)
+        await page.key("ArrowUp", 38)
+        assert await page.read(on) == ["BUTTON", "stage", "1"]
+        # A value the page does not take is the old one again at once.
+        await page.key("Enter", 13)
+        await page.tab.call("Input.insertText", text=" ")
+        await page.key("Enter", 13)
+        assert await page.read(last) == "1.stage=''"
+        assert await page.read(says(2, "stage")) == "Pass"
+        # Leaving a field by a press elsewhere says what is in it.
+        await page.click(cell(4, "hours"))
+        await page.tab.call("Input.insertText", text="6")
+        await page.click(".said")
+        assert await page.read(last) == "3.hours=6.0"
+        assert await page.read("document.querySelectorAll('tbody .mw-editable-field').length") == 0
+        # Tab goes on from a yes or no as it does from a field: from the
+        # percent of a row to its yes or no, and on to the next row.
+        await page.click(cell(1, "shade"))
+        await page.key("Tab", 9)
+        assert (await page.read(on))[1:] == ["open", "0"]
+        await page.key("Tab", 9)
+        assert await page.read(on) == ["BUTTON", "stage", "1"]
+        # A field that is opened and left as it was says nothing, whichever
+        # way it is left: the cell shows 10% and the row may hold more.
+        await page.click(cell(1, "shade"))
+        assert await page.read("document.activeElement.value") == "10"
+        await page.key("Enter", 13)
+        assert await page.read(last) == "3.hours=6.0"
+        assert await page.read(on) == ["BUTTON", "shade", "1"]
+        # Before the first cell there is none to go back to, and the
+        # keyboard is on the cell again, from where Tab leaves the table.
+        await page.click(cell(1, "stage"))
+        await page.key("Tab", 9, shift=True)
+        assert await page.read(last) == "3.hours=6.0"
+        assert await page.read(on) == ["BUTTON", "stage", "0"]
+        # A row that goes while the keyboard is on one of its cells leaves
+        # the keyboard on the cell that took its place.
+        await page.click(cell(2, "stage"))
+        await page.tab.call("Input.insertText", text="Called off")
+        await page.key("Tab", 9)
+        assert await page.read(last) == "1.stage='Called off'"
+        assert await page.read("document.querySelectorAll('tbody tr').length") == 3
+        assert await page.read(on) == ["BUTTON", "hours", "2"]

@@ -83,6 +83,7 @@ class Page:
         session.on_failure = self._failed
         session.on_unheard = self._unheard
         self._deaf: list[tuple[str, str]] = []
+        self._tagged = 0
         self._requests = 0
 
     def _said_goodbye(self) -> bool:
@@ -117,8 +118,15 @@ class Page:
         they set off. One the page does not take raises ``LookupError``."""
         self._in_reach(found)
         seen = len(self._deaf)
+        # A component of the app's own waits to hear of what it emits, as
+        # it does in a tab, so the session says ``heard`` for each.
+        own = isinstance(found.component, Custom)
         for name, payload in events:
-            self.session.event(Event(node=found.id, name=name, payload=payload))
+            tag = None
+            if own:
+                self._tagged += 1
+                tag = f"t{self._tagged}"
+            self.session.event(Event(node=found.id, name=name, payload=payload, tag=tag))
         await self.settle()
         for node_id, why in self._deaf[seen:]:
             if node_id == found.id:
@@ -445,6 +453,17 @@ class Page:
         if match.disabled:
             raise LookupError(f"the item {item!r} of {found!r} is disabled")
         await self.event(found, "select", match.id)
+
+    async def edit(self, table: Found | str, key: Any, column: str, value: Any) -> None:
+        """Type ``value`` over the cell of a ``Table`` in the row that has
+        this key and the column that has this one. The value is what the
+        handler gets: a text, a number, or a yes or no."""
+        await self.event(table, "edit", {"key": key, "column": column, "value": value})
+
+    async def move_row(self, table: Found | str, key: Any, to: int) -> None:
+        """Drag the row of a ``Table`` that has this key to another place,
+        counted from 0 among the other rows."""
+        await self.event(table, "move", {"key": key, "to": to})
 
     async def move(self, row: Found | str, to: int, *, into: Found | str | None = None) -> None:
         """Drag a row of a ``Sortable`` to another place: ``to`` among the

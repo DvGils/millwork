@@ -30,11 +30,13 @@ def test_table_wire_shape() -> None:
     assert node.props["columns"][1] == {
         "key": "type",
         "header": "Type",
+        "group": None,
         "width": None,
         "align": "left",
         "format": "badge",
         "sortable": True,
         "filterable": True,
+        "editable": False,
         "hidden": False,
         "wrap": False,
         "lines": None,
@@ -332,3 +334,224 @@ def test_a_column_is_cut_to_whole_lines_and_a_table_fills_or_has_a_height() -> N
         ui.Column(key="text", lines=0)
     with pytest.raises(ValueError, match="a height or fills"):
         ui.Table(rows=[], fill=True, height=300)
+
+
+async def test_columns_of_one_group_share_a_heading_and_the_outline_names_it() -> None:
+    from millwork.testing import TestApp
+
+    table = ui.Table(
+        rows=[{"region": "North", "q3": 1, "q4": 2, "q1": 3}],
+        columns=[
+            "region",
+            ui.Column(key="q3", header="Q3", group="2023"),
+            ui.Column(key="q4", header="Q4", group="2023"),
+            ui.Column(key="q1", header="Q3", group="2024"),
+        ],
+        default_sort=[("q1", "asc")],
+        key="sales",
+    )
+    sent = table.wire_extra()["columns"]
+    assert [c["group"] for c in sent] == [None, "2023", "2023", "2024"]
+    # A group of nothing but spaces is no group.
+    assert ui.Column(key="a", group="  ").group is None
+    assert ui.Column(key="a", group=" 2023 ").group == "2023"
+
+    app = mw.App("sales", public=None)
+    app.page("/")(lambda s: ui.Page(table))
+
+    def find(entry: dict[str, Any], name: str) -> dict[str, Any]:
+        if entry.get("key") == name:
+            return entry
+        for child in entry.get("children", []):
+            if found := find(child, name):
+                return found
+        return {}
+
+    async with TestApp(app).open("/") as page:
+        said = find(page.outline(), "sales")
+        # Two columns may have one header under different groups, and are
+        # told apart by the group.
+        assert said["columns"] == ["region", "2023 / Q3", "2023 / Q4", "2024 / Q3"]
+        assert said["state"] == ['shown sorted by "2024 / Q3" asc']
+
+
+class Setlist(BaseModel):
+    songs: list[dict[str, Any]] = [
+        {"id": "a", "title": "Opening theme"},
+        {"id": "b", "title": "Slow one"},
+        {"id": "c", "title": "Encore"},
+    ]
+    moves: list[tuple[Any, int]] = []
+
+
+async def test_a_row_that_is_dragged_reaches_the_handler_as_a_key_and_a_place() -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("setlist", state=Setlist, public=None)
+
+    def move(s: mw.Session[Setlist], moved: ui.RowMove) -> None:
+        songs = s.state.songs
+        s.state.moves.append((moved.key, moved.to))
+        at = next(i for i, song in enumerate(songs) if song["id"] == moved.key)
+        songs.insert(moved.to, songs.pop(at))
+
+    @app.page("/")
+    def home(s: mw.Session[Setlist]) -> ui.Component:
+        return ui.Page(ui.Table(rows=s.state.songs, on_move=move, key="songs"))
+
+    async with TestApp(app).open("/") as page:
+        await page.move_row("songs", "a", 2)
+        assert [song["id"] for song in page.state.songs] == ["b", "c", "a"]
+        assert page.state.moves == [("a", 2)]
+        assert "rows can be dragged into another order" in page.outline(as_text=True)
+        # What is no row of the table, or no place in it, is not sent on.
+        for key, to in (("z", 0), ("a", 3), ("a", -1), ("a", "1"), ("a", True), (None, 0)):
+            with pytest.raises(LookupError):
+                await page.move_row("songs", key, to)
+        with pytest.raises(LookupError):
+            await page.event("songs", "move", ["a", 0])
+        assert page.state.moves == [("a", 2)]
+
+
+def test_a_table_whose_rows_are_dragged_shows_them_in_their_own_order() -> None:
+    def move(s: Any, moved: ui.RowMove) -> None:
+        return None
+
+    rows = [{"id": i, "name": f"n{i}"} for i in range(3)]
+    for other in (
+        {"filters": True},
+        {"search": True},
+        {"page_size": 10},
+        {"default_sort": [("name", "asc")]},
+        {"on_sort": move},
+        {"on_filter": move},
+    ):
+        with pytest.raises(ValueError, match=f"on_move does not go with {next(iter(other))}"):
+            ui.Table(rows=rows, on_move=move, **other)
+    # Each row has a key, the keys tell the rows apart, and there are no
+    # more rows than a table draws all of.
+    with pytest.raises(ValueError, match="names each row by its 'id'"):
+        build(ui.Table(rows=[{"name": "a"}, {"name": "b"}], on_move=move))
+    with pytest.raises(ValueError, match="rows 0 and 1 share the 'id' 1"):
+        build(ui.Table(rows=[{"id": 1}, {"id": 1}], on_move=move))
+    with pytest.raises(ValueError, match="at most 200 rows, and this one has 201"):
+        build(ui.Table(rows=[{"id": i} for i in range(201)], on_move=move))
+    node = build(ui.Table(rows=[{"id": i} for i in range(200)], on_move=move)).nodes["root"]
+    assert node.props["on_move"] is True and len(node.props["keys"]) == 200
+    # An empty table can be one whose rows will be dragged.
+    build(ui.Table(rows=[], on_move=move))
+
+
+class Route(BaseModel):
+    stages: list[dict[str, Any]] = [
+        {"id": 1, "stage": "Ford", "hours": 2.5, "climb": 300, "shade": 0.1, "open": True},
+        {"id": 2, "stage": "Saddle", "hours": 3.0, "climb": 420, "shade": 0.2, "open": False},
+    ]
+    edits: list[tuple[Any, str, Any]] = []
+
+
+ROUTE = [
+    ui.Column(key="stage", editable=True),
+    ui.Column(key="hours", format="number", editable=True),
+    ui.Column(key="climb", format="integer", editable=True),
+    ui.Column(key="shade", format="percent", editable=True),
+    ui.Column(key="open", format="bool", editable=True),
+    ui.Column(key="id"),
+    ui.Column(key="note", editable=True, hidden=True),
+]
+
+
+async def test_a_cell_that_is_typed_over_reaches_the_handler_in_its_columns_type() -> None:
+    from millwork.testing import TestApp
+
+    app = mw.App("route", state=Route, public=None)
+
+    def edit(s: mw.Session[Route], typed: ui.CellEdit) -> None:
+        s.state.edits.append((typed.key, typed.column, typed.value))
+        row = next(r for r in s.state.stages if r["id"] == typed.key)
+        row[typed.column] = typed.value
+
+    @app.page("/")
+    def home(s: mw.Session[Route]) -> ui.Component:
+        return ui.Page(ui.Table(rows=s.state.stages, columns=ROUTE, on_edit=edit, key="route"))
+
+    async with TestApp(app).open("/") as page:
+        await page.edit("route", 1, "stage", "Ford to the pass")
+        await page.edit("route", 2, "hours", 4)
+        await page.edit("route", 2, "climb", 500.0)
+        await page.edit("route", 1, "shade", 0.4)
+        await page.edit("route", 2, "open", True)
+        await page.edit("route", 1, "hours", None)
+        took = page.state.edits
+        assert took == [
+            (1, "stage", "Ford to the pass"),
+            (2, "hours", 4.0),
+            (2, "climb", 500),
+            (1, "shade", 0.4),
+            (2, "open", True),
+            (1, "hours", None),
+        ]
+        # A number is a float and a whole number an int, whichever came.
+        assert [type(value) for _, _, value in took[1:3]] == [float, int]
+        assert page.state.stages[0]["stage"] == "Ford to the pass"
+        said = page.outline(as_text=True)
+        assert 'cells of "stage", "hours", "climb", "shade", "open" can be typed over' in said
+        # What is no cell that is typed over, or no value of its column, is
+        # not sent on.
+        refused: list[tuple[Any, Any, Any]] = [
+            (9, "stage", "x"),
+            (1, "id", 5),
+            (1, "note", "hidden"),
+            (1, "nowhere", "x"),
+            (1, "stage", 5),
+            (1, "stage", None),
+            (1, "stage", "x" * 10_001),
+            (1, "hours", "3"),
+            (1, "hours", True),
+            (1, "hours", float("inf")),
+            (1, "hours", float("nan")),
+            (1, "hours", 10**400),
+            (1, "climb", 10**400),
+            (1, "climb", 2.5),
+            (1, "open", 1),
+            (1, "open", None),
+        ]
+        for key, column, value in refused:
+            with pytest.raises(LookupError):
+                await page.edit("route", key, column, value)
+        with pytest.raises(LookupError):
+            await page.event("route", "edit", [1, "stage", "x"])
+        assert len(page.state.edits) == 6
+
+
+def test_a_table_whose_cells_are_typed_over_says_who_to_tell_and_is_not_pressed() -> None:
+    def edit(s: Any, typed: ui.CellEdit) -> None:
+        return None
+
+    rows = [{"id": 1, "name": "a", "since": "2024-01-01"}]
+    typed = [ui.Column(key="name", editable=True)]
+    # A column that is editable in a table that tells nobody is shown as
+    # any other, which is how a page lets only some people type.
+    assert build(ui.Table(rows=rows, columns=typed)).nodes["root"].props.get("on_edit") is None
+    for columns in (["name"], None, [ui.Column(key="name", editable=True, hidden=True)]):
+        with pytest.raises(ValueError, match="a column that is editable and shown, and none is"):
+            ui.Table(rows=rows, columns=columns, on_edit=edit)
+    with pytest.raises(ValueError, match="on_edit does not go with on_row_click"):
+        ui.Table(rows=rows, columns=typed, on_edit=edit, on_row_click=edit)
+    with pytest.raises(ValueError, match='on_edit does not go with selection="row"'):
+        ui.Table(rows=rows, columns=typed, on_edit=edit, selection="row")
+    # A text, a number or a yes or no, and no date, badge, link or code.
+    for format in ("date", "datetime", "badge", "link", "code"):
+        with pytest.raises(ValueError, match=f"'since' is {format}"):
+            ui.Column(key="since", format=format, editable=True)
+    # Its cell is one line.
+    for more in ({"wrap": True}, {"lines": 2}):
+        with pytest.raises(ValueError, match="a cell that is typed over is one line"):
+            ui.Column(key="name", editable=True, **more)
+    assert ui.Column(key="name", editable=True, lines=1).lines == 1
+    with pytest.raises(ValueError, match="cells are typed over names each row by its 'id'"):
+        build(ui.Table(rows=[{"name": "a"}], columns=typed, on_edit=edit))
+    # It goes with rows that are selected by a checkbox, and with rows that are dragged.
+    table = ui.Table(rows=rows, columns=typed, on_edit=edit, on_move=edit, selection="rows")
+    node = build(table).nodes["root"]
+    assert node.props["on_edit"] is True and node.props["columns"][0]["editable"] is True

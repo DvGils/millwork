@@ -179,6 +179,9 @@ class Event(Wire):
     node: str
     name: str
     payload: Any = None
+    # What the tab calls this one event, when it waits to hear that the
+    # session is done with it. It is said back as it came.
+    tag: str | None = Field(default=None, max_length=32)
 
 
 class Answer(Wire):

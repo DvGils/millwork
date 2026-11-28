@@ -29,11 +29,13 @@ import * as ScrollArea from "@/components/ui/scroll-area";
 import * as Toast from "@/components/ui/toast";
 import { cn } from "cn";
 import { lucideForComponents } from "./icons";
+import * as Lent from "./lent";
 
 export const imports: Record<string, unknown> = {
   react: React,
   "lucide-react": lucideForComponents,
   cn: { cn },
+  millwork: Lent,
   "@/components/ui/button": Button,
   "@/components/ui/input": Input,
   "@/components/ui/card": Card,

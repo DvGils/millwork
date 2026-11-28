@@ -3,6 +3,54 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.8.0
+
+### Bug fixes
+
+- The `emit` a custom component gets was another function at every
+  drawing. A component that handed it to rows wrapped in React's `memo`,
+  as the manual says to for a large one, drew every row again at every
+  change. It is the same function from drawing to drawing.
+
+### Features
+
+- A custom component can import `useRowDrag`, `RowGrip` and `Editable`
+  from `millwork`. `useRowDrag` lets the rows of a list or a table of
+  the component's own be dragged into another order by a grip, or moved
+  a place at a time with Alt and an arrow key. `Editable` is a text
+  that becomes a field when it is pressed, said on Enter or on leaving
+  the field and left alone on Escape. Both show what was done at once,
+  and set it back when the page did not take it.
+- `ui.Column(group=...)` puts one heading over the columns of a table
+  that stand next to each other and name the same group, such as a
+  year over its quarters. An outline names such a column by its group
+  and its header.
+- `ui.Table(on_move=...)` gives each row a grip to drag it into another
+  order by, or to move it a place at a time with Alt and an arrow key.
+  The handler gets a `ui.RowMove` with the row's key and its new place,
+  and a row the handler leaves where it was goes back. Such a table is
+  not sorted, filtered, searched or paged, and has at most two hundred
+  rows. In a test `page.move_row(table, key, to)` drags one.
+- `ui.Column(editable=True)` and `ui.Table(on_edit=...)` let the cells
+  of a table be typed over where they stand: a text, a number, a
+  percent typed as it is shown, and a yes or no. The handler gets a
+  `ui.CellEdit` with the row's key, the column and the value in the
+  column's type, and a cell the handler leaves as it was goes back.
+  The arrow keys go between such cells, Enter, F2 or typing opens one,
+  and Enter and Tab say the value and go on. It does not go with rows
+  that are pressed, and without `on_edit` the columns are shown as any
+  other. In a test `page.edit(table, key, column, value)`
+  types over one.
+- `emit` in a custom component gives a promise that is over when the
+  session is done with the event and the page is drawn, whether a
+  handler took it or not. In a test such an event leaves a `heard`
+  command in `page.commands`.
+
+### The manual
+
+- Custom components has a section on rows that are dragged and text
+  that is typed over, with a list to try.
+
 ## 0.7.0
 
 ### Bug fixes

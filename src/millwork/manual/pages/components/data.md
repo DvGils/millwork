@@ -39,7 +39,7 @@ ui.Table(rows=ROWS)
 ```
 
 ## Columns and formats
-<!-- keywords: currency, number format, date format, column header -->
+<!-- keywords: currency, number format, date format, column header, grouped headers, column groups, spanning header, multi-level header -->
 
 `format` renders a value as `text`, `number`, `integer`, `percent`,
 `currency`, `date`, `datetime`, `bool`, `badge`, `link` or `code`.
@@ -57,6 +57,33 @@ ui.Table(
         ui.Column(key="active", header="Active", format="bool", align="center"),
     ],
     default_sort=[("score", "desc")],
+)
+```
+
+A `group` puts one heading over columns that stand next to each other,
+such as a year over its quarters. Columns with the same `group` share
+the heading, and a column without one stands on its own. The columns
+under a heading sort and filter like any other.
+
+```python live
+SALES = [
+    {"region": "North", "q3": 120, "q4": 140, "q1": 150, "q2": 170, "growth": 0.04},
+    {"region": "South", "q3": 127, "q4": 145, "q1": 153, "q2": 172, "growth": 0.05},
+    {"region": "East", "q3": 134, "q4": 150, "q1": 156, "q2": 174, "growth": 0.06},
+    {"region": "West", "q3": 141, "q4": 155, "q1": 159, "q2": 176, "growth": 0.07},
+]
+
+ui.Table(
+    rows=SALES,
+    row_key="region",
+    columns=[
+        ui.Column(key="region", header="Region"),
+        ui.Column(key="q3", header="Q3", group="2023", align="right"),
+        ui.Column(key="q4", header="Q4", group="2023", align="right"),
+        ui.Column(key="q1", header="Q1", group="2024", align="right"),
+        ui.Column(key="q2", header="Q2", group="2024", align="right"),
+        ui.Column(key="growth", header="Growth", format="percent", align="right"),
+    ],
 )
 ```
 
@@ -116,6 +143,142 @@ def example(s):
         gap=3,
     )
 ```
+
+## Rows that are dragged
+<!-- keywords: reorder rows, drag and drop, sortable rows, row order, grip, on_move, RowMove -->
+
+`on_move` gives each row a grip to drag it into another order by. Alt
+with an arrow key on the grip moves the row a place at a time. The
+handler gets a `ui.RowMove` with the row's `key` and the place it was
+moved `to`, counted from 0, and changes the rows. The table drawn from
+them is where the row ends up, so a handler that leaves the rows as
+they were sends the row back.
+
+```python live
+from pydantic import BaseModel
+
+
+class Stage(BaseModel):
+    name: str
+    hours: float
+
+
+class Route(BaseModel):
+    stages: list[Stage] = [
+        Stage(name="Trailhead to the ford", hours=2.5),
+        Stage(name="Ford to the saddle", hours=3.0),
+        Stage(name="Saddle to the hut", hours=1.5),
+        Stage(name="Hut to the summit", hours=4.0),
+        Stage(name="Summit to the road", hours=3.5),
+    ]
+
+
+def example(s):
+    stages = s.state.route.stages
+
+    def move(s, moved):
+        at = next(i for i, stage in enumerate(stages) if stage.name == moved.key)
+        stages.insert(moved.to, stages.pop(at))
+
+    return ui.Table(
+        rows=stages,
+        row_key="name",
+        columns=[
+            ui.Column(key="name", header="Stage"),
+            ui.Column(key="hours", header="Hours", format="number", align="right"),
+        ],
+        on_move=move,
+    )
+```
+
+Such a table shows its rows in the order they have. So it is not sorted
+by a column, and `on_move` does not go with `filters`, `search`,
+`page_size` or `default_sort`. Every row has a key that tells it from
+the others, and there are at most two hundred rows. Selection works
+beside it. A range picked with shift goes by the order the rows are
+shown in, and a selected row that is dragged moves alone.
+
+## Cells that are typed over
+<!-- keywords: editable cell, edit in place, inline edit, spreadsheet, grid, data entry, on_edit, CellEdit, editable column -->
+
+`editable=True` on a column lets its cells be typed over where they
+stand, in a table that has `on_edit`. A press on such a cell opens it as
+a field. The handler gets a `ui.CellEdit` with the row's `key`, the
+`column` and the `value`, and changes the row. The table drawn from the
+rows is what the cell shows, so a handler that leaves the row as it was
+sends the cell back.
+
+```python live
+from pydantic import BaseModel
+
+
+class Leg(BaseModel):
+    id: int
+    name: str
+    hours: float
+    shade: float
+    open: bool
+
+
+class Hike(BaseModel):
+    legs: list[Leg] = [
+        Leg(id=1, name="Trailhead to the ford", hours=2.5, shade=0.6, open=True),
+        Leg(id=2, name="Ford to the saddle", hours=3.0, shade=0.25, open=True),
+        Leg(id=3, name="Saddle to the hut", hours=1.5, shade=0.1, open=False),
+        Leg(id=4, name="Hut to the summit", hours=4.0, shade=0.0, open=True),
+    ]
+
+
+def example(s):
+    legs = s.state.hike.legs
+
+    def edit(s, typed):
+        leg = next(leg for leg in legs if leg.id == typed.key)
+        if typed.value in ("", None):
+            s.toast("Every cell of a leg has something in it.", tone="warning")
+            return
+        if typed.column == "hours" and not 0 < typed.value <= 24:
+            s.toast("A leg takes up to a day.", tone="warning")
+            return
+        setattr(leg, typed.column, typed.value)
+
+    return ui.Table(
+        rows=legs,
+        columns=[
+            ui.Column(key="name", header="Leg", editable=True),
+            ui.Column(key="hours", header="Hours", format="number", align="right", editable=True),
+            ui.Column(key="shade", header="In shade", format="percent", align="right", editable=True),
+            ui.Column(key="open", header="Open", format="bool", align="center", editable=True),
+        ],
+        sortable=False,
+        on_edit=edit,
+    )
+```
+
+The value comes in the column's own type. A text is a `str`, a `number`
+or a `currency` a `float`, an `integer` an `int`, and a `bool` a yes or
+no that is set where it stands, without a field. A number is typed the
+way the theme's `locale` writes one, and a `percent` as the number that
+is shown, so 25 is typed for the 0.25 the row holds. A number that is
+emptied is `None`. What is no number, or no whole one in a column of
+integers, keeps its field open for as long as the keyboard is in it. A
+field that is opened and left as it was says nothing.
+
+The keyboard works the cells as well. Tab stops at one of them, and the
+arrow keys go between the cells that are typed over. Enter, F2 or simply
+typing opens a cell. In the field Enter says the value and goes down,
+Tab says it and goes on to the next cell, and Escape leaves the cell as
+it was. Tab goes on from a yes or no as well, so a row can be filled in
+with Tab alone.
+
+Each row has a key that tells it from the others, and a cell that is
+typed over is one line. A press on a cell opens it, so `on_edit` does
+not go with `on_row_click` or `selection="row"`, where a press is on the
+row. It goes with checkboxes and with rows that are dragged. A row in a
+column the table is sorted by takes its new place as soon as its value
+changes. Without `on_edit` the columns are shown as any other, so a
+page that lets only some people type leaves the handler out for the
+rest.
 
 ## Tones
 

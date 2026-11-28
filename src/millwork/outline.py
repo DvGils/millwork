@@ -238,9 +238,13 @@ def _table(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
     shown = every[:COLUMNS]
 
     def header(column: dict[str, Any]) -> str:
-        # A header that was given is the one shown, an empty one too.
+        # A header that was given is the one shown, an empty one too. A
+        # column under a group is told from its namesake under another by
+        # the group.
         given = column.get("header")
-        return limits.cut(given if isinstance(given, str) else column.get("key", ""))
+        own = given if isinstance(given, str) else column.get("key", "")
+        group = column.get("group")
+        return limits.cut(f"{group} / {own}" if isinstance(group, str) and group else own)
 
     out: dict[str, Any] = {
         "columns": [header(c) for c in shown],
@@ -269,6 +273,11 @@ def _table(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
         state.append("rows can be selected")
     if props.get("on_row_click"):
         state.append("rows can be pressed")
+    if props.get("on_move"):
+        state.append("rows can be dragged into another order")
+    typed = [_quoted(header(c)) for c in every if c.get("editable")]
+    if props.get("on_edit") and typed:
+        state.append(f"cells of {', '.join(typed)} can be typed over")
     if props.get("search"):
         state.append("has a search box")
     if props.get("filters"):

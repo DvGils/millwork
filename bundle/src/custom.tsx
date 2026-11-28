@@ -14,7 +14,7 @@ import { ChatContext, type ChatApi } from "./chat-context";
 
 type Compiled = ComponentType<{
   props: Record<string, unknown>;
-  emit: (name: string, payload?: unknown) => void;
+  emit: (name: string, payload?: unknown) => Promise<void>;
   request: (name: string, payload?: unknown) => Promise<unknown>;
   fileUrl: (id: string) => Promise<string>;
   chat?: ChatApi;
@@ -104,7 +104,7 @@ export function CustomComponent({
 }: {
   node: Node;
   props: Record<string, unknown>;
-  emit: (name: string, payload?: unknown) => void;
+  emit: (name: string, payload?: unknown) => Promise<void>;
   children: ReactNode;
 }) {
   const [Comp, setComp] = useState<Compiled | null>(null);

@@ -652,3 +652,97 @@ body.mw-dragging * {
         display: none;
     }
 }
+
+/* What a component of the app's own borrows: a grip to drag a row by, the
+   row while it is held, and a text that is typed over where it stands. In
+   the components layer, so a class the app gives one of them has the last
+   word. */
+@layer components {
+    .mw-row-grip {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.5rem;
+        border-radius: calc(var(--radius) - 6px);
+        color: var(--muted-foreground);
+        cursor: grab;
+        /* A finger on the grip carries the row and does not scroll the page. */
+        touch-action: none;
+        outline: none;
+    }
+    .mw-row-grip:hover {
+        background: var(--accent);
+        color: var(--foreground);
+    }
+    .mw-row-grip:active {
+        cursor: grabbing;
+    }
+    .mw-row-grip:focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: -1px;
+    }
+    .mw-row-grip:disabled {
+        opacity: 0.4;
+        cursor: default;
+        pointer-events: none;
+    }
+    /* Over the rows it passes and over a cell of theirs that sticks, and
+       under a header that sticks. A table's row has no background of its
+       own to show, so its cells take the color. */
+    [data-mw-dragged] {
+        position: relative;
+        z-index: 15;
+        background-color: var(--accent);
+        filter: drop-shadow(0 5px 6px rgb(0 0 0 / 0.22));
+    }
+    tr[data-mw-dragged] > * {
+        border-bottom-color: transparent;
+        background-color: var(--accent);
+    }
+    /* In a table of the catalogue the header sticks over the rows, the
+       one that is held among them. */
+    [data-slot="table-body"] > tr[data-mw-dragged] {
+        z-index: 5;
+    }
+    .mw-editable {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        overflow: hidden;
+        /* As high as a line, with nothing in it as well. */
+        min-height: calc(1lh + 0.25rem);
+        padding: 0.125rem 0.375rem;
+        border-radius: calc(var(--radius) - 6px);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: inherit;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: text;
+        outline: none;
+    }
+    button.mw-editable:hover:not(:disabled) {
+        background: color-mix(in oklab, var(--accent) 70%, transparent);
+    }
+    button.mw-editable:focus-visible {
+        box-shadow: 0 0 0 2px var(--ring);
+    }
+    button.mw-editable:disabled {
+        cursor: default;
+    }
+    .mw-editable-sent {
+        color: var(--muted-foreground);
+    }
+    .mw-editable-field {
+        background: var(--background);
+        box-shadow: 0 0 0 2px var(--ring);
+        text-overflow: clip;
+    }
+    /* What was typed is no value of the column: the field says so and stays. */
+    .mw-editable-wrong {
+        box-shadow: 0 0 0 2px var(--destructive);
+    }
+}

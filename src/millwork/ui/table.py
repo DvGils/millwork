@@ -33,6 +33,8 @@ Format = Literal[
     "code",
 ]
 Tone = Literal["default", "muted", "primary", "accent", "success", "warning", "destructive"]
+# The formats whose cells can be typed over: a text, a number, and a yes or no.
+EDITABLE = frozenset({"text", "number", "integer", "percent", "currency", "bool"})
 Row = Mapping[str, Any]
 _TONES = frozenset(get_args(Tone))
 
@@ -56,11 +58,21 @@ class Column(BaseModel):
 
     key: str
     header: str | None = None
+    group: str | None = None
+    """A heading over this column and the columns shown next to it that
+    name the same group, such as a year over its quarters. Columns that
+    are not shown next to each other each get a heading of their own."""
     width: int | str | None = None
     align: Literal["left", "center", "right"] = "left"
     format: Format = "text"
     sortable: bool = True
     filterable: bool = True
+    editable: bool = False
+    """The cells of this column can be typed over, in a table that has
+    ``on_edit``. For a column of text, of numbers, or of yes and no,
+    whose cells are one line. In a table without ``on_edit`` the column
+    is shown as any other, so a page that lets only some people type
+    leaves the handler out for the rest."""
     hidden: bool = False
     wrap: bool = False
     lines: int | None = Field(default=None, ge=1)
@@ -68,6 +80,29 @@ class Column(BaseModel):
     three dots. The whole text shows under the pointer, and the table's
     search reads all of it. A column that has no ``width`` then takes the
     width the other columns leave."""
+
+    @model_validator(mode="after")
+    def _editable_is_typed(self) -> Column:
+        if not self.editable:
+            return self
+        if self.format not in EDITABLE:
+            raise ValueError(
+                f"the column {self.key!r} is {self.format}, and a cell that is typed over "
+                f"is one of {', '.join(sorted(EDITABLE))}"
+            )
+        if self.wrap or (self.lines or 1) > 1:
+            raise ValueError(
+                f"the column {self.key!r} is editable, and a cell that is typed over is "
+                "one line, so it has no wrap and no more lines than one"
+            )
+        return self
+
+    @field_validator("group")
+    @classmethod
+    def _a_group_has_a_name(cls, group: str | None) -> str | None:
+        """A group that is empty or only spaces is no group, here as in
+        the tab, which would draw a heading with nothing in it."""
+        return (group.strip() or None) if group is not None else None
 
 
 class MenuItem(BaseModel):
@@ -87,6 +122,39 @@ class MenuItem(BaseModel):
     @classmethod
     def _known_icon(cls, name: str | None) -> str | None:
         return check_icon(name)
+
+
+# The most rows a table has when they can be dragged, which is the most a
+# table draws all of. A longer one draws the rows in view alone, and a row
+# cannot be carried past rows that are not there.
+MOVABLE = 200
+
+
+class CellEdit(BaseModel):
+    """A cell of a ``Table`` that was typed over, as ``on_edit`` gets it.
+    ``key`` is the row's key and ``column`` the column's. ``value`` is what
+    was typed, as the column's format has it: a ``str`` for text, a
+    ``float`` for a number, a currency or a percent (the percent as the
+    fraction it stands for, 0.25 for 25%), an ``int`` for an integer, a
+    ``bool`` for a yes or no. A number that was emptied is ``None``."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: Any
+    column: str
+    value: Any
+
+
+class RowMove(BaseModel):
+    """A row of a ``Table`` that was dragged, as ``on_move`` gets it. ``key``
+    is the row's key and ``to`` its new place among the rows, counted from 0
+    with the row itself left out, so that ``rows.insert(move.to, row)``
+    after taking the row out puts it there."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: Any
+    to: int
 
 
 def _wire_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
@@ -211,6 +279,8 @@ class Table(Component):
         "on_action": "[action_id, row_key]",
         "on_sort": "[[column, 'asc' | 'desc'], ...]",
         "on_filter": "{'columns': {column: value}, 'search': text}",
+        "on_move": "a RowMove: the row's key and its new place",
+        "on_edit": "a CellEdit: the row's key, the column and the value typed",
     }
     wire_exclude: ClassVar[frozenset[str]] = frozenset({"tones", "rows"})
 
@@ -240,11 +310,66 @@ class Table(Component):
     on_action: Any = None
     on_sort: Any = None
     on_filter: Any = None
+    on_move: Any = None
+    """With a handler here the rows have a grip and are dragged into
+    another order, or moved a place at a time with Alt and an arrow key.
+    The handler gets a ``RowMove`` and changes the rows, and the table
+    drawn from them is where the row ends up: a handler that leaves the
+    rows as they were sends the row back. Such a table shows its rows in
+    the order they have, so it is not sorted by a column, filtered,
+    searched or paged, and it has at most 200 rows, each with a key."""
 
     @model_validator(mode="after")
     def _one_height(self) -> Table:
         if self.fill and self.height is not None:
             raise ValueError("a table has a height or fills the room that is left, not both")
+        return self
+
+    on_edit: Any = None
+    """With a handler here the cells of the columns that are ``editable``
+    are typed over where they stand. The handler gets a ``CellEdit`` and
+    changes the row, and the table drawn from the rows is what the cell
+    shows: a handler that leaves the row as it was sends the cell back.
+    Each row has a key. Such a table's rows are not pressed, so it does
+    not go with ``on_row_click`` or ``selection="row"``."""
+
+    @model_validator(mode="after")
+    def _typed_cells_have_a_column(self) -> Table:
+        if self.on_edit is None:
+            return self
+        if not any(c.editable and not c.hidden for c in self.columns or []):
+            raise ValueError(
+                "a table with on_edit has a column that is editable and shown, and none is"
+            )
+        if self.on_row_click is not None or self.selection == "row":
+            other = "on_row_click" if self.on_row_click is not None else 'selection="row"'
+            raise ValueError(
+                "a press on a cell that is typed over opens it, so on_edit does not go with "
+                f"{other}, where a press is on the row"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _dragged_rows_keep_their_order(self) -> Table:
+        if self.on_move is None:
+            return self
+        other = [
+            name
+            for name, on in (
+                ("filters", self.filters),
+                ("search", self.search),
+                ("page_size", self.page_size is not None),
+                ("default_sort", bool(self.default_sort)),
+                ("on_sort", self.on_sort is not None),
+                ("on_filter", self.on_filter is not None),
+            )
+            if on
+        ]
+        if other:
+            raise ValueError(
+                "a table whose rows are dragged shows them in the order they have, so "
+                f"on_move does not go with {' or '.join(other)}"
+            )
         return self
 
     @field_validator("columns", mode="before")
@@ -293,12 +418,21 @@ class Table(Component):
         # on them, would take two rows for one or have no name for a row.
         row_key = self.row_key
         row_keys: list[Any] = list(range(len(rows)))
+        keyed = False
         if any(row_key in row for row in rows):
             named = [row.get(row_key) for row in rows]
             clash = _clash(named)
             if clash is None:
                 row_keys = named
-            elif self.selection != "none" or self.on_row_click or self.row_actions or self.selected:
+                keyed = True
+            elif (
+                self.selection != "none"
+                or self.on_row_click
+                or self.row_actions
+                or self.selected
+                or self.on_move
+                or self.on_edit
+            ):
                 if len(clash) == 1:
                     said = f"row {clash[0]} has no {row_key!r}"
                 else:
@@ -307,8 +441,19 @@ class Table(Component):
                     if named[first] != named[second]:
                         said += f" and {named[second]!r}, which are one value in a browser"
                 raise ValueError(
-                    f"table {said}; a table that selects, opens or acts on a row needs "
-                    "a row_key whose values tell its rows apart"
+                    f"table {said}; a table that selects, opens, moves, edits or acts on a "
+                    "row needs a row_key whose values tell its rows apart"
+                )
+        if rows and not keyed and (self.on_move is not None or self.on_edit is not None):
+            what = "rows are dragged" if self.on_move is not None else "cells are typed over"
+            raise ValueError(
+                f"a table whose {what} names each row by its {row_key!r}, and these rows have none"
+            )
+        if self.on_move is not None:
+            if len(rows) > MOVABLE:
+                raise ValueError(
+                    f"a table whose rows are dragged has at most {MOVABLE} rows, "
+                    f"and this one has {len(rows)}"
                 )
         return {
             "rows": Wired(rows),
@@ -350,4 +495,6 @@ class Table(Component):
             on_action: Any = None,
             on_sort: Any = None,
             on_filter: Any = None,
+            on_move: Any = None,
+            on_edit: Any = None,
         ) -> None: ...
