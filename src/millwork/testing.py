@@ -83,6 +83,7 @@ class Page:
         session.on_failure = self._failed
         session.on_unheard = self._unheard
         self._deaf: list[tuple[str, str]] = []
+        self._tagged = 0
         self._requests = 0
 
     def _said_goodbye(self) -> bool:
@@ -117,8 +118,15 @@ class Page:
         they set off. One the page does not take raises ``LookupError``."""
         self._in_reach(found)
         seen = len(self._deaf)
+        # A component of the app's own waits to hear of what it emits, as
+        # it does in a tab, so the session says ``heard`` for each.
+        own = isinstance(found.component, Custom)
         for name, payload in events:
-            self.session.event(Event(node=found.id, name=name, payload=payload))
+            tag = None
+            if own:
+                self._tagged += 1
+                tag = f"t{self._tagged}"
+            self.session.event(Event(node=found.id, name=name, payload=payload, tag=tag))
         await self.settle()
         for node_id, why in self._deaf[seen:]:
             if node_id == found.id:

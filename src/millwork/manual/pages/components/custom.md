@@ -104,7 +104,9 @@ def example(s):
 ```
 
 A custom component can import React, the lucide icons the bundle
-carries, and every `@/components/ui/*` module the catalog uses. Those
+carries, every `@/components/ui/*` module the catalog uses, and from
+`millwork` the pieces under
+[Rows that are dragged](#rows-that-are-dragged-and-text-that-is-typed-over). Those
 icons are the ones in `mw.ICONS`, by lucide's own names, so `trash-2`
 there is `Trash2` here, and the name lucide gives one today imports it
 too. A component that asks for another one is not
@@ -123,7 +125,12 @@ is `"Ada"`, and there is no `props["props"]`.
 <!-- keywords: request, promise, fetch, rpc, load on demand, lookup -->
 
 `emit` says that something happened, and the page is drawn again when
-its handler is done. `request(name, payload)` asks for something the
+its handler is done. It gives a promise that is over at that moment,
+for a component that shows something of its own until then. The promise
+is also over when no handler took the event, when the session is
+another one, and after half a minute without a word. It never fails and
+carries nothing, so what the page gave the component is how it knows
+whether the change was taken. `request(name, payload)` asks for something the
 component wants to know, such as the rows behind a preview or whether a
 name is free. It reaches the handler that `events` has under that name
 and gives a promise of what the handler returns.
@@ -146,6 +153,132 @@ that `events` does not have. In a test,
 `await page.request("orders", "preview", {"table": "orders"})` gives the
 answer.
 
+## Rows that are dragged and text that is typed over
+<!-- keywords: reorder, drag and drop, sortable rows, grip, inline edit, editable cell, rename in place, useRowDrag, Editable, RowGrip -->
+
+A component that draws its own list or table borrows two things from
+`millwork`. `useRowDrag` lets its rows be dragged into another order by
+a grip, or moved a place at a time with Alt and an arrow key on the
+grip. `Editable` is a text that becomes a field when it is pressed.
+Enter or leaving the field says the new text, and Escape leaves it as
+it was.
+
+Both show what was done at once and leave the last word to the page.
+A callback that returns the promise `emit` gives, as the two below do,
+has its row or its text set back the moment a handler did not take the
+change. Try an empty title. A callback that returns nothing is waited
+for until the page gives another value, or four seconds.
+
+```python live
+from pydantic import BaseModel
+
+
+class Song(BaseModel):
+    key: str
+    title: str
+    length: str
+
+
+class Setlist(BaseModel):
+    songs: list[Song] = [
+        Song(key="a", title="Opening theme", length="3:10"),
+        Song(key="b", title="Harbor lights", length="4:25"),
+        Song(key="c", title="Slow one", length="5:02"),
+        Song(key="d", title="The loud one", length="2:48"),
+        Song(key="e", title="Encore", length="6:30"),
+    ]
+
+
+def example(s):
+    songs = s.state.setlist.songs
+
+    def move(s, asked):
+        at = next((i for i, song in enumerate(songs) if song.key == asked.get("key")), None)
+        to = asked.get("to")
+        if at is not None and isinstance(to, int) and 0 <= to < len(songs):
+            songs.insert(to, songs.pop(at))
+
+    def rename(s, asked):
+        title = str(asked.get("title", "")).strip()[:60]
+        song = next((song for song in songs if song.key == asked.get("key")), None)
+        if song is None or not title:
+            s.toast("A song has a title.", tone="warning")
+            return
+        song.title = title
+
+    return ui.Custom(
+        "Setlist",
+        props={"songs": [song.model_dump() for song in songs]},
+        events={"move": move, "rename": rename},
+        key="setlist",
+    )
+```
+
+```jsx
+import { memo } from "react";
+import { useRowDrag, RowGrip, Editable } from "millwork";
+
+const Song = memo(function Song({ song, row, grip, emit }) {
+  return (
+    <li {...row} className="flex items-center gap-2 rounded-lg border bg-card px-2 py-1.5 text-sm">
+      <RowGrip {...grip} label={`Move ${song.title}`} />
+      <div className="min-w-0 grow">
+        <Editable
+          value={song.title}
+          label="Title"
+          placeholder="No title"
+          onCommit={(title) => emit("rename", { key: song.key, title })}
+        />
+      </div>
+      <span className="text-muted-foreground tabular-nums">{song.length}</span>
+    </li>
+  );
+});
+
+export default function Setlist({ props, emit }) {
+  const songs = new Map(props.songs.map((song) => [song.key, song]));
+  const drag = useRowDrag({
+    keys: props.songs.map((song) => song.key),
+    onMove: (key, to) => emit("move", { key, to }),
+  });
+  return (
+    <ol ref={drag.list} className="flex max-w-md flex-col gap-1.5">
+      {drag.order.map((key) => (
+        <Song key={key} song={songs.get(key)} row={drag.row(key)} grip={drag.grip(key)} emit={emit} />
+      ))}
+    </ol>
+  );
+}
+```
+
+`useRowDrag({ keys, onMove })` takes the keys of the rows in the order
+the page gave them and gives back four things.
+
+| | |
+|---|---|
+| `list` | a ref for the element whose children are the rows |
+| `order` | the keys in the order to draw them, which after a move is the moved order until the page has answered |
+| `row(key)` | what goes on a row |
+| `grip(key)` | what goes on its grip, a `RowGrip` or a button of your own |
+
+`onMove(key, to)` is called once for each move, a drop or a place by the
+keyboard, with the row's new place counted from 0. `disabled` turns the
+grips off. `inset={{ top, bottom }}` says how many pixels of the box
+that scrolls are covered by a header or a footer that stays, so a row
+held near what is left of an edge scrolls the box. The rows can be the
+rows of a table. Rows that have no grip, such as a total at the foot, go
+in another parent and stay where they are. A row moves by a transform
+while it is held and only the rows it passes are touched, so the page is
+laid out once, at the drop.
+
+`Editable` takes `value`, `onCommit(text)`, a `label` for a screen
+reader, a `placeholder` for a text that is empty, `disabled` and a
+`className`. `onCommit` gets the text as it was typed, also when
+`value` is a number. It is as wide as what holds it and one line high,
+and a text that is right-aligned stays so in the field. Each one is a
+button on the page, so it suits the names of a few hundred rows and not
+every cell of a large grid.
+
 ## A large component
 <!-- keywords: performance, memo, slow, re-render, many rows -->
 
@@ -156,7 +289,9 @@ of them. The rows that were not sent are the same objects in the browser
 as they were. In a list of two hundred rows where one changed, the other
 rows are the objects they were. So a component with many rows gets them
 as a prop of their own, draws each row in a component of its own wrapped
-in React's `memo`, and a change to one row draws that row.
+in React's `memo`, and a change to one row draws that row. `emit` and
+`request` are the same functions at every drawing, so a row can be
+handed them.
 
 ## In a chat's composer
 

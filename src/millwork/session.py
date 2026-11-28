@@ -266,6 +266,7 @@ class Session[S]:
         self._typed: str | None = None
         self._print_asked = False
         self._moves_heard: list[str] = []
+        self._events_heard: list[tuple[str, str]] = []
         # The component that is to get the keyboard once the next drawing
         # has gone out, by the name it was asked for with, and whether that
         # was said after another page was asked for, and so is for that one.
@@ -749,6 +750,7 @@ class Session[S]:
         # The keyboard asked for after this page was is.
         self._print_asked = False
         self._moves_heard = []
+        self._events_heard = []
         if not self._focus_is_for_next:
             self._focus_asked = None
         self._focus_is_for_next = False
@@ -872,6 +874,10 @@ class Session[S]:
         node = self.tree.nodes.get(event.node) if self.tree is not None else None
         if event.name == "move" and node is not None and node.type == "Sortable":
             self.command("moved", node=event.node)
+        # A component of the app's own waits to hear of an event it sent,
+        # and is told at once of one that reached no handler.
+        if event.tag is not None:
+            self.command("heard", node=event.node, tag=event.tag)
 
     def command(self, name: str, **args: Any) -> None:
         """An instruction to the tab: toast, navigate, clipboard."""
@@ -1559,10 +1565,13 @@ class Session[S]:
 
     def _move_heard(self, event: Event) -> None:
         """A handler is done with a row that was dropped in a ``Sortable``,
-        however it ended. The list is told so after the next drawing."""
+        or with an event the tab waits to hear of, however it ended. The
+        tab is told so after the next drawing."""
         node = self.tree.nodes.get(event.node) if self.tree is not None else None
         if event.name == "move" and node is not None and node.type == "Sortable":
             self._moves_heard.append(event.node)
+        if event.tag is not None:
+            self._events_heard.append((event.node, event.tag))
 
     def _handler_ended(self, plan: Plan, before: int, event: Event) -> None:
         if plan.pressed:
@@ -1882,6 +1891,14 @@ class Session[S]:
             heard, self._moves_heard = self._moves_heard, []
             for node in heard:
                 self.command("moved", node=node)
+        if self._events_heard:
+            # The events a handler has dealt with that the tab waits to
+            # hear of, each by the name the tab gave it. Said behind the
+            # drawing, so what a component then has from the page is the
+            # page's answer to it.
+            told, self._events_heard = self._events_heard, []
+            for node, tag in told:
+                self.command("heard", node=node, tag=tag)
         self._send_marks()
 
     def _title(self, tree: Tree) -> str | None:

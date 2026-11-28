@@ -3,6 +3,34 @@
 Notable changes to millwork. Before 1.0 the API may move between minor
 versions; a release says so here when it does.
 
+## 0.8.0
+
+### Bug fixes
+
+- The `emit` a custom component gets was another function at every
+  drawing. A component that handed it to rows wrapped in React's `memo`,
+  as the manual says to for a large one, drew every row again at every
+  change. It is the same function from drawing to drawing.
+
+### Features
+
+- A custom component can import `useRowDrag`, `RowGrip` and `Editable`
+  from `millwork`. `useRowDrag` lets the rows of a list or a table of
+  the component's own be dragged into another order by a grip, or moved
+  a place at a time with Alt and an arrow key. `Editable` is a text
+  that becomes a field when it is pressed, said on Enter or on leaving
+  the field and left alone on Escape. Both show what was done at once,
+  and set it back when the page did not take it.
+- `emit` in a custom component gives a promise that is over when the
+  session is done with the event and the page is drawn, whether a
+  handler took it or not. In a test such an event leaves a `heard`
+  command in `page.commands`.
+
+### The manual
+
+- Custom components has a section on rows that are dragged and text
+  that is typed over, with a list to try.
+
 ## 0.7.0
 
 ### Bug fixes

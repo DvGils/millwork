@@ -277,6 +277,42 @@ describe("ws request layer", () => {
     expect(ws.fileType("T8")).toBe("image/svg+xml");
   });
 
+  it("emitHeard: a wait is over when the session says back the tag its event went with", async () => {
+    const s = await reconnect();
+    session(s, "HEARD");
+    const over: string[] = [];
+    void ws.emitHeard("root/list", "move", { key: "a", to: 2 }).then(() => over.push("first"));
+    void ws.emitHeard("root/list", "move", { key: "b", to: 0 }).then(() => over.push("second"));
+    void ws.emitHeard("root/other", "rename", "x").then(() => over.push("other"));
+    await tick();
+    const sent = s.json().filter((m) => m.msg.type === "event").slice(-3).map((m) => m.msg);
+    expect(sent.map((m) => [m.node, m.name])).toEqual([
+      ["root/list", "move"],
+      ["root/list", "move"],
+      ["root/other", "rename"],
+    ]);
+    const [first, second, other] = sent.map((m) => m.tag as string);
+    expect(new Set([first, second, other]).size).toBe(3);
+    expect(over).toEqual([]);
+    // In whatever order the session is done with them, each wait ends at its own word.
+    s.text(0, { type: "command", name: "heard", args: { node: "root/list", tag: second } });
+    await tick();
+    expect(over).toEqual(["second"]);
+    s.text(0, { type: "command", name: "heard", args: { node: "root/other", tag: other } });
+    s.text(0, { type: "command", name: "heard", args: { node: "root/list", tag: first } });
+    await tick();
+    expect(over).toEqual(["second", "other", "first"]);
+    // A word said twice, or for a tag nobody waits for, is nobody's.
+    s.text(0, { type: "command", name: "heard", args: { node: "root/list", tag: first } });
+    s.text(0, { type: "command", name: "heard", args: { node: "root/list", tag: "none" } });
+    // Another session has heard nothing of what the one before was sent.
+    void ws.emitHeard("root/list", "move", { key: "c", to: 1 }).then(() => over.push("gone"));
+    const next = await reconnect();
+    session(next, "HEARD-2");
+    await tick();
+    expect(over).toEqual(["second", "other", "first", "gone"]);
+  });
+
   it("runsNothing: only what a browser shows without running anything", () => {
     const shown = ["application/pdf", "text/plain", "TEXT/PLAIN; charset=utf-8", "text/markdown", "image/png", "image/jpeg", "audio/mpeg", "video/mp4"];
     for (const mime of shown) expect(ws.runsNothing(mime)).toBe(true);

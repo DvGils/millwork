@@ -2886,3 +2886,159 @@ async def test_a_floating_thing_ends_where_the_pointer_lets_go() -> None:
         )
         await page.let_go((x - 80, y))
         assert await page.read(box) == [left - 80, top, width + 80, height]
+
+
+LINEUP = """
+import { memo } from "react";
+import { useRowDrag, RowGrip, Editable } from "millwork";
+
+const Row = memo(function Row({ runner, row, grip, emit }) {
+  window.__drawn = (window.__drawn || 0) + 1;
+  return (
+    <tr {...row}>
+      <td className="h-6 w-6 border-b"><RowGrip {...grip} label={`Move ${runner.name}`} /></td>
+      <td className="h-6 w-56 border-b">
+        <Editable
+          value={runner.name}
+          label="Name"
+          onCommit={(name) => emit("rename", { key: runner.key, name })}
+        />
+      </td>
+    </tr>
+  );
+});
+
+export default function Lineup({ props, emit }) {
+  const runners = new Map(props.runners.map((r) => [r.key, r]));
+  const drag = useRowDrag({
+    keys: props.runners.map((r) => r.key),
+    onMove: (key, to) => emit("move", { key, to }),
+  });
+  return (
+    <table className="border-separate border-spacing-0 text-xs">
+      <tbody ref={drag.list}>
+        {drag.order.map((key) => (
+          <Row
+            key={key}
+            runner={runners.get(key)}
+            row={drag.row(key)}
+            grip={drag.grip(key)}
+            emit={emit}
+          />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+"""
+
+
+class Runners(BaseModel):
+    runners: list[dict[str, str]] = [{"key": f"r{i}", "name": f"Runner {i}"} for i in range(20)]
+    said: list[str] = []
+
+
+async def test_rows_of_a_custom_component_are_dragged_and_a_text_is_typed_over(
+    tmp_path: Any,
+) -> None:
+    (tmp_path / "components").mkdir()
+    (tmp_path / "components" / "Lineup.jsx").write_text(LINEUP, encoding="utf-8")
+    app = mw.App("lineup", state=Runners, public=None, components=tmp_path / "components")
+
+    def move(s: mw.Session[Runners], asked: dict[str, Any]) -> None:
+        rows = s.state.runners
+        at = next(i for i, r in enumerate(rows) if r["key"] == asked["key"])
+        s.state.said.append(f"move {asked['key']} {asked['to']}")
+        # One runner has a place that is not the page's to change.
+        if asked["key"] != "r5":
+            rows.insert(asked["to"], rows.pop(at))
+
+    def rename(s: mw.Session[Runners], asked: dict[str, Any]) -> None:
+        s.state.said.append(f"rename {asked['key']} {asked['name']}")
+        if asked["name"] != "nobody":
+            next(r for r in s.state.runners if r["key"] == asked["key"])["name"] = asked["name"]
+
+    @app.page("/")
+    def home(s: mw.Session[Runners]) -> ui.Component:
+        return ui.Page(
+            ui.Text("; ".join(s.state.said), cls="said"),
+            ui.Custom(
+                "Lineup",
+                props={"runners": s.state.runners},
+                events={"move": move, "rename": rename},
+                key="lineup",
+            ),
+        )
+
+    order = "[...document.querySelectorAll('tbody tr')].map((r) => r.dataset.mwRow).join(' ')"
+    said = "document.querySelector('.said').textContent.split('; ').pop()"
+    names = "[...document.querySelectorAll('tbody tr')].slice(0, 4).map((r) => r.textContent)"
+
+    def grip(key: str) -> str:
+        return f"tr[data-mw-row='{key}'] .mw-row-grip"
+
+    def name(key: str) -> str:
+        return f"tr[data-mw-row='{key}'] .mw-editable"
+
+    start = " ".join(f"r{i}" for i in range(20))
+    async with Page(app) as page:
+        assert await shows(page, "Runner 19")
+        await page.rest()
+        assert await page.read(order) == start
+        high = await page.read("document.querySelector('tbody tr').getBoundingClientRect().height")
+        # Carried down past two rows, a row is dropped in the third's place.
+        x, y = await page.middle(grip("r1"))
+        await page.drag(grip("r1"), (x, y + 2 * high + 3))
+        assert await page.read(said) == "move r1 3"
+        assert (await page.read(order)).startswith("r0 r2 r3 r1 r4")
+        # A row the page does not move is back in its place as soon as the
+        # page has said so, and not after a wait.
+        x, y = await page.middle(grip("r5"))
+        await page.drag(grip("r5"), (x, y - 2 * high - 3))
+        assert await page.read(said) == "move r5 3"
+        assert (await page.read(order)).startswith("r0 r2 r3 r1 r4 r5 r6")
+        # A place at a time by the keyboard, which stays on the grip.
+        await page.read(f"document.querySelector({json.dumps(grip('r0'))}).focus()")
+        await page.key("ArrowDown", 40, alt=True)
+        assert (await page.read(order)).startswith("r2 r0 r3 r1")
+        assert (
+            await page.read("document.activeElement.getAttribute('aria-label')") == "Move Runner 0"
+        )
+        # Three places in quick succession, none of them waited for: each
+        # goes from where the one before left the row, and the row does not
+        # jump back as the page answers the first.
+        down = {"key": "ArrowDown", "code": "ArrowDown", "windowsVirtualKeyCode": 40}
+        for _ in range(3):
+            for kind in ("keyDown", "keyUp"):
+                await page.tab.call("Input.dispatchKeyEvent", type=kind, modifiers=ALT, **down)
+        assert (await page.read(order)).startswith("r2 r3 r1 r4 r0 r5")
+        await page.rest()
+        assert (await page.read(order)).startswith("r2 r3 r1 r4 r0 r5")
+        assert (
+            await page.read("document.activeElement.getAttribute('aria-label')") == "Move Runner 0"
+        )
+        await page.read(f"document.querySelector({json.dumps(grip('r0'))}).focus()")
+        for _ in range(3):
+            await page.key("ArrowUp", 38, alt=True)
+        assert (await page.read(order)).startswith("r2 r0 r3 r1")
+        # A name is typed over, and only its own row is drawn again.
+        await page.read("window.__drawn = 0")
+        await page.click(name("r3"))
+        await page.tab.call("Input.insertText", text="Ada")
+        await page.key("Enter", 13)
+        assert await page.read(said) == "rename r3 Ada"
+        assert await page.read(names) == ["Runner 2", "Runner 0", "Ada", "Runner 1"]
+        assert await page.read("window.__drawn") == 1
+        assert await page.read("document.activeElement.textContent") == "Ada"
+        # Escape leaves it as it was and says nothing.
+        await page.click(name("r3"))
+        await page.tab.call("Input.insertText", text="Grace")
+        await page.key("Escape", 27)
+        assert await page.read(names) == ["Runner 2", "Runner 0", "Ada", "Runner 1"]
+        assert await page.read(said) == "rename r3 Ada"
+        # A name the page does not take is the old one again at once.
+        await page.click(name("r3"))
+        await page.tab.call("Input.insertText", text="nobody")
+        await page.key("Enter", 13)
+        assert await page.read(said) == "rename r3 nobody"
+        assert await page.read(names) == ["Runner 2", "Runner 0", "Ada", "Runner 1"]

@@ -448,7 +448,7 @@ function PartView({ part, user, inline, live, emit }: { part: Part; user: boolea
       if (part.type.startsWith("data-")) {
         const kind = part.type.slice(5);
         return (
-          <CustomComponent node={{ id: `part:${kind}`, type: kind, props: {}, children: [] }} props={{ data: part.data, id: part.id }} emit={() => undefined}>
+          <CustomComponent node={{ id: `part:${kind}`, type: kind, props: {}, children: [] }} props={{ data: part.data, id: part.id }} emit={() => Promise.resolve()}>
             {null}
           </CustomComponent>
         );

@@ -4,9 +4,9 @@
 // custom components. An error inside one node shows that node's id, never a
 // blank page.
 
-import { Component as ReactComponent, memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { Component as ReactComponent, memo, useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { useNode, usePageOf, useResetEpoch, type Node } from "./store";
-import { emit as wsEmit } from "./ws";
+import { emit as wsEmit, emitHeard } from "./ws";
 import { registry } from "./components";
 import { CustomComponent } from "./custom";
 import { ensureTailwindRuntime } from "./tailwind-runtime";
@@ -72,7 +72,14 @@ export const Render = memo(function Render({ id }: { id: string }) {
 
 function NodeComponent({ node }: { node: Node }) {
   const Renderer = registry[node.type];
-  const emit = (name: string, payload: unknown = null) => wsEmit(node.id, name, payload);
+  // The same function at every drawing, so a component that hands it on to
+  // parts of itself that are drawn only when what they get changes does
+  // not draw them all again each time.
+  const id = node.id;
+  const emit = useCallback((name: string, payload: unknown = null) => wsEmit(id, name, payload), [id]);
+  // A component of the app's own gets a promise with it, of the session
+  // being done with the event.
+  const said = useCallback((name: string, payload: unknown = null) => emitHeard(id, name, payload), [id]);
   const children = node.children.map((cid) => <Render key={cid} id={cid} />);
   const cls = node.props.cls;
   useEffect(() => {
@@ -80,7 +87,7 @@ function NodeComponent({ node }: { node: Node }) {
   }, [cls]);
   if (!Renderer) {
     return (
-      <CustomComponent node={node} props={node.props} emit={emit}>
+      <CustomComponent node={node} props={node.props} emit={said}>
         {children}
       </CustomComponent>
     );
