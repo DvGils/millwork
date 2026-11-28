@@ -1413,3 +1413,39 @@ async def test_what_a_form_was_told_and_its_cancel_button(tmp_path: Path) -> Non
         # A form without the button takes no press of it.
         with pytest.raises(LookupError, match="no handler for cancel"):
             await page.cancel("second")
+
+
+async def test_a_wait_inside_work_of_the_session_does_not_wait_for_that_work() -> None:
+    """A click run as work of the session, so that a test can answer the
+    question it opens, waited for itself. It was let go as long as it saw
+    the question open, and never when the question was answered first."""
+
+    class Asked(BaseModel):
+        went: bool | None = None
+
+    app = mw.App("asks", state=Asked, public=None, components=None)
+
+    async def go(s: mw.Session[Asked], _: object) -> None:
+        s.state.went = await s.confirm("Go?")
+
+    @app.page("/")
+    def home(s: mw.Session[Asked]) -> ui.Component:
+        return ui.Page(ui.Button("Go", key="go", on_click=go))
+
+    async with TestApp(app).open("/") as page:
+        # With nothing else under way, the wait is over at once.
+        looked = page.session.spawn(page.settle(timeout=1.0), "a look")
+        assert looked is not None
+        await looked
+        # The question is answered the moment it is open, before the click
+        # that opened it has looked again.
+        pressed = page.session.spawn(page.click("go"), "the press")
+        assert pressed is not None
+        for _ in range(10_000):
+            if page.session._asks:
+                break
+            await asyncio.sleep(0)
+        asked = next(iter(page.session._asks.values()))
+        asked.future.set_result(True)
+        await asyncio.wait_for(pressed, 5)
+        assert page.state.went is True

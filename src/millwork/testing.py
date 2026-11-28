@@ -683,8 +683,14 @@ class Page:
             # their turn, requests, a reply, a page being connected.
             # A child counts until the scope has seen it out, which is a
             # moment after it finished: only then is its turn given back.
+            # The work this very wait is part of does not count: a click
+            # that a test runs as work of the session, to answer the
+            # question it opens, would wait for itself. It got away with
+            # that for as long as it saw the question open, and never
+            # settled when the question was answered before it looked.
             bodies = {t._child for t in s.tasks}
-            working = [c for c in s.scope.children if c not in bodies]
+            me = asyncio.current_task()
+            working = [c for c in s.scope.children if c not in bodies and c is not me]
             # A page being left or opened, which the session's life does.
             switching = not s.over and (not s.ready or bool(s._wanted))
             if asyncio.get_running_loop().time() > deadline:
