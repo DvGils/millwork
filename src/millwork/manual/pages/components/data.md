@@ -198,6 +198,88 @@ the others, and there are at most two hundred rows. Selection works
 beside it. A range picked with shift goes by the order the rows are
 shown in, and a selected row that is dragged moves alone.
 
+## Cells that are typed over
+<!-- keywords: editable cell, edit in place, inline edit, spreadsheet, grid, data entry, on_edit, CellEdit, editable column -->
+
+`editable=True` on a column lets its cells be typed over where they
+stand, in a table that has `on_edit`. A press on such a cell opens it as
+a field. The handler gets a `ui.CellEdit` with the row's `key`, the
+`column` and the `value`, and changes the row. The table drawn from the
+rows is what the cell shows, so a handler that leaves the row as it was
+sends the cell back.
+
+```python live
+from pydantic import BaseModel
+
+
+class Leg(BaseModel):
+    id: int
+    name: str
+    hours: float
+    shade: float
+    open: bool
+
+
+class Hike(BaseModel):
+    legs: list[Leg] = [
+        Leg(id=1, name="Trailhead to the ford", hours=2.5, shade=0.6, open=True),
+        Leg(id=2, name="Ford to the saddle", hours=3.0, shade=0.25, open=True),
+        Leg(id=3, name="Saddle to the hut", hours=1.5, shade=0.1, open=False),
+        Leg(id=4, name="Hut to the summit", hours=4.0, shade=0.0, open=True),
+    ]
+
+
+def example(s):
+    legs = s.state.hike.legs
+
+    def edit(s, typed):
+        leg = next(leg for leg in legs if leg.id == typed.key)
+        if typed.value in ("", None):
+            s.toast("Every cell of a leg has something in it.", tone="warning")
+            return
+        if typed.column == "hours" and not 0 < typed.value <= 24:
+            s.toast("A leg takes up to a day.", tone="warning")
+            return
+        setattr(leg, typed.column, typed.value)
+
+    return ui.Table(
+        rows=legs,
+        columns=[
+            ui.Column(key="name", header="Leg", editable=True),
+            ui.Column(key="hours", header="Hours", format="number", align="right", editable=True),
+            ui.Column(key="shade", header="In shade", format="percent", align="right", editable=True),
+            ui.Column(key="open", header="Open", format="bool", align="center", editable=True),
+        ],
+        sortable=False,
+        on_edit=edit,
+    )
+```
+
+The value comes in the column's own type. A text is a `str`, a `number`
+or a `currency` a `float`, an `integer` an `int`, and a `bool` a yes or
+no that is set where it stands, without a field. A number is typed the
+way the theme's `locale` writes one, and a `percent` as the number that
+is shown, so 25 is typed for the 0.25 the row holds. A number that is
+emptied is `None`. What is no number, or no whole one in a column of
+integers, keeps its field open for as long as the keyboard is in it. A
+field that is opened and left as it was says nothing.
+
+The keyboard works the cells as well. Tab stops at one of them, and the
+arrow keys go between the cells that are typed over. Enter, F2 or simply
+typing opens a cell. In the field Enter says the value and goes down,
+Tab says it and goes on to the next cell, and Escape leaves the cell as
+it was. Tab goes on from a yes or no as well, so a row can be filled in
+with Tab alone.
+
+Each row has a key that tells it from the others, and a cell that is
+typed over is one line. A press on a cell opens it, so `on_edit` does
+not go with `on_row_click` or `selection="row"`, where a press is on the
+row. It goes with checkboxes and with rows that are dragged. A row in a
+column the table is sorted by takes its new place as soon as its value
+changes. Without `on_edit` the columns are shown as any other, so a
+page that lets only some people type leaves the handler out for the
+rest.
+
 ## Tones
 
 `tones` colors rows. It is a function of the row returning a tone, or a

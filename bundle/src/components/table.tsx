@@ -4,7 +4,7 @@
 
 import { partName, usePartMarks } from "../marks";
 import { asDate, dateFormat, dateTimeFormat, formatNumber } from "../format";
-import { t } from "../theme";
+import { locale, t } from "../theme";
 import { type CSSProperties, type KeyboardEvent as KeyPress, type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Renderer } from "../render";
 import { type Sort, emptyFilter, equalsFilter, includesFilter, rangeFilter, sortRows } from "../table-rows";
@@ -26,6 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ownPress } from "../press";
 import { emitHeard } from "../ws";
 import { type Grip, RowGrip, useRowDrag } from "../lent";
+import { type Way, fieldText, neighbor, same, typed } from "../cell-edit";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +44,7 @@ interface Column {
   format?: string;
   sortable?: boolean;
   filterable?: boolean;
+  editable?: boolean;
   hidden?: boolean;
   wrap?: boolean;
   lines?: number | null;
@@ -195,6 +197,89 @@ type Entry = { row: Record<string, unknown>; i: number; key: unknown; id: string
 
 type Act = (what: "select" | "range" | "click" | "action", key: unknown, id?: string) => void;
 
+// A cell that is typed over. How its field is left: Enter goes down and
+// with shift up, Tab to the next cell and with shift to the one before,
+// Escape stays, and a press elsewhere takes the keyboard with it.
+type Leave = Way | "stay" | "blur";
+// What became of it: the field is closed and the keyboard is the table's
+// to place, or the field is closed and the keyboard is where the person
+// took it, or what was typed is no value of the column and the field is
+// still open.
+type Left = "placed" | "left" | "wrong";
+// `open` a cell, with the character that was typed to open it or nothing;
+// `close` its field with the text in it, or nothing to leave the cell as it
+// was; `set` a cell that has no field, a yes or no.
+type CellAct = (what: "open" | "close" | "set", name: string, col: string, payload: unknown, how?: Leave) => Left;
+type Opened = { name: string; col: string; initial: string | null };
+
+// The field of the one cell that is open. It lies over the cell, as big as
+// the cell, so typing in it changes no column's width.
+function CellField({ start, typedOver, label, close }: { start: string; typedOver: boolean; label: string; close: (text: string | null, how: Leave) => Left }) {
+  const [draft, setDraft] = useState(start);
+  // What the field held when it opened. The row may be given another
+  // value while it is open, and the field is as it was against this one.
+  const [first] = useState(start);
+  const [wrong, setWrong] = useState(false);
+  // A field that is closed by a key leaves the page, which a browser may
+  // tell it as losing the keyboard. It is closed once.
+  const closed = useRef(false);
+  // Enter that takes a word from an input method is that method's, and
+  // one browser says the word is taken just before it says Enter.
+  const composed = useRef(false);
+  const leave = (text: string | null, how: Leave) => {
+    if (closed.current) return;
+    // A field that was opened and left as it was says nothing: the cell
+    // may show less of a number than the row holds, and what it shows is
+    // not what was typed.
+    const said = text !== null && !typedOver && text === first ? null : text;
+    let left = close(said, how);
+    // What is no value of the column, with the keyboard gone elsewhere,
+    // is not kept open for a person who is no longer there.
+    if (left === "wrong" && how === "blur") left = close(null, how);
+    if (left === "wrong") setWrong(true);
+    else closed.current = true;
+  };
+  return (
+    <input
+      autoFocus
+      aria-label={label}
+      aria-invalid={wrong || undefined}
+      value={draft}
+      onCompositionEnd={() => {
+        composed.current = true;
+        window.setTimeout(() => (composed.current = false), 0);
+      }}
+      // Opened by typing, the field goes on from what was typed. Opened
+      // otherwise, what it holds is typed over.
+      onFocus={(e) => {
+        if (!typedOver) e.currentTarget.select();
+      }}
+      onChange={(e) => {
+        setDraft(e.currentTarget.value);
+        setWrong(false);
+      }}
+      onBlur={() => leave(draft, "blur")}
+      onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing || composed.current || e.keyCode === 229) return;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          leave(draft, e.shiftKey ? "up" : "down");
+        } else if (e.key === "Tab") {
+          // The keyboard goes where the table puts it: the next cell, or
+          // this one at the end of them, from where Tab leaves the table.
+          e.preventDefault();
+          leave(draft, e.shiftKey ? "prev" : "next");
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          leave(null, "stay");
+        }
+      }}
+      className={cn("mw-editable mw-editable-field absolute inset-0", wrong && "mw-editable-wrong")}
+    />
+  );
+}
+
 const NONE: never[] = [];
 
 // The lines a column's cells are cut to, or 0 for a column that is not cut.
@@ -222,12 +307,19 @@ interface RowProps {
   // from one drawing to the next.
   mark?: { "data-mw-row": string };
   grip?: Grip;
+  // In a table whose cells are typed over: what a cell does, the column
+  // of this row that Tab stops at, the cell of this row that is open, and
+  // what was typed in this row that the page has not answered yet.
+  cell?: CellAct;
+  stopCol?: string | null;
+  opened?: Opened | null;
+  sent?: Record<string, unknown> | null;
 }
 
 // One row, drawn again only when something it shows changed: the record is the
 // same object from one patch to the next unless the patch touched it, and
 // everything else here is a plain value or stable for the table's life.
-const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, columns, checkbox, actions, clickable, stop, act, mark, grip }: RowProps) {
+const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, columns, checkbox, actions, clickable, stop, act, mark, grip, cell, stopCol, opened, sent }: RowProps) {
   const takers = columns.filter(takesTheRest).length;
   // Whether shift was down for the press that is changing the checkbox. The
   // change itself does not say, and it comes during the click that does.
@@ -271,6 +363,69 @@ const Row = memo(function Row({ row, rowKey, part, tone, cellTones, selected, co
       ) : null}
       {columns.map((c) => {
         const cellTone_ = cellTones?.[c.key];
+        if (cell && c.editable) {
+          const format = c.format ?? "text";
+          const waits = sent != null && c.key in sent;
+          const value = waits ? sent[c.key] : row[c.key];
+          const label = c.header ?? c.key;
+          const tab = stopCol === c.key ? 0 : -1;
+          const align = cn(c.align === "right" && "text-right tabular-nums", c.align === "center" && "text-center");
+          if (format === "bool") {
+            return (
+              <TableCell key={c.key} data-free="" className={cn("py-(--mw-cell-y) whitespace-nowrap", align)}>
+                <Checkbox
+                  data-cell=""
+                  data-col={c.key}
+                  tabIndex={tab}
+                  checked={Boolean(value)}
+                  onCheckedChange={(on) => cell("set", part, c.key, on === true)}
+                  aria-label={label}
+                  className={cn("inline-flex", waits && "opacity-60")}
+                />
+              </TableCell>
+            );
+          }
+          const open = opened && opened.col === c.key ? opened : null;
+          const shown = formatCell(value, format, cellTone_);
+          const text = typeof shown === "string" ? shown : "";
+          // A column that is cut to a line keeps no width for its text,
+          // as its cells do when they are not typed over.
+          const cut = cutTo(c) > 0;
+          return (
+            <TableCell
+              key={c.key}
+              data-free={cut ? "" : undefined}
+              className={cn("py-(--mw-cell-y) whitespace-nowrap", align, cut && (c.width == null ? "max-w-0 min-w-32" : "max-w-0"))}
+              style={cut && c.width == null ? { width: `${100 / takers}%` } : undefined}
+            >
+              {/* As wide as the cell with its padding, so the text stands where the text of any other cell does. */}
+              <div className="relative -mx-1.5">
+                <button
+                  type="button"
+                  data-cell=""
+                  data-col={c.key}
+                  tabIndex={tab}
+                  // Said with its column, for a person who came to it by Tab
+                  // and not by reading the table.
+                  aria-label={`${label}: ${text}`}
+                  title={cut ? text : undefined}
+                  onClick={() => cell("open", part, c.key, null)}
+                  className={cn("mw-editable", waits && "mw-editable-sent", open && "invisible", cellTone_ && cellTone[cellTone_])}
+                >
+                  {shown}
+                </button>
+                {open ? (
+                  <CellField
+                    start={open.initial ?? fieldText(value, format, locale())}
+                    typedOver={open.initial !== null}
+                    label={label}
+                    close={(text, how) => cell("close", part, c.key, text, how)}
+                  />
+                ) : null}
+              </div>
+            </TableCell>
+          );
+        }
         const content = formatCell(row[c.key], c.format ?? "text", cellTone_);
         const shown = cellTone_ && c.format !== "badge" && cellTone[cellTone_] ? <span className={cellTone[cellTone_]}>{content}</span> : content;
         const lines = cutTo(c);
@@ -556,6 +711,170 @@ export const Table: Renderer = ({ node, props, emit }) => {
     aimed.current = null;
     if (at >= 0) rowAt(at)?.focus();
   });
+  // Cells that are typed over. The columns that are, in the order they
+  // are shown; the cell that is open; the cell Tab stops at; and what was
+  // typed and not yet answered by the page, a row's cells by column.
+  const editable = Boolean(props.on_edit);
+  const typedCols = useMemo(() => (editable ? visible.filter((c) => c.editable).map((c) => c.key) : NONE), [editable, visible]);
+  const [opened, setOpened] = useState<Opened | null>(null);
+  const [stopCell, setStopCell] = useState<{ name: string; col: string } | null>(null);
+  const [sent, setSent] = useState<Map<string, Record<string, unknown>>>(() => new Map());
+  // The last word sent of each cell, so an answer to an older one does
+  // not take away what was typed since.
+  const said = useRef(new Map<string, number>());
+  // The cell the keyboard is going to, once it is drawn and no field is open.
+  const aimedCell = useRef<{ name: string; col: string } | null>(null);
+  const cellAt = (at: number, col: string) => rowAt(at)?.querySelector<HTMLElement>(`[data-cell][data-col="${CSS.escape(col)}"]`);
+  const goTo = (to: { name: string; col: string }) => {
+    setStopCell(to);
+    aimedCell.current = to;
+    const at = names.indexOf(to.name);
+    if (at >= 0 && (at < view.first || at >= view.last)) view.bring(at);
+  };
+  useLayoutEffect(() => {
+    const aim = aimedCell.current;
+    if (!aim || opened) return;
+    const at = names.indexOf(aim.name);
+    if (at < 0) aimedCell.current = null;
+    if (at < view.first || at >= view.last) return;
+    const el = cellAt(at, aim.col);
+    if (!el) return;
+    aimedCell.current = null;
+    el.focus();
+  });
+  // A row that went away with its cell open takes the field with it, and
+  // so does one that a long table no longer draws.
+  useEffect(() => {
+    if (!opened) return;
+    const at = names.indexOf(opened.name);
+    if (at < view.first || at >= view.last) setOpened(null);
+  }, [opened, names, view.first, view.last]);
+  // The cell the keyboard is on, and its place. A row that goes while the
+  // keyboard is on one of its cells would take the keyboard off the page
+  // with it: the row is filtered out by what was just typed, or the page
+  // took it away or gave it another key. The cell in its place gets the
+  // keyboard, or the last one. A row that a long table no longer draws is
+  // left alone, or the table would scroll back to it.
+  const onCell = useRef<{ name: string; col: string; at: number } | null>(null);
+  useLayoutEffect(() => {
+    const was = onCell.current;
+    if (!was || opened || aimedCell.current) return;
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (!lost) return;
+    const at = names.indexOf(was.name);
+    onCell.current = null;
+    if (at >= 0 && (at < view.first || at >= view.last)) return;
+    const to = at >= 0 ? at : Math.min(was.at, names.length - 1);
+    if (to >= view.first && to < view.last) cellAt(to, was.col)?.focus();
+  });
+  const tell = (entry: Entry, name: string, col: string, value: unknown) => {
+    const id = `${name}\n${col}`;
+    const mine = (said.current.get(id) ?? 0) + 1;
+    said.current.set(id, mine);
+    setSent((old) => new Map(old).set(name, { ...old.get(name), [col]: value }));
+    // The page has answered: what it gave the row is what the cell shows.
+    const answered = () => {
+      if (said.current.get(id) !== mine) return;
+      said.current.delete(id);
+      setSent((old) => {
+        const row = old.get(name);
+        if (!row || !(col in row)) return old;
+        const next = new Map(old);
+        const { [col]: _gone, ...rest } = row;
+        if (Object.keys(rest).length) next.set(name, rest);
+        else next.delete(name);
+        return next;
+      });
+    };
+    void emitHeard(node.id, "edit", { key: entry.key, column: col, value }).then(answered, answered);
+  };
+  const cellNow: CellAct = (what, name, col, payload, how) => {
+    const at = names.indexOf(name);
+    const entry = page[at];
+    const column = visible.find((c) => c.key === col);
+    if (!entry || !column) {
+      // The row or the column went while its cell was open.
+      setOpened(null);
+      return "left";
+    }
+    if (what === "open") {
+      setStopCell({ name, col });
+      setOpened({ name, col, initial: typeof payload === "string" ? payload : null });
+      return "left";
+    }
+    const shown = () => {
+      const waits = sent.get(name);
+      return waits && col in waits ? waits[col] : entry.row[col];
+    };
+    if (what === "set") {
+      if (!same(payload, shown())) tell(entry, name, col, payload);
+      return "left";
+    }
+    if (payload !== null) {
+      const got = typed(String(payload), column.format ?? "text", locale());
+      if (!got.ok) return "wrong";
+      if (!same(got.value, shown())) tell(entry, name, col, got.value);
+    }
+    setOpened(null);
+    if (how === undefined || how === "blur") return "left";
+    const to = how === "stay" ? null : neighbor(names.length, typedCols.length, at, typedCols.indexOf(col), how);
+    // With no cell to go on to, the keyboard is on this one again.
+    goTo(to ? { name: names[to[0]], col: typedCols[to[1]] } : { name, col });
+    return "placed";
+  };
+  const cellLive = useRef(cellNow);
+  cellLive.current = cellNow;
+  const cell = useCallback<CellAct>((what, name, col, payload, how) => cellLive.current(what, name, col, payload, how), []);
+  // The cell an element is, when it is one that is typed over.
+  const cellOf = (el: EventTarget | null): { el: HTMLElement; name: string; col: string } | null => {
+    if (!(el instanceof HTMLElement) || el.dataset.cell === undefined) return null;
+    const name = el.closest<HTMLElement>("tr[data-part]")?.dataset.part;
+    const col = el.dataset.col;
+    return name !== undefined && col !== undefined ? { el, name, col } : null;
+  };
+  const cellKeys = (e: KeyPress) => {
+    const on = cellOf(e.target);
+    if (!on || e.ctrlKey || e.metaKey || e.altKey || e.nativeEvent.isComposing) return;
+    const way = ({ ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" } as Record<string, Way | undefined>)[e.key];
+    if (way) {
+      e.preventDefault();
+      const to = neighbor(names.length, typedCols.length, names.indexOf(on.name), typedCols.indexOf(on.col), way);
+      if (to) goTo({ name: names[to[0]], col: typedCols[to[1]] });
+      return;
+    }
+    // A yes or no has no field: Space sets it, as it does any checkbox.
+    // Tab goes on from it to the next cell, as it does from a field, so a
+    // row that is filled in with Tab is not left at a yes or no in the
+    // middle of it. From the last cell Tab leaves the table.
+    if (on.el.getAttribute("role") === "checkbox") {
+      if (e.key !== "Tab") return;
+      const to = neighbor(names.length, typedCols.length, names.indexOf(on.name), typedCols.indexOf(on.col), e.shiftKey ? "prev" : "next");
+      if (!to) return;
+      e.preventDefault();
+      goTo({ name: names[to[0]], col: typedCols[to[1]] });
+      return;
+    }
+    if (e.key === "Enter" || e.key === "F2") {
+      e.preventDefault();
+      cell("open", on.name, on.col, null);
+    } else if (e.key === "Backspace" || e.key === "Delete") {
+      e.preventDefault();
+      cell("open", on.name, on.col, "");
+    } else if (e.key.length === 1 && e.key !== " ") {
+      // A character typed on a cell opens it and is the first one in it.
+      e.preventDefault();
+      cell("open", on.name, on.col, e.key);
+    }
+  };
+  // The one cell Tab stops at: the one the keyboard was on last, while it
+  // is drawn, and the first one drawn otherwise.
+  const stopAtCell = (() => {
+    if (!editable || !typedCols.length) return null;
+    const at = stopCell ? names.indexOf(stopCell.name) : -1;
+    if (stopCell && at >= view.first && at < view.last && typedCols.includes(stopCell.col)) return stopCell;
+    return names.length ? { name: names[view.first], col: typedCols[0] } : null;
+  })();
+
   const rowKeys = (e: KeyPress) => {
     const at = placeOf(e.target);
     if (at < 0 || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -727,7 +1046,7 @@ export const Table: Renderer = ({ node, props, emit }) => {
           <TableBody
             ref={body}
             style={clickable && head ? ({ "--mw-head": `${head}px` } as CSSProperties) : undefined}
-            onKeyDown={clickable ? rowKeys : undefined}
+            onKeyDown={clickable ? rowKeys : editable ? cellKeys : undefined}
             onFocus={
               clickable
                 ? (e) => {
@@ -736,14 +1055,27 @@ export const Table: Renderer = ({ node, props, emit }) => {
                     setStop(names[at]);
                     on.current = { name: names[at], at };
                   }
-                : undefined
+                : editable
+                  ? (e) => {
+                      const at = cellOf(e.target);
+                      if (!at) return;
+                      onCell.current = { name: at.name, col: at.col, at: names.indexOf(at.name) };
+                      if (stopCell?.name !== at.name || stopCell.col !== at.col) setStopCell({ name: at.name, col: at.col });
+                    }
+                  : undefined
             }
             onBlur={
               clickable
                 ? (e) => {
                     if (placeOf(e.target) >= 0) on.current = null;
                   }
-                : undefined
+                : editable
+                  ? (e) => {
+                      // The keyboard was taken elsewhere, the field of this
+                      // very cell included.
+                      if (cellOf(e.target)) onCell.current = null;
+                    }
+                  : undefined
             }
           >
             {view.before > 0 ? (
@@ -769,6 +1101,10 @@ export const Table: Renderer = ({ node, props, emit }) => {
                   act={act}
                   mark={movable ? drag.row(names[view.first + n]) : undefined}
                   grip={movable ? drag.grip(names[view.first + n]) : undefined}
+                  cell={editable ? cell : undefined}
+                  stopCol={stopAtCell && stopAtCell.name === e.id ? stopAtCell.col : null}
+                  opened={opened && opened.name === e.id ? opened : null}
+                  sent={sent.get(e.id) ?? null}
                 />
               ))
             ) : (

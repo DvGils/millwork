@@ -454,6 +454,12 @@ class Page:
             raise LookupError(f"the item {item!r} of {found!r} is disabled")
         await self.event(found, "select", match.id)
 
+    async def edit(self, table: Found | str, key: Any, column: str, value: Any) -> None:
+        """Type ``value`` over the cell of a ``Table`` in the row that has
+        this key and the column that has this one. The value is what the
+        handler gets: a text, a number, or a yes or no."""
+        await self.event(table, "edit", {"key": key, "column": column, "value": value})
+
     async def move_row(self, table: Found | str, key: Any, to: int) -> None:
         """Drag the row of a ``Table`` that has this key to another place,
         counted from 0 among the other rows."""

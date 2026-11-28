@@ -275,6 +275,9 @@ def _table(props: dict[str, Any], limits: _Limits) -> dict[str, Any]:
         state.append("rows can be pressed")
     if props.get("on_move"):
         state.append("rows can be dragged into another order")
+    typed = [_quoted(header(c)) for c in every if c.get("editable")]
+    if props.get("on_edit") and typed:
+        state.append(f"cells of {', '.join(typed)} can be typed over")
     if props.get("search"):
         state.append("has a search box")
     if props.get("filters"):

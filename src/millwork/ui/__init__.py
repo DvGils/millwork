@@ -23,7 +23,7 @@ from millwork.ui.chat import Accept, Action, Chat, Command
 from millwork.ui.files import Download, FileCard, FileUpload, Image, Pdf
 from millwork.ui.form import Form
 from millwork.ui.sortable import Move, Sortable
-from millwork.ui.table import Column, MenuItem, RowMove, Table
+from millwork.ui.table import CellEdit, Column, MenuItem, RowMove, Table
 
 Variant = Literal["primary", "secondary", "outline", "ghost", "link", "destructive"]
 Size = Literal["sm", "md", "lg"]
@@ -1997,6 +1997,7 @@ __all__ = [
     "Badge",
     "Button",
     "Card",
+    "CellEdit",
     "Column",
     "Chat",
     "Checkbox",

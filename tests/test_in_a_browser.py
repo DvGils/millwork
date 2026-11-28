@@ -3232,3 +3232,169 @@ async def test_rows_of_a_table_are_dragged_and_selected_in_the_order_they_are_sh
         await page.key("ArrowDown", 40, alt=True)
         assert await page.read(titles("one")) == "Opening Slow Loud Harbor Encore Finale"
         assert await page.read("document.activeElement.className") == "mw-row-grip"
+
+
+class Stages(BaseModel):
+    stages: list[dict[str, Any]] = [
+        {
+            "id": i,
+            "stage": name,
+            "hours": 2.5 + i / 2,
+            "climb": 300 + i * 120,
+            "shade": 0.1,
+            "open": i % 2 == 0,
+        }
+        for i, name in enumerate(["Ford", "Saddle", "Hut", "Summit"])
+    ]
+    said: list[str] = []
+
+
+async def test_the_cells_of_a_table_are_typed_over_by_the_mouse_and_the_keyboard() -> None:
+    app = mw.App("stages", state=Stages, public=None)
+
+    def edit(s: mw.Session[Stages], typed: ui.CellEdit) -> None:
+        s.state.said.append(f"{typed.key}.{typed.column}={typed.value!r}")
+        row = next(r for r in s.state.stages if r["id"] == typed.key)
+        # A stage has a name: one that is emptied stays as it was. And one
+        # that is called off is no stage any more.
+        if typed.value == "Called off":
+            s.state.stages.remove(row)
+        elif typed.column != "stage" or typed.value:
+            row[typed.column] = typed.value
+
+    @app.page("/")
+    def home(s: mw.Session[Stages]) -> ui.Component:
+        return ui.Page(
+            ui.Text(" | ".join(s.state.said), cls="said"),
+            ui.Table(
+                rows=s.state.stages,
+                columns=[
+                    ui.Column(key="stage", header="Stage", editable=True),
+                    ui.Column(key="hours", header="Hours", format="number", editable=True),
+                    ui.Column(key="climb", header="Climb", format="integer"),
+                    ui.Column(key="shade", header="Shade", format="percent", editable=True),
+                    ui.Column(key="open", header="Open", format="bool", editable=True),
+                ],
+                sortable=False,
+                on_edit=edit,
+                key="route",
+            ),
+        )
+
+    last = "document.querySelector('.said').textContent.split(' | ').pop()"
+    on = (
+        "(() => { const a = document.activeElement; const r = a.closest('tr');"
+        " return [a.tagName, a.dataset.col ?? '', r ? r.dataset.part : '']; })()"
+    )
+
+    def cell(row: int, column: str) -> str:
+        return f"tbody tr:nth-child({row}) [data-col='{column}']"
+
+    def says(row: int, column: str) -> str:
+        return f"document.querySelector({json.dumps(cell(row, column))}).textContent"
+
+    async def keys(text: str) -> None:
+        for character in text:
+            press = {"key": character, "text": character}
+            await page.tab.call("Input.dispatchKeyEvent", type="keyDown", **press)
+            await page.tab.call("Input.dispatchKeyEvent", type="keyUp", key=character)
+        await page.rest()
+
+    async with Page(app) as page:
+        # The cells that are typed over are one stop for Tab.
+        assert await page.read("document.querySelectorAll('tbody [tabindex=\"0\"]').length") == 1
+        widths = "[...document.querySelectorAll('thead th')].map((c) => c.offsetWidth)"
+        before = await page.read(widths)
+        # A press opens a cell with what it holds selected, and the field
+        # changes no column's width. Enter says it and goes down.
+        await page.click(cell(1, "stage"))
+        assert await page.read("document.activeElement.value") == "Ford"
+        await page.tab.call("Input.insertText", text="Ford to the pass, by the long way round")
+        assert await page.read(widths) == before
+        await page.key("Enter", 13)
+        assert await page.read(last) == "0.stage='Ford to the pass, by the long way round'"
+        assert await page.read(on) == ["BUTTON", "stage", "1"]
+        # A character typed on a cell opens it and is the first one in it.
+        # Tab says it and goes to the next cell that is typed over.
+        await keys("Pass")
+        assert await page.read("document.activeElement.value") == "Pass"
+        await page.key("Tab", 9)
+        assert await page.read(last) == "1.stage='Pass'"
+        assert await page.read(on) == ["BUTTON", "hours", "1"]
+        # A number, and Tab again, which passes the column that is not typed over.
+        await page.key("Enter", 13)
+        assert await page.read("document.activeElement.value") == "3"
+        await page.tab.call("Input.insertText", text="4.25")
+        await page.key("Tab", 9)
+        assert await page.read(last) == "1.hours=4.25"
+        assert await page.read(on) == ["BUTTON", "shade", "1"]
+        # What is no number keeps the field open and says so. Escape then
+        # leaves the cell as it was, with the keyboard on it.
+        await page.key("F2", 113)
+        await page.tab.call("Input.insertText", text="lots")
+        await page.key("Enter", 13)
+        assert await page.read(
+            "[document.activeElement.tagName, document.activeElement.getAttribute('aria-invalid')]"
+        ) == ["INPUT", "true"]
+        await page.key("Escape", 27)
+        assert await page.read(last) == "1.hours=4.25"
+        assert await page.read(on) == ["BUTTON", "shade", "1"]
+        # A percent is typed as it is shown.
+        await keys("40")
+        await page.key("Enter", 13)
+        assert await page.read(last) == "1.shade=0.4" and await page.read(says(2, "shade")) == "40%"
+        assert await page.read(on) == ["BUTTON", "shade", "2"]
+        # The arrow keys go between the cells that are typed over, and a
+        # yes or no is set where it stands.
+        await page.key("ArrowRight", 39)
+        assert (await page.read(on))[1:] == ["open", "2"]
+        await page.tab.call(
+            "Input.dispatchKeyEvent", type="keyDown", key=" ", code="Space", text=" "
+        )
+        await page.tab.call("Input.dispatchKeyEvent", type="keyUp", key=" ", code="Space")
+        await page.rest()
+        assert await page.read(last) == "2.open=False"
+        for _ in range(3):
+            await page.key("ArrowLeft", 37)
+        await page.key("ArrowUp", 38)
+        assert await page.read(on) == ["BUTTON", "stage", "1"]
+        # A value the page does not take is the old one again at once.
+        await page.key("Enter", 13)
+        await page.tab.call("Input.insertText", text=" ")
+        await page.key("Enter", 13)
+        assert await page.read(last) == "1.stage=''"
+        assert await page.read(says(2, "stage")) == "Pass"
+        # Leaving a field by a press elsewhere says what is in it.
+        await page.click(cell(4, "hours"))
+        await page.tab.call("Input.insertText", text="6")
+        await page.click(".said")
+        assert await page.read(last) == "3.hours=6.0"
+        assert await page.read("document.querySelectorAll('tbody .mw-editable-field').length") == 0
+        # Tab goes on from a yes or no as it does from a field: from the
+        # percent of a row to its yes or no, and on to the next row.
+        await page.click(cell(1, "shade"))
+        await page.key("Tab", 9)
+        assert (await page.read(on))[1:] == ["open", "0"]
+        await page.key("Tab", 9)
+        assert await page.read(on) == ["BUTTON", "stage", "1"]
+        # A field that is opened and left as it was says nothing, whichever
+        # way it is left: the cell shows 10% and the row may hold more.
+        await page.click(cell(1, "shade"))
+        assert await page.read("document.activeElement.value") == "10"
+        await page.key("Enter", 13)
+        assert await page.read(last) == "3.hours=6.0"
+        assert await page.read(on) == ["BUTTON", "shade", "1"]
+        # Before the first cell there is none to go back to, and the
+        # keyboard is on the cell again, from where Tab leaves the table.
+        await page.click(cell(1, "stage"))
+        await page.key("Tab", 9, shift=True)
+        assert await page.read(last) == "3.hours=6.0"
+        assert await page.read(on) == ["BUTTON", "stage", "0"]
+        # A row that goes while the keyboard is on one of its cells leaves
+        # the keyboard on the cell that took its place.
+        await page.click(cell(2, "stage"))
+        await page.tab.call("Input.insertText", text="Called off")
+        await page.key("Tab", 9)
+        assert await page.read(last) == "1.stage='Called off'"
+        assert await page.read("document.querySelectorAll('tbody tr').length") == 3
+        assert await page.read(on) == ["BUTTON", "hours", "2"]

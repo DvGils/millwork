@@ -31,6 +31,16 @@ versions; a release says so here when it does.
   and a row the handler leaves where it was goes back. Such a table is
   not sorted, filtered, searched or paged, and has at most two hundred
   rows. In a test `page.move_row(table, key, to)` drags one.
+- `ui.Column(editable=True)` and `ui.Table(on_edit=...)` let the cells
+  of a table be typed over where they stand: a text, a number, a
+  percent typed as it is shown, and a yes or no. The handler gets a
+  `ui.CellEdit` with the row's key, the column and the value in the
+  column's type, and a cell the handler leaves as it was goes back.
+  The arrow keys go between such cells, Enter, F2 or typing opens one,
+  and Enter and Tab say the value and go on. It does not go with rows
+  that are pressed, and without `on_edit` the columns are shown as any
+  other. In a test `page.edit(table, key, column, value)`
+  types over one.
 - `emit` in a custom component gives a promise that is over when the
   session is done with the event and the page is drawn, whether a
   handler took it or not. In a test such an event leaves a `heard`

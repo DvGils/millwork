@@ -93,7 +93,8 @@ draft)` with a dict or a model instance, `select(table, keys)`,
 `action(node, id, key)` for a row or card action and for an action
 under an answer in a `Chat`, where the key is the message, `move(row, to,
 into=)` for a row of a `Sortable` dragged to a place in its list or in
-another, `move_row(table, key, to)` for a row of a `Table`, `upload(node, path,
+another, `move_row(table, key, to)` for a row of a `Table`, `edit(table, key,
+column, value)` for a cell of one that is typed over, `upload(node, path,
 field=)`, which runs every check an upload gets and returns the `FileRef`,
 which for a form is the value of its file field in the draft,
 `send(chat, text, files=)`, `stop(chat)`, `navigate(path)`, and `event(node,

@@ -741,4 +741,8 @@ body.mw-dragging * {
         box-shadow: 0 0 0 2px var(--ring);
         text-overflow: clip;
     }
+    /* What was typed is no value of the column: the field says so and stays. */
+    .mw-editable-wrong {
+        box-shadow: 0 0 0 2px var(--destructive);
+    }
 }
