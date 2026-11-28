@@ -11,6 +11,11 @@ versions; a release says so here when it does.
   drawing. A component that handed it to rows wrapped in React's `memo`,
   as the manual says to for a large one, drew every row again at every
   change. It is the same function from drawing to drawing.
+- In a test, `page.settle` called from work that the session itself
+  runs, such as a `page.click` handed to `s.spawn`, counted that work
+  among what it waited for. It was let go only while it saw a question
+  open, and gave up after ten seconds when the question was answered
+  before it looked. It no longer waits for the work it is part of.
 
 ### Features
 
